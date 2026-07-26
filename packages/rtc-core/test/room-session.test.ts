@@ -134,6 +134,10 @@ class FakeDataChannel {
   receive(message: unknown): void {
     this.onmessage?.({ data: JSON.stringify(message) } as MessageEvent);
   }
+
+  fail(): void {
+    this.onerror?.({} as Event);
+  }
 }
 
 class FakePeerConnection {
@@ -579,6 +583,51 @@ describe('RoomSession', () => {
         text: 'hello before offer',
       },
     ]);
+  });
+
+  it('reports a data channel error when the peer remains active', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness();
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+      const channel = harness.peerConnections[0]?.channels[0];
+
+      channel?.fail();
+      await vi.advanceTimersByTimeAsync(251);
+
+      expect(harness.session.getSnapshot().warning).toEqual({
+        code: 'data-channel-error',
+        message: 'Chat channel to peer-a encountered an error',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('suppresses a data channel error that races a normal peer departure', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness();
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+      const channel = harness.peerConnections[0]?.channels[0];
+
+      channel?.fail();
+      harness.socket.serverMessage({
+        v: 1,
+        type: 'peer.left',
+        roomId: 'study-room',
+        payload: { peerId: 'peer-a' },
+      });
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(251);
+
+      expect(harness.session.getSnapshot().warning).toBeNull();
+      expect(harness.session.getSnapshot().participants).not.toContainEqual(
+        expect.objectContaining({ peerId: 'peer-a' }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('cleans peer, socket, channel, and media resources on leave', async () => {

@@ -113,6 +113,7 @@ const SOCKET_CONNECTING = 0;
 const SOCKET_OPEN = 1;
 const MAX_CHAT_TEXT_LENGTH = 4_000;
 const MAX_PENDING_CHAT_MESSAGES_PER_PEER = 50;
+const DATA_CHANNEL_ERROR_GRACE_MS = 250;
 
 function defaultCreateId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -787,7 +788,15 @@ export class RoomSession {
       }
     };
     channel.onerror = () => {
-      this.#setWarning('data-channel-error', `Chat channel to ${peer.peerId} encountered an error`);
+      globalThis.setTimeout(() => {
+        if (peer.closed || this.#peers.get(peer.peerId) !== peer) {
+          return;
+        }
+        this.#setWarning(
+          'data-channel-error',
+          `Chat channel to ${peer.peerId} encountered an error`,
+        );
+      }, DATA_CHANNEL_ERROR_GRACE_MS);
     };
 
     if (channel.readyState === 'open') {

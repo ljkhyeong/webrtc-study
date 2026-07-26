@@ -1,11 +1,11 @@
 # ROUND architecture
 
-ROUND is intentionally split into four workspaces so the real-time engine can move into BATON
+ROUND is intentionally split into four components so the real-time engine can move into BATON
 without bringing this MVP's visual layer with it.
 
 ```text
 apps/web          React room UI
-apps/signaling    Stateless WebSocket signaling server
+apps/signaling    Java 21 + Spring Boot raw WebSocket signaling server
 packages/protocol Shared, versioned signaling contract
 packages/rtc-core Framework-free WebRTC room engine
 ```
@@ -22,7 +22,9 @@ limited to six participants because upload bandwidth and CPU use grow with every
 ## Portability boundary
 
 - `@round/rtc-core` never imports React, a router, or a CSS framework.
-- `@round/protocol` owns wire-message types and runtime validation.
+- `@round/protocol` owns browser-side wire-message types and runtime validation.
+- `apps/signaling` mirrors protocol v1 validation at its WebSocket boundary and keeps room state
+  in memory under `com.personal.round.signaling`.
 - `apps/web` adapts room snapshots to React and owns all presentation.
 - Room identity is an opaque string. BATON authentication can be added in front of signaling
   without changing the peer engine.

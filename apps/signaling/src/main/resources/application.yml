@@ -1,0 +1,11 @@
+server:
+  address: ${HOST:0.0.0.0}
+  port: ${PORT:8787}
+  shutdown: graceful
+
+round:
+  signaling:
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+    max-room-size: ${MAX_ROOM_SIZE:6}
+    heartbeat-interval-ms: ${HEARTBEAT_INTERVAL_MS:30000}
+    max-text-payload-bytes: 65536

@@ -25,12 +25,17 @@ ROUND의 첫 버전은 최대 6명이 브라우저끼리 직접 연결되는 mes
 
 - Node.js 22 이상
 - npm 11 이상
+- Java 21
 
 ```bash
 npm install
 cp .env.example .env
 npm run dev
 ```
+
+Gradle은 저장소의 Wrapper를 사용하므로 별도로 설치하지 않아도 됩니다. `npm run dev`가
+루트 `.env`를 Spring Boot와 Vite 양쪽에 전달하고 signaling 서버와 웹 앱을 함께
+실행합니다.
 
 브라우저에서 [http://localhost:5173](http://localhost:5173)을 엽니다. 서로 다른 브라우저
 프로필이나 시크릿 창을 함께 열면 2명 입장을 로컬에서 확인할 수 있습니다.
@@ -43,24 +48,25 @@ npm run check
 
 ## 환경 변수
 
-| 변수                   | 기본값                  | 설명                          |
-| ---------------------- | ----------------------- | ----------------------------- |
-| `PORT`                 | `8787`                  | signaling HTTP/WebSocket 포트 |
-| `HOST`                 | `0.0.0.0`               | signaling bind 주소           |
-| `ALLOWED_ORIGINS`      | `http://localhost:5173` | 쉼표로 구분한 허용 Origin     |
-| `MAX_ROOM_SIZE`        | `6`                     | 방 최대 참가자 수             |
-| `VITE_SIGNALING_URL`   | 현재 호스트의 `/signal` | 브라우저가 연결할 WSS/WS 주소 |
-| `VITE_STUN_URLS`       | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소       |
-| `VITE_TURN_URL`        | 없음                    | 운영용 TURN 주소              |
-| `VITE_TURN_USERNAME`   | 없음                    | TURN 사용자 이름              |
-| `VITE_TURN_CREDENTIAL` | 없음                    | TURN credential               |
+| 변수                    | 기본값                  | 설명                          |
+| ----------------------- | ----------------------- | ----------------------------- |
+| `PORT`                  | `8787`                  | signaling HTTP/WebSocket 포트 |
+| `HOST`                  | `0.0.0.0`               | signaling bind 주소           |
+| `ALLOWED_ORIGINS`       | `http://localhost:5173` | 쉼표로 구분한 허용 Origin     |
+| `MAX_ROOM_SIZE`         | `6`                     | 방 최대 참가자 수             |
+| `HEARTBEAT_INTERVAL_MS` | `30000`                 | 연결 상태 확인 주기(ms)       |
+| `VITE_SIGNALING_URL`    | 현재 호스트의 `/signal` | 브라우저가 연결할 WSS/WS 주소 |
+| `VITE_STUN_URLS`        | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소       |
+| `VITE_TURN_URL`         | 없음                    | 운영용 TURN 주소              |
+| `VITE_TURN_USERNAME`    | 없음                    | TURN 사용자 이름              |
+| `VITE_TURN_CREDENTIAL`  | 없음                    | TURN credential               |
 
 ## 저장소 구조
 
 ```text
 apps/
   web/          React + Vite 화면
-  signaling/    Node.js WebSocket signaling 서버
+  signaling/    Java 21 + Spring Boot WebSocket signaling 서버
 packages/
   protocol/     클라이언트/서버 공유 메시지 계약
   rtc-core/     React에 의존하지 않는 WebRTC 엔진
@@ -79,9 +85,10 @@ packages/
 
 ## BATON 통합 방향
 
-`@round/rtc-core`는 React, 라우터, CSS 프레임워크를 import하지 않습니다. 이후 BATON에서는
-이 패키지를 `features/meeting` 어댑터에서 감싸고, 방 접근 권한만 BATON의 인증 모델에 맞춰
-연결할 수 있습니다.
+`@round/rtc-core`는 React, 라우터, CSS 프레임워크를 import하지 않습니다. Java signaling
+코드도 `com.personal.round.signaling` 아래에 격리되어 있습니다. 이후 BATON에서는
+WebRTC 코어를 `features/meeting` 어댑터에서 감싸고, signaling 패키지를 BATON의 inbound
+adapter로 옮긴 뒤 방 접근 권한만 BATON 인증 모델에 맞춰 연결할 수 있습니다.
 
 BATON의 현재 Caddy 설정은 `Permissions-Policy`에서 카메라와 마이크를 차단하고 있으므로
 통합 시 해당 헤더와 WebSocket `connect-src` 정책을 함께 조정해야 합니다.
