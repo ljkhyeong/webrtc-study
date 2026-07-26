@@ -1,0 +1,73 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+	log default {
+		output stdout
+		format filter {
+			request>headers delete
+			request>uri delete
+			wrap json
+		}
+	}
+}
+
+http://127.0.0.1:8080 {
+	handle /healthz {
+		reverse_proxy signaling:8787
+	}
+
+	respond 404
+}
+
+{$ROUND_DOMAIN} {
+	encode zstd gzip
+
+	@skipAccessLog {
+		not path /signal /api/turn-credentials /healthz
+	}
+	log_skip @skipAccessLog
+
+	header {
+		-Server
+		Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' wss:; form-action 'self'"
+		Permissions-Policy "camera=(self), microphone=(self), geolocation=()"
+		Referrer-Policy "no-referrer"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+
+	handle /signal {
+		reverse_proxy signaling:8787
+	}
+
+	handle /api/turn-credentials {
+		reverse_proxy signaling:8787
+	}
+
+	handle /healthz {
+		reverse_proxy signaling:8787
+	}
+
+	handle /assets/* {
+		root * /srv
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	handle {
+		root * /srv
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format filter {
+			request>headers delete
+			request>uri regexp "[?].*$" "?REDACTED"
+			wrap json
+		}
+	}
+}
