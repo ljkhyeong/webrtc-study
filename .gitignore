@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+output/
+.DS_Store
+*.local
+*.log
+
+.env
+.env.*
+!.env.example
+
+apps/web/playwright-report/
+apps/web/test-results/

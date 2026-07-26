@@ -1,0 +1,87 @@
+import { useEffect, useRef } from 'react';
+import { MicOffIcon } from './Icons';
+
+export interface ParticipantView {
+  peerId: string;
+  displayName: string;
+  isLocal: boolean;
+  audioEnabled: boolean;
+  videoEnabled: boolean;
+  connectionState: string;
+  stream?: MediaStream | undefined;
+}
+
+interface VideoTileProps {
+  participant: ParticipantView;
+}
+
+function initials(name: string) {
+  return Array.from(name.trim()).slice(0, 2).join('').toUpperCase() || '?';
+}
+
+export function VideoTile({ participant }: VideoTileProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    video.srcObject = participant.stream ?? null;
+    return () => {
+      video.srcObject = null;
+    };
+  }, [participant.stream]);
+
+  const hasStream = Boolean(participant.stream);
+  const hasVisibleVideo = participant.videoEnabled && hasStream;
+  const isConnected =
+    participant.isLocal || ['connected', 'completed'].includes(participant.connectionState);
+
+  return (
+    <article
+      className={`video-tile${isConnected ? ' video-tile--connected' : ''}`}
+      data-peer-id={participant.peerId}
+    >
+      {hasStream ? (
+        <video
+          ref={videoRef}
+          className={hasVisibleVideo ? undefined : 'video-tile__media--hidden'}
+          autoPlay
+          muted={participant.isLocal}
+          playsInline
+          aria-label={`${participant.displayName}의 영상`}
+          aria-hidden={!hasVisibleVideo}
+        />
+      ) : null}
+      {!hasVisibleVideo ? (
+        <div
+          className="video-tile__fallback"
+          aria-label={`${participant.displayName}의 카메라 꺼짐`}
+        >
+          <span>{initials(participant.displayName)}</span>
+        </div>
+      ) : null}
+
+      <div className="video-tile__shade" />
+      <div className="video-tile__meta">
+        <span className="video-tile__name">
+          {participant.displayName}
+          {participant.isLocal ? ' (나)' : ''}
+        </span>
+        {!participant.audioEnabled ? (
+          <span className="video-tile__muted" aria-label="마이크 꺼짐">
+            <MicOffIcon />
+          </span>
+        ) : (
+          <span className="video-tile__signal" aria-label="마이크 켜짐">
+            <i />
+            <i />
+            <i />
+          </span>
+        )}
+      </div>
+    </article>
+  );
+}
