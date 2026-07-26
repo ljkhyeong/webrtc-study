@@ -3,6 +3,7 @@ package com.personal.round.protocol;
 import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JsonParser;
 import tools.jackson.databind.JsonNode;
@@ -13,7 +14,7 @@ import tools.jackson.databind.node.ObjectNode;
 public class ProtocolParser {
 
 	public static final int PROTOCOL_VERSION = 1;
-	public static final int MAX_ROOM_ID_LENGTH = 128;
+	public static final int MAX_ROOM_ID_LENGTH = 14;
 	public static final int MAX_PEER_ID_LENGTH = 128;
 	public static final int MAX_DISPLAY_NAME_LENGTH = 64;
 	public static final int MAX_REQUEST_ID_LENGTH = 128;
@@ -22,6 +23,10 @@ public class ProtocolParser {
 
 	private static final Set<String> CLIENT_TYPES = Set.of(
 			"room.join", "room.leave", "rtc.offer", "rtc.answer", "rtc.ice");
+	private static final Pattern ROOM_ID_PATTERN = Pattern.compile(
+			"[abcdefghjkmnpqrstuvwxyz23456789]{4}"
+					+ "-[abcdefghjkmnpqrstuvwxyz23456789]{4}"
+					+ "-[abcdefghjkmnpqrstuvwxyz23456789]{4}");
 
 	private final ObjectMapper objectMapper;
 
@@ -63,8 +68,7 @@ public class ProtocolParser {
 
 	private ClientMessage.Join parseJoin(ObjectNode message) {
 		exactKeys(message, Set.of("v", "type", "roomId", "requestId", "payload"), "$");
-		String roomId = normalizedString(
-				message.get("roomId"), MAX_ROOM_ID_LENGTH, "$.roomId");
+		String roomId = roomId(message.get("roomId"), "$.roomId");
 		String requestId = optionalNonBlankString(
 				message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId");
 		ObjectNode payload = object(message.get("payload"), "$.payload");
@@ -76,8 +80,7 @@ public class ProtocolParser {
 
 	private ClientMessage.Leave parseLeave(ObjectNode message) {
 		exactKeys(message, Set.of("v", "type", "roomId", "requestId"), "$");
-		String roomId = normalizedString(
-				message.get("roomId"), MAX_ROOM_ID_LENGTH, "$.roomId");
+		String roomId = roomId(message.get("roomId"), "$.roomId");
 		String requestId = optionalNonBlankString(
 				message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId");
 		return new ClientMessage.Leave(roomId, requestId);
@@ -123,8 +126,7 @@ public class ProtocolParser {
 	}
 
 	private RelayEnvelope relayEnvelope(ObjectNode message) {
-		String roomId = normalizedString(
-				message.get("roomId"), MAX_ROOM_ID_LENGTH, "$.roomId");
+		String roomId = roomId(message.get("roomId"), "$.roomId");
 		String requestId = optionalNonBlankString(
 				message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId");
 		String to = nonBlankString(message.get("to"), MAX_PEER_ID_LENGTH, "$.to");
@@ -165,6 +167,16 @@ public class ProtocolParser {
 		if (isEcmaScriptWhitespace(value.charAt(0))
 				|| isEcmaScriptWhitespace(value.charAt(value.length() - 1))) {
 			throw fail(path, "must not start or end with whitespace");
+		}
+		return value;
+	}
+
+	private static String roomId(JsonNode input, String path) {
+		String value = boundedString(input, MAX_ROOM_ID_LENGTH, path);
+		if (!ROOM_ID_PATTERN.matcher(value).matches()) {
+			throw fail(
+					path,
+					"must contain three lowercase four-character invite segments separated by hyphens");
 		}
 		return value;
 	}

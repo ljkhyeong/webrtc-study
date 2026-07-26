@@ -11,7 +11,9 @@ import {
   type ServerMessage,
 } from './types.js';
 
-const MAX_ROOM_ID_LENGTH = 128;
+const ROOM_ID_PATTERN =
+  /^[abcdefghjkmnpqrstuvwxyz23456789]{4}(?:-[abcdefghjkmnpqrstuvwxyz23456789]{4}){2}$/;
+const MAX_ROOM_ID_LENGTH = 14;
 const MAX_PEER_ID_LENGTH = 128;
 const MAX_DISPLAY_NAME_LENGTH = 64;
 const MAX_REQUEST_ID_LENGTH = 128;
@@ -232,7 +234,10 @@ function validateErrorPayload(input: unknown, path: string): void {
 }
 
 function roomId(input: unknown, path: string): void {
-  boundedNormalizedString(input, MAX_ROOM_ID_LENGTH, path);
+  boundedString(input, MAX_ROOM_ID_LENGTH, path);
+  if (!(input as string).match(ROOM_ID_PATTERN)) {
+    fail(path, 'must be a canonical ROUND room id');
+  }
 }
 
 function optionalRequestId(input: unknown, path: string): void {

@@ -14,27 +14,27 @@ describe('client message validation', () => {
     {
       v: PROTOCOL_VERSION,
       type: 'room.join',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
       payload: { displayName: 'Ada' },
     },
     {
       v: PROTOCOL_VERSION,
       type: 'rtc.offer',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
       to: 'peer-b',
       payload: { description: { type: 'offer', sdp: 'v=0' } },
     },
     {
       v: PROTOCOL_VERSION,
       type: 'rtc.answer',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
       to: 'peer-a',
       payload: { description: { type: 'answer' } },
     },
     {
       v: PROTOCOL_VERSION,
       type: 'rtc.ice',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
       to: 'peer-a',
       payload: {
         candidate: {
@@ -48,14 +48,14 @@ describe('client message validation', () => {
     {
       v: PROTOCOL_VERSION,
       type: 'rtc.ice',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
       to: 'peer-a',
       payload: { candidate: null },
     },
     {
       v: PROTOCOL_VERSION,
       type: 'room.leave',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
     },
   ])('accepts $type', (message) => {
     expect(parseClientMessage(message)).toEqual(message);
@@ -66,7 +66,7 @@ describe('client message validation', () => {
     const spoofed = {
       v: PROTOCOL_VERSION,
       type: 'rtc.offer',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
       from: 'pretend-peer',
       to: 'peer-b',
       payload: { description: { type: 'offer', sdp: 'v=0' } },
@@ -76,13 +76,27 @@ describe('client message validation', () => {
     expect(isClientMessage(spoofed)).toBe(false);
   });
 
+  it.each(['room', 'Study-A', 'abcd-efgh-ijkl', 'abcd-efgh-jkmp-extra'])(
+    'rejects non-canonical room id %s',
+    (roomId) => {
+      expect(
+        isClientMessage({
+          v: PROTOCOL_VERSION,
+          type: 'room.join',
+          roomId,
+          payload: { displayName: 'Ada' },
+        }),
+      ).toBe(false);
+    },
+  );
+
   it.each([
-    [{ v: 2, type: 'room.leave', roomId: 'study-room' }],
+    [{ v: 2, type: 'room.leave', roomId: 'abcd-efgh-jkmp' }],
     [
       {
         v: 1,
         type: 'room.join',
-        roomId: ' study-room ',
+        roomId: ' abcd-efgh-jkmp ',
         payload: { displayName: 'Ada' },
       },
     ],
@@ -90,7 +104,7 @@ describe('client message validation', () => {
       {
         v: 1,
         type: 'rtc.offer',
-        roomId: 'study-room',
+        roomId: 'abcd-efgh-jkmp',
         to: 'peer-b',
         payload: { description: { type: 'answer', sdp: 'v=0' } },
       },
@@ -99,7 +113,7 @@ describe('client message validation', () => {
       {
         v: 1,
         type: 'rtc.ice',
-        roomId: 'study-room',
+        roomId: 'abcd-efgh-jkmp',
         to: 'peer-b',
         payload: { candidate: { candidate: 'candidate', sdpMLineIndex: -1 } },
       },
@@ -114,7 +128,7 @@ describe('server message validation', () => {
     {
       v: PROTOCOL_VERSION,
       type: 'room.joined',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
       payload: {
         peerId: 'peer-a',
         participants: [{ peerId: 'peer-b', displayName: 'Grace' }],
@@ -123,26 +137,26 @@ describe('server message validation', () => {
     {
       v: PROTOCOL_VERSION,
       type: 'peer.joined',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
       payload: { participant: { peerId: 'peer-c', displayName: 'Linus' } },
     },
     {
       v: PROTOCOL_VERSION,
       type: 'rtc.answer',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
       from: 'peer-b',
       payload: { description: { type: 'answer', sdp: 'v=0' } },
     },
     {
       v: PROTOCOL_VERSION,
       type: 'peer.left',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
       payload: { peerId: 'peer-b' },
     },
     {
       v: PROTOCOL_VERSION,
       type: 'error',
-      roomId: 'study-room',
+      roomId: 'abcd-efgh-jkmp',
       payload: { code: 'ROOM_FULL', message: 'The room is full.' },
     },
   ])('accepts $type', (message) => {
