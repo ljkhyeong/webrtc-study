@@ -84,9 +84,10 @@ Set these values carefully:
   `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS` bound credential endpoint abuse.
   The defaults permit 12 requests per client in 60 seconds while tracking up
   to 10,000 clients.
-- `VITE_ICE_TRANSPORT_POLICY=all` is the normal release setting. Build a
-  dedicated image with `relay` to prove media crosses TURN rather than a direct
-  candidate, then restore `all` and rebuild the release image.
+- `VITE_ICE_TRANSPORT_POLICY=all` is the normal release setting. The tag-based
+  release workflow also publishes a separate `-relay` edge image to prove media
+  crosses TURN rather than a direct candidate. Never use that relay-only image
+  as the normal study-room release.
 - `TURN_EXTERNAL_IP` is the public IPv4 address.
 - `TURN_RELAY_IP` is the host interface address used for relay sockets. Set it
   equal to `TURN_EXTERNAL_IP` when the public address belongs directly to the
@@ -110,6 +111,42 @@ and recreate the TURN container after renewal:
 ```bash
 docker compose --env-file ops/production.env up -d --no-deps --force-recreate turn
 ```
+
+## Publish immutable release images
+
+Set the non-secret GitHub Actions repository variable `ROUND_STUN_URLS` to the
+comma-separated production STUN URLs compiled into the browser bundle. Use the
+production TURN hostname, for example `stun:turn.example.com:3478`. The release
+workflow fails before publishing if this variable is missing.
+
+After the release candidate is merged and its normal branch CI is green, create
+and push an annotated SemVer tag:
+
+```bash
+git tag -a v0.1.0-rc.1 -m "ROUND v0.1.0-rc.1"
+git push origin v0.1.0-rc.1
+```
+
+`.github/workflows/release-images.yml` reruns repository and deployment checks,
+then publishes Linux AMD64 and ARM64 images to GHCR:
+
+```text
+ghcr.io/<owner>/round-edge:<tag>
+ghcr.io/<owner>/round-edge:<tag>-relay
+ghcr.io/<owner>/round-signaling:<tag>
+ghcr.io/<owner>/round-turn:<tag>
+```
+
+Each image also receives a full `sha-<commit>` tag. The workflow summary records
+the manifest digest for every image. Copy the normal edge, signaling, and TURN
+digest references into `ops/production.env`; use the relay-only edge digest
+only for the relay gate. Never move or overwrite an existing release or SHA
+tag.
+
+Ensure the production host can pull the packages before deployment. Public
+packages need no registry credential. A private package requires a narrowly
+scoped GHCR credential with package read access stored in the host's Docker
+credential store, not in `ops/production.env`.
 
 ## Validate, build, and start
 
@@ -141,11 +178,11 @@ docker compose --env-file ops/production.env ps
 Do not run plain `docker compose config` in shared logs: its rendered output
 contains `TURN_SHARED_SECRET`.
 
-The sample uses unique release tags for a single-host source build. In CI,
-publish `web-runtime`, `signaling-runtime`, and `turn-runtime` under immutable
-release tags, then set `ROUND_EDGE_IMAGE`, `ROUND_SIGNALING_IMAGE`, and
-`ROUND_TURN_IMAGE` to registry digests. Pin the optional base-image variables to
-digests as well. A digest-based host deployment can use:
+The tracked sample uses GHCR release tags so the same file remains usable for a
+local source build. For production, set `ROUND_EDGE_IMAGE`,
+`ROUND_SIGNALING_IMAGE`, and `ROUND_TURN_IMAGE` to the manifest digests from the
+release workflow. Pin the optional base-image variables to digests as well. A
+digest-based host deployment can use:
 
 ```bash
 docker compose --env-file ops/production.env pull

@@ -8,10 +8,14 @@ document.
 ## Release candidate
 
 - [ ] The release commit is immutable and tagged.
+- [ ] The tag-triggered release workflow passes and records normal edge,
+      relay-only edge, signaling, and TURN manifest digests.
 - [ ] `npm run check` passes from a clean checkout.
 - [ ] The production Compose configuration renders without missing variables.
 - [ ] `ops/ci/validate-deployment.sh` passes with temporary dummy fixtures.
-- [ ] The previous immutable image tag is available for rollback.
+- [ ] The previous immutable image set is available for rollback. For the first
+      pilot, service shutdown and DNS removal are recorded as the explicit
+      rollback until a known-good deployed image set exists.
 - [ ] The signaling service is configured as exactly one replica.
 
 ## Public network path
@@ -33,7 +37,8 @@ document.
 Run this test from two physical devices on different networks. One device
 should use home Wi-Fi and the other cellular tethering or another ISP.
 
-- [ ] Force `iceTransportPolicy: "relay"` in the release-candidate build.
+- [ ] Deploy the release workflow's `-relay` edge image without changing the
+      signaling or TURN image digests.
 - [ ] Both participants can see and hear each other.
 - [ ] Ordered DataChannel chat works in both directions.
 - [ ] `RTCPeerConnection.getStats()` shows a selected candidate pair whose
