@@ -1,0 +1,215 @@
+name: Release container images
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-images-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  verify:
+    name: Verify release candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Validate release inputs
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          STUN_URLS: ${{ vars.ROUND_STUN_URLS }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            printf 'Release tag must use SemVer, for example v0.1.0 or v0.1.0-rc.1.\n' >&2
+            exit 1
+          fi
+          if [[ -z "$STUN_URLS" ]]; then
+            printf 'Set the ROUND_STUN_URLS repository variable before tagging a release.\n' >&2
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run repository checks
+        run: npm run check
+
+      - name: Validate deployment configuration
+        run: bash ops/ci/validate-deployment.sh --check-only
+
+  publish-edge:
+    name: Publish web edge images
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish production edge image
+        id: edge
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: web-runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          pull: true
+          build-args: |
+            VITE_STUN_URLS=${{ vars.ROUND_STUN_URLS }}
+            VITE_ICE_TRANSPORT_POLICY=all
+          tags: |
+            ${{ env.IMAGE_NAMESPACE }}/round-edge:${{ github.ref_name }}
+            ${{ env.IMAGE_NAMESPACE }}/round-edge:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=gha,scope=round-edge
+          cache-to: type=gha,mode=max,scope=round-edge
+          provenance: mode=max
+          sbom: true
+
+      - name: Build and publish relay-only edge image
+        id: edge-relay
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: web-runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          pull: true
+          build-args: |
+            VITE_STUN_URLS=${{ vars.ROUND_STUN_URLS }}
+            VITE_ICE_TRANSPORT_POLICY=relay
+          tags: |
+            ${{ env.IMAGE_NAMESPACE }}/round-edge:${{ github.ref_name }}-relay
+            ${{ env.IMAGE_NAMESPACE }}/round-edge:sha-${{ github.sha }}-relay
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}-relay
+          cache-from: type=gha,scope=round-edge-relay
+          cache-to: type=gha,mode=max,scope=round-edge-relay
+          provenance: mode=max
+          sbom: true
+
+      - name: Record edge image digests
+        env:
+          EDGE_DIGEST: ${{ steps.edge.outputs.digest }}
+          RELAY_DIGEST: ${{ steps.edge-relay.outputs.digest }}
+        run: |
+          {
+            printf '### ROUND edge images\n\n'
+            printf -- '- Production: %s/round-edge@%s\n' "$IMAGE_NAMESPACE" "$EDGE_DIGEST"
+            printf -- '- Relay-only: %s/round-edge@%s\n' "$IMAGE_NAMESPACE" "$RELAY_DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-services:
+    name: Publish ${{ matrix.name }} image
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: signaling
+            image: round-signaling
+            target: signaling-runtime
+          - name: TURN
+            image: round-turn
+            target: turn-runtime
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish ${{ matrix.name }} image
+        id: image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          pull: true
+          tags: |
+            ${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.ref_name }}
+            ${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Record ${{ matrix.name }} image digest
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE_NAME: ${{ matrix.image }}
+        run: |
+          {
+            printf '### ROUND %s image\n\n' "$IMAGE_NAME"
+            printf -- '- %s/%s@%s\n' "$IMAGE_NAMESPACE" "$IMAGE_NAME" "$IMAGE_DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
