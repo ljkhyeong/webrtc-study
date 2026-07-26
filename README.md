@@ -11,10 +11,12 @@ ROUND의 첫 버전은 최대 6명이 브라우저끼리 직접 연결되는 mes
 
 - 읽기 쉬운 방 코드와 공유 가능한 초대 링크
 - 카메라·마이크 기반 다자간 WebRTC 통화
+- 입장 전 미리보기와 카메라·마이크 선택
 - 마이크 음소거와 카메라 켜기/끄기
 - WebRTC DataChannel 기반 휘발성 텍스트 채팅
 - 참가자 입장·퇴장과 연결 상태 표시
-- 카메라/마이크 권한 거부 시 미디어 없이 입장
+- 한쪽 미디어 권한만 허용해도 음성 전용 또는 영상 전용으로 입장
+- 일시적인 signaling·ICE 연결 장애 자동 복구
 - 데스크톱과 모바일 반응형 화면
 
 계정, 녹화, 화면 공유, 채팅 저장, 관리자 기능은 아직 포함하지 않습니다.
@@ -48,18 +50,23 @@ npm run check
 
 ## 환경 변수
 
-| 변수                    | 기본값                  | 설명                          |
-| ----------------------- | ----------------------- | ----------------------------- |
-| `PORT`                  | `8787`                  | signaling HTTP/WebSocket 포트 |
-| `HOST`                  | `0.0.0.0`               | signaling bind 주소           |
-| `ALLOWED_ORIGINS`       | `http://localhost:5173` | 쉼표로 구분한 허용 Origin     |
-| `MAX_ROOM_SIZE`         | `6`                     | 방 최대 참가자 수             |
-| `HEARTBEAT_INTERVAL_MS` | `30000`                 | 연결 상태 확인 주기(ms)       |
-| `VITE_SIGNALING_URL`    | 현재 호스트의 `/signal` | 브라우저가 연결할 WSS/WS 주소 |
-| `VITE_STUN_URLS`        | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소       |
-| `VITE_TURN_URL`         | 없음                    | 운영용 TURN 주소              |
-| `VITE_TURN_USERNAME`    | 없음                    | TURN 사용자 이름              |
-| `VITE_TURN_CREDENTIAL`  | 없음                    | TURN credential               |
+| 변수                                        | 기본값                  | 설명                          |
+| ------------------------------------------- | ----------------------- | ----------------------------- |
+| `PORT`                                      | `8787`                  | signaling HTTP/WebSocket 포트 |
+| `HOST`                                      | `0.0.0.0`               | signaling bind 주소           |
+| `ALLOWED_ORIGINS`                           | `http://localhost:5173` | 쉼표로 구분한 허용 Origin     |
+| `MAX_ROOM_SIZE`                             | `6`                     | 방 최대 참가자 수             |
+| `HEARTBEAT_INTERVAL_MS`                     | `30000`                 | 연결 상태 확인 주기(ms)       |
+| `VITE_SIGNALING_URL`                        | 현재 호스트의 `/signal` | 브라우저가 연결할 WSS/WS 주소 |
+| `VITE_STUN_URLS`                            | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소       |
+| `VITE_TURN_CREDENTIALS_URL`                 | `/api/turn-credentials` | 만료형 TURN credential API    |
+| `VITE_ICE_TRANSPORT_POLICY`                 | `all`                   | `relay`이면 TURN만 강제       |
+| `TURN_URLS`                                 | 없음                    | 서버가 브라우저에 전달할 TURN |
+| `TURN_SHARED_SECRET`                        | 없음                    | signaling과 coturn 공유 비밀  |
+| `TURN_CREDENTIAL_TTL_SECONDS`               | `3600`                  | TURN credential 수명(초)      |
+| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS` | `60`                    | IP별 발급 제한 구간(초)       |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`   | `12`                    | 구간당 IP별 최대 발급 수      |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`    | `10000`                 | rate-limit 상태 최대 IP 수    |
 
 ## 저장소 구조
 
@@ -80,8 +87,15 @@ packages/
 사용하려면 웹은 HTTPS, signaling은 WSS로 배포해야 합니다.
 
 기본 STUN 설정만으로는 회사·학교망이나 제한적인 NAT 환경에서 연결을 보장할 수 없습니다.
-실사용 배포에는 coturn 같은 TURN 서버를 연결하는 것을 권장합니다. mesh 방식은 참가자마다
-업로드 스트림 수가 늘어나므로 첫 버전은 6명으로 제한합니다.
+실사용 배포에는 coturn 같은 TURN 서버가 필요합니다. ROUND는 TURN shared secret을 브라우저
+번들에 넣지 않고 Java 서버가 짧은 수명의 credential을 발급합니다. mesh 방식은 참가자마다
+업로드 스트림 수가 늘어나므로 영상은 기본 640×360, 최대 15fps이며 첫 버전은 6명으로
+제한합니다.
+
+운영 배포에는 Caddy, 단일 Java signaling 인스턴스, coturn을 포함한 Compose 구성이
+준비되어 있습니다. 서버 준비, DNS, 방화벽, 인증서, relay-only 검증과 롤백 절차는
+[배포 가이드](docs/deployment.md)를 따르세요. 스터디 그룹에 공개하기 전에는
+[파일럿 체크리스트](docs/pilot-checklist.md)를 모두 통과해야 합니다.
 
 ## BATON 통합 방향
 
