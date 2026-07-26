@@ -12,14 +12,31 @@ public final class OriginPolicy {
 	private final boolean allowAny;
 
 	public OriginPolicy(Iterable<String> configuredOrigins) {
+		this(configuredOrigins, false);
+	}
+
+	public OriginPolicy(Iterable<String> configuredOrigins, boolean production) {
 		Set<String> normalizedOrigins = new HashSet<>();
 		boolean wildcard = false;
 		for (String configuredOrigin : configuredOrigins) {
 			if ("*".equals(configuredOrigin)) {
+				if (production) {
+					throw new IllegalArgumentException(
+							"Wildcard origins are forbidden in the production profile");
+				}
 				wildcard = true;
 			}
 			else {
-				normalizedOrigins.add(normalize(configuredOrigin));
+				String normalized = normalize(configuredOrigin);
+				if (production && "null".equals(normalized)) {
+					throw new IllegalArgumentException(
+							"The null origin is forbidden in the production profile");
+				}
+				if (production && !normalized.startsWith("https://")) {
+					throw new IllegalArgumentException(
+							"Production origins must use HTTPS");
+				}
+				normalizedOrigins.add(normalized);
 			}
 		}
 		if (!wildcard && normalizedOrigins.isEmpty()) {

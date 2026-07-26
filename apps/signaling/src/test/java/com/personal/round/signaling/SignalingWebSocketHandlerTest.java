@@ -30,6 +30,7 @@ class SignalingWebSocketHandlerTest {
 				new ProtocolParser(new ObjectMapper()), service, properties);
 		session = mock(WebSocketSession.class);
 		when(session.getId()).thenReturn("session");
+		when(service.acceptInboundFrame(session)).thenReturn(true);
 	}
 
 	@Test
@@ -58,5 +59,19 @@ class SignalingWebSocketHandlerTest {
 		verify(session).close(new CloseStatus(1009, "Message exceeds 64 KiB"));
 		verify(service).disconnect(session);
 		verify(service, org.mockito.Mockito.never()).handle(any(), any());
+	}
+
+	@Test
+	void stopsProcessingWhenTheAbuseLimiterRejectsAFrame() throws Exception {
+		when(service.acceptInboundFrame(session)).thenReturn(false);
+
+		handler.handleMessage(
+				session,
+				new TextMessage("""
+						{"v":1,"type":"room.leave","roomId":"abcd-efgh-jkmp"}
+						"""));
+
+		verify(service, org.mockito.Mockito.never()).handle(any(), any());
+		verify(service, org.mockito.Mockito.never()).sendInvalidMessage(any(), any());
 	}
 }

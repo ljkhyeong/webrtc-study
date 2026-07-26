@@ -8,6 +8,10 @@ import static org.mockito.Mockito.when;
 
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.protocol.ClientMessage;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -31,15 +35,20 @@ import tools.jackson.databind.ObjectMapper;
 
 class SignalingServiceTest {
 
-	private static final String ROOM_ID = "webrtc-study";
+	private static final String ROOM_ID = "abcd-efgh-jkmp";
+	private static final String OTHER_ROOM_ID = "qrst-uvwx-yz23";
 
 	private ObjectMapper objectMapper;
+	private Clock clock;
+	private SimpleMeterRegistry meterRegistry;
 	private SignalingService service;
 
 	@BeforeEach
 	void setUp() {
 		objectMapper = new ObjectMapper();
-		service = new SignalingService(objectMapper, properties(6));
+		clock = Clock.fixed(Instant.parse("2026-07-26T00:00:00Z"), ZoneOffset.UTC);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties(6), meterRegistry);
 	}
 
 	@AfterEach
@@ -117,7 +126,7 @@ class SignalingServiceTest {
 
 		service.handle(ada.session(), join("Ada"));
 		String adaPeerId = ada.nextJson().at("/payload/peerId").asText();
-		service.handle(ada.session(), relay("rtc.offer", "other-room", adaPeerId));
+		service.handle(ada.session(), relay("rtc.offer", OTHER_ROOM_ID, adaPeerId));
 		assertError(ada.nextJson(), "ROOM_MISMATCH");
 
 		service.handle(ada.session(), relay("rtc.offer", ROOM_ID, adaPeerId));
@@ -166,6 +175,14 @@ class SignalingServiceTest {
 				.count();
 		assertThat(joinedCount).isEqualTo(6);
 		assertThat(fullCount).isEqualTo(6);
+		assertThat(meterRegistry.get("round.signaling.joins.rejected")
+				.tag("reason", "room_full")
+				.counter()
+				.count()).isEqualTo(6);
+		assertThat(meterRegistry.get("round.signaling.rooms.active").gauge().value())
+				.isEqualTo(1);
+		assertThat(meterRegistry.get("round.signaling.peers.joined").gauge().value())
+				.isEqualTo(6);
 	}
 
 	@Test
@@ -190,6 +207,8 @@ class SignalingServiceTest {
 				.isEqualTo(new CloseStatus(4000, "Heartbeat timeout"));
 		assertThat(responsive.nextJson().at("/payload/peerId").asText()).isEqualTo(sleepingPeerId);
 		assertThat(service.participantCount(ROOM_ID)).isOne();
+		assertThat(meterRegistry.get("round.signaling.heartbeat.closes").counter().count())
+				.isEqualTo(1);
 
 		service.disconnect(sleeping.session());
 		assertThat(service.participantCount(ROOM_ID)).isOne();
@@ -209,12 +228,12 @@ class SignalingServiceTest {
 
 			service.handle(
 					independent.session(),
-					new ClientMessage.Join("another-room", null, "Independent peer"));
+					new ClientMessage.Join(OTHER_ROOM_ID, null, "Independent peer"));
 			JsonNode joined = independent.nextJson();
 
 			assertThat(joined.get("type").asText()).isEqualTo("room.joined");
-			assertThat(joined.get("roomId").asText()).isEqualTo("another-room");
-			assertThat(service.participantCount("another-room")).isOne();
+			assertThat(joined.get("roomId").asText()).isEqualTo(OTHER_ROOM_ID);
+			assertThat(service.participantCount(OTHER_ROOM_ID)).isOne();
 		}
 		finally {
 			releaseSlowSend.countDown();
@@ -277,6 +296,8 @@ class SignalingServiceTest {
 		assertThat(service.participantCount(ROOM_ID)).isOne();
 		service.disconnect(grace.session());
 		assertThat(ada.hasNoTextMessageFor(100)).isTrue();
+		assertThat(meterRegistry.get("round.signaling.frames.invalid").counter().count())
+				.isEqualTo(1);
 	}
 
 	@Test
@@ -297,10 +318,151 @@ class SignalingServiceTest {
 			assertThat(slow.closeStatus().get())
 					.isEqualTo(new CloseStatus(1011, "Outbound queue overflow"));
 			assertThat(service.roomCount()).isZero();
+			assertThat(meterRegistry.get("round.signaling.outbound.queue.overflows")
+					.counter()
+					.count()).isEqualTo(1);
 		}
 		finally {
 			releaseFirstSend.countDown();
 		}
+	}
+
+	@Test
+	void shutdownRejectsNewConnectionsAndClosesExistingSessionsWithGoingAway() throws Exception {
+		TestPeer connected = peer("connected-before-shutdown");
+		connect(connected);
+		service.handle(connected.session(), join("Ada"));
+		connected.nextJson();
+
+		service.shutdown();
+
+		connected.awaitClosed();
+		assertThat(connected.closeStatus().get())
+				.isEqualTo(new CloseStatus(1001, "Server shutting down"));
+		assertThat(service.isAcceptingConnections()).isFalse();
+		assertThat(service.connectedPeerCount()).isZero();
+		assertThat(service.roomCount()).isZero();
+
+		TestPeer late = peer("late-connection");
+		assertThat(service.connect(late.session())).isFalse();
+		late.awaitClosed();
+		assertThat(late.closeStatus().get())
+				.isEqualTo(new CloseStatus(1001, "Server shutting down"));
+	}
+
+	@Test
+	void shutdownKeepsGoingAwayStatusWhenAnOutboundWriteIsInFlight() throws Exception {
+		CountDownLatch sendEntered = new CountDownLatch(1);
+		CountDownLatch releaseSend = new CountDownLatch(1);
+		TestPeer slow = peer("shutdown-in-flight", sendEntered, releaseSend);
+		connect(slow);
+
+		try {
+			service.handle(slow.session(), join("Slow peer"));
+			assertThat(sendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+			service.shutdown();
+
+			slow.awaitClosed();
+			assertThat(slow.closeStatus().get())
+					.isEqualTo(new CloseStatus(1001, "Server shutting down"));
+		}
+		finally {
+			releaseSend.countDown();
+		}
+	}
+
+	@Test
+	void expiresOnlySocketsThatRemainUnjoinedPastTheConfiguredDeadline() throws Exception {
+		TestPeer idle = peer("idle-unjoined");
+		TestPeer joined = peer("joined");
+		connect(idle, joined);
+		service.handle(joined.session(), join("Grace"));
+		joined.nextJson();
+
+		long connectedAt = clock.millis();
+		service.expireUnjoinedSessions(connectedAt + 14_999);
+		assertThat(idle.closeStatus().get()).isNull();
+		assertThat(joined.closeStatus().get()).isNull();
+
+		service.expireUnjoinedSessions(connectedAt + 15_000);
+		idle.awaitClosed();
+		assertThat(idle.closeStatus().get())
+				.isEqualTo(new CloseStatus(1008, "Room join timeout"));
+		assertThat(joined.closeStatus().get()).isNull();
+		assertThat(service.participantCount(ROOM_ID)).isOne();
+	}
+
+	@Test
+	void allowsSixPeerIceBurstButClosesAConnectionThatExceedsItsWindow() throws Exception {
+		List<TestPeer> peers = new ArrayList<>();
+		for (int index = 0; index < 6; index++) {
+			TestPeer peer = peer("burst-" + index);
+			peers.add(peer);
+			assertThat(service.connect(peer.session())).isTrue();
+		}
+
+		for (TestPeer peer : peers) {
+			for (int frame = 0; frame < 200; frame++) {
+				assertThat(service.acceptInboundFrame(peer.session())).isTrue();
+			}
+		}
+		TestPeer offender = peers.getFirst();
+		for (int frame = 200; frame < 600; frame++) {
+			assertThat(service.acceptInboundFrame(offender.session())).isTrue();
+		}
+
+		assertThat(service.acceptInboundFrame(offender.session())).isFalse();
+		offender.awaitClosed();
+		assertThat(offender.closeStatus().get())
+				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
+		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+				.counter()
+				.count()).isEqualTo(1);
+		assertThat(service.connectedPeerCount()).isEqualTo(5);
+	}
+
+	@Test
+	void appliesTheGlobalFrameWindowAcrossSessions() throws Exception {
+		service.shutdown();
+		SignalingProperties properties = properties(6);
+		properties.setMaxFramesPerSessionWindow(10);
+		properties.setMaxFramesGlobalWindow(12);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		TestPeer first = peer("global-first");
+		TestPeer second = peer("global-second");
+		connect(first, second);
+
+		for (int frame = 0; frame < 6; frame++) {
+			assertThat(service.acceptInboundFrame(first.session())).isTrue();
+			assertThat(service.acceptInboundFrame(second.session())).isTrue();
+		}
+
+		assertThat(service.acceptInboundFrame(first.session())).isFalse();
+		first.awaitClosed();
+		assertThat(second.closeStatus().get()).isNull();
+	}
+
+	@Test
+	void rejectsConnectionsBeyondTheConfiguredGlobalLimit() throws Exception {
+		service.shutdown();
+		SignalingProperties properties = properties(2);
+		properties.setMaxConnections(2);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		TestPeer first = peer("limit-first");
+		TestPeer second = peer("limit-second");
+		TestPeer rejected = peer("limit-rejected");
+
+		assertThat(service.connect(first.session())).isTrue();
+		assertThat(service.connect(second.session())).isTrue();
+		assertThat(service.connect(rejected.session())).isFalse();
+
+		rejected.awaitClosed();
+		assertThat(rejected.closeStatus().get())
+				.isEqualTo(new CloseStatus(1013, "Server connection limit reached"));
+		assertThat(service.connectedPeerCount()).isEqualTo(2);
 	}
 
 	private void connect(TestPeer... peers) {
@@ -329,6 +491,16 @@ class SignalingServiceTest {
 		SignalingProperties properties = new SignalingProperties();
 		properties.setMaxRoomSize(maxRoomSize);
 		return properties;
+	}
+
+	private SignalingService service(
+			SignalingProperties properties,
+			SimpleMeterRegistry registry) {
+		return new SignalingService(
+				objectMapper,
+				properties,
+				new SignalingMetrics(registry),
+				clock);
 	}
 
 	private TestPeer peer(String id) throws Exception {

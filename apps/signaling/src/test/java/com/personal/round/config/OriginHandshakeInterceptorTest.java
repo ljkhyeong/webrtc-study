@@ -1,6 +1,7 @@
 package com.personal.round.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,9 +43,24 @@ class OriginHandshakeInterceptorTest {
 
 	@Test
 	void rejectsInvalidConfiguredOriginsAtStartup() {
-		org.assertj.core.api.Assertions.assertThatThrownBy(
-						() -> new OriginPolicy(List.of("https://study.example/path")))
+		assertThatThrownBy(() -> new OriginPolicy(List.of("https://study.example/path")))
 				.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void productionProfileFailsFastForWildcardNullAndNonHttpsOrigins() {
+		assertThatThrownBy(() -> new OriginPolicy(List.of("*"), true))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("Wildcard");
+		assertThatThrownBy(() -> new OriginPolicy(List.of("null"), true))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("null origin");
+		assertThatThrownBy(() -> new OriginPolicy(List.of("http://study.example"), true))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("HTTPS");
+
+		assertThat(new OriginPolicy(List.of("https://study.example"), true)
+				.allows("https://study.example")).isTrue();
 	}
 
 	private OriginHandshakeInterceptor interceptor(List<String> origins) {

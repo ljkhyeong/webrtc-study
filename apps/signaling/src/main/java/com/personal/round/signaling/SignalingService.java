@@ -5,6 +5,7 @@ import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ProtocolParser;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
+import java.time.Clock;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -17,6 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.PingMessage;
@@ -28,7 +30,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 @Service
-public class SignalingService {
+public class SignalingService implements SmartLifecycle {
 
 	private static final Logger log = LoggerFactory.getLogger(SignalingService.class);
 	private static final CloseStatus HEARTBEAT_TIMEOUT =
@@ -37,6 +39,12 @@ public class SignalingService {
 			new CloseStatus(1001, "Server shutting down");
 	private static final CloseStatus OUTBOUND_QUEUE_OVERFLOW =
 			new CloseStatus(1011, "Outbound queue overflow");
+	private static final CloseStatus JOIN_TIMEOUT =
+			new CloseStatus(1008, "Room join timeout");
+	private static final CloseStatus RATE_LIMITED =
+			new CloseStatus(1008, "Inbound frame rate exceeded");
+	private static final CloseStatus CONNECTION_LIMIT =
+			new CloseStatus(1013, "Server connection limit reached");
 	static final int MAX_OUTBOUND_QUEUE_SIZE = 256;
 
 	private final Object monitor = new Object();
@@ -44,20 +52,92 @@ public class SignalingService {
 	private final Map<String, LinkedHashMap<String, Peer>> rooms = new HashMap<>();
 	private final ExecutorService outboundExecutor = Executors.newVirtualThreadPerTaskExecutor();
 	private final ObjectMapper objectMapper;
+	private final SignalingMetrics metrics;
+	private final Clock clock;
 	private final int maxRoomSize;
+	private final int maxConnections;
+	private final long unjoinedTimeoutMs;
+	private final long abuseWindowMs;
+	private final int maxFramesPerSessionWindow;
+	private final int maxFramesGlobalWindow;
+	private final RateWindow globalInboundWindow = new RateWindow();
+	private volatile boolean acceptingConnections = true;
+	private volatile boolean running = true;
 
-	public SignalingService(ObjectMapper objectMapper, SignalingProperties properties) {
+	public SignalingService(
+			ObjectMapper objectMapper,
+			SignalingProperties properties,
+			SignalingMetrics metrics,
+			Clock clock) {
 		properties.validate();
 		this.objectMapper = objectMapper;
+		this.metrics = metrics;
+		this.clock = clock;
 		this.maxRoomSize = properties.getMaxRoomSize();
+		this.maxConnections = properties.getMaxConnections();
+		this.unjoinedTimeoutMs = properties.getUnjoinedTimeoutMs();
+		this.abuseWindowMs = properties.getAbuseWindowMs();
+		this.maxFramesPerSessionWindow = properties.getMaxFramesPerSessionWindow();
+		this.maxFramesGlobalWindow = properties.getMaxFramesGlobalWindow();
+		metrics.updateState(0, 0, 0);
 	}
 
-	public void connect(WebSocketSession session) {
+	public boolean connect(WebSocketSession session) {
+		WorkPlan workPlan = new WorkPlan();
+		boolean accepted;
 		synchronized (monitor) {
-			connectedPeers.computeIfAbsent(
-					session.getId(),
-					ignored -> new Peer(UUID.randomUUID().toString(), session));
+			if (!acceptingConnections) {
+				workPlan.close(session, SERVER_SHUTDOWN);
+				accepted = false;
+			}
+			else if (connectedPeers.size() >= maxConnections
+					&& !connectedPeers.containsKey(session.getId())) {
+				workPlan.close(session, CONNECTION_LIMIT);
+				accepted = false;
+			}
+			else {
+				connectedPeers.computeIfAbsent(
+						session.getId(),
+						ignored -> new Peer(
+								UUID.randomUUID().toString(), session, clock.millis()));
+				refreshMetricsLocked();
+				accepted = true;
+			}
 		}
+		execute(workPlan);
+		return accepted;
+	}
+
+	public boolean isAcceptingConnections() {
+		return acceptingConnections;
+	}
+
+	public boolean acceptInboundFrame(WebSocketSession session) {
+		return acceptInboundFrame(session, clock.millis());
+	}
+
+	boolean acceptInboundFrame(WebSocketSession session, long nowMillis) {
+		WorkPlan workPlan = new WorkPlan();
+		boolean accepted = false;
+		synchronized (monitor) {
+			Peer peer = connectedPeers.get(session.getId());
+			if (peer != null && peer.connected) {
+				boolean sessionAllowed = peer.inboundWindow.tryAcquire(
+						nowMillis, abuseWindowMs, maxFramesPerSessionWindow);
+				boolean globalAllowed = globalInboundWindow.tryAcquire(
+						nowMillis, abuseWindowMs, maxFramesGlobalWindow);
+				if (sessionAllowed && globalAllowed) {
+					accepted = true;
+				}
+				else {
+					metrics.recordRateLimitedFrame();
+					disconnectLocked(session.getId(), workPlan);
+					workPlan.close(session, RATE_LIMITED);
+				}
+			}
+		}
+		execute(workPlan);
+		return accepted;
 	}
 
 	public void handle(WebSocketSession session, ClientMessage message) {
@@ -79,6 +159,7 @@ public class SignalingService {
 	}
 
 	public void sendInvalidMessage(WebSocketSession session, String detail) {
+		metrics.recordInvalidFrame();
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
 			Peer peer = connectedPeers.get(session.getId());
@@ -87,6 +168,10 @@ public class SignalingService {
 			}
 		}
 		execute(workPlan);
+	}
+
+	public void recordInvalidFrame() {
+		metrics.recordInvalidFrame();
 	}
 
 	public void sendInternalError(WebSocketSession session) {
@@ -132,9 +217,31 @@ public class SignalingService {
 						// A slow transport has not written the ping yet. Its drainer owns progress.
 					}
 					case AWAITING_PONG -> {
+						metrics.recordHeartbeatClose();
 						disconnectLocked(peer.session.getId(), workPlan);
 						workPlan.close(peer.session, HEARTBEAT_TIMEOUT);
 					}
+				}
+			}
+		}
+		execute(workPlan);
+	}
+
+	public void expireUnjoinedSessions() {
+		expireUnjoinedSessions(clock.millis());
+	}
+
+	void expireUnjoinedSessions(long nowMillis) {
+		WorkPlan workPlan = new WorkPlan();
+		synchronized (monitor) {
+			for (Peer peer : new ArrayList<>(connectedPeers.values())) {
+				if (!peer.connected || peer.unjoinedSinceMillis < 0
+						|| nowMillis < peer.unjoinedSinceMillis) {
+					continue;
+				}
+				if (nowMillis - peer.unjoinedSinceMillis >= unjoinedTimeoutMs) {
+					disconnectLocked(peer.session.getId(), workPlan);
+					workPlan.close(peer.session, JOIN_TIMEOUT);
 				}
 			}
 		}
@@ -162,8 +269,15 @@ public class SignalingService {
 		}
 	}
 
+	public int connectedPeerCount() {
+		synchronized (monitor) {
+			return connectedPeers.size();
+		}
+	}
+
 	private void join(Peer peer, ClientMessage.Join message, WorkPlan workPlan) {
 		if (peer.roomId != null) {
+			metrics.recordJoinRejectedAlreadyJoined();
 			sendError(
 					peer,
 					"ALREADY_JOINED",
@@ -180,6 +294,7 @@ public class SignalingService {
 			if (room.isEmpty()) {
 				rooms.remove(message.roomId(), room);
 			}
+			metrics.recordJoinRejectedRoomFull();
 			sendError(
 					peer,
 					"ROOM_FULL",
@@ -195,7 +310,9 @@ public class SignalingService {
 				.toList();
 		peer.roomId = message.roomId();
 		peer.displayName = message.displayName();
+		peer.unjoinedSinceMillis = -1;
 		room.put(peer.peerId, peer);
+		refreshMetricsLocked();
 
 		ObjectNode joined = base("room.joined", message.roomId());
 		if (message.requestId() != null) {
@@ -293,13 +410,16 @@ public class SignalingService {
 		enqueue(target, new TextMessage(relayed.toString()), workPlan);
 	}
 
-	private void disconnectLocked(String sessionId, WorkPlan workPlan) {
+	private boolean disconnectLocked(String sessionId, WorkPlan workPlan) {
 		Peer peer = connectedPeers.remove(sessionId);
 		if (peer != null && peer.connected) {
 			peer.connected = false;
 			peer.outbound.clear();
 			removePeerFromRoom(peer, workPlan);
+			refreshMetricsLocked();
+			return true;
 		}
+		return false;
 	}
 
 	private void removePeerFromRoom(Peer peer, WorkPlan workPlan) {
@@ -312,14 +432,20 @@ public class SignalingService {
 		peer.roomId = null;
 		peer.displayName = null;
 		peer.announced = false;
+		if (peer.connected) {
+			peer.unjoinedSinceMillis = clock.millis();
+		}
 		LinkedHashMap<String, Peer> room = rooms.get(roomId);
 		if (room == null || room.remove(peer.peerId) == null) {
+			refreshMetricsLocked();
 			return;
 		}
 		if (room.isEmpty()) {
 			rooms.remove(roomId, room);
+			refreshMetricsLocked();
 			return;
 		}
+		refreshMetricsLocked();
 		if (!wasAnnounced) {
 			return;
 		}
@@ -387,6 +513,7 @@ public class SignalingService {
 		}
 
 		if (peer.outbound.size() >= MAX_OUTBOUND_QUEUE_SIZE) {
+			metrics.recordQueueOverflow();
 			disconnectLocked(peer.session.getId(), workPlan);
 			workPlan.close(peer.session, OUTBOUND_QUEUE_OVERFLOW);
 			return false;
@@ -415,6 +542,7 @@ public class SignalingService {
 		}
 		catch (RejectedExecutionException exception) {
 			log.debug("Outbound executor rejected work during shutdown");
+			task.run();
 		}
 	}
 
@@ -449,11 +577,14 @@ public class SignalingService {
 				}
 			}
 			catch (Exception exception) {
-				log.debug("Failed to send signaling frame to peer {}", peer.peerId, exception);
+				log.debug(
+						"Failed to send signaling frame; closing transport ({})",
+						exception.getClass().getSimpleName());
 				WorkPlan workPlan = new WorkPlan();
 				synchronized (monitor) {
-					disconnectLocked(peer.session.getId(), workPlan);
-					workPlan.close(peer.session, CloseStatus.SERVER_ERROR);
+					if (disconnectLocked(peer.session.getId(), workPlan)) {
+						workPlan.close(peer.session, CloseStatus.SERVER_ERROR);
+					}
 				}
 				execute(workPlan);
 				return;
@@ -476,6 +607,8 @@ public class SignalingService {
 	public void shutdown() {
 		List<WebSocketSession> sessions;
 		synchronized (monitor) {
+			acceptingConnections = false;
+			running = false;
 			sessions = connectedPeers.values().stream().map(peer -> peer.session).toList();
 			connectedPeers.values().forEach(peer -> {
 				peer.connected = false;
@@ -483,11 +616,46 @@ public class SignalingService {
 			});
 			connectedPeers.clear();
 			rooms.clear();
+			refreshMetricsLocked();
 		}
 		for (WebSocketSession session : sessions) {
 			closeQuietly(session, SERVER_SHUTDOWN);
 		}
 		outboundExecutor.shutdownNow();
+	}
+
+	@Override
+	public void start() {
+		if (!outboundExecutor.isShutdown()) {
+			running = true;
+			acceptingConnections = true;
+		}
+	}
+
+	@Override
+	public void stop() {
+		shutdown();
+	}
+
+	@Override
+	public void stop(Runnable callback) {
+		shutdown();
+		callback.run();
+	}
+
+	@Override
+	public boolean isRunning() {
+		return running;
+	}
+
+	@Override
+	public int getPhase() {
+		return Integer.MAX_VALUE;
+	}
+
+	private void refreshMetricsLocked() {
+		int joined = rooms.values().stream().mapToInt(Map::size).sum();
+		metrics.updateState(rooms.size(), connectedPeers.size(), joined);
 	}
 
 	private static final class Peer {
@@ -501,10 +669,13 @@ public class SignalingService {
 		private HeartbeatState heartbeatState = HeartbeatState.READY;
 		private String roomId;
 		private String displayName;
+		private long unjoinedSinceMillis;
+		private final RateWindow inboundWindow = new RateWindow();
 
-		private Peer(String peerId, WebSocketSession session) {
+		private Peer(String peerId, WebSocketSession session, long connectedAtMillis) {
 			this.peerId = peerId;
 			this.session = session;
+			this.unjoinedSinceMillis = connectedAtMillis;
 		}
 	}
 
@@ -515,6 +686,22 @@ public class SignalingService {
 		READY,
 		PING_QUEUED,
 		AWAITING_PONG
+	}
+
+	private static final class RateWindow {
+
+		private long startedAtMillis = Long.MIN_VALUE;
+		private int count;
+
+		private boolean tryAcquire(long nowMillis, long windowMillis, int maximum) {
+			if (startedAtMillis == Long.MIN_VALUE || nowMillis < startedAtMillis
+					|| nowMillis - startedAtMillis >= windowMillis) {
+				startedAtMillis = nowMillis;
+				count = 0;
+			}
+			count++;
+			return count <= maximum;
+		}
 	}
 
 	private static final class WorkPlan {

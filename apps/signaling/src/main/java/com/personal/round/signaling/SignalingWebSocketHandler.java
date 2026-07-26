@@ -45,7 +45,11 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 
 	@Override
 	protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+		if (!signalingService.acceptInboundFrame(session)) {
+			return;
+		}
 		if (message.getPayload().getBytes(StandardCharsets.UTF_8).length > maxTextPayloadBytes) {
+			signalingService.recordInvalidFrame();
 			session.close(MESSAGE_TOO_BIG);
 			signalingService.disconnect(session);
 			return;
@@ -62,24 +66,33 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 			signalingService.sendInvalidMessage(session, exception.getMessage());
 		}
 		catch (RuntimeException exception) {
-			log.error("Unexpected signaling failure for session {}", session.getId(), exception);
+			log.error(
+					"Unexpected signaling failure ({})",
+					exception.getClass().getSimpleName());
 			signalingService.sendInternalError(session);
 		}
 	}
 
 	@Override
 	protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) {
+		if (!signalingService.acceptInboundFrame(session)) {
+			return;
+		}
 		signalingService.sendInvalidMessage(session, "Binary messages are not supported.");
 	}
 
 	@Override
 	protected void handlePongMessage(WebSocketSession session, PongMessage message) {
-		signalingService.markAlive(session);
+		if (signalingService.acceptInboundFrame(session)) {
+			signalingService.markAlive(session);
+		}
 	}
 
 	@Override
 	public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
-		log.debug("WebSocket transport error for session {}", session.getId(), exception);
+		log.debug(
+				"WebSocket transport error; closing transport ({})",
+				exception.getClass().getSimpleName());
 		signalingService.disconnect(session);
 		if (session.isOpen()) {
 			session.close(CloseStatus.SERVER_ERROR);

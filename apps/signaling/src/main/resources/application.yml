@@ -1,11 +1,51 @@
 server:
   address: ${HOST:0.0.0.0}
   port: ${PORT:8787}
+  forward-headers-strategy: native
   shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      group:
+        readiness:
+          include: readinessState,signaling
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  metrics:
+    tags:
+      application: round-signaling
 
 round:
   signaling:
     allowed-origins: ${ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
     max-room-size: ${MAX_ROOM_SIZE:6}
+    max-connections: ${MAX_SIGNALING_CONNECTIONS:1000}
     heartbeat-interval-ms: ${HEARTBEAT_INTERVAL_MS:30000}
+    unjoined-timeout-ms: ${UNJOINED_SOCKET_TIMEOUT_MS:15000}
+    unjoined-sweep-interval-ms: ${UNJOINED_SOCKET_SWEEP_MS:1000}
+    abuse-window-ms: ${SIGNALING_ABUSE_WINDOW_MS:10000}
+    max-frames-per-session-window: ${SIGNALING_MAX_FRAMES_PER_SESSION:600}
+    max-frames-global-window: ${SIGNALING_MAX_FRAMES_GLOBAL:3600}
     max-text-payload-bytes: 65536
+  turn:
+    urls: ${TURN_URLS:}
+    shared-secret: ${TURN_SHARED_SECRET:}
+    credential-ttl-seconds: ${TURN_CREDENTIAL_TTL_SECONDS:3600}
+    rate-limit-window-seconds: ${TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS:60}
+    rate-limit-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS:12}
+    rate-limit-max-clients: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS:10000}
