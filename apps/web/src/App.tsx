@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createRoomSession,
+  type RoomIssue,
   type RoomSession,
   type RoomSessionSnapshot,
   type RoomSessionStatus,
 } from '@round/rtc-core';
 import { LandingScreen } from './components/LandingScreen';
+import { PrejoinScreen } from './components/PrejoinScreen';
 import { RoomView, type ChatMessageView } from './components/RoomView';
 import type { ParticipantView } from './components/VideoTile';
 import { pathForRoom, roomIdFromPath, sanitizeDisplayName } from './lib/room';
+import { loadTurnCredentials, turnCredentialRefreshDelayMs } from './lib/turn';
 
 const DISPLAY_NAME_STORAGE_KEY = 'round:display-name';
 
@@ -18,9 +21,65 @@ const statusLabels: Record<RoomSessionStatus, string> = {
   'connecting-signal': '서버에 연결 중',
   joining: '스터디룸 입장 중',
   active: '직접 연결됨',
+  reconnecting: '연결 복구 중',
   ended: '통화 종료됨',
   error: '연결 오류',
 };
+
+function roomErrorMessage(issue: RoomIssue | null | undefined): string | undefined {
+  if (!issue) {
+    return undefined;
+  }
+
+  switch (issue.code) {
+    case 'ROOM_FULL':
+      return '이 스터디룸은 최대 6명까지 입장할 수 있습니다.';
+    case 'INVALID_MESSAGE':
+      return '초대 정보가 올바르지 않습니다. 새 초대 링크를 받아 주세요.';
+    case 'room-join-timeout':
+      return '서버가 입장 요청에 응답하지 않았습니다. 네트워크를 확인해 주세요.';
+    case 'signaling-connect-timeout':
+      return '스터디 서버에 연결할 수 없습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.';
+    case 'signaling-connect-failed':
+    case 'signaling-closed':
+    case 'reconnect-exhausted':
+      return '서버와의 연결을 복구하지 못했습니다. 네트워크를 확인한 뒤 다시 연결해 주세요.';
+    default:
+      return issue.message;
+  }
+}
+
+function roomWarningMessage(issue: RoomIssue | null | undefined): string | undefined {
+  if (!issue) {
+    return undefined;
+  }
+  switch (issue.code) {
+    case 'signaling-reconnecting':
+      return '스터디 서버에 다시 연결하는 중입니다. 현재 통화 정보는 유지됩니다.';
+    case 'rtc-configuration-update-failed':
+      return '일부 참가자의 TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.';
+    default:
+      return issue.message;
+  }
+}
+
+function roomStatusLabel(
+  status: RoomSessionStatus,
+  participants: readonly ParticipantView[],
+): string {
+  if (status !== 'active') {
+    return statusLabels[status];
+  }
+
+  const remoteParticipants = participants.filter((participant) => !participant.isLocal);
+  if (remoteParticipants.length === 0) {
+    return '입장 완료 · 대기 중';
+  }
+  if (remoteParticipants.every((participant) => participant.connectionState === 'connected')) {
+    return '통화 연결됨';
+  }
+  return '참가자 연결 중';
+}
 
 function readStoredDisplayName() {
   try {
@@ -54,7 +113,12 @@ function signalingUrl() {
   return `${protocol}//${window.location.host}/signal`;
 }
 
-function rtcConfiguration(): RTCConfiguration {
+interface LoadedRtcConfiguration {
+  readonly configuration: RTCConfiguration;
+  readonly turnExpiresAt: number | null;
+}
+
+async function loadRtcConfiguration(): Promise<LoadedRtcConfiguration> {
   const stunUrls = (
     import.meta.env.VITE_STUN_URLS ?? 'stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302'
   )
@@ -63,20 +127,38 @@ function rtcConfiguration(): RTCConfiguration {
     .filter(Boolean);
   const iceServers: RTCIceServer[] = stunUrls.length > 0 ? [{ urls: stunUrls }] : [];
 
-  const turnUrl = import.meta.env.VITE_TURN_URL?.trim();
-  const turnUsername = import.meta.env.VITE_TURN_USERNAME?.trim();
-  const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL?.trim();
-  if (turnUrl && turnUsername && turnCredential) {
-    iceServers.push({
-      urls: turnUrl,
-      username: turnUsername,
-      credential: turnCredential,
+  const credentialsEndpoint = import.meta.env.VITE_TURN_CREDENTIALS_URL?.trim();
+  let credentials;
+  try {
+    credentials = await loadTurnCredentials(
+      credentialsEndpoint ? { endpoint: credentialsEndpoint } : {},
+    );
+  } catch (error) {
+    throw new Error('TURN 서버 정보를 받지 못했습니다. 잠시 후 다시 시도해 주세요.', {
+      cause: error,
     });
+  }
+  if (credentials !== null) {
+    iceServers.push(credentials.iceServer);
+  }
+
+  const configuredPolicy = import.meta.env.VITE_ICE_TRANSPORT_POLICY?.trim() || 'all';
+  if (configuredPolicy !== 'all' && configuredPolicy !== 'relay') {
+    throw new Error('ICE 전송 정책 설정이 올바르지 않습니다.');
+  }
+
+  const localDevelopment = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+  if (credentials === null && (!localDevelopment || configuredPolicy === 'relay')) {
+    throw new Error('TURN 서버 정보를 받지 못했습니다. 잠시 후 다시 시도해 주세요.');
   }
 
   return {
-    iceServers,
-    iceCandidatePoolSize: 4,
+    configuration: {
+      iceServers,
+      iceCandidatePoolSize: 4,
+      iceTransportPolicy: configuredPolicy,
+    },
+    turnExpiresAt: credentials?.expiresAt ?? null,
   };
 }
 
@@ -104,56 +186,147 @@ function usePathname() {
 interface ActiveRoomProps {
   displayName: string;
   roomId: string;
+  takePreparedMediaStream: () => MediaStream | null;
+  onReconnect: () => void;
   onLeave: () => void;
 }
 
-function ActiveRoom({ displayName, roomId, onLeave }: ActiveRoomProps) {
+function ActiveRoom({
+  displayName,
+  roomId,
+  takePreparedMediaStream,
+  onReconnect,
+  onLeave,
+}: ActiveRoomProps) {
   const sessionRef = useRef<RoomSession | null>(null);
+  const lifecycleRef = useRef(0);
   const [snapshot, setSnapshot] = useState<RoomSessionSnapshot | null>(null);
   const [actionError, setActionError] = useState('');
+  const [turnRefreshWarning, setTurnRefreshWarning] = useState('');
 
   useEffect(() => {
+    const lifecycle = ++lifecycleRef.current;
     let isCurrentSession = true;
-    const session = createRoomSession({
-      roomId,
-      displayName,
-      signalingUrl: signalingUrl(),
-      rtcConfiguration: rtcConfiguration(),
-      mediaConstraints: {
-        audio: {
-          autoGainControl: true,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: 'user',
-        },
-      },
-      maxChatMessages: 200,
-    });
+    let unsubscribe = () => {};
+    let turnRefreshTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
-    sessionRef.current = session;
-    setActionError('');
-    setSnapshot(session.getSnapshot());
-    const unsubscribe = session.subscribe(setSnapshot);
-
-    void session.join().catch((error: unknown) => {
-      if (isCurrentSession && sessionRef.current === session) {
-        setActionError(error instanceof Error ? error.message : '스터디룸 연결에 실패했습니다.');
+    const scheduleTurnRefresh = (expiresAt: number) => {
+      if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
+        return;
       }
-    });
+      if (turnRefreshTimer !== null) {
+        globalThis.clearTimeout(turnRefreshTimer);
+      }
+      turnRefreshTimer = globalThis.setTimeout(() => {
+        void refreshTurnConfiguration();
+      }, turnCredentialRefreshDelayMs(expiresAt));
+    };
+
+    const scheduleTurnRefreshRetry = () => {
+      if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
+        return;
+      }
+      if (turnRefreshTimer !== null) {
+        globalThis.clearTimeout(turnRefreshTimer);
+      }
+      turnRefreshTimer = globalThis.setTimeout(() => {
+        void refreshTurnConfiguration();
+      }, 30_000);
+    };
+
+    const refreshTurnConfiguration = async () => {
+      try {
+        const loaded = await loadRtcConfiguration();
+        if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
+          return;
+        }
+
+        sessionRef.current?.updateRtcConfiguration(loaded.configuration);
+        setTurnRefreshWarning('');
+        if (loaded.turnExpiresAt !== null) {
+          scheduleTurnRefresh(loaded.turnExpiresAt);
+        }
+      } catch {
+        if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
+          return;
+        }
+        setTurnRefreshWarning(
+          'TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지하며 곧 다시 시도합니다.',
+        );
+        scheduleTurnRefreshRetry();
+      }
+    };
+
+    const startSession = async () => {
+      try {
+        const loaded = await loadRtcConfiguration();
+        if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
+          return;
+        }
+
+        let session = sessionRef.current;
+        if (session === null) {
+          session = createRoomSession({
+            roomId,
+            displayName,
+            signalingUrl: signalingUrl(),
+            rtcConfiguration: loaded.configuration,
+            preparedMediaStream: takePreparedMediaStream(),
+            mediaConstraints: {
+              audio: {
+                autoGainControl: true,
+                echoCancellation: true,
+                noiseSuppression: true,
+              },
+              video: {
+                width: { ideal: 640 },
+                height: { ideal: 360 },
+                frameRate: { ideal: 15, max: 15 },
+                facingMode: 'user',
+              },
+            },
+            maxChatMessages: 200,
+          });
+          sessionRef.current = session;
+        }
+
+        setActionError('');
+        setSnapshot(session.getSnapshot());
+        unsubscribe = session.subscribe(setSnapshot);
+
+        await session.join();
+        if (loaded.turnExpiresAt !== null) {
+          scheduleTurnRefresh(loaded.turnExpiresAt);
+        }
+      } catch (error) {
+        if (isCurrentSession) {
+          setActionError(error instanceof Error ? error.message : '스터디룸 연결에 실패했습니다.');
+        }
+      }
+    };
+
+    setActionError('');
+    void startSession();
 
     return () => {
       isCurrentSession = false;
       unsubscribe();
-      if (sessionRef.current === session) {
-        sessionRef.current = null;
+      if (turnRefreshTimer !== null) {
+        globalThis.clearTimeout(turnRefreshTimer);
       }
-      void session.leave();
+      // React StrictMode immediately re-runs effects in development. Deferring
+      // disposal lets the second setup reuse the single-use session and the
+      // transferred pre-join tracks instead of stopping them between setups.
+      queueMicrotask(() => {
+        const session = sessionRef.current;
+        if (lifecycleRef.current !== lifecycle || session === null) {
+          return;
+        }
+        sessionRef.current = null;
+        void session.leave();
+      });
     };
-  }, [displayName, roomId]);
+  }, [displayName, roomId, takePreparedMediaStream]);
 
   const participants = useMemo<ParticipantView[]>(() => {
     const session = sessionRef.current;
@@ -215,13 +388,15 @@ function ActiveRoom({ displayName, roomId, onLeave }: ActiveRoomProps) {
     <RoomView
       roomId={roomId}
       status={status}
-      statusLabel={statusLabels[status]}
+      statusLabel={roomStatusLabel(status, participants)}
       participants={participants}
       messages={messages}
       audioEnabled={localMedia.audioEnabled}
       videoEnabled={localMedia.videoEnabled}
-      mediaWarning={snapshot?.warning?.message}
-      errorMessage={(snapshot?.error?.message ?? actionError) || undefined}
+      mediaWarning={roomWarningMessage(snapshot?.warning)}
+      errorMessage={
+        roomErrorMessage(snapshot?.error) || actionError || turnRefreshWarning || undefined
+      }
       onToggleAudio={() => {
         sessionRef.current?.toggleAudio();
       }}
@@ -229,6 +404,7 @@ function ActiveRoom({ displayName, roomId, onLeave }: ActiveRoomProps) {
         sessionRef.current?.toggleVideo();
       }}
       onSendMessage={handleSendMessage}
+      onReconnect={onReconnect}
       onLeave={handleLeave}
     />
   );
@@ -239,15 +415,55 @@ export function App() {
   const roomId = roomIdFromPath(pathname);
   const [displayName, setDisplayName] = useState(readStoredDisplayName);
   const [approvedRoomKey, setApprovedRoomKey] = useState<string | null>(null);
+  const [activeRoomKey, setActiveRoomKey] = useState<string | null>(null);
+  const preparedMediaStreamRef = useRef<MediaStream | null>(null);
+
+  const stopUnclaimedPreparedMedia = useCallback(() => {
+    for (const track of preparedMediaStreamRef.current?.getTracks() ?? []) {
+      track.stop();
+    }
+    preparedMediaStreamRef.current = null;
+  }, []);
+
+  const takePreparedMediaStream = useCallback(() => {
+    const stream = preparedMediaStreamRef.current;
+    preparedMediaStreamRef.current = null;
+    return stream;
+  }, []);
+
+  useEffect(() => {
+    if (approvedRoomKey === null) {
+      return;
+    }
+
+    const currentRoomKey =
+      roomId === null || displayName.length === 0 ? null : `${roomId}:${displayName}`;
+    if (currentRoomKey === approvedRoomKey) {
+      return;
+    }
+
+    stopUnclaimedPreparedMedia();
+    setActiveRoomKey(null);
+    setApprovedRoomKey(null);
+  }, [approvedRoomKey, displayName, roomId, stopUnclaimedPreparedMedia]);
 
   const goHome = () => {
+    stopUnclaimedPreparedMedia();
+    setActiveRoomKey(null);
     setApprovedRoomKey(null);
     navigate('/');
+  };
+
+  const retryCurrentRoom = () => {
+    stopUnclaimedPreparedMedia();
+    setActiveRoomKey(null);
   };
 
   const enterRoom = (nextDisplayName: string, nextRoomId: string) => {
     storeDisplayName(nextDisplayName);
     setDisplayName(nextDisplayName);
+    stopUnclaimedPreparedMedia();
+    setActiveRoomKey(null);
     setApprovedRoomKey(`${nextRoomId}:${nextDisplayName}`);
     const nextPath = pathForRoom(nextRoomId);
     if (nextPath !== pathname) {
@@ -270,11 +486,30 @@ export function App() {
     );
   }
 
+  const roomKey = `${roomId}:${displayName}`;
+  if (activeRoomKey !== roomKey) {
+    return (
+      <PrejoinScreen
+        key={roomKey}
+        displayName={displayName}
+        roomId={roomId}
+        onBack={goHome}
+        onJoin={(preparedMediaStream) => {
+          stopUnclaimedPreparedMedia();
+          preparedMediaStreamRef.current = preparedMediaStream;
+          setActiveRoomKey(roomKey);
+        }}
+      />
+    );
+  }
+
   return (
     <ActiveRoom
-      key={`${roomId}:${displayName}`}
+      key={roomKey}
       displayName={displayName}
       roomId={roomId}
+      takePreparedMediaStream={takePreparedMediaStream}
+      onReconnect={retryCurrentRoom}
       onLeave={goHome}
     />
   );

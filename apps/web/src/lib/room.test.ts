@@ -23,6 +23,7 @@ describe('room helpers', () => {
   it('parses only complete room routes', () => {
     expect(roomIdFromPath('/room/abcd-efgh-jkmp')).toBe('abcd-efgh-jkmp');
     expect(roomIdFromPath('/room/short')).toBeNull();
+    expect(roomIdFromPath('/room/%E0%A4%A')).toBeNull();
     expect(roomIdFromPath('/settings')).toBeNull();
     expect(pathForRoom('abcd-efgh-jkmp')).toBe('/room/abcd-efgh-jkmp');
   });

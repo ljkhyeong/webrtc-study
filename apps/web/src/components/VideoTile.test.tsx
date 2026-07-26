@@ -38,4 +38,13 @@ describe('VideoTile', () => {
     expect(markup).not.toContain('<video');
     expect(markup).toContain('카메라 꺼짐');
   });
+
+  it('shows an actionable peer connection state before media connects', () => {
+    const markup = renderToStaticMarkup(
+      <VideoTile participant={participant({ connectionState: 'disconnected' })} />,
+    );
+
+    expect(markup).toContain('재연결 중');
+    expect(markup).toContain('video-tile__connection--disconnected');
+  });
 });

@@ -23,6 +23,7 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       strictPort: true,
       proxy: {
+        '/api': `http://127.0.0.1:${signalingPort}`,
         '/healthz': `http://127.0.0.1:${signalingPort}`,
         '/signal': {
           target: `ws://127.0.0.1:${signalingPort}`,

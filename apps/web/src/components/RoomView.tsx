@@ -35,6 +35,7 @@ interface RoomViewProps {
   onToggleAudio: () => void;
   onToggleVideo: () => void;
   onSendMessage: (text: string) => void;
+  onReconnect: () => void;
   onLeave: () => void;
 }
 
@@ -74,6 +75,7 @@ export function RoomView({
   onToggleAudio,
   onToggleVideo,
   onSendMessage,
+  onReconnect,
   onLeave,
 }: RoomViewProps) {
   const [chatOpen, setChatOpen] = useState(false);
@@ -128,6 +130,7 @@ export function RoomView({
   };
 
   const isActive = status === 'active';
+  const terminalConnectionError = !isActive && Boolean(errorMessage);
   const gridSize = Math.min(Math.max(participants.length, 1), 6);
 
   return (
@@ -174,15 +177,37 @@ export function RoomView({
           ) : null}
 
           {!isActive ? (
-            <div className="connecting-layer" role="status" aria-live="polite">
-              <span className="connecting-ring" />
-              <strong>{statusLabel}</strong>
-              <p>브라우저 사이에 안전한 직접 연결을 준비하고 있습니다.</p>
+            <div
+              className={`connecting-layer${
+                terminalConnectionError ? ' connecting-layer--error' : ''
+              }`}
+              role={terminalConnectionError ? 'alert' : 'status'}
+              aria-live={terminalConnectionError ? 'assertive' : 'polite'}
+            >
+              {terminalConnectionError ? <CloseIcon /> : <span className="connecting-ring" />}
+              <strong>{terminalConnectionError ? '연결하지 못했습니다' : statusLabel}</strong>
+              <p>
+                {terminalConnectionError
+                  ? errorMessage
+                  : '브라우저 사이에 안전한 연결을 준비하고 있습니다.'}
+              </p>
+              {terminalConnectionError ? (
+                <div className="connecting-layer__actions">
+                  <button type="button" onClick={onReconnect}>
+                    다시 연결
+                  </button>
+                  <button type="button" onClick={onLeave}>
+                    나가기
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
           {mediaWarning ? <p className="room-notice room-notice--warning">{mediaWarning}</p> : null}
-          {errorMessage ? <p className="room-notice room-notice--error">{errorMessage}</p> : null}
+          {errorMessage && !terminalConnectionError ? (
+            <p className="room-notice room-notice--error">{errorMessage}</p>
+          ) : null}
         </section>
 
         <aside className="chat-panel" aria-hidden={!chatOpen}>

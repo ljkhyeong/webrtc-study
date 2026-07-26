@@ -51,8 +51,12 @@ export function roomIdFromPath(pathname: string) {
     return null;
   }
 
-  const roomId = normalizeRoomId(decodeURIComponent(match[1]!));
-  return isValidRoomId(roomId) ? roomId : null;
+  try {
+    const roomId = normalizeRoomId(decodeURIComponent(match[1]!));
+    return isValidRoomId(roomId) ? roomId : null;
+  } catch {
+    return null;
+  }
 }
 
 export function pathForRoom(roomId: string) {
