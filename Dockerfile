@@ -2,8 +2,8 @@
 
 ARG NODE_IMAGE=node:22.23.0-alpine3.24
 ARG CADDY_IMAGE=caddy:2.10.2-alpine
-ARG JAVA_BUILD_IMAGE=eclipse-temurin:21.0.10_7-jdk-alpine-3.22
-ARG JAVA_RUNTIME_IMAGE=eclipse-temurin:21.0.10_7-jre-alpine-3.22
+ARG JAVA_BUILD_IMAGE=eclipse-temurin:21.0.11_10-jdk-alpine-3.23
+ARG JAVA_RUNTIME_IMAGE=eclipse-temurin:21.0.11_10-jre-alpine-3.23
 ARG COTURN_IMAGE=coturn/coturn:4.14.0-r0-alpine
 
 FROM ${NODE_IMAGE} AS web-build
