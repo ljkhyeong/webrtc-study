@@ -9,9 +9,10 @@ public class TurnProperties {
 
 	private List<String> urls = new ArrayList<>();
 	private String sharedSecret = "";
-	private long credentialTtlSeconds = 3_600;
+	private long credentialTtlSeconds = 600;
 	private long rateLimitWindowSeconds = 60;
 	private int rateLimitMaxRequests = 12;
+	private int rateLimitGlobalMaxRequests = 8;
 	private int rateLimitMaxClients = 10_000;
 
 	public List<String> getUrls() {
@@ -54,6 +55,14 @@ public class TurnProperties {
 		this.rateLimitMaxRequests = rateLimitMaxRequests;
 	}
 
+	public int getRateLimitGlobalMaxRequests() {
+		return rateLimitGlobalMaxRequests;
+	}
+
+	public void setRateLimitGlobalMaxRequests(int rateLimitGlobalMaxRequests) {
+		this.rateLimitGlobalMaxRequests = rateLimitGlobalMaxRequests;
+	}
+
 	public int getRateLimitMaxClients() {
 		return rateLimitMaxClients;
 	}
@@ -92,6 +101,10 @@ public class TurnProperties {
 		if (rateLimitMaxRequests < 1 || rateLimitMaxRequests > 10_000) {
 			throw new IllegalArgumentException(
 					"round.turn.rate-limit-max-requests must be between 1 and 10000");
+		}
+		if (rateLimitGlobalMaxRequests < 1 || rateLimitGlobalMaxRequests > 1_000_000) {
+			throw new IllegalArgumentException(
+					"round.turn.rate-limit-global-max-requests must be between 1 and 1000000");
 		}
 		if (rateLimitMaxClients < 1 || rateLimitMaxClients > 1_000_000) {
 			throw new IllegalArgumentException(

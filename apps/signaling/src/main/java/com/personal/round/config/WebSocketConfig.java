@@ -1,7 +1,8 @@
 package com.personal.round.config;
 
-import com.personal.round.signaling.SignalingWebSocketHandler;
+import com.personal.round.signaling.ConnectionAdmissionPolicy;
 import com.personal.round.signaling.SignalingService;
+import com.personal.round.signaling.SignalingWebSocketHandler;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.context.annotation.Bean;
@@ -18,10 +19,12 @@ public class WebSocketConfig implements WebSocketConfigurer {
 	private final SignalingWebSocketHandler handler;
 	private final OriginHandshakeInterceptor originInterceptor;
 	private final ConnectionAdmissionHandshakeInterceptor admissionInterceptor;
+	private final ConnectionAdmissionHandshakeHandler admissionHandler;
 
 	public WebSocketConfig(
 			SignalingWebSocketHandler handler,
 			SignalingService signalingService,
+			ConnectionAdmissionPolicy admissionPolicy,
 			SignalingProperties properties,
 			Environment environment) {
 		properties.validate();
@@ -31,12 +34,15 @@ public class WebSocketConfig implements WebSocketConfigurer {
 				new OriginPolicy(properties.getAllowedOrigins(), production));
 		this.admissionInterceptor =
 				new ConnectionAdmissionHandshakeInterceptor(signalingService);
+		this.admissionHandler =
+				new ConnectionAdmissionHandshakeHandler(signalingService, admissionPolicy);
 	}
 
 	@Override
 	public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
 		registry.addHandler(handler, "/signal")
-				.addInterceptors(admissionInterceptor, originInterceptor)
+				.addInterceptors(originInterceptor, admissionInterceptor)
+				.setHandshakeHandler(admissionHandler)
 				.setAllowedOriginPatterns("*");
 	}
 

@@ -83,8 +83,10 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	public boolean connect(WebSocketSession session) {
+		ConnectionAdmissionPolicy.Reservation reservation = takeReservation(session);
 		WorkPlan workPlan = new WorkPlan();
 		boolean accepted;
+		boolean reservationTransferred = false;
 		synchronized (monitor) {
 			if (!acceptingConnections) {
 				workPlan.close(session, SERVER_SHUTDOWN);
@@ -96,13 +98,22 @@ public class SignalingService implements SmartLifecycle {
 				accepted = false;
 			}
 			else {
-				connectedPeers.computeIfAbsent(
-						session.getId(),
-						ignored -> new Peer(
-								UUID.randomUUID().toString(), session, clock.millis()));
+				if (!connectedPeers.containsKey(session.getId())) {
+					connectedPeers.put(
+							session.getId(),
+							new Peer(
+									UUID.randomUUID().toString(),
+									session,
+									clock.millis(),
+									reservation));
+					reservationTransferred = true;
+				}
 				refreshMetricsLocked();
 				accepted = true;
 			}
+		}
+		if (!reservationTransferred && reservation != null) {
+			reservation.close();
 		}
 		execute(workPlan);
 		return accepted;
@@ -124,15 +135,20 @@ public class SignalingService implements SmartLifecycle {
 			if (peer != null && peer.connected) {
 				boolean sessionAllowed = peer.inboundWindow.tryAcquire(
 						nowMillis, abuseWindowMs, maxFramesPerSessionWindow);
-				boolean globalAllowed = globalInboundWindow.tryAcquire(
-						nowMillis, abuseWindowMs, maxFramesGlobalWindow);
-				if (sessionAllowed && globalAllowed) {
-					accepted = true;
-				}
-				else {
+				if (!sessionAllowed) {
 					metrics.recordRateLimitedFrame();
 					disconnectLocked(session.getId(), workPlan);
 					workPlan.close(session, RATE_LIMITED);
+				}
+				else {
+					boolean globalAllowed = globalInboundWindow.tryAcquire(
+							nowMillis, abuseWindowMs, maxFramesGlobalWindow);
+					if (globalAllowed) {
+						accepted = true;
+					}
+					else {
+						metrics.recordOverloadedFrame();
+					}
 				}
 			}
 		}
@@ -414,6 +430,7 @@ public class SignalingService implements SmartLifecycle {
 		Peer peer = connectedPeers.remove(sessionId);
 		if (peer != null && peer.connected) {
 			peer.connected = false;
+			peer.releaseReservation();
 			peer.outbound.clear();
 			removePeerFromRoom(peer, workPlan);
 			refreshMetricsLocked();
@@ -612,6 +629,7 @@ public class SignalingService implements SmartLifecycle {
 			sessions = connectedPeers.values().stream().map(peer -> peer.session).toList();
 			connectedPeers.values().forEach(peer -> {
 				peer.connected = false;
+				peer.releaseReservation();
 				peer.outbound.clear();
 			});
 			connectedPeers.clear();
@@ -658,6 +676,20 @@ public class SignalingService implements SmartLifecycle {
 		metrics.updateState(rooms.size(), connectedPeers.size(), joined);
 	}
 
+	private static ConnectionAdmissionPolicy.Reservation takeReservation(
+			WebSocketSession session) {
+		Map<String, Object> attributes = session.getAttributes();
+		if (attributes == null) {
+			return null;
+		}
+		Object candidate = attributes.get(ConnectionAdmissionPolicy.RESERVATION_ATTRIBUTE);
+		if (!(candidate instanceof ConnectionAdmissionPolicy.Reservation reservation)) {
+			return null;
+		}
+		attributes.remove(ConnectionAdmissionPolicy.RESERVATION_ATTRIBUTE, reservation);
+		return reservation;
+	}
+
 	private static final class Peer {
 
 		private final String peerId;
@@ -671,11 +703,23 @@ public class SignalingService implements SmartLifecycle {
 		private String displayName;
 		private long unjoinedSinceMillis;
 		private final RateWindow inboundWindow = new RateWindow();
+		private final ConnectionAdmissionPolicy.Reservation reservation;
 
-		private Peer(String peerId, WebSocketSession session, long connectedAtMillis) {
+		private Peer(
+				String peerId,
+				WebSocketSession session,
+				long connectedAtMillis,
+				ConnectionAdmissionPolicy.Reservation reservation) {
 			this.peerId = peerId;
 			this.session = session;
 			this.unjoinedSinceMillis = connectedAtMillis;
+			this.reservation = reservation;
+		}
+
+		private void releaseReservation() {
+			if (reservation != null) {
+				reservation.close();
+			}
 		}
 	}
 

@@ -5,21 +5,31 @@ import static org.springframework.http.HttpStatus.TOO_MANY_REQUESTS;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 public class TurnCredentialController {
 
 	private final TurnCredentialService credentialService;
+	private final TurnCredentialRequestPolicy requestPolicy;
 
-	public TurnCredentialController(TurnCredentialService credentialService) {
+	public TurnCredentialController(
+			TurnCredentialService credentialService,
+			TurnCredentialRequestPolicy requestPolicy) {
 		this.credentialService = credentialService;
+		this.requestPolicy = requestPolicy;
 	}
 
-	@GetMapping("/api/turn-credentials")
+	@PostMapping("/api/turn-credentials")
 	public ResponseEntity<TurnCredentials> credentials(HttpServletRequest request) {
+		if (!requestPolicy.allows(request)) {
+			return ResponseEntity.status(HttpStatus.FORBIDDEN)
+					.cacheControl(CacheControl.noStore())
+					.build();
+		}
 		return switch (credentialService.issueFor(request.getRemoteAddr())) {
 			case TurnCredentialService.Issued issued -> ResponseEntity.ok()
 					.cacheControl(CacheControl.noStore())

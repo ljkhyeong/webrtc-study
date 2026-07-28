@@ -87,6 +87,9 @@ curl \
   --show-error \
   --connect-timeout 5 \
   --max-time 10 \
+  --request POST \
+  --header "Origin: ${round_url%/}" \
+  --header "Sec-Fetch-Site: same-origin" \
   --output "$credential_file" \
   "$credential_url" \
   || fail "credential endpoint request failed"

@@ -37,7 +37,7 @@ class TurnCredentialServiceTest {
 		assertThat(first.urls()).containsExactly(
 				"turn:turn.example.com:3478?transport=udp",
 				"turns:turn.example.com:5349?transport=tcp");
-		assertThat(first.expiresAt()).isEqualTo(1_800_003_600L);
+		assertThat(first.expiresAt()).isEqualTo(1_800_000_600L);
 		assertThat(first.username()).startsWith(first.expiresAt() + ":");
 		assertThat(first.credential()).isEqualTo(hmac(first.username(), SHARED_SECRET));
 		assertThat(sameNatClient.credential())
@@ -116,6 +116,36 @@ class TurnCredentialServiceTest {
 	}
 
 	@Test
+	void rateLimitsIssuanceAcrossClientAddressesAndResetsAtTheWindowBoundary() {
+		TurnProperties properties = enabledProperties();
+		properties.setRateLimitMaxRequests(10);
+		properties.setRateLimitGlobalMaxRequests(2);
+		properties.setRateLimitWindowSeconds(60);
+		MutableClock clock = new MutableClock(1_800_000_000);
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		TurnCredentialService service = service(properties, clock, registry);
+
+		issued(service.issueFor("198.51.100.10"));
+		issued(service.issueFor("198.51.100.11"));
+		TurnCredentialService.RateLimited limited =
+				rateLimited(service.issueFor("198.51.100.12"));
+
+		assertThat(limited.retryAfterSeconds()).isEqualTo(60);
+		assertThat(service.trackedClientCount()).isEqualTo(2);
+
+		clock.advanceSeconds(30);
+		assertThat(rateLimited(service.issueFor("198.51.100.12")).retryAfterSeconds())
+				.isEqualTo(30);
+
+		clock.advanceSeconds(30);
+		issued(service.issueFor("198.51.100.12"));
+		assertThat(registry.get("round.turn.credentials.rate_limited").counter().count())
+				.isEqualTo(2);
+		assertThat(registry.get("round.turn.credentials.issued").counter().count())
+				.isEqualTo(3);
+	}
+
+	@Test
 	void boundsTheNumberOfTrackedClientWindows() {
 		TurnProperties properties = enabledProperties();
 		properties.setRateLimitMaxRequests(1);
@@ -145,6 +175,20 @@ class TurnCredentialServiceTest {
 				new SimpleMeterRegistry()))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("rate-limit-max-requests")
+				.hasMessageNotContaining(SHARED_SECRET);
+	}
+
+	@Test
+	void validatesGlobalRateLimitConfigurationWithoutEchoingSensitiveValues() {
+		TurnProperties properties = enabledProperties();
+		properties.setRateLimitGlobalMaxRequests(0);
+
+		assertThatThrownBy(() -> service(
+				properties,
+				new MutableClock(1_800_000_000),
+				new SimpleMeterRegistry()))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("rate-limit-global-max-requests")
 				.hasMessageNotContaining(SHARED_SECRET);
 	}
 

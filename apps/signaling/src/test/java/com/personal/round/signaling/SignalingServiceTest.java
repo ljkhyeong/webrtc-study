@@ -8,13 +8,16 @@ import static org.mockito.Mockito.when;
 
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.protocol.ClientMessage;
+import com.personal.round.protocol.ProtocolParser;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -27,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.PingMessage;
+import org.springframework.web.socket.PongMessage;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -419,11 +423,14 @@ class SignalingServiceTest {
 		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
 				.counter()
 				.count()).isEqualTo(1);
+		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+				.counter()
+				.count()).isZero();
 		assertThat(service.connectedPeerCount()).isEqualTo(5);
 	}
 
 	@Test
-	void appliesTheGlobalFrameWindowAcrossSessions() throws Exception {
+	void dropsGlobalOverloadWithoutClosingAnArbitrarySession() throws Exception {
 		service.shutdown();
 		SignalingProperties properties = properties(6);
 		properties.setMaxFramesPerSessionWindow(10);
@@ -440,8 +447,83 @@ class SignalingServiceTest {
 		}
 
 		assertThat(service.acceptInboundFrame(first.session())).isFalse();
-		first.awaitClosed();
+		assertThat(first.closeStatus().get()).isNull();
 		assertThat(second.closeStatus().get()).isNull();
+		assertThat(service.connectedPeerCount()).isEqualTo(2);
+		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+				.counter()
+				.count()).isZero();
+		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+				.counter()
+				.count()).isEqualTo(1);
+		assertThat(service.acceptInboundFrame(
+				first.session(),
+				clock.millis() + properties.getAbuseWindowMs())).isTrue();
+	}
+
+	@Test
+	void globalOverloadDoesNotTurnAValidPongIntoAHeartbeatTimeout() throws Exception {
+		service.shutdown();
+		SignalingProperties properties = properties(2);
+		properties.setMaxFramesPerSessionWindow(2);
+		properties.setMaxFramesGlobalWindow(2);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
+				new ProtocolParser(objectMapper),
+				service,
+				properties);
+		TestPeer load = peer("pong-global-load");
+		TestPeer responsive = peer("pong-global-responsive");
+		connect(load, responsive);
+		assertThat(service.acceptInboundFrame(load.session())).isTrue();
+		assertThat(service.acceptInboundFrame(load.session())).isTrue();
+		service.disconnect(load.session());
+
+		service.heartbeatSweep();
+		responsive.awaitMessage(PingMessage.class::isInstance);
+		handler.handleMessage(responsive.session(), new PongMessage());
+		service.heartbeatSweep();
+
+		responsive.awaitFrameCount(2);
+		assertThat(responsive.closeStatus().get()).isNull();
+		assertThat(service.connectedPeerCount()).isOne();
+		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+				.counter()
+				.count()).isEqualTo(1);
+		assertThat(meterRegistry.get("round.signaling.heartbeat.closes")
+				.counter()
+				.count()).isZero();
+	}
+
+	@Test
+	void pongStillDisconnectsTheSessionThatExceedsItsOwnFrameWindow() throws Exception {
+		service.shutdown();
+		SignalingProperties properties = properties(1);
+		properties.setMaxFramesPerSessionWindow(1);
+		properties.setMaxFramesGlobalWindow(10);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
+				new ProtocolParser(objectMapper),
+				service,
+				properties);
+		TestPeer offender = peer("pong-session-offender");
+		connect(offender);
+
+		handler.handleMessage(offender.session(), new PongMessage());
+		handler.handleMessage(offender.session(), new PongMessage());
+
+		offender.awaitClosed();
+		assertThat(offender.closeStatus().get())
+				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
+		assertThat(service.connectedPeerCount()).isZero();
+		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+				.counter()
+				.count()).isEqualTo(1);
+		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+				.counter()
+				.count()).isZero();
 	}
 
 	@Test
@@ -463,6 +545,48 @@ class SignalingServiceTest {
 		assertThat(rejected.closeStatus().get())
 				.isEqualTo(new CloseStatus(1013, "Server connection limit reached"));
 		assertThat(service.connectedPeerCount()).isEqualTo(2);
+	}
+
+	@Test
+	void releasesAdmissionReservationsOnDisconnectConnectRejectionAndShutdown()
+			throws Exception {
+		service.shutdown();
+		SignalingProperties properties = properties(1);
+		properties.setMaxConnections(1);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		SignalingProperties admissionProperties = new SignalingProperties();
+		admissionProperties.setMaxRoomSize(1);
+		admissionProperties.setMaxConnections(3);
+		admissionProperties.setMaxConnectionsPerClient(3);
+		ConnectionAdmissionPolicy policy = new ConnectionAdmissionPolicy(
+				admissionProperties,
+				new SignalingMetrics(new SimpleMeterRegistry()));
+		TestPeer accepted = peer("reserved-accepted");
+		TestPeer rejected = peer("reserved-rejected");
+		attachReservation(accepted, policy.reserve(
+				new java.net.InetSocketAddress("192.0.2.30", 41_000)).reservation());
+		attachReservation(rejected, policy.reserve(
+				new java.net.InetSocketAddress("192.0.2.31", 41_000)).reservation());
+
+		assertThat(service.connect(accepted.session())).isTrue();
+		assertThat(service.connect(rejected.session())).isFalse();
+		rejected.awaitClosed();
+		assertThat(policy.activeReservationCount()).isEqualTo(1);
+
+		service.disconnect(rejected.session());
+		service.disconnect(accepted.session());
+		service.disconnect(accepted.session());
+		assertThat(policy.activeReservationCount()).isZero();
+
+		TestPeer shutdownPeer = peer("reserved-shutdown");
+		attachReservation(shutdownPeer, policy.reserve(
+				new java.net.InetSocketAddress("192.0.2.32", 41_000)).reservation());
+		assertThat(service.connect(shutdownPeer.session())).isTrue();
+
+		service.shutdown();
+
+		assertThat(policy.activeReservationCount()).isZero();
 	}
 
 	private void connect(TestPeer... peers) {
@@ -505,6 +629,14 @@ class SignalingServiceTest {
 
 	private TestPeer peer(String id) throws Exception {
 		return peer(id, null, null);
+	}
+
+	private static void attachReservation(
+			TestPeer peer,
+			ConnectionAdmissionPolicy.Reservation reservation) {
+		Map<String, Object> attributes = new HashMap<>();
+		attributes.put(ConnectionAdmissionPolicy.RESERVATION_ATTRIBUTE, reservation);
+		when(peer.session().getAttributes()).thenReturn(attributes);
 	}
 
 	private TestPeer peer(

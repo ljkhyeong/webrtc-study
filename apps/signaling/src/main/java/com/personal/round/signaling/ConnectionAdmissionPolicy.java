@@ -1,0 +1,138 @@
+package com.personal.round.signaling;
+
+import com.personal.round.config.SignalingProperties;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import org.springframework.stereotype.Component;
+
+@Component
+public final class ConnectionAdmissionPolicy {
+
+	public static final String RESERVATION_ATTRIBUTE =
+			ConnectionAdmissionPolicy.class.getName() + ".reservation";
+
+	private static final String UNKNOWN_CLIENT = "<unknown>";
+
+	private final Object monitor = new Object();
+	private final Map<String, Integer> connectionsByClient = new HashMap<>();
+	private final int maxConnections;
+	private final int maxConnectionsPerClient;
+	private final SignalingMetrics metrics;
+	private int activeReservations;
+
+	public ConnectionAdmissionPolicy(
+			SignalingProperties properties,
+			SignalingMetrics metrics) {
+		int maxConnections = properties.getMaxConnections();
+		int maxConnectionsPerClient = properties.getMaxConnectionsPerClient();
+		if (maxConnections < 1) {
+			throw new IllegalArgumentException("maxConnections must be positive");
+		}
+		if (maxConnectionsPerClient < 1) {
+			throw new IllegalArgumentException("maxConnectionsPerClient must be positive");
+		}
+		this.maxConnections = maxConnections;
+		this.maxConnectionsPerClient = maxConnectionsPerClient;
+		this.metrics = metrics;
+	}
+
+	public Admission reserve(InetSocketAddress remoteAddress) {
+		String clientKey = clientKey(remoteAddress);
+		synchronized (monitor) {
+			if (activeReservations >= maxConnections) {
+				metrics.recordConnectionRejectedServerCapacity();
+				return Admission.rejected(Rejection.SERVER_CAPACITY);
+			}
+
+			int clientConnections = connectionsByClient.getOrDefault(clientKey, 0);
+			if (clientConnections >= maxConnectionsPerClient) {
+				metrics.recordConnectionRejectedClientCapacity();
+				return Admission.rejected(Rejection.CLIENT_CAPACITY);
+			}
+
+			activeReservations++;
+			connectionsByClient.put(clientKey, clientConnections + 1);
+			return Admission.accepted(new Reservation(this, clientKey));
+		}
+	}
+
+	int activeReservationCount() {
+		synchronized (monitor) {
+			return activeReservations;
+		}
+	}
+
+	int activeReservationCount(InetSocketAddress remoteAddress) {
+		synchronized (monitor) {
+			return connectionsByClient.getOrDefault(clientKey(remoteAddress), 0);
+		}
+	}
+
+	private void release(Reservation reservation) {
+		synchronized (monitor) {
+			if (reservation.released) {
+				return;
+			}
+			reservation.released = true;
+			activeReservations--;
+			connectionsByClient.computeIfPresent(
+					reservation.clientKey,
+					(ignored, current) -> {
+						int remaining = current - 1;
+						return remaining == 0 ? null : remaining;
+					});
+		}
+	}
+
+	private static String clientKey(InetSocketAddress remoteAddress) {
+		if (remoteAddress == null) {
+			return UNKNOWN_CLIENT;
+		}
+		InetAddress address = remoteAddress.getAddress();
+		if (address != null) {
+			return address.getHostAddress();
+		}
+		return remoteAddress.getHostString().toLowerCase(Locale.ROOT);
+	}
+
+	public enum Rejection {
+		NONE,
+		SERVER_CAPACITY,
+		CLIENT_CAPACITY
+	}
+
+	public record Admission(Reservation reservation, Rejection rejection) {
+
+		private static Admission accepted(Reservation reservation) {
+			return new Admission(reservation, Rejection.NONE);
+		}
+
+		private static Admission rejected(Rejection rejection) {
+			return new Admission(null, rejection);
+		}
+
+		public boolean accepted() {
+			return reservation != null;
+		}
+	}
+
+	public static final class Reservation implements AutoCloseable {
+
+		private final ConnectionAdmissionPolicy owner;
+		private final String clientKey;
+		private boolean released;
+
+		private Reservation(ConnectionAdmissionPolicy owner, String clientKey) {
+			this.owner = owner;
+			this.clientKey = clientKey;
+		}
+
+		@Override
+		public void close() {
+			owner.release(this);
+		}
+	}
+}

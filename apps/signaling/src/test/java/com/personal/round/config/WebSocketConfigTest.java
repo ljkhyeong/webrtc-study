@@ -3,6 +3,7 @@ package com.personal.round.config;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
+import com.personal.round.signaling.ConnectionAdmissionPolicy;
 import com.personal.round.signaling.SignalingService;
 import com.personal.round.signaling.SignalingWebSocketHandler;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ class WebSocketConfigTest {
 		assertThatThrownBy(() -> new WebSocketConfig(
 				mock(SignalingWebSocketHandler.class),
 				mock(SignalingService.class),
+				mock(ConnectionAdmissionPolicy.class),
 				new SignalingProperties(),
 				environment))
 				.isInstanceOf(IllegalArgumentException.class)

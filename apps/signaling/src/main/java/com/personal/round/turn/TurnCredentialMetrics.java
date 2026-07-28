@@ -15,7 +15,7 @@ public final class TurnCredentialMetrics {
 				.description("TURN credentials successfully issued")
 				.register(registry);
 		rateLimited = Counter.builder("round.turn.credentials.rate_limited")
-				.description("TURN credential requests rejected by the per-client rate limit")
+				.description("TURN credential requests rejected by an issuance quota")
 				.register(registry);
 	}
 

@@ -50,23 +50,25 @@ npm run check
 
 ## 환경 변수
 
-| 변수                                        | 기본값                  | 설명                          |
-| ------------------------------------------- | ----------------------- | ----------------------------- |
-| `PORT`                                      | `8787`                  | signaling HTTP/WebSocket 포트 |
-| `HOST`                                      | `0.0.0.0`               | signaling bind 주소           |
-| `ALLOWED_ORIGINS`                           | `http://localhost:5173` | 쉼표로 구분한 허용 Origin     |
-| `MAX_ROOM_SIZE`                             | `6`                     | 방 최대 참가자 수             |
-| `HEARTBEAT_INTERVAL_MS`                     | `30000`                 | 연결 상태 확인 주기(ms)       |
-| `VITE_SIGNALING_URL`                        | 현재 호스트의 `/signal` | 브라우저가 연결할 WSS/WS 주소 |
-| `VITE_STUN_URLS`                            | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소       |
-| `VITE_TURN_CREDENTIALS_URL`                 | `/api/turn-credentials` | 만료형 TURN credential API    |
-| `VITE_ICE_TRANSPORT_POLICY`                 | `all`                   | `relay`이면 TURN만 강제       |
-| `TURN_URLS`                                 | 없음                    | 서버가 브라우저에 전달할 TURN |
-| `TURN_SHARED_SECRET`                        | 없음                    | signaling과 coturn 공유 비밀  |
-| `TURN_CREDENTIAL_TTL_SECONDS`               | `3600`                  | TURN credential 수명(초)      |
-| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS` | `60`                    | IP별 발급 제한 구간(초)       |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`   | `12`                    | 구간당 IP별 최대 발급 수      |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`    | `10000`                 | rate-limit 상태 최대 IP 수    |
+| 변수                                             | 기본값                  | 설명                          |
+| ------------------------------------------------ | ----------------------- | ----------------------------- |
+| `PORT`                                           | `8787`                  | signaling HTTP/WebSocket 포트 |
+| `HOST`                                           | `0.0.0.0`               | signaling bind 주소           |
+| `ALLOWED_ORIGINS`                                | `http://localhost:5173` | 쉼표로 구분한 허용 Origin     |
+| `MAX_ROOM_SIZE`                                  | `6`                     | 방 최대 참가자 수             |
+| `MAX_SIGNALING_CONNECTIONS_PER_CLIENT`           | `12`                    | IP별 동시 signaling 연결 제한 |
+| `HEARTBEAT_INTERVAL_MS`                          | `30000`                 | 연결 상태 확인 주기(ms)       |
+| `VITE_SIGNALING_URL`                             | 현재 호스트의 `/signal` | 브라우저가 연결할 WSS/WS 주소 |
+| `VITE_STUN_URLS`                                 | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소       |
+| `VITE_TURN_CREDENTIALS_URL`                      | `/api/turn-credentials` | 만료형 TURN credential API    |
+| `VITE_ICE_TRANSPORT_POLICY`                      | `all`                   | `relay`이면 TURN만 강제       |
+| `TURN_URLS`                                      | 없음                    | 서버가 브라우저에 전달할 TURN |
+| `TURN_SHARED_SECRET`                             | 없음                    | signaling과 coturn 공유 비밀  |
+| `TURN_CREDENTIAL_TTL_SECONDS`                    | `600`                   | TURN credential 수명(초)      |
+| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`      | `60`                    | IP별 발급 제한 구간(초)       |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`        | `12`                    | 구간당 IP별 최대 발급 수      |
+| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS` | `8`                     | 구간당 서버 전체 최대 발급 수 |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`         | `10000`                 | rate-limit 상태 최대 IP 수    |
 
 ## 저장소 구조
 

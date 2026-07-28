@@ -16,6 +16,9 @@ public final class SignalingMetrics {
 	private final Counter alreadyJoinedRejections;
 	private final Counter invalidFrames;
 	private final Counter rateLimitedFrames;
+	private final Counter overloadedFrames;
+	private final Counter serverCapacityRejections;
+	private final Counter clientCapacityRejections;
 	private final Counter queueOverflows;
 	private final Counter heartbeatCloses;
 
@@ -41,7 +44,18 @@ public final class SignalingMetrics {
 				.description("Malformed, unsupported, or oversized inbound WebSocket frames")
 				.register(registry);
 		rateLimitedFrames = Counter.builder("round.signaling.frames.rate_limited")
-				.description("Inbound WebSocket frames rejected by abuse limits")
+				.description("Inbound WebSocket frames rejected by per-session abuse limits")
+				.register(registry);
+		overloadedFrames = Counter.builder("round.signaling.frames.overloaded")
+				.description("Inbound WebSocket frames dropped by the global overload guard")
+				.register(registry);
+		serverCapacityRejections = Counter.builder("round.signaling.connections.rejected")
+				.tag("reason", "server_capacity")
+				.description("WebSocket handshakes rejected by connection admission")
+				.register(registry);
+		clientCapacityRejections = Counter.builder("round.signaling.connections.rejected")
+				.tag("reason", "client_capacity")
+				.description("WebSocket handshakes rejected by connection admission")
 				.register(registry);
 		queueOverflows = Counter.builder("round.signaling.outbound.queue.overflows")
 				.description("Peers closed because their outbound queue overflowed")
@@ -71,6 +85,18 @@ public final class SignalingMetrics {
 
 	void recordRateLimitedFrame() {
 		rateLimitedFrames.increment();
+	}
+
+	void recordOverloadedFrame() {
+		overloadedFrames.increment();
+	}
+
+	void recordConnectionRejectedServerCapacity() {
+		serverCapacityRejections.increment();
+	}
+
+	void recordConnectionRejectedClientCapacity() {
+		clientCapacityRejections.increment();
 	}
 
 	void recordQueueOverflow() {

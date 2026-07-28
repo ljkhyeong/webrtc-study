@@ -76,14 +76,19 @@ Set these values carefully:
 - `TURN_URLS` should advertise UDP, TCP, and TLS routes for the TURN hostname.
   The signaling endpoint uses the same shared secret as coturn to issue
   expiring HMAC credentials.
-- `TURN_CREDENTIAL_TTL_SECONDS` defaults to 3,600 seconds and can be adjusted
+- `TURN_CREDENTIAL_TTL_SECONDS` defaults to 600 seconds and can be adjusted
   without rebuilding an image. The endpoint and external probe issue or fetch
   a fresh credential on every request.
 - `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`,
-  `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`, and
+  `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`,
+  `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS`, and
   `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS` bound credential endpoint abuse.
-  The defaults permit 12 requests per client in 60 seconds while tracking up
-  to 10,000 clients.
+  The defaults permit 12 requests per client and eight requests across the
+  standalone server in 60 seconds while tracking up to 10,000 clients.
+  Browser requests must be exact same-origin POST requests. Origin and Fetch
+  Metadata validation is browser abuse mitigation, not authentication; a
+  non-browser client can construct those headers until BATON identity and
+  study membership are connected.
 - `VITE_ICE_TRANSPORT_POLICY=all` is the normal release setting. The tag-based
   release workflow also publishes a separate `-relay` edge image to prove media
   crosses TURN rather than a direct candidate. Never use that relay-only image

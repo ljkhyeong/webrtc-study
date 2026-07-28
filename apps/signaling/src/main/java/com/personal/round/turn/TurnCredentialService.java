@@ -26,6 +26,7 @@ public class TurnCredentialService {
 	private final AtomicLong issuanceSequence = new AtomicLong();
 	private final Map<String, IssuanceWindow> issuanceWindowsByClient;
 	private final long rateLimitWindowMillis;
+	private IssuanceWindow globalIssuanceWindow;
 
 	public TurnCredentialService(
 			TurnProperties properties,
@@ -54,17 +55,36 @@ public class TurnCredentialService {
 				clientAddress == null || clientAddress.isBlank() ? "unknown-client" : clientAddress;
 		long nowMillis = clock.millis();
 		synchronized (issuanceWindowsByClient) {
-			IssuanceWindow window = issuanceWindowsByClient.get(clientKey);
-			if (window == null || window.isExpired(nowMillis, rateLimitWindowMillis)) {
-				window = new IssuanceWindow(nowMillis);
-				issuanceWindowsByClient.put(clientKey, window);
+			IssuanceWindow clientWindow = currentWindow(
+					issuanceWindowsByClient.get(clientKey), nowMillis);
+			IssuanceWindow globalWindow = currentWindow(globalIssuanceWindow, nowMillis);
+			long retryAfterSeconds = 0;
+			if (clientWindow != null
+					&& clientWindow.issued >= properties.getRateLimitMaxRequests()) {
+				retryAfterSeconds = clientWindow.retryAfterSeconds(
+						nowMillis, rateLimitWindowMillis);
 			}
-			if (window.issued >= properties.getRateLimitMaxRequests()) {
+			if (globalWindow != null
+					&& globalWindow.issued >= properties.getRateLimitGlobalMaxRequests()) {
+				retryAfterSeconds = Math.max(
+						retryAfterSeconds,
+						globalWindow.retryAfterSeconds(nowMillis, rateLimitWindowMillis));
+			}
+			if (retryAfterSeconds > 0) {
 				metrics.recordRateLimited();
-				return new RateLimited(
-						window.retryAfterSeconds(nowMillis, rateLimitWindowMillis));
+				return new RateLimited(retryAfterSeconds);
 			}
-			window.issued++;
+
+			if (clientWindow == null) {
+				clientWindow = new IssuanceWindow(nowMillis);
+				issuanceWindowsByClient.put(clientKey, clientWindow);
+			}
+			if (globalWindow == null) {
+				globalWindow = new IssuanceWindow(nowMillis);
+				globalIssuanceWindow = globalWindow;
+			}
+			clientWindow.issued++;
+			globalWindow.issued++;
 		}
 
 		long expiresAt = Math.addExact(
@@ -81,6 +101,13 @@ public class TurnCredentialService {
 		synchronized (issuanceWindowsByClient) {
 			return issuanceWindowsByClient.size();
 		}
+	}
+
+	private IssuanceWindow currentWindow(IssuanceWindow window, long nowMillis) {
+		if (window == null || window.isExpired(nowMillis, rateLimitWindowMillis)) {
+			return null;
+		}
+		return window;
 	}
 
 	private String randomToken() {

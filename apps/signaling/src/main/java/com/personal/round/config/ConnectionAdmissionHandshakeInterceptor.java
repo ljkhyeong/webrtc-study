@@ -35,6 +35,6 @@ public final class ConnectionAdmissionHandshakeInterceptor implements HandshakeI
 			ServerHttpResponse response,
 			WebSocketHandler wsHandler,
 			Exception exception) {
-		// Admission does not allocate resources.
+		// Shutdown admission does not allocate resources.
 	}
 }

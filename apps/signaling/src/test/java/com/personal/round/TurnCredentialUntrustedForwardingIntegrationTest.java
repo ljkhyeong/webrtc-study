@@ -28,16 +28,19 @@ class TurnCredentialUntrustedForwardingIntegrationTest {
 
 	@Test
 	void ignoresForwardedAddressesFromAnUntrustedDirectPeer() throws Exception {
-		assertThat(get("198.51.100.1").statusCode()).isEqualTo(200);
-		assertThat(get("198.51.100.2").statusCode()).isEqualTo(200);
-		assertThat(get("198.51.100.3").statusCode()).isEqualTo(429);
+		assertThat(post("198.51.100.1").statusCode()).isEqualTo(200);
+		assertThat(post("198.51.100.2").statusCode()).isEqualTo(200);
+		assertThat(post("198.51.100.3").statusCode()).isEqualTo(429);
 	}
 
-	private HttpResponse<String> get(String forwardedFor) throws Exception {
+	private HttpResponse<String> post(String forwardedFor) throws Exception {
+		String origin = "http://127.0.0.1:" + port;
 		HttpRequest request = HttpRequest.newBuilder()
-				.uri(URI.create("http://127.0.0.1:" + port + "/api/turn-credentials"))
+				.uri(URI.create(origin + "/api/turn-credentials"))
 				.header("X-Forwarded-For", forwardedFor)
-				.GET()
+				.header("Origin", origin)
+				.header("Sec-Fetch-Site", "same-origin")
+				.POST(HttpRequest.BodyPublishers.noBody())
 				.build();
 		return HttpClient.newHttpClient()
 				.send(request, HttpResponse.BodyHandlers.ofString());

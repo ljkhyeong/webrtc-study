@@ -74,4 +74,15 @@ class SignalingWebSocketHandlerTest {
 		verify(service, org.mockito.Mockito.never()).handle(any(), any());
 		verify(service, org.mockito.Mockito.never()).sendInvalidMessage(any(), any());
 	}
+
+	@Test
+	void recordsPongLivenessBeforeApplyingFrameAccounting() throws Exception {
+		when(service.acceptInboundFrame(session)).thenReturn(false);
+
+		handler.handleMessage(session, new org.springframework.web.socket.PongMessage());
+
+		org.mockito.InOrder order = org.mockito.Mockito.inOrder(service);
+		order.verify(service).markAlive(session);
+		order.verify(service).acceptInboundFrame(session);
+	}
 }

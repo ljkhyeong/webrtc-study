@@ -47,7 +47,19 @@ class HealthIntegrationTest {
 
 	@Test
 	void keepsTurnCredentialEndpointHiddenWhenTurnIsDisabled() throws Exception {
-		assertThat(get("/api/turn-credentials").statusCode()).isEqualTo(204);
+		String origin = "http://127.0.0.1:" + port;
+		HttpRequest request = HttpRequest.newBuilder()
+				.uri(URI.create(origin + "/api/turn-credentials"))
+				.header("Origin", origin)
+				.header("Sec-Fetch-Site", "same-origin")
+				.POST(HttpRequest.BodyPublishers.noBody())
+				.build();
+
+		HttpResponse<String> response = HttpClient.newHttpClient()
+				.send(request, HttpResponse.BodyHandlers.ofString());
+
+		assertThat(response.statusCode()).isEqualTo(204);
+		assertThat(response.headers().firstValue("cache-control")).contains("no-store");
 	}
 
 	private HttpResponse<String> get(String path) throws Exception {

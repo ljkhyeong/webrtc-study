@@ -11,6 +11,7 @@ public class SignalingProperties {
 			List.of("http://localhost:5173", "http://127.0.0.1:5173"));
 	private int maxRoomSize = 6;
 	private int maxConnections = 1_000;
+	private int maxConnectionsPerClient = 12;
 	private long heartbeatIntervalMs = 30_000;
 	private long unjoinedTimeoutMs = 15_000;
 	private long unjoinedSweepIntervalMs = 1_000;
@@ -41,6 +42,14 @@ public class SignalingProperties {
 
 	public void setMaxConnections(int maxConnections) {
 		this.maxConnections = maxConnections;
+	}
+
+	public int getMaxConnectionsPerClient() {
+		return maxConnectionsPerClient;
+	}
+
+	public void setMaxConnectionsPerClient(int maxConnectionsPerClient) {
+		this.maxConnectionsPerClient = maxConnectionsPerClient;
 	}
 
 	public long getHeartbeatIntervalMs() {
@@ -109,6 +118,10 @@ public class SignalingProperties {
 		if (maxConnections < maxRoomSize || maxConnections > 100_000) {
 			throw new IllegalArgumentException(
 					"round.signaling.max-connections must be between max-room-size and 100000");
+		}
+		if (maxConnectionsPerClient < 1 || maxConnectionsPerClient > 100_000) {
+			throw new IllegalArgumentException(
+					"round.signaling.max-connections-per-client must be between 1 and 100000");
 		}
 		if (heartbeatIntervalMs < 1) {
 			throw new IllegalArgumentException(

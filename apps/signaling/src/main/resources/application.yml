@@ -35,6 +35,7 @@ round:
     allowed-origins: ${ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
     max-room-size: ${MAX_ROOM_SIZE:6}
     max-connections: ${MAX_SIGNALING_CONNECTIONS:1000}
+    max-connections-per-client: ${MAX_SIGNALING_CONNECTIONS_PER_CLIENT:12}
     heartbeat-interval-ms: ${HEARTBEAT_INTERVAL_MS:30000}
     unjoined-timeout-ms: ${UNJOINED_SOCKET_TIMEOUT_MS:15000}
     unjoined-sweep-interval-ms: ${UNJOINED_SOCKET_SWEEP_MS:1000}
@@ -45,7 +46,8 @@ round:
   turn:
     urls: ${TURN_URLS:}
     shared-secret: ${TURN_SHARED_SECRET:}
-    credential-ttl-seconds: ${TURN_CREDENTIAL_TTL_SECONDS:3600}
+    credential-ttl-seconds: ${TURN_CREDENTIAL_TTL_SECONDS:600}
     rate-limit-window-seconds: ${TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS:60}
     rate-limit-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS:12}
+    rate-limit-global-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS:8}
     rate-limit-max-clients: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS:10000}

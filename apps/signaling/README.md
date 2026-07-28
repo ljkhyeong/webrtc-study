@@ -5,7 +5,7 @@ The signaling process exposes:
 - `GET /healthz` for the legacy transport-only health check
 - `GET /actuator/health/liveness` and `/actuator/health/readiness`
 - `GET /actuator/prometheus` and `/actuator/metrics`
-- `GET /api/turn-credentials` when coturn REST credentials are configured
+- `POST /api/turn-credentials` when coturn REST credentials are configured
 - WebSocket `/signal`
 
 The `production` Spring profile fails during startup unless every configured
@@ -47,15 +47,16 @@ only a fixed message and the exception class.
 
 Set both `TURN_SHARED_SECRET` and comma-separated `TURN_URLS`, or leave both
 unset. A partial configuration fails startup without printing the secret. The
-optional `TURN_CREDENTIAL_TTL_SECONDS` defaults to 3,600 seconds (one hour).
+optional `TURN_CREDENTIAL_TTL_SECONDS` defaults to 600 seconds (ten minutes).
 
 Credential issuance uses these additional bounded rate-limit settings:
 
-| Environment variable                        | Default | Purpose                                                   |
-| ------------------------------------------- | ------: | --------------------------------------------------------- |
-| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS` |    `60` | Fixed issuance window                                     |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`   |    `12` | Successful issues per effective client address and window |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`    | `10000` | Maximum client windows retained in the in-memory LRU      |
+| Environment variable                             | Default | Purpose                                                   |
+| ------------------------------------------------ | ------: | --------------------------------------------------------- |
+| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`      |    `60` | Fixed issuance window                                     |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`        |    `12` | Successful issues per effective client address and window |
+| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS` |     `8` | Successful issues across this server and window           |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`         | `10000` | Maximum client windows retained in the in-memory LRU      |
 
 The credential endpoint returns a no-store response:
 
@@ -69,10 +70,17 @@ The credential endpoint returns a no-store response:
 ```
 
 `expiresAt` is Unix epoch seconds. Every successful request receives a new
-username and credential, including separate browsers behind the same NAT. Once
-an effective client address reaches its issuance limit, the endpoint returns an
-empty no-store HTTP 429 response with `Retry-After` set to the remaining whole
+username and credential, including separate browsers behind the same NAT. The
+endpoint accepts only POST requests with an exact same-origin `Origin`; when
+Fetch Metadata is present, `Sec-Fetch-Site` must also be `same-origin`. Once an
+effective client or the server reaches its issuance limit, the endpoint returns
+an empty no-store HTTP 429 response with `Retry-After` set to the remaining whole
 seconds in the current window.
+
+Origin and Fetch Metadata checks prevent another website from spending a
+visitor's quota through a browser. They do not authenticate non-browser clients,
+which can construct these headers. The limits and short TTL are standalone MVP
+abuse mitigation until BATON identity and study membership protect issuance.
 
 When TURN is intentionally disabled, the endpoint returns an empty no-store
 HTTP 204 response so local STUN-only development does not create a false

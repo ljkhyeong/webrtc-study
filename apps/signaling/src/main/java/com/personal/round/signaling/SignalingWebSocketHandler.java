@@ -83,9 +83,8 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 
 	@Override
 	protected void handlePongMessage(WebSocketSession session, PongMessage message) {
-		if (signalingService.acceptInboundFrame(session)) {
-			signalingService.markAlive(session);
-		}
+		signalingService.markAlive(session);
+		signalingService.acceptInboundFrame(session);
 	}
 
 	@Override

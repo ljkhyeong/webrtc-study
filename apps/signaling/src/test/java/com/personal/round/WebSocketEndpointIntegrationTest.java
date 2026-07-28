@@ -19,6 +19,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 		properties = {
 			"server.address=127.0.0.1",
 			"round.signaling.allowed-origins=http://localhost:5173",
+			"round.signaling.max-connections-per-client=1",
 			"round.signaling.heartbeat-interval-ms=60000"
 		})
 class WebSocketEndpointIntegrationTest {
@@ -31,13 +32,14 @@ class WebSocketEndpointIntegrationTest {
 	@Test
 	void acceptsSignalQueryButRejectsTrailingSlashAndWrongOrigin() throws Exception {
 		StandardWebSocketClient client = new StandardWebSocketClient();
+		assertThatThrownBy(() -> connect(client, "/signal", "https://evil.example"))
+				.hasRootCauseInstanceOf(Exception.class);
+
 		WebSocketSession session = connect(client, "/signal?invite=room", ALLOWED_ORIGIN);
 		assertThat(session.isOpen()).isTrue();
 		session.close();
 
 		assertThatThrownBy(() -> connect(client, "/signal/", ALLOWED_ORIGIN))
-				.hasRootCauseInstanceOf(Exception.class);
-		assertThatThrownBy(() -> connect(client, "/signal", "https://evil.example"))
 				.hasRootCauseInstanceOf(Exception.class);
 	}
 
