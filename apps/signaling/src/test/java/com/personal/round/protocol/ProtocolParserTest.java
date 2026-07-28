@@ -2,6 +2,7 @@ package com.personal.round.protocol;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +35,7 @@ class ProtocolParserTest {
 				 "payload":{"description":{"type":"offer","sdp":"v=0"}}}
 				""");
 		assertThat(offer.type()).isEqualTo("rtc.offer");
-		assertThat(offer.payload().at("/description/sdp").asText()).isEqualTo("v=0");
+		assertThat(offer.payload().at("/description/sdp").asString()).isEqualTo("v=0");
 
 		ClientMessage.Relay answer = (ClientMessage.Relay) parser.parse("""
 				{"v":1.0,"type":"rtc.answer","roomId":"abcd-efgh-jkmp","to":"peer-b",
@@ -61,15 +62,45 @@ class ProtocolParserTest {
 		assertInvalid("""
 				{"v":1,"type":"room.join","roomId":"abcd-efgh-jkmp","from":"spoofed",
 				 "payload":{"displayName":"Ada"}}
-				""", "$.from");
+				""", "$");
 		assertInvalid("""
 				{"v":1,"type":"rtc.offer","roomId":"abcd-efgh-jkmp","to":"peer",
 				 "payload":{"description":{"type":"offer","sdp":"v=0","extra":true}}}
-				""", "$.payload.description.extra");
+				""", "$.payload.description");
 		assertInvalid("""
 				{"v":1,"type":"rtc.ice","roomId":"abcd-efgh-jkmp","to":"peer",
 				 "payload":{"candidate":{"candidate":"candidate:1","networkCost":10}}}
-				""", "$.payload.candidate.networkCost");
+				""", "$.payload.candidate");
+	}
+
+	@Test
+	void doesNotExposeAnOversizedUnexpectedPropertyNameInThePublicErrorMessage() {
+		String unexpectedProperty = "x".repeat(ProtocolValidationException.MAX_PUBLIC_MESSAGE_LENGTH + 1);
+		String message = """
+				{"v":1,"type":"room.join","roomId":"abcd-efgh-jkmp","%s":true,
+				 "payload":{"displayName":"Ada"}}
+				""".formatted(unexpectedProperty);
+
+		ProtocolValidationException exception = catchThrowableOfType(
+				ProtocolValidationException.class,
+				() -> parser.parse(message));
+
+		assertThat(exception.getPath()).isEqualTo("$");
+		assertThat(exception.getMessage())
+				.isEqualTo("$: contains an unsupported property")
+				.hasSizeLessThanOrEqualTo(ProtocolValidationException.MAX_PUBLIC_MESSAGE_LENGTH)
+				.doesNotContain(unexpectedProperty);
+	}
+
+	@Test
+	void capsEveryPublicValidationMessageAtTheProtocolLimit() {
+		ProtocolValidationException exception = new ProtocolValidationException(
+				"$." + "x".repeat(ProtocolValidationException.MAX_PUBLIC_MESSAGE_LENGTH),
+				"is not allowed");
+
+		assertThat(exception.getMessage())
+				.hasSize(ProtocolValidationException.MAX_PUBLIC_MESSAGE_LENGTH)
+				.endsWith("…");
 	}
 
 	@Test

@@ -157,7 +157,7 @@ public class ProtocolParser {
 		Collection<String> propertyNames = input.propertyNames();
 		for (String propertyName : propertyNames) {
 			if (!allowedKeys.contains(propertyName)) {
-				throw fail(path + "." + propertyName, "is not allowed");
+				throw fail(path, "contains an unsupported property");
 			}
 		}
 	}
@@ -219,10 +219,10 @@ public class ProtocolParser {
 	}
 
 	private static String boundedString(JsonNode input, int maximumLength, String path) {
-		if (input == null || !input.isTextual()) {
+		if (input == null || !input.isString()) {
 			throw fail(path, "must be a string");
 		}
-		String value = input.asText();
+		String value = input.asString();
 		if (value.length() > maximumLength) {
 			throw fail(path, "must contain at most " + maximumLength + " characters");
 		}
@@ -230,10 +230,10 @@ public class ProtocolParser {
 	}
 
 	private static String requiredText(JsonNode input, String path) {
-		if (input == null || !input.isTextual()) {
+		if (input == null || !input.isString()) {
 			throw fail(path, "must be a string");
 		}
-		return input.asText();
+		return input.asString();
 	}
 
 	private static void nullableOptionalString(
@@ -283,7 +283,7 @@ public class ProtocolParser {
 	}
 
 	private static void textLiteral(JsonNode input, String expected, String path) {
-		if (input == null || !input.isTextual() || !expected.equals(input.asText())) {
+		if (input == null || !input.isString() || !expected.equals(input.asString())) {
 			throw fail(path, "must equal \"" + expected + "\"");
 		}
 	}
