@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -46,6 +47,7 @@ class SignalingServiceTest {
 	private ObjectMapper objectMapper;
 	private Clock clock;
 	private SimpleMeterRegistry meterRegistry;
+	private ExecutorService outboundExecutor;
 	private SignalingService service;
 
 	@BeforeEach
@@ -53,12 +55,16 @@ class SignalingServiceTest {
 		objectMapper = new ObjectMapper();
 		clock = Clock.fixed(Instant.parse("2026-07-26T00:00:00Z"), ZoneOffset.UTC);
 		meterRegistry = new SimpleMeterRegistry();
+		outboundExecutor = Executors.newThreadPerTaskExecutor(
+				Thread.ofVirtual().name("round-signaling-test-", 0).factory());
 		service = service(properties(6), meterRegistry);
 	}
 
 	@AfterEach
 	void tearDown() {
-		service.shutdown();
+		service.stop();
+		outboundExecutor.close();
+		assertThat(outboundExecutor.isTerminated()).isTrue();
 	}
 
 	@Test
@@ -333,40 +339,65 @@ class SignalingServiceTest {
 	}
 
 	@Test
-	void shutdownRejectsNewConnectionsAndClosesExistingSessionsWithGoingAway() throws Exception {
-		TestPeer connected = peer("connected-before-shutdown");
+	void lifecycleStartsStopsAndRestartsWithoutOwningTheExecutor() throws Exception {
+		service.stop();
+		service = newService(properties(6), new SimpleMeterRegistry());
+		assertThat(service.isRunning()).isFalse();
+		assertThat(service.isAcceptingConnections()).isFalse();
+
+		TestPeer beforeStart = peer("before-start");
+		assertThat(service.connect(beforeStart.session())).isFalse();
+		beforeStart.awaitClosed();
+		assertThat(beforeStart.closeStatus().get())
+				.isEqualTo(new CloseStatus(1001, "Server shutting down"));
+
+		service.start();
+		assertThat(service.isRunning()).isTrue();
+		assertThat(service.isAcceptingConnections()).isTrue();
+		TestPeer connected = peer("connected-before-stop");
 		connect(connected);
 		service.handle(connected.session(), join("Ada"));
 		connected.nextJson();
 
-		service.shutdown();
+		AtomicBoolean stopCallback = new AtomicBoolean();
+		service.stop(() -> stopCallback.set(true));
+		assertThat(stopCallback).isTrue();
+		service.stop();
 
 		connected.awaitClosed();
 		assertThat(connected.closeStatus().get())
 				.isEqualTo(new CloseStatus(1001, "Server shutting down"));
+		assertThat(service.isRunning()).isFalse();
 		assertThat(service.isAcceptingConnections()).isFalse();
 		assertThat(service.connectedPeerCount()).isZero();
 		assertThat(service.roomCount()).isZero();
+		assertThat(outboundExecutor.isShutdown()).isFalse();
 
-		TestPeer late = peer("late-connection");
-		assertThat(service.connect(late.session())).isFalse();
-		late.awaitClosed();
-		assertThat(late.closeStatus().get())
+		service.start();
+		TestPeer restarted = peer("after-restart");
+		assertThat(service.connect(restarted.session())).isTrue();
+		assertThat(service.isRunning()).isTrue();
+		assertThat(service.isAcceptingConnections()).isTrue();
+
+		service.stop();
+		restarted.awaitClosed();
+		assertThat(restarted.closeStatus().get())
 				.isEqualTo(new CloseStatus(1001, "Server shutting down"));
+		assertThat(outboundExecutor.isShutdown()).isFalse();
 	}
 
 	@Test
-	void shutdownKeepsGoingAwayStatusWhenAnOutboundWriteIsInFlight() throws Exception {
+	void stopKeepsGoingAwayStatusWhenAnOutboundWriteIsInFlight() throws Exception {
 		CountDownLatch sendEntered = new CountDownLatch(1);
 		CountDownLatch releaseSend = new CountDownLatch(1);
-		TestPeer slow = peer("shutdown-in-flight", sendEntered, releaseSend);
+		TestPeer slow = peer("stop-in-flight", sendEntered, releaseSend);
 		connect(slow);
 
 		try {
 			service.handle(slow.session(), join("Slow peer"));
 			assertThat(sendEntered.await(1, TimeUnit.SECONDS)).isTrue();
 
-			service.shutdown();
+			service.stop();
 
 			slow.awaitClosed();
 			assertThat(slow.closeStatus().get())
@@ -374,6 +405,28 @@ class SignalingServiceTest {
 		}
 		finally {
 			releaseSend.countDown();
+		}
+	}
+
+	@Test
+	void executesOutboundWorkInlineWhenTheDedicatedExecutorRejectsIt() throws Exception {
+		try (ExecutorService rejectingExecutor = Executors.newThreadPerTaskExecutor(
+				Thread.ofVirtual().name("round-signaling-rejected-test-", 0).factory())) {
+			SignalingService fallbackService = new SignalingService(
+					objectMapper,
+					properties(1),
+					new SignalingMetrics(new SimpleMeterRegistry()),
+					rejectingExecutor,
+					clock);
+			fallbackService.start();
+			TestPeer peer = peer("rejected-executor-fallback");
+			assertThat(fallbackService.connect(peer.session())).isTrue();
+			rejectingExecutor.shutdownNow();
+
+			fallbackService.handle(peer.session(), join("Fallback"));
+
+			assertThat(peer.nextJson().get("type").asText()).isEqualTo("room.joined");
+			fallbackService.stop();
 		}
 	}
 
@@ -432,7 +485,7 @@ class SignalingServiceTest {
 
 	@Test
 	void dropsGlobalOverloadWithoutClosingAnArbitrarySession() throws Exception {
-		service.shutdown();
+		service.stop();
 		SignalingProperties properties =
 				TestProperties.signalingWithFrameLimits(6, 10, 12);
 		meterRegistry = new SimpleMeterRegistry();
@@ -463,7 +516,7 @@ class SignalingServiceTest {
 
 	@Test
 	void globalOverloadDoesNotTurnAValidPongIntoAHeartbeatTimeout() throws Exception {
-		service.shutdown();
+		service.stop();
 		SignalingProperties properties =
 				TestProperties.signalingWithFrameLimits(2, 2, 2);
 		meterRegistry = new SimpleMeterRegistry();
@@ -497,7 +550,7 @@ class SignalingServiceTest {
 
 	@Test
 	void pongStillDisconnectsTheSessionThatExceedsItsOwnFrameWindow() throws Exception {
-		service.shutdown();
+		service.stop();
 		SignalingProperties properties =
 				TestProperties.signalingWithFrameLimits(1, 1, 10);
 		meterRegistry = new SimpleMeterRegistry();
@@ -526,7 +579,7 @@ class SignalingServiceTest {
 
 	@Test
 	void rejectsConnectionsBeyondTheConfiguredGlobalLimit() throws Exception {
-		service.shutdown();
+		service.stop();
 		SignalingProperties properties =
 				TestProperties.signalingWithConnectionLimits(2, 2, 2);
 		meterRegistry = new SimpleMeterRegistry();
@@ -546,9 +599,9 @@ class SignalingServiceTest {
 	}
 
 	@Test
-	void releasesAdmissionReservationsOnDisconnectConnectRejectionAndShutdown()
+	void releasesAdmissionReservationsOnDisconnectConnectRejectionAndStop()
 			throws Exception {
-		service.shutdown();
+		service.stop();
 		SignalingProperties properties =
 				TestProperties.signalingWithConnectionLimits(1, 1, 1);
 		meterRegistry = new SimpleMeterRegistry();
@@ -573,12 +626,12 @@ class SignalingServiceTest {
 		service.disconnect(accepted.session());
 		assertThat(policy.activeReservationCount()).isZero();
 
-		TestPeer shutdownPeer = peer("reserved-shutdown");
-		attachReservation(shutdownPeer, policy.reserve(
+		TestPeer stoppedPeer = peer("reserved-stop");
+		attachReservation(stoppedPeer, policy.reserve(
 				new java.net.InetSocketAddress("192.0.2.32", 41_000)).reservation());
-		assertThat(service.connect(shutdownPeer.session())).isTrue();
+		assertThat(service.connect(stoppedPeer.session())).isTrue();
 
-		service.shutdown();
+		service.stop();
 
 		assertThat(policy.activeReservationCount()).isZero();
 	}
@@ -612,10 +665,19 @@ class SignalingServiceTest {
 	private SignalingService service(
 			SignalingProperties properties,
 			SimpleMeterRegistry registry) {
+		SignalingService started = newService(properties, registry);
+		started.start();
+		return started;
+	}
+
+	private SignalingService newService(
+			SignalingProperties properties,
+			SimpleMeterRegistry registry) {
 		return new SignalingService(
 				objectMapper,
 				properties,
 				new SignalingMetrics(registry),
+				outboundExecutor,
 				clock);
 	}
 

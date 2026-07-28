@@ -1,9 +1,9 @@
 package com.personal.round.signaling;
 
+import com.personal.round.config.SignalingExecutionConfig;
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ProtocolParser;
-import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.time.Clock;
 import java.util.ArrayDeque;
@@ -14,10 +14,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.CloseStatus;
@@ -48,9 +48,10 @@ public class SignalingService implements SmartLifecycle {
 	static final int MAX_OUTBOUND_QUEUE_SIZE = 256;
 
 	private final Object monitor = new Object();
+	private final Object lifecycleMonitor = new Object();
 	private final Map<String, Peer> connectedPeers = new HashMap<>();
 	private final Map<String, LinkedHashMap<String, Peer>> rooms = new HashMap<>();
-	private final ExecutorService outboundExecutor = Executors.newVirtualThreadPerTaskExecutor();
+	private final ExecutorService outboundExecutor;
 	private final ObjectMapper objectMapper;
 	private final SignalingMetrics metrics;
 	private final Clock clock;
@@ -61,16 +62,19 @@ public class SignalingService implements SmartLifecycle {
 	private final int maxFramesPerSessionWindow;
 	private final int maxFramesGlobalWindow;
 	private final RateWindow globalInboundWindow = new RateWindow();
-	private volatile boolean acceptingConnections = true;
-	private volatile boolean running = true;
+	private volatile boolean acceptingConnections;
+	private volatile boolean running;
 
 	public SignalingService(
 			ObjectMapper objectMapper,
 			SignalingProperties properties,
 			SignalingMetrics metrics,
+			@Qualifier(SignalingExecutionConfig.OUTBOUND_EXECUTOR_BEAN)
+			ExecutorService outboundExecutor,
 			Clock clock) {
 		this.objectMapper = objectMapper;
 		this.metrics = metrics;
+		this.outboundExecutor = outboundExecutor;
 		this.clock = clock;
 		this.maxRoomSize = properties.maxRoomSize();
 		this.maxConnections = properties.maxConnections();
@@ -557,7 +561,7 @@ public class SignalingService implements SmartLifecycle {
 			outboundExecutor.execute(task);
 		}
 		catch (RejectedExecutionException exception) {
-			log.debug("Outbound executor rejected work during shutdown");
+			log.debug("Outbound executor rejected work; executing signaling task inline");
 			task.run();
 		}
 	}
@@ -619,45 +623,59 @@ public class SignalingService implements SmartLifecycle {
 		}
 	}
 
-	@PreDestroy
-	public void shutdown() {
-		List<WebSocketSession> sessions;
-		synchronized (monitor) {
-			acceptingConnections = false;
-			running = false;
-			sessions = connectedPeers.values().stream().map(peer -> peer.session).toList();
-			connectedPeers.values().forEach(peer -> {
-				peer.connected = false;
-				peer.releaseReservation();
-				peer.outbound.clear();
-			});
-			connectedPeers.clear();
-			rooms.clear();
-			refreshMetricsLocked();
-		}
-		for (WebSocketSession session : sessions) {
-			closeQuietly(session, SERVER_SHUTDOWN);
-		}
-		outboundExecutor.shutdownNow();
-	}
-
 	@Override
 	public void start() {
-		if (!outboundExecutor.isShutdown()) {
-			running = true;
-			acceptingConnections = true;
+		synchronized (lifecycleMonitor) {
+			synchronized (monitor) {
+				if (running || outboundExecutor.isShutdown()) {
+					return;
+				}
+				running = true;
+				acceptingConnections = true;
+			}
 		}
 	}
 
 	@Override
 	public void stop() {
-		shutdown();
+		synchronized (lifecycleMonitor) {
+			List<WebSocketSession> sessions;
+			synchronized (monitor) {
+				if (!running
+						&& !acceptingConnections
+						&& connectedPeers.isEmpty()
+						&& rooms.isEmpty()) {
+					return;
+				}
+				acceptingConnections = false;
+				running = false;
+				sessions = connectedPeers.values().stream()
+						.map(peer -> peer.session)
+						.toList();
+				connectedPeers.values().forEach(peer -> {
+					peer.connected = false;
+					peer.releaseReservation();
+					peer.outbound.clear();
+				});
+				connectedPeers.clear();
+				rooms.clear();
+				globalInboundWindow.reset();
+				refreshMetricsLocked();
+			}
+			for (WebSocketSession session : sessions) {
+				closeQuietly(session, SERVER_SHUTDOWN);
+			}
+		}
 	}
 
 	@Override
 	public void stop(Runnable callback) {
-		shutdown();
-		callback.run();
+		try {
+			stop();
+		}
+		finally {
+			callback.run();
+		}
 	}
 
 	@Override
@@ -744,6 +762,11 @@ public class SignalingService implements SmartLifecycle {
 			}
 			count++;
 			return count <= maximum;
+		}
+
+		private void reset() {
+			startedAtMillis = Long.MIN_VALUE;
+			count = 0;
 		}
 	}
 
