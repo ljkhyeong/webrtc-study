@@ -24,7 +24,7 @@ limited to six participants because upload bandwidth and CPU use grow with every
 
 - `@round/rtc-core` never imports React, a router, or a CSS framework.
 - `@round/protocol` owns browser-side wire-message types and runtime validation.
-- `apps/signaling` mirrors protocol v1 validation at its WebSocket boundary and keeps room state
+- `apps/signaling` mirrors protocol v2 validation at its WebSocket boundary and keeps room state
   in memory under `com.personal.round.signaling`.
 - `apps/web` adapts room snapshots to React and owns all presentation.
 - Room identity is an opaque string. BATON authentication can be added in front of signaling
@@ -79,5 +79,9 @@ exhausted recovery stops every owned track and timer.
 
 ICE recovery uses one deterministic offer initiator per peer pair to avoid glare. A disconnected
 peer gets a short grace period, then an ICE restart, followed by peer-connection recreation if the
-restart does not recover. Raising the room limit or adding multiple video sources should move the
-media topology to an SFU instead of extending this mesh recovery model indefinitely.
+restart does not recover. Every ROUND offer starts a bounded `negotiationId` generation that its
+answer and ICE candidates echo. Recreated peers reject messages from retired generations so delayed
+SDP or ICE cannot corrupt the single replacement attempt. Protocol v2 marks this wire-contract change;
+the web client and signaling server must be deployed together, and current ROUND clients always send
+the optional field. Raising the room limit or adding multiple video sources should move the media
+topology to an SFU instead of extending this mesh recovery model indefinitely.

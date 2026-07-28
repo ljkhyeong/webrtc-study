@@ -23,55 +23,83 @@ class ProtocolParserTest {
 	@Test
 	void parsesEveryClientMessageShape() {
 		assertThat(parser.parse("""
-				{"v":1,"type":"room.join","roomId":"abcd-efgh-jkmp","requestId":"join-1",
+				{"v":2,"type":"room.join","roomId":"abcd-efgh-jkmp","requestId":"join-1",
 				 "payload":{"displayName":"Ada"}}
 				"""))
 				.isEqualTo(new ClientMessage.Join("abcd-efgh-jkmp", "join-1", "Ada"));
 
 		assertThat(parser.parse("""
-				{"v":1,"type":"room.leave","roomId":"abcd-efgh-jkmp"}
+				{"v":2,"type":"room.leave","roomId":"abcd-efgh-jkmp"}
 				"""))
 				.isEqualTo(new ClientMessage.Leave("abcd-efgh-jkmp", null));
 
 		ClientMessage.Relay offer = (ClientMessage.Relay) parser.parse("""
-				{"v":1,"type":"rtc.offer","roomId":"abcd-efgh-jkmp","to":"peer-b",
+				{"v":2,"type":"rtc.offer","roomId":"abcd-efgh-jkmp","to":"peer-b",
 				 "payload":{"description":{"type":"offer","sdp":"v=0"}}}
 				""");
 		assertThat(offer.type()).isEqualTo("rtc.offer");
 		assertThat(offer.payload().at("/description/sdp").asString()).isEqualTo("v=0");
 
 		ClientMessage.Relay answer = (ClientMessage.Relay) parser.parse("""
-				{"v":1.0,"type":"rtc.answer","roomId":"abcd-efgh-jkmp","to":"peer-b",
+				{"v":2.0,"type":"rtc.answer","roomId":"abcd-efgh-jkmp","to":"peer-b",
 				 "payload":{"description":{"type":"answer"}}}
 				""");
 		assertThat(answer.type()).isEqualTo("rtc.answer");
 
 		ClientMessage.Relay ice = (ClientMessage.Relay) parser.parse("""
-				{"v":1,"type":"rtc.ice","roomId":"abcd-efgh-jkmp","to":"peer-b",
+				{"v":2,"type":"rtc.ice","roomId":"abcd-efgh-jkmp","to":"peer-b",
 				 "payload":{"candidate":{"candidate":"","sdpMid":null,
 				 "sdpMLineIndex":0.0,"usernameFragment":"ufrag"}}}
 				""");
 		assertThat(ice.payload().at("/candidate/sdpMid").isNull()).isTrue();
 
 		ClientMessage.Relay endOfCandidates = (ClientMessage.Relay) parser.parse("""
-				{"v":1,"type":"rtc.ice","roomId":"abcd-efgh-jkmp","to":"peer-b",
+				{"v":2,"type":"rtc.ice","roomId":"abcd-efgh-jkmp","to":"peer-b",
 				 "payload":{"candidate":null}}
 				""");
 		assertThat(endOfCandidates.payload().get("candidate").isNull()).isTrue();
 	}
 
 	@Test
+	void acceptsAndPreservesNegotiationIdsForEveryRelayPayload() {
+		String negotiationId = "n".repeat(ProtocolParser.MAX_NEGOTIATION_ID_LENGTH);
+
+		for (String type : new String[] {"rtc.offer", "rtc.answer", "rtc.ice"}) {
+			ClientMessage.Relay relay = (ClientMessage.Relay) parser.parse(
+					relayJson(type, negotiationId));
+
+			assertThat(relay.type()).isEqualTo(type);
+			assertThat(relay.payload().get("negotiationId").asString()).isEqualTo(negotiationId);
+		}
+	}
+
+	@Test
+	void rejectsBlankAndOversizedNegotiationIdsForEveryRelayPayload() {
+		String[] invalidNegotiationIds = {
+				"",
+				" ",
+				"n".repeat(ProtocolParser.MAX_NEGOTIATION_ID_LENGTH + 1)
+		};
+
+		for (String type : new String[] {"rtc.offer", "rtc.answer", "rtc.ice"}) {
+			for (String negotiationId : invalidNegotiationIds) {
+				assertInvalid(relayJson(type, negotiationId), "$.payload.negotiationId");
+			}
+		}
+	}
+
+	@Test
 	void rejectsUnknownAndClientOwnedSenderFieldsAtEveryLevel() {
 		assertInvalid("""
-				{"v":1,"type":"room.join","roomId":"abcd-efgh-jkmp","from":"spoofed",
+				{"v":2,"type":"room.join","roomId":"abcd-efgh-jkmp","from":"spoofed",
 				 "payload":{"displayName":"Ada"}}
 				""", "$");
 		assertInvalid("""
-				{"v":1,"type":"rtc.offer","roomId":"abcd-efgh-jkmp","to":"peer",
+				{"v":2,"type":"rtc.offer","roomId":"abcd-efgh-jkmp","to":"peer",
 				 "payload":{"description":{"type":"offer","sdp":"v=0","extra":true}}}
 				""", "$.payload.description");
 		assertInvalid("""
-				{"v":1,"type":"rtc.ice","roomId":"abcd-efgh-jkmp","to":"peer",
+				{"v":2,"type":"rtc.ice","roomId":"abcd-efgh-jkmp","to":"peer",
 				 "payload":{"candidate":{"candidate":"candidate:1","networkCost":10}}}
 				""", "$.payload.candidate");
 	}
@@ -80,7 +108,7 @@ class ProtocolParserTest {
 	void doesNotExposeAnOversizedUnexpectedPropertyNameInThePublicErrorMessage() {
 		String unexpectedProperty = "x".repeat(ProtocolValidationException.MAX_PUBLIC_MESSAGE_LENGTH + 1);
 		String message = """
-				{"v":1,"type":"room.join","roomId":"abcd-efgh-jkmp","%s":true,
+				{"v":2,"type":"room.join","roomId":"abcd-efgh-jkmp","%s":true,
 				 "payload":{"displayName":"Ada"}}
 				""".formatted(unexpectedProperty);
 
@@ -109,15 +137,15 @@ class ProtocolParserTest {
 	@Test
 	void rejectsNullOptionalFieldsExceptIceNullableFields() {
 		assertInvalid("""
-				{"v":1,"type":"room.join","roomId":"abcd-efgh-jkmp","requestId":null,
+				{"v":2,"type":"room.join","roomId":"abcd-efgh-jkmp","requestId":null,
 				 "payload":{"displayName":"Ada"}}
 				""", "$.requestId");
 		assertInvalid("""
-				{"v":1,"type":"rtc.offer","roomId":"abcd-efgh-jkmp","to":"peer",
+				{"v":2,"type":"rtc.offer","roomId":"abcd-efgh-jkmp","to":"peer",
 				 "payload":{"description":{"type":"offer","sdp":null}}}
 				""", "$.payload.description.sdp");
 		assertInvalid("""
-				{"v":1,"type":"rtc.offer","roomId":"abcd-efgh-jkmp","to":null,
+				{"v":2,"type":"rtc.offer","roomId":"abcd-efgh-jkmp","to":null,
 				 "payload":{"description":{"type":"offer"}}}
 				""", "$.to");
 	}
@@ -125,19 +153,19 @@ class ProtocolParserTest {
 	@Test
 	void enforcesNormalizedNamesAndAllLengthAndNumberBounds() {
 		assertInvalid("""
-				{"v":1,"type":"room.join","roomId":" abcd-efgh-jkmp",
+				{"v":2,"type":"room.join","roomId":" abcd-efgh-jkmp",
 				 "payload":{"displayName":"Ada"}}
 				""", "$.roomId");
 		assertInvalid("""
-				{"v":1,"type":"room.join","roomId":"abcd-efgh-jkmp",
+				{"v":2,"type":"room.join","roomId":"abcd-efgh-jkmp",
 				 "payload":{"displayName":"Ada "}}
 				""", "$.payload.displayName");
 		assertInvalid("""
-				{"v":1,"type":"rtc.ice","roomId":"abcd-efgh-jkmp","to":"peer",
+				{"v":2,"type":"rtc.ice","roomId":"abcd-efgh-jkmp","to":"peer",
 				 "payload":{"candidate":{"candidate":"candidate:1","sdpMLineIndex":65536}}}
 				""", "$.payload.candidate.sdpMLineIndex");
 		assertInvalid("""
-				{"v":2,"type":"room.leave","roomId":"abcd-efgh-jkmp"}
+				{"v":1,"type":"room.leave","roomId":"abcd-efgh-jkmp"}
 				""", "$.v");
 	}
 
@@ -187,19 +215,19 @@ class ProtocolParserTest {
 	@Test
 	void rejectsNonCanonicalRoomIdsAndEcmaScriptWhitespaceNames() {
 		assertInvalid(
-				"{\"v\":1,\"type\":\"room.join\",\"roomId\":\"abcd-efgh-jkmp\","
+				"{\"v\":2,\"type\":\"room.join\",\"roomId\":\"abcd-efgh-jkmp\","
 						+ "\"payload\":{\"displayName\":\"\\u00a0Ada\"}}",
 				"$.payload.displayName");
 		assertInvalid(
-				"{\"v\":1,\"type\":\"room.join\",\"roomId\":\"abcd-efgh-jkmp\","
+				"{\"v\":2,\"type\":\"room.join\",\"roomId\":\"abcd-efgh-jkmp\","
 						+ "\"payload\":{\"displayName\":\"\\ufeff\"}}",
 				"$.payload.displayName");
 		assertInvalid(
-				"{\"v\":1,\"type\":\"room.join\",\"roomId\":\"abcd-efgi-jkmp\","
+				"{\"v\":2,\"type\":\"room.join\",\"roomId\":\"abcd-efgi-jkmp\","
 						+ "\"payload\":{\"displayName\":\"Ada\"}}",
 				"$.roomId");
 		assertInvalid(
-				"{\"v\":1,\"type\":\"room.join\",\"roomId\":\"ABCD-efgh-jkmp\","
+				"{\"v\":2,\"type\":\"room.join\",\"roomId\":\"ABCD-efgh-jkmp\","
 						+ "\"payload\":{\"displayName\":\"Ada\"}}",
 				"$.roomId");
 	}
@@ -210,7 +238,7 @@ class ProtocolParserTest {
 		assertInvalid("[]", "$");
 		assertInvalid("null", "$");
 		assertThatThrownBy(() -> parser.parse(
-						"{\"v\":1,\"type\":\"room.leave\",\"roomId\":\"abcd-efgh-jkmp\"} true"))
+						"{\"v\":2,\"type\":\"room.leave\",\"roomId\":\"abcd-efgh-jkmp\"} true"))
 				.isInstanceOf(MalformedJsonException.class);
 	}
 
@@ -232,6 +260,25 @@ class ProtocolParserTest {
 		ObjectNode description = message.putObject("payload").putObject("description");
 		description.put("type", "offer");
 		description.put("sdp", sdp);
+		return message.toString();
+	}
+
+	private String relayJson(String type, String negotiationId) {
+		ObjectNode message = objectMapper.createObjectNode();
+		message.put("v", ProtocolParser.PROTOCOL_VERSION);
+		message.put("type", type);
+		message.put("roomId", "abcd-efgh-jkmp");
+		message.put("to", "peer-b");
+		ObjectNode payload = message.putObject("payload");
+		payload.put("negotiationId", negotiationId);
+		if ("rtc.ice".equals(type)) {
+			payload.putNull("candidate");
+		}
+		else {
+			ObjectNode description = payload.putObject("description");
+			description.put("type", type.substring("rtc.".length()));
+			description.put("sdp", "v=0");
+		}
 		return message.toString();
 	}
 }

@@ -13,6 +13,22 @@ import {
   utf8ByteLength,
 } from '../src/index.js';
 
+const MAX_NEGOTIATION_ID_LENGTH = 128;
+const RELAY_PAYLOAD_CASES = [
+  {
+    type: 'rtc.offer',
+    contents: { description: { type: 'offer', sdp: 'v=0' } },
+  },
+  {
+    type: 'rtc.answer',
+    contents: { description: { type: 'answer', sdp: 'v=0' } },
+  },
+  {
+    type: 'rtc.ice',
+    contents: { candidate: null },
+  },
+] as const;
+
 describe('client message validation', () => {
   it.each([
     {
@@ -66,6 +82,46 @@ describe('client message validation', () => {
     expect(isClientMessage(message)).toBe(true);
   });
 
+  it.each(RELAY_PAYLOAD_CASES)(
+    'accepts a maximum-length negotiation id for $type',
+    ({ type, contents }) => {
+      const message = {
+        v: PROTOCOL_VERSION,
+        type,
+        roomId: 'abcd-efgh-jkmp',
+        to: 'peer-b',
+        payload: {
+          ...contents,
+          negotiationId: 'n'.repeat(MAX_NEGOTIATION_ID_LENGTH),
+        },
+      };
+
+      expect(parseClientMessage(message)).toEqual(message);
+      expect(isClientMessage(message)).toBe(true);
+    },
+  );
+
+  it.each(
+    RELAY_PAYLOAD_CASES.flatMap(({ type, contents }) =>
+      ['', ' ', 'n'.repeat(MAX_NEGOTIATION_ID_LENGTH + 1)].map((negotiationId) => ({
+        type,
+        contents,
+        negotiationId,
+      })),
+    ),
+  )('rejects an invalid negotiation id for $type', ({ type, contents, negotiationId }) => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type,
+      roomId: 'abcd-efgh-jkmp',
+      to: 'peer-b',
+      payload: { ...contents, negotiationId },
+    };
+
+    expect(() => parseClientMessage(message)).toThrow('$.payload.negotiationId');
+    expect(isClientMessage(message)).toBe(false);
+  });
+
   it('rejects a sender identity supplied by a client', () => {
     const spoofed = {
       v: PROTOCOL_VERSION,
@@ -95,10 +151,10 @@ describe('client message validation', () => {
   );
 
   it.each([
-    [{ v: 2, type: 'room.leave', roomId: 'abcd-efgh-jkmp' }],
+    [{ v: 1, type: 'room.leave', roomId: 'abcd-efgh-jkmp' }],
     [
       {
-        v: 1,
+        v: PROTOCOL_VERSION,
         type: 'room.join',
         roomId: ' abcd-efgh-jkmp ',
         payload: { displayName: 'Ada' },
@@ -106,7 +162,7 @@ describe('client message validation', () => {
     ],
     [
       {
-        v: 1,
+        v: PROTOCOL_VERSION,
         type: 'rtc.offer',
         roomId: 'abcd-efgh-jkmp',
         to: 'peer-b',
@@ -115,7 +171,7 @@ describe('client message validation', () => {
     ],
     [
       {
-        v: 1,
+        v: PROTOCOL_VERSION,
         type: 'rtc.ice',
         roomId: 'abcd-efgh-jkmp',
         to: 'peer-b',
@@ -225,6 +281,46 @@ describe('server message validation', () => {
   ])('accepts $type', (message) => {
     expect(parseServerMessage(message)).toEqual(message);
     expect(isServerMessage(message)).toBe(true);
+  });
+
+  it.each(RELAY_PAYLOAD_CASES)(
+    'accepts a maximum-length negotiation id for $type',
+    ({ type, contents }) => {
+      const message = {
+        v: PROTOCOL_VERSION,
+        type,
+        roomId: 'abcd-efgh-jkmp',
+        from: 'peer-b',
+        payload: {
+          ...contents,
+          negotiationId: 'n'.repeat(MAX_NEGOTIATION_ID_LENGTH),
+        },
+      };
+
+      expect(parseServerMessage(message)).toEqual(message);
+      expect(isServerMessage(message)).toBe(true);
+    },
+  );
+
+  it.each(
+    RELAY_PAYLOAD_CASES.flatMap(({ type, contents }) =>
+      ['', ' ', 'n'.repeat(MAX_NEGOTIATION_ID_LENGTH + 1)].map((negotiationId) => ({
+        type,
+        contents,
+        negotiationId,
+      })),
+    ),
+  )('rejects an invalid negotiation id for $type', ({ type, contents, negotiationId }) => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type,
+      roomId: 'abcd-efgh-jkmp',
+      from: 'peer-b',
+      payload: { ...contents, negotiationId },
+    };
+
+    expect(() => parseServerMessage(message)).toThrow('$.payload.negotiationId');
+    expect(isServerMessage(message)).toBe(false);
   });
 
   it('rejects an unknown signaling error code', () => {

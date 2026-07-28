@@ -17,6 +17,7 @@ const MAX_ROOM_ID_LENGTH = 14;
 const MAX_PEER_ID_LENGTH = 128;
 const MAX_DISPLAY_NAME_LENGTH = 64;
 const MAX_REQUEST_ID_LENGTH = 128;
+const MAX_NEGOTIATION_ID_LENGTH = MAX_REQUEST_ID_LENGTH;
 const MAX_CANDIDATE_LENGTH = 8 * 1024;
 const MAX_ERROR_MESSAGE_LENGTH = 1_024;
 
@@ -190,7 +191,8 @@ function validateDescriptionPayload(
   path: string,
 ): void {
   const payload = record(input, path);
-  exactKeys(payload, ['description'], path);
+  exactKeys(payload, ['description', 'negotiationId'], path);
+  optionalNegotiationId(payload.negotiationId, `${path}.negotiationId`);
   const description = record(payload.description, `${path}.description`);
   exactKeys(description, ['type', 'sdp'], `${path}.description`);
   literal(description.type, expectedType, `${path}.description.type`);
@@ -201,7 +203,8 @@ function validateDescriptionPayload(
 
 function validateIcePayload(input: unknown, path: string): void {
   const payload = record(input, path);
-  exactKeys(payload, ['candidate'], path);
+  exactKeys(payload, ['candidate', 'negotiationId'], path);
+  optionalNegotiationId(payload.negotiationId, `${path}.negotiationId`);
   if (payload.candidate === null) {
     return;
   }
@@ -276,6 +279,12 @@ function roomId(input: unknown, path: string): void {
 function optionalRequestId(input: unknown, path: string): void {
   if (input !== undefined) {
     boundedNonBlankString(input, MAX_REQUEST_ID_LENGTH, path);
+  }
+}
+
+function optionalNegotiationId(input: unknown, path: string): void {
+  if (input !== undefined) {
+    boundedNonBlankString(input, MAX_NEGOTIATION_ID_LENGTH, path);
   }
 }
 

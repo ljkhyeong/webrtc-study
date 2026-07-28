@@ -13,11 +13,12 @@ import tools.jackson.databind.node.ObjectNode;
 @Component
 public class ProtocolParser {
 
-	public static final int PROTOCOL_VERSION = 1;
+	public static final int PROTOCOL_VERSION = 2;
 	public static final int MAX_ROOM_ID_LENGTH = 14;
 	public static final int MAX_PEER_ID_LENGTH = 128;
 	public static final int MAX_DISPLAY_NAME_LENGTH = 64;
 	public static final int MAX_REQUEST_ID_LENGTH = 128;
+	public static final int MAX_NEGOTIATION_ID_LENGTH = MAX_REQUEST_ID_LENGTH;
 	public static final int MAX_SIGNALING_FRAME_BYTES = 64 * 1024;
 	public static final int MAX_SDP_BYTES = 48 * 1024;
 	public static final int MAX_CANDIDATE_LENGTH = 8 * 1024;
@@ -99,7 +100,9 @@ public class ProtocolParser {
 		exactKeys(message, Set.of("v", "type", "roomId", "requestId", "to", "payload"), "$");
 		RelayEnvelope envelope = relayEnvelope(message);
 		ObjectNode payload = object(message.get("payload"), "$.payload");
-		exactKeys(payload, Set.of("description"), "$.payload");
+		exactKeys(payload, Set.of("description", "negotiationId"), "$.payload");
+		optionalNonBlankString(
+				payload, "negotiationId", MAX_NEGOTIATION_ID_LENGTH, "$.payload.negotiationId");
 		ObjectNode description = object(payload.get("description"), "$.payload.description");
 		exactKeys(description, Set.of("type", "sdp"), "$.payload.description");
 		textLiteral(description.get("type"), expectedType, "$.payload.description.type");
@@ -118,7 +121,9 @@ public class ProtocolParser {
 		exactKeys(message, Set.of("v", "type", "roomId", "requestId", "to", "payload"), "$");
 		RelayEnvelope envelope = relayEnvelope(message);
 		ObjectNode payload = object(message.get("payload"), "$.payload");
-		exactKeys(payload, Set.of("candidate"), "$.payload");
+		exactKeys(payload, Set.of("candidate", "negotiationId"), "$.payload");
+		optionalNonBlankString(
+				payload, "negotiationId", MAX_NEGOTIATION_ID_LENGTH, "$.payload.negotiationId");
 		JsonNode candidateNode = payload.get("candidate");
 		if (candidateNode == null) {
 			throw fail("$.payload.candidate", "is required");
