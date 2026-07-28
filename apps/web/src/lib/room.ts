@@ -62,3 +62,11 @@ export function roomIdFromPath(pathname: string) {
 export function pathForRoom(roomId: string) {
   return `/room/${encodeURIComponent(roomId)}`;
 }
+
+export function canonicalRoomUrl(roomId: string, currentUrl: string) {
+  const current = new URL(currentUrl);
+  if (current.protocol !== 'https:' && current.protocol !== 'http:') {
+    throw new Error('Room links require an HTTP origin');
+  }
+  return new URL(pathForRoom(roomId), current.origin).toString();
+}

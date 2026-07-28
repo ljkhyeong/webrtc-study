@@ -18,7 +18,8 @@ public class ProtocolParser {
 	public static final int MAX_PEER_ID_LENGTH = 128;
 	public static final int MAX_DISPLAY_NAME_LENGTH = 64;
 	public static final int MAX_REQUEST_ID_LENGTH = 128;
-	public static final int MAX_SDP_LENGTH = 64 * 1024;
+	public static final int MAX_SIGNALING_FRAME_BYTES = 64 * 1024;
+	public static final int MAX_SDP_BYTES = 48 * 1024;
 	public static final int MAX_CANDIDATE_LENGTH = 8 * 1024;
 
 	private static final Set<String> CLIENT_TYPES = Set.of(
@@ -35,6 +36,14 @@ public class ProtocolParser {
 	}
 
 	public ClientMessage parse(String rawMessage) {
+		if (rawMessage != null && utf8ByteLength(rawMessage) > MAX_SIGNALING_FRAME_BYTES) {
+			throw fail(
+					"$",
+					"serialized message must contain at most "
+							+ MAX_SIGNALING_FRAME_BYTES
+							+ " UTF-8 bytes");
+		}
+
 		JsonNode parsed;
 		try (JsonParser jsonParser = objectMapper.createParser(rawMessage)) {
 			parsed = objectMapper.readTree(jsonParser);
@@ -95,7 +104,7 @@ public class ProtocolParser {
 		exactKeys(description, Set.of("type", "sdp"), "$.payload.description");
 		textLiteral(description.get("type"), expectedType, "$.payload.description.type");
 		if (description.has("sdp")) {
-			boundedString(description.get("sdp"), MAX_SDP_LENGTH, "$.payload.description.sdp");
+			boundedUtf8String(description.get("sdp"), MAX_SDP_BYTES, "$.payload.description.sdp");
 		}
 		return new ClientMessage.Relay(
 				"rtc." + expectedType,
@@ -227,6 +236,41 @@ public class ProtocolParser {
 			throw fail(path, "must contain at most " + maximumLength + " characters");
 		}
 		return value;
+	}
+
+	private static String boundedUtf8String(JsonNode input, int maximumBytes, String path) {
+		if (input == null || !input.isString()) {
+			throw fail(path, "must be a string");
+		}
+		String value = input.asString();
+		if (utf8ByteLength(value) > maximumBytes) {
+			throw fail(path, "must contain at most " + maximumBytes + " UTF-8 bytes");
+		}
+		return value;
+	}
+
+	static long utf8ByteLength(String value) {
+		long bytes = 0;
+		for (int index = 0; index < value.length(); index++) {
+			char codeUnit = value.charAt(index);
+			if (codeUnit <= 0x007F) {
+				bytes += 1;
+			}
+			else if (codeUnit <= 0x07FF) {
+				bytes += 2;
+			}
+			else if (Character.isHighSurrogate(codeUnit)
+					&& index + 1 < value.length()
+					&& Character.isLowSurrogate(value.charAt(index + 1))) {
+				bytes += 4;
+				index++;
+			}
+			else {
+				// Match TextEncoder: an unpaired surrogate becomes U+FFFD.
+				bytes += 3;
+			}
+		}
+		return bytes;
 	}
 
 	private static String requiredText(JsonNode input, String path) {

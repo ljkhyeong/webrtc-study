@@ -49,13 +49,13 @@ function roomErrorMessage(issue: RoomIssue | null | undefined): string | undefin
   }
 }
 
-function roomWarningMessage(issue: RoomIssue | null | undefined): string | undefined {
+export function roomWarningMessage(issue: RoomIssue | null | undefined): string | undefined {
   if (!issue) {
     return undefined;
   }
   switch (issue.code) {
     case 'signaling-reconnecting':
-      return '스터디 서버에 다시 연결하는 중입니다. 현재 통화 정보는 유지됩니다.';
+      return '스터디 서버에 다시 연결하는 중입니다. 카메라와 마이크는 유지되지만 참가자 연결은 다시 설정됩니다.';
     case 'rtc-configuration-update-failed':
       return '일부 참가자의 TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.';
     default:
@@ -241,7 +241,9 @@ function ActiveRoom({
           return;
         }
 
-        sessionRef.current?.updateRtcConfiguration(loaded.configuration);
+        sessionRef.current?.updateRtcConfiguration(loaded.configuration, {
+          restartIce: true,
+        });
         setTurnRefreshWarning('');
         if (loaded.turnExpiresAt !== null) {
           scheduleTurnRefresh(loaded.turnExpiresAt);
@@ -354,6 +356,7 @@ function ActiveRoom({
         text: message.text,
         sentAt: message.sentAt,
         isLocal: message.isLocal,
+        deliveryState: message.deliveryState,
       })) ?? [],
     [snapshot?.messages],
   );

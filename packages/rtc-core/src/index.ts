@@ -14,6 +14,7 @@ export {
 export {
   RoomSession,
   createRoomSession,
+  type ChatDeliveryState,
   type ChatMessage,
   type LocalMediaSnapshot,
   type ParticipantSnapshot,

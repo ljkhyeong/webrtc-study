@@ -13,6 +13,7 @@ import {
   UsersIcon,
 } from './Icons';
 import { type ParticipantView, VideoTile } from './VideoTile';
+import { canonicalRoomUrl } from '../lib/room';
 
 export interface ChatMessageView {
   id: string;
@@ -20,6 +21,7 @@ export interface ChatMessageView {
   text: string;
   sentAt: number;
   isLocal: boolean;
+  deliveryState?: 'pending' | 'sent' | 'failed' | 'received';
 }
 
 interface RoomViewProps {
@@ -45,8 +47,49 @@ const messageTime = new Intl.DateTimeFormat('ko-KR', {
   hour12: false,
 });
 
-async function copyInviteLink() {
-  const inviteUrl = window.location.href;
+function ChatMessageTime({
+  sentAt,
+  deliveryState,
+}: {
+  sentAt: number;
+  deliveryState: ChatMessageView['deliveryState'];
+}) {
+  const deliveryLabel =
+    deliveryState === 'pending' ? ' · 전송 중' : deliveryState === 'failed' ? ' · 전송 실패' : '';
+  const date = new Date(sentAt);
+  if (!Number.isFinite(sentAt) || Number.isNaN(date.getTime())) {
+    return <time>{`시간 미상${deliveryLabel}`}</time>;
+  }
+
+  try {
+    return (
+      <time dateTime={date.toISOString()}>
+        {messageTime.format(date)}
+        {deliveryLabel}
+      </time>
+    );
+  } catch {
+    return <time>{`시간 미상${deliveryLabel}`}</time>;
+  }
+}
+
+export function countNewRemoteMessages(
+  messages: ChatMessageView[],
+  previousLastMessageId: string | null,
+) {
+  if (messages.length === 0) {
+    return 0;
+  }
+  const previousIndex =
+    previousLastMessageId === null
+      ? -1
+      : messages.findIndex((item) => item.id === previousLastMessageId);
+  const unseen = previousIndex >= 0 ? messages.slice(previousIndex + 1) : messages;
+  return unseen.filter((item) => !item.isLocal).length;
+}
+
+async function copyInviteLink(roomId: string) {
+  const inviteUrl = canonicalRoomUrl(roomId, window.location.href);
   if (navigator.clipboard) {
     await navigator.clipboard.writeText(inviteUrl);
     return;
@@ -82,17 +125,21 @@ export function RoomView({
   const [message, setMessage] = useState('');
   const [copied, setCopied] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const previousMessageCount = useRef(messages.length);
+  const previousLastMessageId = useRef<string | null>(messages.at(-1)?.id ?? null);
+  const hasObservedMessages = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (messages.length > previousMessageCount.current && !chatOpen) {
-      const newRemoteMessages = messages
-        .slice(previousMessageCount.current)
-        .filter((item) => !item.isLocal).length;
+    if (!hasObservedMessages.current) {
+      hasObservedMessages.current = true;
+      previousLastMessageId.current = messages.at(-1)?.id ?? null;
+      return;
+    }
+    if (!chatOpen) {
+      const newRemoteMessages = countNewRemoteMessages(messages, previousLastMessageId.current);
       setUnreadCount((count) => count + newRemoteMessages);
     }
-    previousMessageCount.current = messages.length;
+    previousLastMessageId.current = messages.at(-1)?.id ?? null;
   }, [chatOpen, messages]);
 
   useEffect(() => {
@@ -106,7 +153,7 @@ export function RoomView({
 
   const handleCopy = async () => {
     try {
-      await copyInviteLink();
+      await copyInviteLink(roomId);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -236,9 +283,10 @@ export function RoomView({
                 >
                   <header>
                     <strong>{chatMessage.isLocal ? '나' : chatMessage.senderName}</strong>
-                    <time dateTime={new Date(chatMessage.sentAt).toISOString()}>
-                      {messageTime.format(chatMessage.sentAt)}
-                    </time>
+                    <ChatMessageTime
+                      sentAt={chatMessage.sentAt}
+                      deliveryState={chatMessage.deliveryState}
+                    />
                   </header>
                   <p>{chatMessage.text}</p>
                 </article>

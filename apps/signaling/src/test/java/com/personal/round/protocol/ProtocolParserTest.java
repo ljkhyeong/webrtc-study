@@ -7,14 +7,17 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 class ProtocolParserTest {
 
+	private ObjectMapper objectMapper;
 	private ProtocolParser parser;
 
 	@BeforeEach
 	void setUp() {
-		parser = new ProtocolParser(new ObjectMapper());
+		objectMapper = new ObjectMapper();
+		parser = new ProtocolParser(objectMapper);
 	}
 
 	@Test
@@ -139,6 +142,49 @@ class ProtocolParserTest {
 	}
 
 	@Test
+	void acceptsMaximumAsciiAndMultibyteSdpWithinTheTransportFrameBudget() {
+		String[] maximumSdpValues = {
+				"x".repeat(ProtocolParser.MAX_SDP_BYTES),
+				"가".repeat(ProtocolParser.MAX_SDP_BYTES / 3)
+		};
+
+		for (String sdp : maximumSdpValues) {
+			String json = offerJson(
+					sdp,
+					"p".repeat(ProtocolParser.MAX_PEER_ID_LENGTH),
+					"r".repeat(ProtocolParser.MAX_REQUEST_ID_LENGTH));
+
+			assertThat(ProtocolParser.utf8ByteLength(sdp))
+					.isEqualTo(ProtocolParser.MAX_SDP_BYTES);
+			assertThat(ProtocolParser.utf8ByteLength(json))
+					.isLessThanOrEqualTo(ProtocolParser.MAX_SIGNALING_FRAME_BYTES);
+			assertThat(parser.parse(json)).isInstanceOf(ClientMessage.Relay.class);
+		}
+	}
+
+	@Test
+	void rejectsAsciiAndMultibyteSdpOverTheUtf8ByteBudget() {
+		assertInvalid(
+				offerJson("x".repeat(ProtocolParser.MAX_SDP_BYTES + 1), "peer-b", null),
+				"$.payload.description.sdp");
+		assertInvalid(
+				offerJson("가".repeat(ProtocolParser.MAX_SDP_BYTES / 3 + 1), "peer-b", null),
+				"$.payload.description.sdp");
+	}
+
+	@Test
+	void rejectsAnEscapeHeavySdpWhoseSerializedFrameExceeds64KiB() {
+		String sdp = "\n".repeat(ProtocolParser.MAX_SDP_BYTES);
+		String json = offerJson(sdp, "peer-b", null);
+
+		assertThat(ProtocolParser.utf8ByteLength(sdp))
+				.isEqualTo(ProtocolParser.MAX_SDP_BYTES);
+		assertThat(ProtocolParser.utf8ByteLength(json))
+				.isGreaterThan(ProtocolParser.MAX_SIGNALING_FRAME_BYTES);
+		assertInvalid(json, "$");
+	}
+
+	@Test
 	void rejectsNonCanonicalRoomIdsAndEcmaScriptWhitespaceNames() {
 		assertInvalid(
 				"{\"v\":1,\"type\":\"room.join\",\"roomId\":\"abcd-efgh-jkmp\","
@@ -172,5 +218,20 @@ class ProtocolParserTest {
 		assertThatThrownBy(() -> parser.parse(json))
 				.isInstanceOf(ProtocolValidationException.class)
 				.hasMessageContaining(expectedPath);
+	}
+
+	private String offerJson(String sdp, String to, String requestId) {
+		ObjectNode message = objectMapper.createObjectNode();
+		message.put("v", ProtocolParser.PROTOCOL_VERSION);
+		message.put("type", "rtc.offer");
+		message.put("roomId", "abcd-efgh-jkmp");
+		if (requestId != null) {
+			message.put("requestId", requestId);
+		}
+		message.put("to", to);
+		ObjectNode description = message.putObject("payload").putObject("description");
+		description.put("type", "offer");
+		description.put("sdp", sdp);
+		return message.toString();
 	}
 }

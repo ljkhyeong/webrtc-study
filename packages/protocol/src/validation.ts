@@ -17,9 +17,11 @@ const MAX_ROOM_ID_LENGTH = 14;
 const MAX_PEER_ID_LENGTH = 128;
 const MAX_DISPLAY_NAME_LENGTH = 64;
 const MAX_REQUEST_ID_LENGTH = 128;
-const MAX_SDP_LENGTH = 64 * 1024;
 const MAX_CANDIDATE_LENGTH = 8 * 1024;
 const MAX_ERROR_MESSAGE_LENGTH = 1_024;
+
+export const MAX_SIGNALING_FRAME_BYTES = 64 * 1024;
+export const MAX_SDP_BYTES = 48 * 1024;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -35,6 +37,7 @@ export class ProtocolValidationError extends Error {
 
 export function parseClientMessage(input: unknown): ClientMessage {
   const message = record(input, '$');
+  assertSerializedFrameWithinBudget(message);
   literal(message.v, PROTOCOL_VERSION, '$.v');
   oneOf(message.type, CLIENT_MESSAGE_TYPES, '$.type');
 
@@ -70,6 +73,7 @@ export function parseClientMessage(input: unknown): ClientMessage {
 
 export function parseServerMessage(input: unknown): ServerMessage {
   const message = record(input, '$');
+  assertSerializedFrameWithinBudget(message);
   literal(message.v, PROTOCOL_VERSION, '$.v');
   oneOf(message.type, SERVER_MESSAGE_TYPES, '$.type');
 
@@ -134,6 +138,35 @@ export function isServerMessage(input: unknown): input is ServerMessage {
   }
 }
 
+export function serializeClientMessage(input: unknown): string {
+  return serializeFrame(parseClientMessage(input) as unknown as UnknownRecord);
+}
+
+export function utf8ByteLength(value: string): number {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit <= 0x7f) {
+      bytes += 1;
+    } else if (codeUnit <= 0x7ff) {
+      bytes += 2;
+    } else if (
+      codeUnit >= 0xd800 &&
+      codeUnit <= 0xdbff &&
+      index + 1 < value.length &&
+      value.charCodeAt(index + 1) >= 0xdc00 &&
+      value.charCodeAt(index + 1) <= 0xdfff
+    ) {
+      bytes += 4;
+      index += 1;
+    } else {
+      // TextEncoder replaces an unpaired surrogate with U+FFFD.
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
 function relayEnvelope(message: UnknownRecord): void {
   roomId(message.roomId, '$.roomId');
   optionalRequestId(message.requestId, '$.requestId');
@@ -162,7 +195,7 @@ function validateDescriptionPayload(
   exactKeys(description, ['type', 'sdp'], `${path}.description`);
   literal(description.type, expectedType, `${path}.description.type`);
   if (description.sdp !== undefined) {
-    boundedString(description.sdp, MAX_SDP_LENGTH, `${path}.description.sdp`);
+    boundedUtf8String(description.sdp, MAX_SDP_BYTES, `${path}.description.sdp`);
   }
 }
 
@@ -273,6 +306,35 @@ function boundedString(input: unknown, maximumLength: number, path: string): voi
   if (input.length > maximumLength) {
     fail(path, `must contain at most ${maximumLength} characters`);
   }
+}
+
+function boundedUtf8String(input: unknown, maximumBytes: number, path: string): void {
+  if (typeof input !== 'string') {
+    fail(path, 'must be a string');
+  }
+  if (utf8ByteLength(input) > maximumBytes) {
+    fail(path, `must contain at most ${maximumBytes} UTF-8 bytes`);
+  }
+}
+
+function assertSerializedFrameWithinBudget(message: UnknownRecord): void {
+  serializeFrame(message);
+}
+
+function serializeFrame(message: UnknownRecord): string {
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(message);
+  } catch {
+    fail('$', 'must be serializable as JSON');
+  }
+  if (serialized === undefined) {
+    fail('$', 'must be serializable as a JSON object');
+  }
+  if (utf8ByteLength(serialized) > MAX_SIGNALING_FRAME_BYTES) {
+    fail('$', `serialized message must contain at most ${MAX_SIGNALING_FRAME_BYTES} UTF-8 bytes`);
+  }
+  return serialized;
 }
 
 function literal<T extends string | number>(

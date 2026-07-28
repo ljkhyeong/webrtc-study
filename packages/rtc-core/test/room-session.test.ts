@@ -123,12 +123,17 @@ class FakeMediaStream {
 class FakeDataChannel {
   readyState: RTCDataChannelState = 'open';
   readonly sent: string[] = [];
+  readonly sendErrors: Error[] = [];
   onopen: ((event: Event) => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onclose: ((event: Event) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
 
   send(data: string): void {
+    const error = this.sendErrors.shift();
+    if (error !== undefined) {
+      throw error;
+    }
     this.sent.push(data);
   }
 
@@ -142,11 +147,20 @@ class FakeDataChannel {
   }
 
   receive(message: unknown): void {
-    this.onmessage?.({ data: JSON.stringify(message) } as MessageEvent);
+    this.receiveRaw(JSON.stringify(message));
+  }
+
+  receiveRaw(data: unknown): void {
+    this.onmessage?.({ data } as MessageEvent);
   }
 
   fail(): void {
     this.onerror?.({} as Event);
+  }
+
+  remoteClose(): void {
+    this.readyState = 'closed';
+    this.onclose?.({} as Event);
   }
 }
 
@@ -164,6 +178,7 @@ class FakePeerConnection {
   readonly channels: FakeDataChannel[] = [];
   readonly offerOptions: (RTCOfferOptions | undefined)[] = [];
   readonly configurationCalls: RTCConfiguration[] = [];
+  readonly createOfferErrors: Error[] = [];
   setConfigurationError: Error | null = null;
   closed = false;
 
@@ -182,6 +197,10 @@ class FakePeerConnection {
 
   async createOffer(options?: RTCOfferOptions): Promise<RTCSessionDescriptionInit> {
     this.offerOptions.push(options);
+    const error = this.createOfferErrors.shift();
+    if (error !== undefined) {
+      throw error;
+    }
     return {
       type: 'offer',
       sdp: options?.iceRestart === true ? 'restart-offer-sdp' : 'offer-sdp',
@@ -248,9 +267,11 @@ function createHarness(
     preparedMediaStream?: MediaStream | null;
     createId?: () => string;
     now?: () => number;
+    displayName?: string;
     recovery?: RoomSessionRecoveryOptions;
     rtcConfiguration?: RTCConfiguration;
     onSocketCreated?: (socket: FakeWebSocket, index: number) => void;
+    onPeerConnectionCreated?: (peer: FakePeerConnection, index: number) => void;
   } = {},
 ): Harness {
   const sockets: FakeWebSocket[] = [];
@@ -261,7 +282,7 @@ function createHarness(
 
   const session = createRoomSession({
     roomId: ROOM_ID,
-    displayName: 'Jin',
+    displayName: overrides.displayName ?? 'Jin',
     signalingUrl: 'ws://localhost:8787',
     webSocketFactory: () => {
       const socket = new FakeWebSocket();
@@ -272,6 +293,7 @@ function createHarness(
     peerConnectionFactory: (configuration) => {
       const peer = new FakePeerConnection(configuration);
       peerConnections.push(peer);
+      overrides.onPeerConnectionCreated?.(peer, peerConnections.length - 1);
       return peer as unknown as RTCPeerConnection;
     },
     mediaDevices: {
@@ -408,6 +430,22 @@ describe('RoomSession', () => {
     expect(harness.session.getLocalStream()).toBeNull();
   });
 
+  it('validates an outbound signaling message before writing to the socket', async () => {
+    const harness = createHarness({
+      displayName: 'J'.repeat(65),
+    });
+    const joining = expect(harness.session.join()).rejects.toThrow(
+      'must contain at most 64 characters',
+    );
+
+    await flushMicrotasks();
+    harness.socket.open();
+    await joining;
+
+    expect(harness.socket.sent).toEqual([]);
+    expect(harness.session.getSnapshot().status).toBe('error');
+  });
+
   it('adopts prepared pre-join media without requesting it again and stops it on leave', async () => {
     const preparedAudio = new FakeTrack('audio');
     preparedAudio.enabled = false;
@@ -540,6 +578,91 @@ describe('RoomSession', () => {
     ]);
   });
 
+  it('retries one transient initial offer failure instead of leaving the peer failed', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          maxReconnectAttempts: 1,
+          reconnectInitialDelayMs: 10,
+        },
+        onPeerConnectionCreated: (peer) => {
+          peer.createOfferErrors.push(new Error('transient offer failure'));
+        },
+      });
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+      const peer = harness.peerConnections[0];
+
+      expect(peer?.offerOptions).toEqual([undefined]);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: { code: 'peer-negotiation-retrying' },
+        participants: [
+          expect.objectContaining({ peerId: 'self' }),
+          expect.objectContaining({ peerId: 'peer-a', connectionState: 'connecting' }),
+        ],
+      });
+
+      await vi.advanceTimersByTimeAsync(10);
+      await flushMicrotasks();
+
+      expect(peer?.offerOptions).toEqual([undefined, undefined]);
+      expect(peer?.closed).toBe(false);
+      expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(1);
+      expect(harness.session.getSnapshot().participants).toContainEqual(
+        expect.objectContaining({
+          peerId: 'peer-a',
+          connectionState: 'negotiating',
+        }),
+      );
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops the initial offer retry after the bounded second failure', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          maxReconnectAttempts: 1,
+          reconnectInitialDelayMs: 10,
+        },
+        onPeerConnectionCreated: (peer) => {
+          peer.createOfferErrors.push(
+            new Error('initial offer failure'),
+            new Error('retry offer failure'),
+          );
+        },
+      });
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+      const peer = harness.peerConnections[0];
+
+      await vi.advanceTimersByTimeAsync(10);
+      await flushMicrotasks();
+      await vi.runAllTimersAsync();
+
+      expect(peer?.offerOptions).toEqual([undefined, undefined]);
+      expect(peer?.closed).toBe(true);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: { code: 'peer-negotiation-failed' },
+        participants: [
+          expect.objectContaining({ peerId: 'self' }),
+          expect.objectContaining({ peerId: 'peer-a', connectionState: 'failed' }),
+        ],
+      });
+      expect(() => harness.session.sendChat('must not report success')).toThrow(
+        'Chat delivery to peer-a is unavailable',
+      );
+      expect(harness.session.getSnapshot().messages).toEqual([]);
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('defensively replaces RTC configuration for current and future peers without renegotiation', async () => {
     const initialUrls = ['stun:initial.example.test'];
     const initialIceServers: RTCIceServer[] = [{ urls: initialUrls }];
@@ -626,6 +749,63 @@ describe('RoomSession', () => {
     );
     expect(harness.sockets).toHaveLength(1);
     expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(offerCount);
+  });
+
+  it('lets only the deterministic initiator restart ICE after a TURN refresh', async () => {
+    const initiator = createHarness();
+    await joinSession(initiator, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+    await answerPeer(initiator, 'z-peer');
+    const initiatorPeer = initiator.peerConnections[0];
+    const initiatorChannel = initiatorPeer?.channels[0];
+    initiatorPeer?.setConnectionState('connected');
+
+    const refreshedConfiguration: RTCConfiguration = {
+      iceServers: [
+        {
+          urls: 'turn:refreshed.example.test',
+          username: 'refresh-user',
+          credential: 'refresh-credential',
+        },
+      ],
+    };
+    initiator.session.updateRtcConfiguration(refreshedConfiguration, {
+      restartIce: true,
+    });
+    await flushMicrotasks();
+
+    expect(initiatorPeer?.configurationCalls).toEqual([refreshedConfiguration]);
+    expect(initiatorPeer?.offerOptions).toEqual([undefined, { iceRestart: true }]);
+    expect(initiatorPeer?.channels[0]).toBe(initiatorChannel);
+    expect(initiator.socket.messagesOfType('rtc.offer').at(-1)).toMatchObject({
+      to: 'z-peer',
+      payload: {
+        description: { type: 'offer', sdp: 'restart-offer-sdp' },
+      },
+    });
+    await answerPeer(initiator, 'z-peer');
+    expect(initiator.session.getSnapshot().participants).toContainEqual(
+      expect.objectContaining({
+        peerId: 'z-peer',
+        connectionState: 'connected',
+      }),
+    );
+    await initiator.session.leave();
+
+    const responder = createHarness();
+    await joinSession(responder, [{ peerId: 'a-peer', displayName: 'Ara' }], 'z-self');
+    await answerPeer(responder, 'a-peer');
+    const responderPeer = responder.peerConnections[0];
+    responderPeer?.setConnectionState('connected');
+
+    responder.session.updateRtcConfiguration(refreshedConfiguration, {
+      restartIce: true,
+    });
+    await flushMicrotasks();
+
+    expect(responderPeer?.configurationCalls).toEqual([refreshedConfiguration]);
+    expect(responderPeer?.offerOptions).toEqual([undefined]);
+    expect(responder.socket.messagesOfType('rtc.offer')).toHaveLength(1);
+    await responder.session.leave();
   });
 
   it('reports one non-fatal warning when configuration refresh fails for current peers', async () => {
@@ -797,6 +977,69 @@ describe('RoomSession', () => {
     ]);
   });
 
+  it('bounds pending remote ICE candidates and retains the newest candidates', async () => {
+    const harness = createHarness();
+    await joinSession(harness);
+
+    harness.socket.serverMessage({
+      v: 1,
+      type: 'peer.joined',
+      roomId: ROOM_ID,
+      payload: {
+        participant: { peerId: 'peer-a', displayName: 'Ara' },
+      },
+    });
+    for (let index = 0; index <= 256; index += 1) {
+      harness.socket.serverMessage({
+        v: 1,
+        type: 'rtc.ice',
+        roomId: ROOM_ID,
+        from: 'peer-a',
+        payload: {
+          candidate: {
+            candidate: `candidate:${index}`,
+            sdpMid: '0',
+            sdpMLineIndex: 0,
+            usernameFragment: null,
+          },
+        },
+      });
+    }
+    await flushMicrotasks();
+
+    harness.socket.serverMessage({
+      v: 1,
+      type: 'rtc.offer',
+      roomId: ROOM_ID,
+      from: 'peer-a',
+      payload: {
+        description: { type: 'offer', sdp: 'remote-offer' },
+      },
+    });
+    await new Promise<void>((resolve) => {
+      globalThis.setTimeout(resolve, 0);
+    });
+
+    const peer = harness.peerConnections[0];
+    expect(peer?.addedCandidates).toHaveLength(256);
+    expect(peer?.addedCandidates.at(0)).toEqual({
+      candidate: 'candidate:1',
+      sdpMid: '0',
+      sdpMLineIndex: 0,
+      usernameFragment: null,
+    });
+    expect(peer?.addedCandidates.at(-1)).toEqual({
+      candidate: 'candidate:256',
+      sdpMid: '0',
+      sdpMLineIndex: 0,
+      usernameFragment: null,
+    });
+    expect(harness.session.getSnapshot().warning).toEqual({
+      code: 'ice-candidate-queue-overflow',
+      message: 'Oldest pending ICE candidate for peer-a was discarded',
+    });
+  });
+
   it('toggles local tracks and announces media state', async () => {
     const harness = createHarness();
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
@@ -843,6 +1086,7 @@ describe('RoomSession', () => {
       text: 'hello',
       sentAt: 1_234,
       isLocal: true,
+      deliveryState: 'sent',
     });
     expect(JSON.parse(channel?.sent.at(-1) ?? '')).toEqual({
       type: 'chat.message',
@@ -883,6 +1127,173 @@ describe('RoomSession', () => {
         text: 'hi back',
         sentAt: 1_235,
         isLocal: false,
+        deliveryState: 'received',
+      },
+    ]);
+  });
+
+  it('rejects oversized and structurally invalid DataChannel messages', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    expect(channel).toBeDefined();
+    if (channel === undefined) {
+      return;
+    }
+
+    channel.receive({
+      type: 'chat.message',
+      id: 'message-invalid-date',
+      senderId: 'peer-a',
+      text: 'invalid date',
+      sentAt: 1e300,
+    });
+    channel.receive({
+      type: 'chat.message',
+      id: 'x'.repeat(129),
+      senderId: 'peer-a',
+      text: 'oversized id',
+      sentAt: 1_000,
+    });
+    channel.receive({
+      type: 'chat.message',
+      id: 'message-oversized-sender',
+      senderId: 'x'.repeat(129),
+      text: 'oversized sender',
+      sentAt: 1_000,
+    });
+    channel.receive({
+      type: 'chat.message',
+      id: 'message-extra-key',
+      senderId: 'peer-a',
+      text: 'extra key',
+      sentAt: 1_000,
+      unexpected: true,
+    });
+    channel.receive({
+      type: 'participant.media',
+      audioEnabled: true,
+      videoEnabled: true,
+      unexpected: true,
+    });
+
+    expect(
+      harness.session
+        .getSnapshot()
+        .participants.find((participant) => participant.peerId === 'peer-a'),
+    ).toMatchObject({
+      audioEnabled: false,
+      videoEnabled: false,
+    });
+
+    const oversizedRaw = JSON.stringify({
+      type: 'chat.message',
+      id: 'message-oversized-raw',
+      senderId: 'peer-a',
+      text: '가'.repeat(12_000),
+      sentAt: 1_000,
+    });
+    expect(oversizedRaw.length).toBeLessThan(32 * 1024);
+    expect(new TextEncoder().encode(oversizedRaw).byteLength).toBeGreaterThan(32 * 1024);
+    const parseSpy = vi.spyOn(JSON, 'parse');
+    try {
+      channel.receiveRaw(oversizedRaw);
+      expect(parseSpy).not.toHaveBeenCalled();
+    } finally {
+      parseSpy.mockRestore();
+    }
+
+    channel.receive({
+      type: 'participant.media',
+      audioEnabled: true,
+      videoEnabled: true,
+    });
+    channel.receive({
+      type: 'chat.message',
+      id: 'message-valid',
+      senderId: 'spoofed-peer',
+      text: 'valid message',
+      sentAt: 1_001,
+    });
+
+    expect(
+      harness.session
+        .getSnapshot()
+        .participants.find((participant) => participant.peerId === 'peer-a'),
+    ).toMatchObject({
+      audioEnabled: true,
+      videoEnabled: true,
+    });
+    expect(harness.session.getSnapshot().messages).toEqual([
+      {
+        id: 'message-valid',
+        senderId: 'peer-a',
+        senderName: 'Ara',
+        text: 'valid message',
+        sentAt: 1_001,
+        isLocal: false,
+        deliveryState: 'received',
+      },
+    ]);
+  });
+
+  it('rate-limits DataChannel work per peer and resets the fixed window', async () => {
+    let now = 10_000;
+    const harness = createHarness({ now: () => now });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    expect(channel).toBeDefined();
+    if (channel === undefined) {
+      return;
+    }
+
+    for (let index = 0; index < 120; index += 1) {
+      channel.receiveRaw('not-json');
+    }
+    channel.receive({
+      type: 'chat.message',
+      id: 'message-over-limit',
+      senderId: 'peer-a',
+      text: 'must be dropped',
+      sentAt: now,
+    });
+
+    expect(harness.session.getSnapshot()).toMatchObject({
+      messages: [],
+      warning: {
+        code: 'data-channel-rate-limit',
+        message: 'Ignored excessive DataChannel messages from peer-a',
+      },
+    });
+
+    now -= 1;
+    channel.receive({
+      type: 'chat.message',
+      id: 'message-after-clock-rollback',
+      senderId: 'peer-a',
+      text: 'must remain limited',
+      sentAt: now,
+    });
+    expect(harness.session.getSnapshot().messages).toEqual([]);
+
+    now += 10_001;
+    channel.receive({
+      type: 'chat.message',
+      id: 'message-after-window',
+      senderId: 'peer-a',
+      text: 'accepted after reset',
+      sentAt: now,
+    });
+
+    expect(harness.session.getSnapshot().messages).toEqual([
+      {
+        id: 'message-after-window',
+        senderId: 'peer-a',
+        senderName: 'Ara',
+        text: 'accepted after reset',
+        sentAt: now,
+        isLocal: false,
+        deliveryState: 'received',
       },
     ]);
   });
@@ -966,6 +1377,194 @@ describe('RoomSession', () => {
     ]);
   });
 
+  it('preserves pending chat across a send exception and completes it after channel recovery', async () => {
+    const harness = createHarness({
+      createId: () => 'message-send-retry',
+      now: () => 3_500,
+    });
+    await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+    await answerPeer(harness, 'z-peer');
+    const peer = harness.peerConnections[0];
+    const failedChannel = peer?.channels[0];
+    peer?.setConnectionState('connected');
+    failedChannel?.sendErrors.push(new Error('buffer rejected'));
+
+    const local = harness.session.sendChat('retry this message');
+    await flushMicrotasks();
+
+    expect(local.deliveryState).toBe('pending');
+    expect(failedChannel?.readyState).toBe('closed');
+    expect(peer?.channels).toHaveLength(2);
+    expect(peer?.offerOptions).toEqual([undefined, { iceRestart: true }]);
+    expect(harness.session.getSnapshot().messages).toContainEqual(
+      expect.objectContaining({
+        id: 'message-send-retry',
+        deliveryState: 'pending',
+      }),
+    );
+
+    await answerPeer(harness, 'z-peer');
+    const recoveredChannel = peer?.channels[1];
+    expect(
+      recoveredChannel?.sent
+        .map((raw) => JSON.parse(raw) as { type: string; id?: string })
+        .filter(({ type }) => type === 'chat.message'),
+    ).toEqual([
+      expect.objectContaining({
+        type: 'chat.message',
+        id: 'message-send-retry',
+      }),
+    ]);
+    expect(harness.session.getSnapshot().messages).toContainEqual(
+      expect.objectContaining({
+        id: 'message-send-retry',
+        deliveryState: 'sent',
+      }),
+    );
+    await harness.session.leave();
+  });
+
+  it('recreates a closed channel and flushes chat that was waiting for it', async () => {
+    const harness = createHarness({
+      createId: () => 'message-channel-close',
+      now: () => 3_600,
+    });
+    await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+    await answerPeer(harness, 'z-peer');
+    const peer = harness.peerConnections[0];
+    const closedChannel = peer?.channels[0];
+    peer?.setConnectionState('connected');
+    if (peer === undefined || closedChannel === undefined) {
+      throw new Error('Expected an initial peer and DataChannel');
+    }
+    closedChannel.readyState = 'connecting';
+    harness.session.sendChat('wait through close');
+
+    closedChannel.remoteClose();
+    await flushMicrotasks();
+
+    expect(peer.channels).toHaveLength(2);
+    expect(peer.offerOptions).toEqual([undefined, { iceRestart: true }]);
+    expect(harness.session.getSnapshot().messages).toContainEqual(
+      expect.objectContaining({
+        id: 'message-channel-close',
+        deliveryState: 'pending',
+      }),
+    );
+
+    await answerPeer(harness, 'z-peer');
+    expect(
+      peer.channels[1]?.sent
+        .map((raw) => JSON.parse(raw) as { type: string; id?: string })
+        .filter(({ type }) => type === 'chat.message'),
+    ).toEqual([
+      expect.objectContaining({
+        type: 'chat.message',
+        id: 'message-channel-close',
+      }),
+    ]);
+    expect(harness.session.getSnapshot().messages).toContainEqual(
+      expect.objectContaining({
+        id: 'message-channel-close',
+        deliveryState: 'sent',
+      }),
+    );
+    await harness.session.leave();
+  });
+
+  it('waits for the designated remote initiator after a responder channel closes', async () => {
+    const harness = createHarness({
+      createId: () => 'message-responder-close',
+      now: () => 3_650,
+    });
+    await joinSession(harness, [{ peerId: 'a-peer', displayName: 'Ara' }], 'z-self');
+    await answerPeer(harness, 'a-peer');
+    const peer = harness.peerConnections[0];
+    const channel = peer?.channels[0];
+    peer?.setConnectionState('connected');
+    if (peer === undefined || channel === undefined) {
+      throw new Error('Expected an initial peer and DataChannel');
+    }
+    channel.readyState = 'connecting';
+    harness.session.sendChat('wait for the remote initiator');
+
+    channel.remoteClose();
+    await flushMicrotasks();
+
+    expect(peer.channels).toHaveLength(1);
+    expect(peer.offerOptions).toEqual([undefined]);
+    expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(1);
+    expect(harness.session.getSnapshot().messages).toContainEqual(
+      expect.objectContaining({
+        id: 'message-responder-close',
+        deliveryState: 'pending',
+      }),
+    );
+    await harness.session.leave();
+  });
+
+  it('rejects a saturated outbound queue without a false local success', async () => {
+    let sequence = 0;
+    const harness = createHarness({
+      createId: () => `message-${sequence++}`,
+      now: () => 3_700,
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    if (channel === undefined) {
+      throw new Error('Expected an initial DataChannel');
+    }
+    channel.readyState = 'connecting';
+
+    for (let index = 0; index < 50; index += 1) {
+      harness.session.sendChat(`queued ${index}`);
+    }
+
+    expect(() => harness.session.sendChat('must not appear locally')).toThrow(
+      'Chat delivery queue for peer-a is full',
+    );
+    expect(harness.session.getSnapshot().messages).toHaveLength(50);
+    expect(harness.session.getSnapshot().messages).not.toContainEqual(
+      expect.objectContaining({ text: 'must not appear locally' }),
+    );
+    expect(
+      harness.session
+        .getSnapshot()
+        .messages.every((message) => message.deliveryState === 'pending'),
+    ).toBe(true);
+    await harness.session.leave();
+  });
+
+  it('marks queued local chat as failed when its peer leaves before delivery', async () => {
+    const harness = createHarness({
+      createId: () => 'message-peer-left',
+      now: () => 3_800,
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    if (channel === undefined) {
+      throw new Error('Expected an initial DataChannel');
+    }
+    channel.readyState = 'connecting';
+    harness.session.sendChat('do not report this as sent');
+
+    harness.socket.serverMessage({
+      v: 1,
+      type: 'peer.left',
+      roomId: ROOM_ID,
+      payload: { peerId: 'peer-a' },
+    });
+    await flushMicrotasks();
+
+    expect(harness.session.getSnapshot().messages).toContainEqual(
+      expect.objectContaining({
+        id: 'message-peer-left',
+        deliveryState: 'failed',
+      }),
+    );
+    await harness.session.leave();
+  });
+
   it('reports a data channel error when the peer remains active', async () => {
     vi.useFakeTimers();
     try {
@@ -978,7 +1577,7 @@ describe('RoomSession', () => {
 
       expect(harness.session.getSnapshot().warning).toEqual({
         code: 'data-channel-error',
-        message: 'Chat channel to peer-a encountered an error',
+        message: 'Chat channel to peer-a encountered an error and is being recovered',
       });
     } finally {
       vi.useRealTimers();
