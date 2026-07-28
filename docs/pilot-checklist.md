@@ -99,6 +99,9 @@ toggle, leave, rejoin, invite-copy behavior, and zero unexpected console errors.
 - [ ] Two and four participants remain connected for at least thirty minutes.
 - [ ] Six physical participants remain connected for at least ninety minutes.
 - [ ] A two-participant relay-only session remains connected for four hours.
+- [ ] Six relay-only participants can join concurrently without coturn
+      `user-quota`, `total-quota`, or relay-port exhaustion; observed allocation
+      counts are recorded before changing the defaults.
 - [ ] Six-person video uses the documented low-bandwidth capture policy and
       keeps audio intelligible.
 - [ ] RTT, packet loss, outbound bitrate, process memory, open file

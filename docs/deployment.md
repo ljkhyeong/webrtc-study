@@ -44,19 +44,23 @@ addresses and ports; stateful return traffic must also be allowed.
 
 The sample also limits abuse and overload:
 
-- `TURN_USER_QUOTA=12` permits up to 12 concurrent allocations for one issued
-  user. A six-person mesh can create candidates for five peer connections, and
-  the remaining quota leaves room for pooled candidates and ICE recovery.
-  Revisit this value from observed allocations in the real relay-only pilot.
-- `TURN_TOTAL_QUOTA=120` caps allocations across the server.
+- `TURN_USER_QUOTA=20` permits up to 20 concurrent allocations for one issued
+  user. A six-person mesh can gather against three advertised TURN transports
+  for five peer connections (up to 15 allocations), leaving five for overlap
+  during ICE recovery.
+- `TURN_TOTAL_QUOTA=100` matches the default 100-port relay range and caps
+  allocations across the server. Six fully relayed participants can consume up
+  to 90 allocations while gathering all three transports, leaving ten for
+  short recovery overlap.
 - `TURN_MAX_BPS=2000000` caps each TURN session at 2,000,000 bytes/s per input
   and output stream.
 - `TURN_BPS_CAPACITY=30000000` caps capacity allocated across all sessions at
   30,000,000 bytes/s per direction.
 
 Tune these four values from observed bitrate and concurrency. The total quota
-must be at least the user quota, and total bandwidth capacity must be at least
-the per-session limit.
+must be at least the user quota and no higher than the usable relay-port
+capacity unless the port range is expanded; total bandwidth capacity must be
+at least the per-session limit.
 
 ## Configure secrets and certificates
 
