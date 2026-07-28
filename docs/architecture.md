@@ -30,6 +30,28 @@ limited to six participants because upload bandwidth and CPU use grow with every
 - Room identity is an opaque string. BATON authentication can be added in front of signaling
   without changing the peer engine.
 
+## Identity and authorization boundary
+
+The standalone MVP intentionally uses an invitation-capability model: possession of a valid room
+ID is enough to join, and display names are not verified identities. Spring Security is therefore
+not installed just to create the appearance of authentication without a user or membership source.
+The WebSocket Origin policy, connection admission, frame limits, and TURN issuance quotas are abuse
+controls; they do not turn an anonymous visitor into an authorized study member.
+
+BATON integration should reuse BATON's existing security model at two explicit seams:
+
+1. Authenticate the `/signal` HTTP upgrade and the TURN credential POST through BATON's
+   `SecurityFilterChain`, preferably with the existing secure same-origin session cookie or a
+   short-lived one-time ticket rather than a long-lived token in the WebSocket URL.
+2. Carry the authenticated principal into the `WebSocketSession` and check BATON study membership
+   before accepting `room.join`. Protect TURN issuance with the same meeting membership and CSRF
+   policy.
+
+The signaling service must continue to own peer IDs, overwrite the wire-level sender identity, and
+relay SDP/ICE only between peers that are currently in the same room. A generic MVC interceptor,
+argument resolver, or STOMP message rule cannot replace these checks because ROUND uses raw
+WebSocket frames after the HTTP upgrade.
+
 ## Production boundary
 
 `localhost` is allowed to use camera and microphone without TLS. Any deployed environment must
