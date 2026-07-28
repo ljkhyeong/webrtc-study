@@ -14,10 +14,16 @@ public final class TestProperties {
 	private static final Duration DEFAULT_HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
 	private static final Duration DEFAULT_UNJOINED_TIMEOUT = Duration.ofSeconds(15);
 	private static final Duration DEFAULT_UNJOINED_SWEEP_INTERVAL = Duration.ofSeconds(1);
+	private static final Duration DEFAULT_SHUTDOWN_CLOSE_TIMEOUT = Duration.ofSeconds(5);
 	private static final Duration DEFAULT_ABUSE_WINDOW = Duration.ofSeconds(10);
 	private static final int DEFAULT_MAX_FRAMES_PER_SESSION_WINDOW = 600;
 	private static final int DEFAULT_MAX_FRAMES_PER_CLIENT_WINDOW = 1_200;
 	private static final int DEFAULT_MAX_FRAMES_GLOBAL_WINDOW = 3_600;
+	private static final long DEFAULT_MAX_BYTES_PER_SESSION_WINDOW = 4L * 1024 * 1024;
+	private static final long DEFAULT_MAX_BYTES_PER_CLIENT_WINDOW = 8L * 1024 * 1024;
+	private static final long DEFAULT_MAX_BYTES_GLOBAL_WINDOW = 24L * 1024 * 1024;
+	private static final long DEFAULT_MAX_OUTBOUND_QUEUE_BYTES = 2L * 1024 * 1024;
+	private static final long DEFAULT_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL = 64L * 1024 * 1024;
 	private static final int DEFAULT_MAX_TEXT_PAYLOAD_BYTES = 64 * 1024;
 
 	private static final Duration DEFAULT_TURN_CREDENTIAL_TTL = Duration.ofMinutes(10);
@@ -40,6 +46,29 @@ public final class TestProperties {
 				DEFAULT_MAX_CONNECTIONS_PER_CLIENT);
 	}
 
+	public static SignalingProperties signalingWithShutdownCloseTimeout(Duration timeout) {
+		SignalingProperties defaults = signaling();
+		return new SignalingProperties(
+				defaults.allowedOrigins(),
+				defaults.maxRoomSize(),
+				defaults.maxConnections(),
+				defaults.maxConnectionsPerClient(),
+				defaults.heartbeatInterval(),
+				defaults.unjoinedTimeout(),
+				defaults.unjoinedSweepInterval(),
+				timeout,
+				defaults.abuseWindow(),
+				defaults.maxFramesPerSessionWindow(),
+				defaults.maxFramesPerClientWindow(),
+				defaults.maxFramesGlobalWindow(),
+				defaults.maxBytesPerSessionWindow(),
+				defaults.maxBytesPerClientWindow(),
+				defaults.maxBytesGlobalWindow(),
+				defaults.maxOutboundQueueBytes(),
+				defaults.maxOutboundQueueBytesGlobal(),
+				defaults.maxTextPayloadBytes());
+	}
+
 	public static SignalingProperties signalingWithConnectionLimits(
 			int maxRoomSize,
 			int maxConnections,
@@ -60,6 +89,32 @@ public final class TestProperties {
 			int maxFramesPerSessionWindow,
 			int maxFramesPerClientWindow,
 			int maxFramesGlobalWindow) {
+		return signalingWithConnectionFrameAndByteLimits(
+				maxRoomSize,
+				maxConnections,
+				maxConnectionsPerClient,
+				maxFramesPerSessionWindow,
+				maxFramesPerClientWindow,
+				maxFramesGlobalWindow,
+				DEFAULT_MAX_BYTES_PER_SESSION_WINDOW,
+				DEFAULT_MAX_BYTES_PER_CLIENT_WINDOW,
+				DEFAULT_MAX_BYTES_GLOBAL_WINDOW,
+				DEFAULT_MAX_OUTBOUND_QUEUE_BYTES,
+				DEFAULT_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL);
+	}
+
+	public static SignalingProperties signalingWithConnectionFrameAndByteLimits(
+			int maxRoomSize,
+			int maxConnections,
+			int maxConnectionsPerClient,
+			int maxFramesPerSessionWindow,
+			int maxFramesPerClientWindow,
+			int maxFramesGlobalWindow,
+			long maxBytesPerSessionWindow,
+			long maxBytesPerClientWindow,
+			long maxBytesGlobalWindow,
+			long maxOutboundQueueBytes,
+			long maxOutboundQueueBytesGlobal) {
 		return new SignalingProperties(
 				DEFAULT_ALLOWED_ORIGINS,
 				maxRoomSize,
@@ -68,10 +123,16 @@ public final class TestProperties {
 				DEFAULT_HEARTBEAT_INTERVAL,
 				DEFAULT_UNJOINED_TIMEOUT,
 				DEFAULT_UNJOINED_SWEEP_INTERVAL,
+				DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
 				DEFAULT_ABUSE_WINDOW,
 				maxFramesPerSessionWindow,
 				maxFramesPerClientWindow,
 				maxFramesGlobalWindow,
+				maxBytesPerSessionWindow,
+				maxBytesPerClientWindow,
+				maxBytesGlobalWindow,
+				maxOutboundQueueBytes,
+				maxOutboundQueueBytesGlobal,
 				DEFAULT_MAX_TEXT_PAYLOAD_BYTES);
 	}
 
@@ -87,6 +148,51 @@ public final class TestProperties {
 				maxFramesPerSessionWindow,
 				maxFramesPerClientWindow,
 				maxFramesGlobalWindow);
+	}
+
+	public static SignalingProperties signalingWithFrameAndByteLimits(
+			int maxRoomSize,
+			int maxFramesPerSessionWindow,
+			int maxFramesPerClientWindow,
+			int maxFramesGlobalWindow,
+			long maxBytesPerSessionWindow,
+			long maxBytesPerClientWindow,
+			long maxBytesGlobalWindow,
+			long maxOutboundQueueBytes) {
+		return signalingWithFrameAndByteLimits(
+				maxRoomSize,
+				maxFramesPerSessionWindow,
+				maxFramesPerClientWindow,
+				maxFramesGlobalWindow,
+				maxBytesPerSessionWindow,
+				maxBytesPerClientWindow,
+				maxBytesGlobalWindow,
+				maxOutboundQueueBytes,
+				DEFAULT_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL);
+	}
+
+	public static SignalingProperties signalingWithFrameAndByteLimits(
+			int maxRoomSize,
+			int maxFramesPerSessionWindow,
+			int maxFramesPerClientWindow,
+			int maxFramesGlobalWindow,
+			long maxBytesPerSessionWindow,
+			long maxBytesPerClientWindow,
+			long maxBytesGlobalWindow,
+			long maxOutboundQueueBytes,
+			long maxOutboundQueueBytesGlobal) {
+		return signalingWithConnectionFrameAndByteLimits(
+				maxRoomSize,
+				DEFAULT_MAX_CONNECTIONS,
+				DEFAULT_MAX_CONNECTIONS_PER_CLIENT,
+				maxFramesPerSessionWindow,
+				maxFramesPerClientWindow,
+				maxFramesGlobalWindow,
+				maxBytesPerSessionWindow,
+				maxBytesPerClientWindow,
+				maxBytesGlobalWindow,
+				maxOutboundQueueBytes,
+				maxOutboundQueueBytesGlobal);
 	}
 
 	public static TurnProperties turn(List<String> urls, String sharedSecret) {

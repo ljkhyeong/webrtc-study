@@ -1,6 +1,7 @@
 package com.personal.round.turn;
 
 import com.personal.round.config.TurnProperties;
+import com.personal.round.net.ClientAddressKeyResolver;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
@@ -22,6 +23,7 @@ public class TurnCredentialService {
 	private final TurnProperties properties;
 	private final Clock clock;
 	private final TurnCredentialMetrics metrics;
+	private final ClientAddressKeyResolver clientAddressKeyResolver;
 	private final SecureRandom secureRandom = new SecureRandom();
 	private final AtomicLong issuanceSequence = new AtomicLong();
 	private final Map<String, IssuanceWindow> issuanceWindowsByClient;
@@ -31,10 +33,12 @@ public class TurnCredentialService {
 	public TurnCredentialService(
 			TurnProperties properties,
 			Clock clock,
-			TurnCredentialMetrics metrics) {
+			TurnCredentialMetrics metrics,
+			ClientAddressKeyResolver clientAddressKeyResolver) {
 		this.properties = properties;
 		this.clock = clock;
 		this.metrics = metrics;
+		this.clientAddressKeyResolver = clientAddressKeyResolver;
 		this.rateLimitWindowMillis = properties.rateLimitWindow().toMillis();
 		this.issuanceWindowsByClient = new LinkedHashMap<>(16, 0.75f, true) {
 			@Override
@@ -49,10 +53,10 @@ public class TurnCredentialService {
 			return Disabled.INSTANCE;
 		}
 
-		String clientKey =
-				clientAddress == null || clientAddress.isBlank() ? "unknown-client" : clientAddress;
-		long nowMillis = clock.millis();
+		String clientKey = clientAddressKeyResolver.resolve(clientAddress);
+		long nowMillis;
 		synchronized (issuanceWindowsByClient) {
+			nowMillis = clock.millis();
 			IssuanceWindow clientWindow = currentWindow(
 					issuanceWindowsByClient.get(clientKey), nowMillis);
 			IssuanceWindow globalWindow = currentWindow(globalIssuanceWindow, nowMillis);
@@ -159,8 +163,8 @@ public class TurnCredentialService {
 		}
 
 		private boolean isExpired(long nowMillis, long windowMillis) {
-			return nowMillis < startedAtMillis
-					|| nowMillis - startedAtMillis >= windowMillis;
+			return nowMillis >= startedAtMillis
+					&& nowMillis - startedAtMillis >= windowMillis;
 		}
 
 		private long retryAfterSeconds(long nowMillis, long windowMillis) {

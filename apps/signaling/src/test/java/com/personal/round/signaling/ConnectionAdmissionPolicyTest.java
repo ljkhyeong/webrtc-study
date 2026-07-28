@@ -3,6 +3,7 @@ package com.personal.round.signaling;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.personal.round.config.TestProperties;
+import com.personal.round.net.ClientAddressKeyResolver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetSocketAddress;
 import org.junit.jupiter.api.Test;
@@ -63,6 +64,24 @@ class ConnectionAdmissionPolicyTest {
 		assertThat(policy.reserve(FIRST_CLIENT).accepted()).isTrue();
 	}
 
+	@Test
+	void appliesOneConnectionLimitAcrossRotatingIpv6InterfaceIdentifiers() {
+		ConnectionAdmissionPolicy policy = policy(3, 1, new SimpleMeterRegistry());
+		InetSocketAddress first =
+				new InetSocketAddress("2001:db8:abcd:12::1", 41_000);
+		InetSocketAddress samePrefix =
+				new InetSocketAddress("2001:db8:abcd:12:ffff::beef", 42_000);
+		InetSocketAddress otherPrefix =
+				new InetSocketAddress("2001:db8:abcd:13::1", 41_000);
+
+		assertThat(policy.reserve(first).accepted()).isTrue();
+		assertThat(policy.reserve(samePrefix).rejection())
+				.isEqualTo(ConnectionAdmissionPolicy.Rejection.CLIENT_CAPACITY);
+		assertThat(policy.reserve(otherPrefix).accepted()).isTrue();
+		assertThat(policy.activeReservationCount(first)).isOne();
+		assertThat(policy.activeReservationCount(samePrefix)).isOne();
+	}
+
 	private static ConnectionAdmissionPolicy policy(
 			int maxConnections,
 			int maxConnectionsPerClient,
@@ -70,6 +89,7 @@ class ConnectionAdmissionPolicyTest {
 		return new ConnectionAdmissionPolicy(
 				TestProperties.signalingWithConnectionLimits(
 						1, maxConnections, maxConnectionsPerClient),
-				new SignalingMetrics(registry));
+				new SignalingMetrics(registry),
+				new ClientAddressKeyResolver());
 	}
 }

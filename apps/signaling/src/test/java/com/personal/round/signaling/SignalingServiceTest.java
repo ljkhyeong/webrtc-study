@@ -8,11 +8,13 @@ import static org.mockito.Mockito.when;
 
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.config.TestProperties;
+import com.personal.round.net.ClientAddressKeyResolver;
 import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ProtocolParser;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetSocketAddress;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -22,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -212,9 +215,10 @@ class SignalingServiceTest {
 		responsive.nextJson();
 
 		service.heartbeatSweep();
-		responsive.awaitMessage(PingMessage.class::isInstance);
+		PingMessage responsivePing = responsive.awaitPing();
 		sleeping.awaitMessage(PingMessage.class::isInstance);
-		service.markAlive(responsive.session());
+		service.markAlive(responsive.session(), payloadBytes(responsivePing));
+		clock.advanceMillis(properties(6).heartbeatInterval().toMillis());
 		service.heartbeatSweep();
 
 		sleeping.awaitClosed();
@@ -294,6 +298,35 @@ class SignalingServiceTest {
 	}
 
 	@Test
+	void heartbeatDeadlineDisconnectsAPeerWhosePingIsStuckInTheOutboundQueue()
+			throws Exception {
+		CountDownLatch firstSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseFirstSend = new CountDownLatch(1);
+		TestPeer slow = peer("heartbeat-queued", firstSendEntered, releaseFirstSend);
+		connect(slow);
+
+		try {
+			service.handle(slow.session(), join("Slow peer"));
+			assertThat(firstSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+			service.heartbeatSweep();
+			clock.advanceMillis(properties(6).heartbeatInterval().toMillis());
+			service.heartbeatSweep();
+
+			slow.awaitClosed();
+			assertThat(slow.closeStatus().get())
+					.isEqualTo(new CloseStatus(4000, "Heartbeat timeout"));
+			assertThat(service.connectedPeerCount()).isZero();
+			assertThat(meterRegistry.get("round.signaling.heartbeat.closes")
+					.counter()
+					.count()).isEqualTo(1);
+		}
+		finally {
+			releaseFirstSend.countDown();
+		}
+	}
+
+	@Test
 	void sendFailureDisconnectsOnceAndBroadcastsPeerLeft() throws Exception {
 		TestPeer ada = peer("ada");
 		TestPeer grace = peer("grace");
@@ -341,6 +374,187 @@ class SignalingServiceTest {
 		finally {
 			releaseFirstSend.countDown();
 		}
+	}
+
+	@Test
+	void outboundByteBudgetDisconnectsBeforeAFrameCountFlood() throws Exception {
+		service.stop();
+		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
+				1,
+				100,
+				200,
+				400,
+				1_000_000,
+				2_000_000,
+				4_000_000,
+				64 * 1024);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		CountDownLatch firstSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseFirstSend = new CountDownLatch(1);
+		TestPeer slow = peer("byte-overflow", firstSendEntered, releaseFirstSend);
+		connect(slow);
+
+		try {
+			service.handle(slow.session(), join("Slow peer"));
+			assertThat(firstSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+			String largeDetail = "x".repeat(32 * 1024);
+			service.sendInvalidMessage(slow.session(), largeDetail);
+			service.sendInvalidMessage(slow.session(), largeDetail);
+
+			slow.awaitClosed();
+			assertThat(slow.closeStatus().get())
+					.isEqualTo(new CloseStatus(1011, "Outbound queue overflow"));
+			assertThat(meterRegistry.get("round.signaling.outbound.queue.overflows")
+					.counter()
+					.count()).isEqualTo(1);
+		}
+		finally {
+			releaseFirstSend.countDown();
+		}
+	}
+
+	@Test
+	void disconnectKeepsInFlightBytesReservedUntilTheBlockedSendReturns() throws Exception {
+		CountDownLatch sendEntered = new CountDownLatch(1);
+		CountDownLatch releaseSend = new CountDownLatch(1);
+		TestPeer slow = peer("in-flight-accounting", sendEntered, releaseSend);
+		connect(slow);
+
+		service.sendInvalidMessage(slow.session(), "x".repeat(32 * 1024));
+		assertThat(sendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+		service.disconnect(slow.session());
+
+		assertThat(meterRegistry.get("round.signaling.outbound.queue.bytes")
+				.gauge()
+				.value()).isGreaterThan(32D * 1024D);
+
+		releaseSend.countDown();
+		assertThat(TestPeer.await(
+				() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
+						.gauge()
+						.value() == 0,
+				2_000)).isTrue();
+	}
+
+	@Test
+	void globalOutboundByteBudgetEvictsTheLargestReleasableSlowPeer()
+			throws Exception {
+		service.stop();
+		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
+				2,
+				100,
+				200,
+				400,
+				1_000_000,
+				2_000_000,
+				4_000_000,
+				128 * 1024,
+				160 * 1024);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		CountDownLatch firstSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseFirstSend = new CountDownLatch(1);
+		CountDownLatch secondSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseSecondSend = new CountDownLatch(1);
+		TestPeer first = peer("global-byte-queue-first", firstSendEntered, releaseFirstSend);
+		TestPeer second = peer("global-byte-queue-second", secondSendEntered, releaseSecondSend);
+		connect(first, second);
+
+		try {
+			String largeDetail = "x".repeat(48 * 1024);
+			service.sendInvalidMessage(first.session(), largeDetail);
+			assertThat(firstSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+			service.sendInvalidMessage(first.session(), largeDetail);
+			service.sendInvalidMessage(second.session(), largeDetail);
+			assertThat(secondSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+			service.sendInvalidMessage(second.session(), largeDetail);
+
+			first.awaitClosed();
+			assertThat(first.closeStatus().get())
+					.isEqualTo(new CloseStatus(1011, "Outbound queue overflow"));
+			assertThat(second.closeStatus().get()).isNull();
+			assertThat(service.connectedPeerCount()).isOne();
+			assertThat(meterRegistry.get("round.signaling.outbound.queue.overflows")
+					.counter()
+					.count()).isEqualTo(1);
+			assertThat(meterRegistry.get("round.signaling.outbound.queue.global_overflows")
+					.counter()
+					.count()).isEqualTo(1);
+			assertThat(meterRegistry.get("round.signaling.outbound.queue.bytes")
+					.gauge()
+					.value()).isBetween(144D * 1024D, 160D * 1024D);
+		}
+		finally {
+			releaseFirstSend.countDown();
+			releaseSecondSend.countDown();
+		}
+
+		second.awaitFrameCount(2);
+		assertThat(TestPeer.await(
+				() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
+						.gauge()
+						.value() == 0,
+				2_000)).isTrue();
+	}
+
+	@Test
+	void globalOutboundBudgetEvictsEnoughQueuedConsumersBeforeAdmittingAHealthyPeer()
+			throws Exception {
+		service.stop();
+		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
+				3,
+				100,
+				200,
+				400,
+				1_000_000,
+				2_000_000,
+				4_000_000,
+				64 * 1024,
+				120 * 1024);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		CountDownLatch firstSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseFirstSend = new CountDownLatch(1);
+		CountDownLatch secondSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseSecondSend = new CountDownLatch(1);
+		TestPeer first = peer("multi-eviction-first", firstSendEntered, releaseFirstSend);
+		TestPeer second = peer("multi-eviction-second", secondSendEntered, releaseSecondSend);
+		TestPeer healthy = peer("multi-eviction-healthy");
+		connect(first, second, healthy);
+
+		try {
+			String queuedDetail = "x".repeat(28 * 1024);
+			service.sendInvalidMessage(first.session(), queuedDetail);
+			assertThat(firstSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+			service.sendInvalidMessage(first.session(), queuedDetail);
+			service.sendInvalidMessage(second.session(), queuedDetail);
+			assertThat(secondSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+			service.sendInvalidMessage(second.session(), queuedDetail);
+
+			service.sendInvalidMessage(healthy.session(), "y".repeat(40 * 1024));
+
+			first.awaitClosed();
+			second.awaitClosed();
+			healthy.awaitTextMessage();
+			assertThat(healthy.closeStatus().get()).isNull();
+			assertThat(service.connectedPeerCount()).isOne();
+			assertThat(meterRegistry.get("round.signaling.outbound.queue.global_overflows")
+					.counter()
+					.count()).isEqualTo(1);
+		}
+		finally {
+			releaseFirstSend.countDown();
+			releaseSecondSend.countDown();
+		}
+
+		assertThat(TestPeer.await(
+				() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
+						.gauge()
+						.value() == 0,
+				2_000)).isTrue();
 	}
 
 	@Test
@@ -411,6 +625,91 @@ class SignalingServiceTest {
 		finally {
 			releaseSend.countDown();
 		}
+	}
+
+	@Test
+	void closesAllSessionsConcurrentlyWithinTheShutdownBudget() throws Exception {
+		int peerCount = 24;
+		CountDownLatch closeEntered = new CountDownLatch(peerCount);
+		CountDownLatch releaseClose = new CountDownLatch(1);
+		List<TestPeer> peers = new ArrayList<>();
+		for (int index = 0; index < peerCount; index++) {
+			TestPeer peer = peer("parallel-close-" + index);
+			doAnswer(invocation -> {
+				closeEntered.countDown();
+				if (!releaseClose.await(2, TimeUnit.SECONDS)) {
+					throw new java.io.IOException("Timed out waiting to release close");
+				}
+				peer.closeStatus().set(invocation.getArgument(0));
+				return null;
+			}).when(peer.session()).close(any(CloseStatus.class));
+			peers.add(peer);
+			assertThat(service.connect(peer.session())).isTrue();
+		}
+
+		CompletableFuture<Void> stopped = CompletableFuture.runAsync(service::stop);
+		try {
+			assertThat(closeEntered.await(1, TimeUnit.SECONDS)).isTrue();
+		}
+		finally {
+			releaseClose.countDown();
+		}
+		stopped.get(2, TimeUnit.SECONDS);
+
+		assertThat(peers)
+				.allSatisfy(peer -> assertThat(peer.closeStatus().get())
+						.isEqualTo(new CloseStatus(1001, "Server shutting down")));
+	}
+
+	@Test
+	void shutdownDeadlineIncludesCloseTasksThatIgnoreInterrupts() throws Exception {
+		service.stop();
+		SignalingProperties properties =
+				TestProperties.signalingWithShutdownCloseTimeout(Duration.ofMillis(100));
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		int peerCount = 4;
+		CountDownLatch closeEntered = new CountDownLatch(peerCount);
+		CountDownLatch releaseClose = new CountDownLatch(1);
+		List<TestPeer> peers = new ArrayList<>();
+		for (int index = 0; index < peerCount; index++) {
+			TestPeer peer = peer("interrupt-ignoring-close-" + index);
+			doAnswer(invocation -> {
+				closeEntered.countDown();
+				boolean released = false;
+				while (!released) {
+					try {
+						releaseClose.await();
+						released = true;
+					}
+					catch (InterruptedException ignored) {
+						// Simulate a transport close implementation that ignores interruption.
+					}
+				}
+				peer.closeStatus().set(invocation.getArgument(0));
+				return null;
+			}).when(peer.session()).close(any(CloseStatus.class));
+			peers.add(peer);
+			assertThat(service.connect(peer.session())).isTrue();
+		}
+
+		long startedAtNanos = System.nanoTime();
+		try {
+			service.stop();
+			long elapsedMillis =
+					TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
+
+			assertThat(closeEntered.getCount()).isZero();
+			assertThat(elapsedMillis).isLessThan(1_000);
+			assertThat(service.isRunning()).isFalse();
+		}
+		finally {
+			releaseClose.countDown();
+		}
+
+		assertThat(TestPeer.await(
+				() -> peers.stream().allMatch(peer -> peer.closeStatus().get() != null),
+				2_000)).isTrue();
 	}
 
 	@Test
@@ -487,6 +786,25 @@ class SignalingServiceTest {
 				.counter()
 				.count()).isZero();
 		assertThat(service.connectedPeerCount()).isEqualTo(5);
+	}
+
+	@Test
+	void backwardClockMovementDoesNotResetAnInboundQuotaWindow() throws Exception {
+		service.stop();
+		SignalingProperties properties =
+				TestProperties.signalingWithFrameLimits(1, 1, 2, 4);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		TestPeer peer = peer("clock-rollback");
+		connect(peer);
+		long windowStart = clock.millis();
+
+		assertThat(service.acceptInboundFrame(peer.session(), windowStart)).isTrue();
+		assertThat(service.acceptInboundFrame(peer.session(), windowStart - 1)).isFalse();
+
+		peer.awaitClosed();
+		assertThat(peer.closeStatus().get())
+				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
 	}
 
 	@Test
@@ -675,6 +993,105 @@ class SignalingServiceTest {
 	}
 
 	@Test
+	void closesOnlyTheSessionThatExhaustsItsInboundByteBudget() throws Exception {
+		service.stop();
+		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
+				2,
+				100,
+				200,
+				400,
+				10,
+				100,
+				200,
+				64 * 1024);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		TestPeer offender = peer("session-byte-offender");
+		TestPeer healthy = peer("session-byte-healthy");
+		connect(offender, healthy);
+
+		assertThat(service.acceptInboundFrame(offender.session(), 6)).isTrue();
+		assertThat(service.acceptInboundFrame(offender.session(), 5)).isFalse();
+
+		offender.awaitClosed();
+		assertThat(offender.closeStatus().get())
+				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
+		assertThat(healthy.closeStatus().get()).isNull();
+		assertThat(meterRegistry.get("round.signaling.frames.byte_limited")
+				.tag("scope", "session")
+				.counter()
+				.count()).isEqualTo(1);
+		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+				.counter()
+				.count()).isZero();
+	}
+
+	@Test
+	void sharesInboundByteBudgetAcrossConnectionsFromOneClient() throws Exception {
+		service.stop();
+		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
+				2,
+				100,
+				200,
+				400,
+				10,
+				10,
+				100,
+				64 * 1024);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
+		TestPeer first = peer("client-byte-first");
+		TestPeer second = peer("client-byte-second");
+		connectFrom(policy, "192.0.2.60", first, second);
+
+		assertThat(service.acceptInboundFrame(first.session(), 6)).isTrue();
+		assertThat(service.acceptInboundFrame(second.session(), 5)).isFalse();
+
+		assertThat(first.closeStatus().get()).isNull();
+		assertThat(second.closeStatus().get()).isNull();
+		assertThat(meterRegistry.get("round.signaling.frames.byte_limited")
+				.tag("scope", "client")
+				.counter()
+				.count()).isEqualTo(1);
+	}
+
+	@Test
+	void globalInboundByteBudgetDropsLoadWithoutClosingAnArbitraryPeer() throws Exception {
+		service.stop();
+		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
+				3,
+				100,
+				200,
+				400,
+				100,
+				100,
+				200,
+				64 * 1024);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
+		TestPeer first = peer("global-byte-first");
+		TestPeer second = peer("global-byte-second");
+		TestPeer third = peer("global-byte-third");
+		connectFrom(policy, "192.0.2.61", first);
+		connectFrom(policy, "192.0.2.62", second);
+		connectFrom(policy, "192.0.2.63", third);
+
+		assertThat(service.acceptInboundFrame(first.session(), 80)).isTrue();
+		assertThat(service.acceptInboundFrame(second.session(), 80)).isTrue();
+		assertThat(service.acceptInboundFrame(third.session(), 50)).isFalse();
+
+		assertThat(first.closeStatus().get()).isNull();
+		assertThat(second.closeStatus().get()).isNull();
+		assertThat(third.closeStatus().get()).isNull();
+		assertThat(meterRegistry.get("round.signaling.frames.byte_limited")
+				.tag("scope", "global")
+				.counter()
+				.count()).isEqualTo(1);
+	}
+
+	@Test
 	void globalOverloadDoesNotTurnAValidPongIntoAHeartbeatTimeout() throws Exception {
 		service.stop();
 		SignalingProperties properties =
@@ -698,8 +1115,11 @@ class SignalingServiceTest {
 		service.disconnect(secondLoad.session());
 
 		service.heartbeatSweep();
-		responsive.awaitMessage(PingMessage.class::isInstance);
-		handler.handleMessage(responsive.session(), new PongMessage());
+		PingMessage responsivePing = responsive.awaitPing();
+		handler.handleMessage(
+				responsive.session(),
+				new PongMessage(responsivePing.getPayload().asReadOnlyBuffer()));
+		clock.advanceMillis(properties(6).heartbeatInterval().toMillis());
 		service.heartbeatSweep();
 
 		responsive.awaitFrameCount(2);
@@ -711,6 +1131,33 @@ class SignalingServiceTest {
 		assertThat(meterRegistry.get("round.signaling.heartbeat.closes")
 				.counter()
 				.count()).isZero();
+	}
+
+	@Test
+	void forgedPongCannotResetAQueuedHeartbeatDeadline() throws Exception {
+		CountDownLatch firstSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseFirstSend = new CountDownLatch(1);
+		TestPeer slow = peer("heartbeat-forged-pong", firstSendEntered, releaseFirstSend);
+		connect(slow);
+
+		try {
+			service.handle(slow.session(), join("Slow peer"));
+			assertThat(firstSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+			service.heartbeatSweep();
+			service.markAlive(
+					slow.session(),
+					"forged-heartbeat-response".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			clock.advanceMillis(properties(6).heartbeatInterval().toMillis());
+			service.heartbeatSweep();
+
+			slow.awaitClosed();
+			assertThat(slow.closeStatus().get())
+					.isEqualTo(new CloseStatus(4000, "Heartbeat timeout"));
+		}
+		finally {
+			releaseFirstSend.countDown();
+		}
 	}
 
 	@Test
@@ -773,7 +1220,8 @@ class SignalingServiceTest {
 		service = service(properties, meterRegistry);
 		ConnectionAdmissionPolicy policy = new ConnectionAdmissionPolicy(
 				TestProperties.signalingWithConnectionLimits(1, 3, 3),
-				new SignalingMetrics(new SimpleMeterRegistry()));
+				new SignalingMetrics(new SimpleMeterRegistry()),
+				new ClientAddressKeyResolver());
 		TestPeer accepted = peer("reserved-accepted");
 		TestPeer rejected = peer("reserved-rejected");
 		attachReservation(accepted, policy.reserve(
@@ -810,7 +1258,8 @@ class SignalingServiceTest {
 	private ConnectionAdmissionPolicy admissionPolicy(SignalingProperties properties) {
 		return new ConnectionAdmissionPolicy(
 				properties,
-				new SignalingMetrics(new SimpleMeterRegistry()));
+				new SignalingMetrics(new SimpleMeterRegistry()),
+				new ClientAddressKeyResolver());
 	}
 
 	private void connectFrom(
@@ -916,6 +1365,13 @@ class SignalingServiceTest {
 		assertThat(message.at("/payload/code").asString()).isEqualTo(code);
 	}
 
+	private static byte[] payloadBytes(PingMessage pingMessage) {
+		var payload = pingMessage.getPayload().asReadOnlyBuffer();
+		byte[] bytes = new byte[payload.remaining()];
+		payload.get(bytes);
+		return bytes;
+	}
+
 	private static final class MutableClock extends Clock {
 
 		private Instant instant;
@@ -998,6 +1454,17 @@ class SignalingServiceTest {
 					return messages.stream().anyMatch(predicate);
 				}
 			}, 2_000)).isTrue();
+		}
+
+		PingMessage awaitPing() {
+			awaitMessage(PingMessage.class::isInstance);
+			synchronized (messages) {
+				return messages.stream()
+						.filter(PingMessage.class::isInstance)
+						.map(PingMessage.class::cast)
+						.findFirst()
+						.orElseThrow();
+			}
 		}
 
 		void awaitFrameCount(int expected) {

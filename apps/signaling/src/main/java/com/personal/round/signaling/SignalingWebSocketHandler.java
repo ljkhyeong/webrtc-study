@@ -45,13 +45,14 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 
 	@Override
 	protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-		if (!signalingService.acceptInboundFrame(session)) {
-			return;
-		}
-		if (message.getPayload().getBytes(StandardCharsets.UTF_8).length > maxTextPayloadBytes) {
+		int payloadBytes = message.getPayload().getBytes(StandardCharsets.UTF_8).length;
+		if (payloadBytes > maxTextPayloadBytes) {
 			signalingService.recordInvalidFrame();
 			session.close(MESSAGE_TOO_BIG);
 			signalingService.disconnect(session);
+			return;
+		}
+		if (!signalingService.acceptInboundFrame(session, payloadBytes)) {
 			return;
 		}
 
@@ -75,7 +76,7 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 
 	@Override
 	protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) {
-		if (!signalingService.acceptInboundFrame(session)) {
+		if (!signalingService.acceptInboundFrame(session, message.getPayloadLength())) {
 			return;
 		}
 		signalingService.sendInvalidMessage(session, "Binary messages are not supported.");
@@ -83,8 +84,11 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 
 	@Override
 	protected void handlePongMessage(WebSocketSession session, PongMessage message) {
-		signalingService.markAlive(session);
-		signalingService.acceptInboundFrame(session);
+		signalingService.acceptInboundFrame(session, message.getPayloadLength());
+		var payload = message.getPayload().asReadOnlyBuffer();
+		byte[] payloadBytes = new byte[payload.remaining()];
+		payload.get(payloadBytes);
+		signalingService.markAlive(session, payloadBytes);
 	}
 
 	@Override

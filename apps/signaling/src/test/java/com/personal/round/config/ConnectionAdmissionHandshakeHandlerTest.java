@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.personal.round.net.ClientAddressKeyResolver;
 import com.personal.round.signaling.ConnectionAdmissionPolicy;
 import com.personal.round.signaling.SignalingMetrics;
 import com.personal.round.signaling.SignalingService;
@@ -41,7 +42,8 @@ class ConnectionAdmissionHandshakeHandlerTest {
 		service = mock(SignalingService.class);
 		policy = new ConnectionAdmissionPolicy(
 				TestProperties.signalingWithConnectionLimits(6, 1_000, 1),
-				new SignalingMetrics(new SimpleMeterRegistry()));
+				new SignalingMetrics(new SimpleMeterRegistry()),
+				new ClientAddressKeyResolver());
 		delegate = mock(HandshakeHandler.class);
 		handler = new ConnectionAdmissionHandshakeHandler(service, policy, delegate);
 		request = mock(ServerHttpRequest.class);

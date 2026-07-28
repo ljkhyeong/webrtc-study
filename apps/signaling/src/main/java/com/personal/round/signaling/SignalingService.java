@@ -5,6 +5,9 @@ import com.personal.round.config.SignalingProperties;
 import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ProtocolParser;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Clock;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -13,8 +16,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -60,12 +67,20 @@ public class SignalingService implements SmartLifecycle {
 	private final Clock clock;
 	private final int maxRoomSize;
 	private final int maxConnections;
+	private final long heartbeatIntervalMs;
 	private final long unjoinedTimeoutMs;
 	private final long abuseWindowMs;
 	private final int maxFramesPerSessionWindow;
 	private final int maxFramesPerClientWindow;
 	private final int maxFramesGlobalWindow;
-	private final RateWindow globalInboundWindow = new RateWindow();
+	private final long maxBytesPerSessionWindow;
+	private final long maxBytesPerClientWindow;
+	private final long maxBytesGlobalWindow;
+	private final long maxOutboundQueueBytes;
+	private final long maxOutboundQueueBytesGlobal;
+	private final long shutdownCloseTimeoutMs;
+	private final UsageWindow globalInboundWindow = new UsageWindow();
+	private long globalOutboundBytes;
 	private volatile boolean acceptingConnections;
 	private volatile boolean running;
 
@@ -82,12 +97,20 @@ public class SignalingService implements SmartLifecycle {
 		this.clock = clock;
 		this.maxRoomSize = properties.maxRoomSize();
 		this.maxConnections = properties.maxConnections();
+		this.heartbeatIntervalMs = properties.heartbeatInterval().toMillis();
 		this.unjoinedTimeoutMs = properties.unjoinedTimeout().toMillis();
 		this.abuseWindowMs = properties.abuseWindow().toMillis();
 		this.maxFramesPerSessionWindow = properties.maxFramesPerSessionWindow();
 		this.maxFramesPerClientWindow = properties.maxFramesPerClientWindow();
 		this.maxFramesGlobalWindow = properties.maxFramesGlobalWindow();
+		this.maxBytesPerSessionWindow = properties.maxBytesPerSessionWindow();
+		this.maxBytesPerClientWindow = properties.maxBytesPerClientWindow();
+		this.maxBytesGlobalWindow = properties.maxBytesGlobalWindow();
+		this.maxOutboundQueueBytes = properties.maxOutboundQueueBytes();
+		this.maxOutboundQueueBytesGlobal = properties.maxOutboundQueueBytesGlobal();
+		this.shutdownCloseTimeoutMs = properties.shutdownCloseTimeout().toMillis();
 		metrics.updateState(0, 0, 0);
+		metrics.updateOutboundQueuedBytes(0);
 	}
 
 	public boolean connect(WebSocketSession session) {
@@ -152,39 +175,76 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	public boolean acceptInboundFrame(WebSocketSession session) {
-		return acceptInboundFrame(session, clock.millis());
+		return acceptInboundFrame(session, 0);
 	}
 
 	boolean acceptInboundFrame(WebSocketSession session, long nowMillis) {
+		return acceptInboundFrame(session, 0, () -> nowMillis);
+	}
+
+	public boolean acceptInboundFrame(WebSocketSession session, int payloadBytes) {
+		return acceptInboundFrame(session, payloadBytes, clock::millis);
+	}
+
+	private boolean acceptInboundFrame(
+			WebSocketSession session,
+			int payloadBytes,
+			LongSupplier nowMillisSupplier) {
+		if (payloadBytes < 0) {
+			throw new IllegalArgumentException("payloadBytes must not be negative");
+		}
 		WorkPlan workPlan = new WorkPlan();
 		boolean accepted = false;
 		synchronized (monitor) {
+			long nowMillis = nowMillisSupplier.getAsLong();
 			Peer peer = connectedPeers.get(session.getId());
 			if (peer != null && peer.connected) {
 				touchClientInboundStateLocked(peer);
-				boolean sessionAllowed = peer.inboundWindow.tryAcquire(
-						nowMillis, abuseWindowMs, maxFramesPerSessionWindow);
-				if (!sessionAllowed) {
-					metrics.recordRateLimitedFrame();
+				WindowDecision sessionDecision = peer.inboundWindow.tryAcquire(
+						nowMillis,
+						abuseWindowMs,
+						maxFramesPerSessionWindow,
+						maxBytesPerSessionWindow,
+						payloadBytes);
+				WindowDecision clientDecision =
+						peer.clientInboundState.inboundWindow.tryAcquire(
+								nowMillis,
+								abuseWindowMs,
+								maxFramesPerClientWindow,
+								maxBytesPerClientWindow,
+								payloadBytes);
+				WindowDecision globalDecision = globalInboundWindow.tryAcquire(
+						nowMillis,
+						abuseWindowMs,
+						maxFramesGlobalWindow,
+						maxBytesGlobalWindow,
+						payloadBytes);
+				if (sessionDecision != WindowDecision.ACCEPTED) {
+					if (sessionDecision == WindowDecision.BYTE_LIMITED) {
+						metrics.recordSessionByteLimitedFrame();
+					}
+					else {
+						metrics.recordRateLimitedFrame();
+					}
 					disconnectLocked(session.getId(), workPlan);
 					workPlan.close(session, RATE_LIMITED);
 				}
-				else {
-					boolean clientAllowed = peer.clientInboundState.inboundWindow.tryAcquire(
-							nowMillis, abuseWindowMs, maxFramesPerClientWindow);
-					if (!clientAllowed) {
-						metrics.recordClientRateLimitedFrame();
+				else if (clientDecision != WindowDecision.ACCEPTED) {
+					if (clientDecision == WindowDecision.BYTE_LIMITED) {
+						metrics.recordClientByteLimitedFrame();
 					}
 					else {
-						boolean globalAllowed = globalInboundWindow.tryAcquire(
-								nowMillis, abuseWindowMs, maxFramesGlobalWindow);
-						if (globalAllowed) {
-							accepted = true;
-						}
-						else {
-							metrics.recordOverloadedFrame();
-						}
+						metrics.recordClientRateLimitedFrame();
 					}
+				}
+				else if (globalDecision == WindowDecision.ACCEPTED) {
+					accepted = true;
+				}
+				else if (globalDecision == WindowDecision.BYTE_LIMITED) {
+					metrics.recordGlobalByteLimitedFrame();
+				}
+				else {
+					metrics.recordOverloadedFrame();
 				}
 			}
 		}
@@ -243,11 +303,18 @@ public class SignalingService implements SmartLifecycle {
 		execute(workPlan);
 	}
 
-	public void markAlive(WebSocketSession session) {
+	public void markAlive(WebSocketSession session, byte[] pongPayload) {
 		synchronized (monitor) {
 			Peer peer = connectedPeers.get(session.getId());
-			if (peer != null) {
+			if (peer != null
+					&& peer.expectedPongPayload != null
+					&& (peer.heartbeatState == HeartbeatState.PING_QUEUED
+							|| peer.heartbeatState == HeartbeatState.AWAITING_PONG)
+					&& MessageDigest.isEqual(peer.expectedPongPayload, pongPayload)) {
 				peer.heartbeatState = HeartbeatState.READY;
+				peer.pingQueuedAtMillis = Long.MIN_VALUE;
+				peer.pingSentAtMillis = Long.MIN_VALUE;
+				peer.expectedPongPayload = null;
 			}
 		}
 	}
@@ -255,23 +322,39 @@ public class SignalingService implements SmartLifecycle {
 	public void heartbeatSweep() {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
+			long nowMillis = clock.millis();
 			for (Peer peer : new ArrayList<>(connectedPeers.values())) {
 				if (!peer.connected) {
 					continue;
 				}
 				switch (peer.heartbeatState) {
 					case READY -> {
-						if (enqueue(peer, new PingMessage(), workPlan)) {
+						byte[] challenge = heartbeatChallenge();
+						if (enqueue(
+								peer,
+								new PingMessage(ByteBuffer.wrap(challenge)),
+								workPlan)) {
 							peer.heartbeatState = HeartbeatState.PING_QUEUED;
+							peer.pingQueuedAtMillis = nowMillis;
+							peer.pingSentAtMillis = Long.MIN_VALUE;
+							peer.expectedPongPayload = challenge;
 						}
 					}
 					case PING_QUEUED -> {
-						// A slow transport has not written the ping yet. Its drainer owns progress.
+						if (nowMillis < peer.pingQueuedAtMillis) {
+							peer.pingQueuedAtMillis = nowMillis;
+						}
+						else if (nowMillis - peer.pingQueuedAtMillis >= heartbeatIntervalMs) {
+							closeForHeartbeatTimeoutLocked(peer, workPlan);
+						}
 					}
 					case AWAITING_PONG -> {
-						metrics.recordHeartbeatClose();
-						disconnectLocked(peer.session.getId(), workPlan);
-						workPlan.close(peer.session, HEARTBEAT_TIMEOUT);
+						if (nowMillis < peer.pingSentAtMillis) {
+							peer.pingSentAtMillis = nowMillis;
+						}
+						else if (nowMillis - peer.pingSentAtMillis >= heartbeatIntervalMs) {
+							closeForHeartbeatTimeoutLocked(peer, workPlan);
+						}
 					}
 				}
 			}
@@ -279,13 +362,24 @@ public class SignalingService implements SmartLifecycle {
 		execute(workPlan);
 	}
 
+	private void closeForHeartbeatTimeoutLocked(Peer peer, WorkPlan workPlan) {
+		metrics.recordHeartbeatClose();
+		disconnectLocked(peer.session.getId(), workPlan);
+		workPlan.close(peer.session, HEARTBEAT_TIMEOUT);
+	}
+
 	public void expireUnjoinedSessions() {
-		expireUnjoinedSessions(clock.millis());
+		expireUnjoinedSessions(clock::millis);
 	}
 
 	void expireUnjoinedSessions(long nowMillis) {
+		expireUnjoinedSessions(() -> nowMillis);
+	}
+
+	private void expireUnjoinedSessions(LongSupplier nowMillisSupplier) {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
+			long nowMillis = nowMillisSupplier.getAsLong();
 			for (Peer peer : new ArrayList<>(connectedPeers.values())) {
 				if (!peer.connected || peer.unjoinedSinceMillis < 0
 						|| nowMillis < peer.unjoinedSinceMillis) {
@@ -483,7 +577,7 @@ public class SignalingService implements SmartLifecycle {
 			peer.connected = false;
 			peer.releaseReservation();
 			releaseClientInboundStateLocked(peer);
-			peer.outbound.clear();
+			clearOutboundLocked(peer);
 			removePeerFromRoom(peer, workPlan);
 			refreshMetricsLocked();
 			return true;
@@ -622,14 +716,39 @@ public class SignalingService implements SmartLifecycle {
 			return false;
 		}
 
-		if (peer.outbound.size() >= MAX_OUTBOUND_QUEUE_SIZE) {
+		int messageBytes = payloadSizeBytes(message);
+		boolean peerOverflow = peer.outboundFrameCount >= MAX_OUTBOUND_QUEUE_SIZE
+				|| messageBytes > maxOutboundQueueBytes - peer.outboundBytes;
+		if (peerOverflow) {
 			metrics.recordQueueOverflow();
 			disconnectLocked(peer.session.getId(), workPlan);
 			workPlan.close(peer.session, OUTBOUND_QUEUE_OVERFLOW);
 			return false;
 		}
+		if (messageBytes > maxOutboundQueueBytesGlobal - globalOutboundBytes) {
+			metrics.recordQueueOverflow();
+			metrics.recordGlobalQueueOverflow();
+			Peer victim;
+			while (messageBytes > maxOutboundQueueBytesGlobal - globalOutboundBytes
+					&& (victim = largestReleasableOutboundPeerLocked()) != null) {
+				disconnectLocked(victim.session.getId(), workPlan);
+				workPlan.close(victim.session, OUTBOUND_QUEUE_OVERFLOW);
+				if (!peer.connected) {
+					return false;
+				}
+			}
+			if (messageBytes > maxOutboundQueueBytesGlobal - globalOutboundBytes) {
+				disconnectLocked(peer.session.getId(), workPlan);
+				workPlan.close(peer.session, OUTBOUND_QUEUE_OVERFLOW);
+				return false;
+			}
+		}
 
-		peer.outbound.addLast(message);
+		peer.outbound.addLast(new OutboundFrame(message, messageBytes));
+		peer.outboundFrameCount++;
+		peer.outboundBytes += messageBytes;
+		globalOutboundBytes += messageBytes;
+		metrics.updateOutboundQueuedBytes(globalOutboundBytes);
 		if (!peer.draining) {
 			peer.draining = true;
 			workPlan.drain(peer);
@@ -658,17 +777,23 @@ public class SignalingService implements SmartLifecycle {
 
 	private void drain(Peer peer) {
 		while (true) {
-			WebSocketMessage<?> message;
+			OutboundFrame frame;
 			synchronized (monitor) {
 				if (!peer.connected) {
-					peer.outbound.clear();
+					clearOutboundLocked(peer);
 					peer.draining = false;
 					return;
 				}
-				message = peer.outbound.pollFirst();
-				if (message == null) {
+				frame = peer.outbound.pollFirst();
+				if (frame == null) {
 					peer.draining = false;
 					return;
+				}
+				peer.inFlightBytes = frame.payloadBytes();
+				if (frame.message() instanceof PingMessage
+						&& peer.heartbeatState == HeartbeatState.PING_QUEUED) {
+					peer.heartbeatState = HeartbeatState.AWAITING_PONG;
+					peer.pingSentAtMillis = clock.millis();
 				}
 			}
 
@@ -676,15 +801,7 @@ public class SignalingService implements SmartLifecycle {
 				if (!peer.session.isOpen()) {
 					throw new IOException("WebSocket session is closed");
 				}
-				peer.session.sendMessage(message);
-				if (message instanceof PingMessage) {
-					synchronized (monitor) {
-						if (peer.connected
-								&& peer.heartbeatState == HeartbeatState.PING_QUEUED) {
-							peer.heartbeatState = HeartbeatState.AWAITING_PONG;
-						}
-					}
-				}
+				peer.session.sendMessage(frame.message());
 			}
 			catch (Exception exception) {
 				log.debug(
@@ -698,6 +815,11 @@ public class SignalingService implements SmartLifecycle {
 				}
 				execute(workPlan);
 				return;
+			}
+			finally {
+				synchronized (monitor) {
+					releaseInFlightLocked(peer, frame);
+				}
 			}
 		}
 	}
@@ -746,7 +868,7 @@ public class SignalingService implements SmartLifecycle {
 				connectedPeers.values().forEach(peer -> {
 					peer.connected = false;
 					peer.releaseReservation();
-					peer.outbound.clear();
+					clearOutboundLocked(peer);
 				});
 				connectedPeers.clear();
 				inboundClients.clear();
@@ -754,9 +876,7 @@ public class SignalingService implements SmartLifecycle {
 				globalInboundWindow.reset();
 				refreshMetricsLocked();
 			}
-			for (WebSocketSession session : sessions) {
-				closeQuietly(session, SERVER_SHUTDOWN);
-			}
+			closeSessionsConcurrently(sessions);
 		}
 	}
 
@@ -803,15 +923,21 @@ public class SignalingService implements SmartLifecycle {
 
 		private final String peerId;
 		private final WebSocketSession session;
-		private final ArrayDeque<WebSocketMessage<?>> outbound = new ArrayDeque<>();
+		private final ArrayDeque<OutboundFrame> outbound = new ArrayDeque<>();
+		private int outboundFrameCount;
+		private long outboundBytes;
+		private long inFlightBytes;
 		private boolean announced;
 		private boolean connected = true;
 		private boolean draining;
 		private HeartbeatState heartbeatState = HeartbeatState.READY;
+		private long pingQueuedAtMillis = Long.MIN_VALUE;
+		private long pingSentAtMillis = Long.MIN_VALUE;
+		private byte[] expectedPongPayload;
 		private String roomId;
 		private String displayName;
 		private long unjoinedSinceMillis;
-		private final RateWindow inboundWindow = new RateWindow();
+		private final UsageWindow inboundWindow = new UsageWindow();
 		private final ConnectionAdmissionPolicy.Reservation reservation;
 		private final String clientKey;
 		private final ClientInboundState clientInboundState;
@@ -840,7 +966,7 @@ public class SignalingService implements SmartLifecycle {
 
 	private static final class ClientInboundState {
 
-		private final RateWindow inboundWindow = new RateWindow();
+		private final UsageWindow inboundWindow = new UsageWindow();
 		private int activeConnections;
 	}
 
@@ -853,33 +979,172 @@ public class SignalingService implements SmartLifecycle {
 		AWAITING_PONG
 	}
 
-	private static final class RateWindow {
+	private enum WindowDecision {
+		ACCEPTED,
+		FRAME_LIMITED,
+		BYTE_LIMITED
+	}
+
+	private static final class UsageWindow {
 
 		private long startedAtMillis = Long.MIN_VALUE;
-		private int count;
+		private int frameCount;
+		private long payloadBytes;
 
-		private boolean tryAcquire(long nowMillis, long windowMillis, int maximum) {
-			if (startedAtMillis == Long.MIN_VALUE || nowMillis < startedAtMillis
-					|| nowMillis - startedAtMillis >= windowMillis) {
+		private WindowDecision tryAcquire(
+				long nowMillis,
+				long windowMillis,
+				int maximumFrames,
+				long maximumBytes,
+				int nextPayloadBytes) {
+			if (startedAtMillis == Long.MIN_VALUE
+					|| (nowMillis >= startedAtMillis
+							&& nowMillis - startedAtMillis >= windowMillis)) {
 				startedAtMillis = nowMillis;
-				count = 0;
+				frameCount = 0;
+				payloadBytes = 0;
 			}
-			if (count < Integer.MAX_VALUE) {
-				count++;
+			if (frameCount < Integer.MAX_VALUE) {
+				frameCount++;
 			}
-			return count <= maximum;
+			payloadBytes = saturatedAdd(payloadBytes, nextPayloadBytes);
+			if (frameCount > maximumFrames) {
+				return WindowDecision.FRAME_LIMITED;
+			}
+			if (payloadBytes > maximumBytes) {
+				return WindowDecision.BYTE_LIMITED;
+			}
+			return WindowDecision.ACCEPTED;
 		}
 
 		private boolean isExpired(long nowMillis, long windowMillis) {
 			return startedAtMillis == Long.MIN_VALUE
-					|| nowMillis < startedAtMillis
-					|| nowMillis - startedAtMillis >= windowMillis;
+					|| (nowMillis >= startedAtMillis
+							&& nowMillis - startedAtMillis >= windowMillis);
 		}
 
 		private void reset() {
 			startedAtMillis = Long.MIN_VALUE;
-			count = 0;
+			frameCount = 0;
+			payloadBytes = 0;
 		}
+	}
+
+	private static int payloadSizeBytes(WebSocketMessage<?> message) {
+		if (message instanceof TextMessage textMessage) {
+			return textMessage.getPayload().getBytes(StandardCharsets.UTF_8).length;
+		}
+		return message.getPayloadLength();
+	}
+
+	private static byte[] heartbeatChallenge() {
+		UUID challenge = UUID.randomUUID();
+		return ByteBuffer.allocate(2 * Long.BYTES)
+				.putLong(challenge.getMostSignificantBits())
+				.putLong(challenge.getLeastSignificantBits())
+				.array();
+	}
+
+	private void closeSessionsConcurrently(List<WebSocketSession> sessions) {
+		if (sessions.isEmpty()) {
+			return;
+		}
+
+		long deadlineNanos =
+				System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(shutdownCloseTimeoutMs);
+		CountDownLatch completion = new CountDownLatch(sessions.size());
+		ThreadFactory threadFactory = Thread.ofVirtual()
+				.name("round-signaling-close-", 0)
+				.factory();
+		List<Thread> closeThreads = new ArrayList<>(sessions.size());
+		for (WebSocketSession session : sessions) {
+			if (System.nanoTime() >= deadlineNanos) {
+				break;
+			}
+			Thread thread = threadFactory.newThread(() -> {
+				try {
+					closeQuietly(session, SERVER_SHUTDOWN);
+				}
+				finally {
+					completion.countDown();
+				}
+			});
+			closeThreads.add(thread);
+			thread.start();
+		}
+
+		boolean completed = false;
+		try {
+			long remainingNanos = deadlineNanos - System.nanoTime();
+			completed = remainingNanos > 0
+					&& completion.await(remainingNanos, TimeUnit.NANOSECONDS);
+			if (!completed) {
+				log.warn(
+						"Signaling shutdown close deadline elapsed with {} sessions remaining",
+						completion.getCount());
+			}
+		}
+		catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			log.warn(
+					"Signaling shutdown was interrupted with {} sessions remaining",
+					completion.getCount());
+		}
+		finally {
+			if (!completed) {
+				closeThreads.stream()
+						.filter(Thread::isAlive)
+						.forEach(Thread::interrupt);
+			}
+		}
+	}
+
+	private static long saturatedAdd(long current, int increment) {
+		if (Long.MAX_VALUE - current < increment) {
+			return Long.MAX_VALUE;
+		}
+		return current + increment;
+	}
+
+	private void clearOutboundLocked(Peer peer) {
+		long queuedBytes = peer.outboundBytes - peer.inFlightBytes;
+		globalOutboundBytes -= queuedBytes;
+		peer.outbound.clear();
+		peer.outboundFrameCount = peer.inFlightBytes == 0 ? 0 : 1;
+		peer.outboundBytes = peer.inFlightBytes;
+		metrics.updateOutboundQueuedBytes(globalOutboundBytes);
+	}
+
+	private void releaseInFlightLocked(Peer peer, OutboundFrame frame) {
+		if (peer.inFlightBytes != frame.payloadBytes()) {
+			log.error("Signaling outbound accounting mismatch; retaining the global byte reservation");
+			return;
+		}
+		peer.inFlightBytes = 0;
+		peer.outboundFrameCount--;
+		peer.outboundBytes -= frame.payloadBytes();
+		globalOutboundBytes -= frame.payloadBytes();
+		metrics.updateOutboundQueuedBytes(globalOutboundBytes);
+	}
+
+	private Peer largestReleasableOutboundPeerLocked() {
+		Peer victim = null;
+		long largestQueuedBytes = 0;
+		long largestTotalBytes = 0;
+		for (Peer candidate : connectedPeers.values()) {
+			long queuedBytes = candidate.outboundBytes - candidate.inFlightBytes;
+			if (queuedBytes <= 0) {
+				continue;
+			}
+			if (queuedBytes > largestQueuedBytes
+					|| (queuedBytes == largestQueuedBytes
+							&& candidate.outboundBytes > largestTotalBytes)) {
+				victim = candidate;
+				largestQueuedBytes = queuedBytes;
+				largestTotalBytes = candidate.outboundBytes;
+			}
+		}
+		return victim;
 	}
 
 	private static final class WorkPlan {
@@ -897,5 +1162,8 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	private record CloseAction(WebSocketSession session, CloseStatus status) {
+	}
+
+	private record OutboundFrame(WebSocketMessage<?> message, int payloadBytes) {
 	}
 }

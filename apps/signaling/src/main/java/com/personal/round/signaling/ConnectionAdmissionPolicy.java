@@ -1,10 +1,9 @@
 package com.personal.round.signaling;
 
 import com.personal.round.config.SignalingProperties;
-import java.net.InetAddress;
+import com.personal.round.net.ClientAddressKeyResolver;
 import java.net.InetSocketAddress;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
@@ -14,25 +13,26 @@ public final class ConnectionAdmissionPolicy {
 	public static final String RESERVATION_ATTRIBUTE =
 			ConnectionAdmissionPolicy.class.getName() + ".reservation";
 
-	private static final String UNKNOWN_CLIENT = "<unknown>";
-
 	private final Object monitor = new Object();
 	private final Map<String, Integer> connectionsByClient = new HashMap<>();
 	private final int maxConnections;
 	private final int maxConnectionsPerClient;
 	private final SignalingMetrics metrics;
+	private final ClientAddressKeyResolver clientAddressKeyResolver;
 	private int activeReservations;
 
 	public ConnectionAdmissionPolicy(
 			SignalingProperties properties,
-			SignalingMetrics metrics) {
+			SignalingMetrics metrics,
+			ClientAddressKeyResolver clientAddressKeyResolver) {
 		this.maxConnections = properties.maxConnections();
 		this.maxConnectionsPerClient = properties.maxConnectionsPerClient();
 		this.metrics = metrics;
+		this.clientAddressKeyResolver = clientAddressKeyResolver;
 	}
 
 	public Admission reserve(InetSocketAddress remoteAddress) {
-		String clientKey = clientKey(remoteAddress);
+		String clientKey = clientAddressKeyResolver.resolve(remoteAddress);
 		synchronized (monitor) {
 			if (activeReservations >= maxConnections) {
 				metrics.recordConnectionRejectedServerCapacity();
@@ -59,7 +59,8 @@ public final class ConnectionAdmissionPolicy {
 
 	int activeReservationCount(InetSocketAddress remoteAddress) {
 		synchronized (monitor) {
-			return connectionsByClient.getOrDefault(clientKey(remoteAddress), 0);
+			return connectionsByClient.getOrDefault(
+					clientAddressKeyResolver.resolve(remoteAddress), 0);
 		}
 	}
 
@@ -77,17 +78,6 @@ public final class ConnectionAdmissionPolicy {
 						return remaining == 0 ? null : remaining;
 					});
 		}
-	}
-
-	private static String clientKey(InetSocketAddress remoteAddress) {
-		if (remoteAddress == null) {
-			return UNKNOWN_CLIENT;
-		}
-		InetAddress address = remoteAddress.getAddress();
-		if (address != null) {
-			return address.getHostAddress();
-		}
-		return remoteAddress.getHostString().toLowerCase(Locale.ROOT);
 	}
 
 	public enum Rejection {

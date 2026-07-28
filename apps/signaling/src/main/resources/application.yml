@@ -39,10 +39,16 @@ round:
     heartbeat-interval: ${HEARTBEAT_INTERVAL_MS:30000}ms
     unjoined-timeout: ${UNJOINED_SOCKET_TIMEOUT_MS:15000}ms
     unjoined-sweep-interval: ${UNJOINED_SOCKET_SWEEP_MS:1000}ms
+    shutdown-close-timeout: ${SIGNALING_SHUTDOWN_CLOSE_TIMEOUT_MS:5000}ms
     abuse-window: ${SIGNALING_ABUSE_WINDOW_MS:10000}ms
     max-frames-per-session-window: ${SIGNALING_MAX_FRAMES_PER_SESSION:600}
     max-frames-per-client-window: ${SIGNALING_MAX_FRAMES_PER_CLIENT:1200}
     max-frames-global-window: ${SIGNALING_MAX_FRAMES_GLOBAL:3600}
+    max-bytes-per-session-window: ${SIGNALING_MAX_BYTES_PER_SESSION:4194304}
+    max-bytes-per-client-window: ${SIGNALING_MAX_BYTES_PER_CLIENT:8388608}
+    max-bytes-global-window: ${SIGNALING_MAX_BYTES_GLOBAL:25165824}
+    max-outbound-queue-bytes: ${SIGNALING_MAX_OUTBOUND_QUEUE_BYTES:2097152}
+    max-outbound-queue-bytes-global: ${SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL:67108864}
     max-text-payload-bytes: 65536
   turn:
     urls: ${TURN_URLS:}

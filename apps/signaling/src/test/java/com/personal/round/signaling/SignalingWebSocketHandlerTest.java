@@ -1,12 +1,15 @@
 package com.personal.round.signaling;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.AdditionalMatchers.aryEq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.personal.round.config.TestProperties;
 import com.personal.round.protocol.ProtocolParser;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +32,7 @@ class SignalingWebSocketHandlerTest {
 				new ProtocolParser(new ObjectMapper()), service, TestProperties.signaling());
 		session = mock(WebSocketSession.class);
 		when(session.getId()).thenReturn("session");
-		when(service.acceptInboundFrame(session)).thenReturn(true);
+		when(service.acceptInboundFrame(any(WebSocketSession.class), anyInt())).thenReturn(true);
 	}
 
 	@Test
@@ -62,7 +65,7 @@ class SignalingWebSocketHandlerTest {
 
 	@Test
 	void stopsProcessingWhenTheAbuseLimiterRejectsAFrame() throws Exception {
-		when(service.acceptInboundFrame(session)).thenReturn(false);
+		when(service.acceptInboundFrame(any(WebSocketSession.class), anyInt())).thenReturn(false);
 
 		handler.handleMessage(
 				session,
@@ -75,13 +78,41 @@ class SignalingWebSocketHandlerTest {
 	}
 
 	@Test
-	void recordsPongLivenessBeforeApplyingFrameAccounting() throws Exception {
-		when(service.acceptInboundFrame(session)).thenReturn(false);
+	void appliesFrameAccountingBeforeRecordingMatchingPongLiveness() throws Exception {
+		byte[] challenge = "round-heartbeat".getBytes(StandardCharsets.UTF_8);
+
+		handler.handleMessage(
+				session,
+				new org.springframework.web.socket.PongMessage(ByteBuffer.wrap(challenge)));
+
+		org.mockito.InOrder order = org.mockito.Mockito.inOrder(service);
+		order.verify(service).acceptInboundFrame(session, challenge.length);
+		order.verify(service).markAlive(
+				org.mockito.ArgumentMatchers.eq(session),
+				aryEq(challenge));
+	}
+
+	@Test
+	void stillPassesARejectedPongToNonceValidationAfterFrameAccounting() throws Exception {
+		when(service.acceptInboundFrame(any(WebSocketSession.class), anyInt())).thenReturn(false);
 
 		handler.handleMessage(session, new org.springframework.web.socket.PongMessage());
 
 		org.mockito.InOrder order = org.mockito.Mockito.inOrder(service);
-		order.verify(service).markAlive(session);
-		order.verify(service).acceptInboundFrame(session);
+		order.verify(service).acceptInboundFrame(session, 0);
+		order.verify(service).markAlive(
+				org.mockito.ArgumentMatchers.eq(session),
+				aryEq(new byte[0]));
+	}
+
+	@Test
+	void accountsForUtf8BytesBeforeParsingText() throws Exception {
+		String malformedMultibytePayload = "{\"name\":\"한\"";
+
+		handler.handleMessage(session, new TextMessage(malformedMultibytePayload));
+
+		verify(service).acceptInboundFrame(
+				session,
+				malformedMultibytePayload.getBytes(StandardCharsets.UTF_8).length);
 	}
 }

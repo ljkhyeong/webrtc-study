@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.personal.round.config.TestProperties;
 import com.personal.round.config.TurnProperties;
+import com.personal.round.net.ClientAddressKeyResolver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
@@ -157,6 +158,38 @@ class TurnCredentialServiceTest {
 	}
 
 	@Test
+	void backwardClockMovementDoesNotResetTurnIssuanceQuota() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				TURN_URLS, SHARED_SECRET, 1, 2, 10_000);
+		MutableClock clock = new MutableClock(1_800_000_000);
+		TurnCredentialService service =
+				service(properties, clock, new SimpleMeterRegistry());
+
+		issued(service.issueFor("198.51.100.10"));
+		clock.advanceSeconds(-1);
+
+		assertThat(rateLimited(service.issueFor("198.51.100.10")).retryAfterSeconds())
+				.isEqualTo(600);
+	}
+
+	@Test
+	void sharesTurnIssuanceQuotaAcrossOneIpv6Prefix() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				TURN_URLS, SHARED_SECRET, 1, 8, 10_000);
+		TurnCredentialService service = service(
+				properties,
+				new MutableClock(1_800_000_000),
+				new SimpleMeterRegistry());
+
+		issued(service.issueFor("2001:db8:abcd:12::1"));
+
+		assertThat(service.issueFor("2001:db8:abcd:12:ffff::beef"))
+				.isInstanceOf(TurnCredentialService.RateLimited.class);
+		assertThat(service.issueFor("2001:db8:abcd:13::1"))
+				.isInstanceOf(TurnCredentialService.Issued.class);
+	}
+
+	@Test
 	void rateLimitsIssuanceAcrossClientAddressesAndResetsAtTheWindowBoundary() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
 				TURN_URLS, SHARED_SECRET, 1, 2, 10_000);
@@ -267,7 +300,8 @@ class TurnCredentialServiceTest {
 		return new TurnCredentialService(
 				properties,
 				clock,
-				new TurnCredentialMetrics(registry));
+				new TurnCredentialMetrics(registry),
+				new ClientAddressKeyResolver());
 	}
 
 	private static TurnCredentials issued(TurnCredentialService.IssueResult result) {
