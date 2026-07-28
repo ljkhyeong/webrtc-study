@@ -1,155 +1,96 @@
 package com.personal.round.config;
 
-import java.util.ArrayList;
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import java.time.Duration;
 import java.util.List;
+import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
+@Validated
 @ConfigurationProperties(prefix = "round.signaling")
-public class SignalingProperties {
+public record SignalingProperties(
+		@NotEmpty(message = "round.signaling.allowed-origins must not be empty")
+		List<@NotBlank(message = "round.signaling.allowed-origins must not contain blank values") String>
+				allowedOrigins,
+		@Min(value = 1, message = "round.signaling.max-room-size must be at least 1")
+		@Max(value = 100, message = "round.signaling.max-room-size must be at most 100")
+		int maxRoomSize,
+		@Min(value = 1, message = "round.signaling.max-connections must be at least 1")
+		@Max(value = 100_000, message = "round.signaling.max-connections must be at most 100000")
+		int maxConnections,
+		@Min(value = 1, message = "round.signaling.max-connections-per-client must be at least 1")
+		@Max(
+				value = 100_000,
+				message = "round.signaling.max-connections-per-client must be at most 100000")
+		int maxConnectionsPerClient,
+		@NotNull(message = "round.signaling.heartbeat-interval must be configured")
+		@DurationMin(
+				millis = 1,
+				message = "round.signaling.heartbeat-interval must be at least 1ms")
+		Duration heartbeatInterval,
+		@NotNull(message = "round.signaling.unjoined-timeout must be configured")
+		@DurationMin(
+				seconds = 1,
+				message = "round.signaling.unjoined-timeout must be at least 1s")
+		Duration unjoinedTimeout,
+		@NotNull(message = "round.signaling.unjoined-sweep-interval must be configured")
+		@DurationMin(
+				millis = 100,
+				message = "round.signaling.unjoined-sweep-interval must be at least 100ms")
+		Duration unjoinedSweepInterval,
+		@NotNull(message = "round.signaling.abuse-window must be configured")
+		@DurationMin(
+				seconds = 1,
+				message = "round.signaling.abuse-window must be at least 1s")
+		Duration abuseWindow,
+		@Min(
+				value = 1,
+				message = "round.signaling.max-frames-per-session-window must be at least 1")
+		int maxFramesPerSessionWindow,
+		@Min(
+				value = 1,
+				message = "round.signaling.max-frames-global-window must be at least 1")
+		int maxFramesGlobalWindow,
+		@Min(value = 1, message = "round.signaling.max-text-payload-bytes must be at least 1")
+		int maxTextPayloadBytes) {
 
-	private List<String> allowedOrigins = new ArrayList<>(
-			List.of("http://localhost:5173", "http://127.0.0.1:5173"));
-	private int maxRoomSize = 6;
-	private int maxConnections = 1_000;
-	private int maxConnectionsPerClient = 12;
-	private long heartbeatIntervalMs = 30_000;
-	private long unjoinedTimeoutMs = 15_000;
-	private long unjoinedSweepIntervalMs = 1_000;
-	private long abuseWindowMs = 10_000;
-	private int maxFramesPerSessionWindow = 600;
-	private int maxFramesGlobalWindow = 3_600;
-	private int maxTextPayloadBytes = 64 * 1024;
-
-	public List<String> getAllowedOrigins() {
-		return List.copyOf(allowedOrigins);
+	public SignalingProperties {
+		allowedOrigins = allowedOrigins == null ? List.of() : List.copyOf(allowedOrigins);
 	}
 
-	public void setAllowedOrigins(List<String> allowedOrigins) {
-		this.allowedOrigins = new ArrayList<>(allowedOrigins);
+	@AssertTrue(
+			message = "round.signaling.max-connections must not be lower than max-room-size")
+	public boolean isMaxConnectionsAtLeastRoomSize() {
+		return maxConnections >= maxRoomSize;
 	}
 
-	public int getMaxRoomSize() {
-		return maxRoomSize;
+	@AssertTrue(
+			message =
+					"round.signaling.max-connections-per-client must not exceed max-connections")
+	public boolean isPerClientConnectionLimitWithinGlobalLimit() {
+		return maxConnectionsPerClient <= maxConnections;
 	}
 
-	public void setMaxRoomSize(int maxRoomSize) {
-		this.maxRoomSize = maxRoomSize;
+	@AssertTrue(
+			message =
+					"round.signaling.unjoined-sweep-interval must not exceed unjoined-timeout")
+	public boolean isUnjoinedSweepWithinTimeout() {
+		return unjoinedSweepInterval == null
+				|| unjoinedTimeout == null
+				|| unjoinedSweepInterval.compareTo(unjoinedTimeout) <= 0;
 	}
 
-	public int getMaxConnections() {
-		return maxConnections;
-	}
-
-	public void setMaxConnections(int maxConnections) {
-		this.maxConnections = maxConnections;
-	}
-
-	public int getMaxConnectionsPerClient() {
-		return maxConnectionsPerClient;
-	}
-
-	public void setMaxConnectionsPerClient(int maxConnectionsPerClient) {
-		this.maxConnectionsPerClient = maxConnectionsPerClient;
-	}
-
-	public long getHeartbeatIntervalMs() {
-		return heartbeatIntervalMs;
-	}
-
-	public void setHeartbeatIntervalMs(long heartbeatIntervalMs) {
-		this.heartbeatIntervalMs = heartbeatIntervalMs;
-	}
-
-	public long getUnjoinedTimeoutMs() {
-		return unjoinedTimeoutMs;
-	}
-
-	public void setUnjoinedTimeoutMs(long unjoinedTimeoutMs) {
-		this.unjoinedTimeoutMs = unjoinedTimeoutMs;
-	}
-
-	public long getUnjoinedSweepIntervalMs() {
-		return unjoinedSweepIntervalMs;
-	}
-
-	public void setUnjoinedSweepIntervalMs(long unjoinedSweepIntervalMs) {
-		this.unjoinedSweepIntervalMs = unjoinedSweepIntervalMs;
-	}
-
-	public long getAbuseWindowMs() {
-		return abuseWindowMs;
-	}
-
-	public void setAbuseWindowMs(long abuseWindowMs) {
-		this.abuseWindowMs = abuseWindowMs;
-	}
-
-	public int getMaxFramesPerSessionWindow() {
-		return maxFramesPerSessionWindow;
-	}
-
-	public void setMaxFramesPerSessionWindow(int maxFramesPerSessionWindow) {
-		this.maxFramesPerSessionWindow = maxFramesPerSessionWindow;
-	}
-
-	public int getMaxFramesGlobalWindow() {
-		return maxFramesGlobalWindow;
-	}
-
-	public void setMaxFramesGlobalWindow(int maxFramesGlobalWindow) {
-		this.maxFramesGlobalWindow = maxFramesGlobalWindow;
-	}
-
-	public int getMaxTextPayloadBytes() {
-		return maxTextPayloadBytes;
-	}
-
-	public void setMaxTextPayloadBytes(int maxTextPayloadBytes) {
-		this.maxTextPayloadBytes = maxTextPayloadBytes;
-	}
-
-	public void validate() {
-		if (allowedOrigins.isEmpty()) {
-			throw new IllegalArgumentException("round.signaling.allowed-origins must not be empty");
-		}
-		if (maxRoomSize < 1 || maxRoomSize > 100) {
-			throw new IllegalArgumentException("round.signaling.max-room-size must be between 1 and 100");
-		}
-		if (maxConnections < maxRoomSize || maxConnections > 100_000) {
-			throw new IllegalArgumentException(
-					"round.signaling.max-connections must be between max-room-size and 100000");
-		}
-		if (maxConnectionsPerClient < 1 || maxConnectionsPerClient > 100_000) {
-			throw new IllegalArgumentException(
-					"round.signaling.max-connections-per-client must be between 1 and 100000");
-		}
-		if (heartbeatIntervalMs < 1) {
-			throw new IllegalArgumentException(
-					"round.signaling.heartbeat-interval-ms must be a positive integer");
-		}
-		if (unjoinedTimeoutMs < 1_000) {
-			throw new IllegalArgumentException(
-					"round.signaling.unjoined-timeout-ms must be at least 1000");
-		}
-		if (unjoinedSweepIntervalMs < 100 || unjoinedSweepIntervalMs > unjoinedTimeoutMs) {
-			throw new IllegalArgumentException(
-					"round.signaling.unjoined-sweep-interval-ms must be between 100 and unjoined-timeout-ms");
-		}
-		if (abuseWindowMs < 1_000) {
-			throw new IllegalArgumentException(
-					"round.signaling.abuse-window-ms must be at least 1000");
-		}
-		if (maxFramesPerSessionWindow < 1) {
-			throw new IllegalArgumentException(
-					"round.signaling.max-frames-per-session-window must be positive");
-		}
-		if (maxFramesGlobalWindow < maxFramesPerSessionWindow) {
-			throw new IllegalArgumentException(
-					"round.signaling.max-frames-global-window must not be lower than the per-session limit");
-		}
-		if (maxTextPayloadBytes < 1) {
-			throw new IllegalArgumentException(
-					"round.signaling.max-text-payload-bytes must be a positive integer");
-		}
+	@AssertTrue(
+			message =
+					"round.signaling.max-frames-global-window must not be lower than "
+							+ "max-frames-per-session-window")
+	public boolean isGlobalFrameLimitAtLeastSessionLimit() {
+		return maxFramesGlobalWindow >= maxFramesPerSessionWindow;
 	}
 }

@@ -32,22 +32,20 @@ public class TurnCredentialService {
 			TurnProperties properties,
 			Clock clock,
 			TurnCredentialMetrics metrics) {
-		properties.validate();
 		this.properties = properties;
 		this.clock = clock;
 		this.metrics = metrics;
-		this.rateLimitWindowMillis =
-				Math.multiplyExact(properties.getRateLimitWindowSeconds(), 1_000);
+		this.rateLimitWindowMillis = properties.rateLimitWindow().toMillis();
 		this.issuanceWindowsByClient = new LinkedHashMap<>(16, 0.75f, true) {
 			@Override
 			protected boolean removeEldestEntry(Map.Entry<String, IssuanceWindow> eldest) {
-				return size() > properties.getRateLimitMaxClients();
+				return size() > properties.rateLimitMaxClients();
 			}
 		};
 	}
 
 	public IssueResult issueFor(String clientAddress) {
-		if (!properties.isEnabled()) {
+		if (!properties.enabled()) {
 			return Disabled.INSTANCE;
 		}
 
@@ -60,12 +58,12 @@ public class TurnCredentialService {
 			IssuanceWindow globalWindow = currentWindow(globalIssuanceWindow, nowMillis);
 			long retryAfterSeconds = 0;
 			if (clientWindow != null
-					&& clientWindow.issued >= properties.getRateLimitMaxRequests()) {
+					&& clientWindow.issued >= properties.rateLimitMaxRequests()) {
 				retryAfterSeconds = clientWindow.retryAfterSeconds(
 						nowMillis, rateLimitWindowMillis);
 			}
 			if (globalWindow != null
-					&& globalWindow.issued >= properties.getRateLimitGlobalMaxRequests()) {
+					&& globalWindow.issued >= properties.rateLimitGlobalMaxRequests()) {
 				retryAfterSeconds = Math.max(
 						retryAfterSeconds,
 						globalWindow.retryAfterSeconds(nowMillis, rateLimitWindowMillis));
@@ -88,11 +86,11 @@ public class TurnCredentialService {
 		}
 
 		long expiresAt = Math.addExact(
-				Math.floorDiv(nowMillis, 1_000), properties.getCredentialTtlSeconds());
+				Math.floorDiv(nowMillis, 1_000), properties.credentialTtl().toSeconds());
 		String username = expiresAt + ":" + randomToken();
 		String credential = sign(username);
 		TurnCredentials credentials = new TurnCredentials(
-				properties.getUrls(), username, credential, expiresAt);
+				properties.urls(), username, credential, expiresAt);
 		metrics.recordIssued();
 		return new Issued(credentials);
 	}
@@ -122,7 +120,7 @@ public class TurnCredentialService {
 		try {
 			Mac mac = Mac.getInstance(HMAC_ALGORITHM);
 			mac.init(new SecretKeySpec(
-					properties.getSharedSecret().getBytes(StandardCharsets.UTF_8),
+					properties.sharedSecret().getBytes(StandardCharsets.UTF_8),
 					HMAC_ALGORITHM));
 			return Base64.getEncoder().encodeToString(
 					mac.doFinal(username.getBytes(StandardCharsets.UTF_8)));

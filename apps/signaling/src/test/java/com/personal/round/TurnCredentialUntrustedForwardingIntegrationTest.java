@@ -15,10 +15,10 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 		properties = {
 			"server.address=127.0.0.1",
 			"server.tomcat.remoteip.internal-proxies=172.16.0.0/12",
-			"round.signaling.heartbeat-interval-ms=60000",
+			"round.signaling.heartbeat-interval=60s",
 			"round.turn.urls=turn:turn.example.com:3478",
 			"round.turn.shared-secret=integration-shared-secret",
-			"round.turn.rate-limit-window-seconds=60",
+			"round.turn.rate-limit-window=60s",
 			"round.turn.rate-limit-max-requests=2"
 		})
 class TurnCredentialUntrustedForwardingIntegrationTest {

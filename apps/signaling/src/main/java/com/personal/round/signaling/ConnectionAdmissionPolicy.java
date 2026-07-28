@@ -26,16 +26,8 @@ public final class ConnectionAdmissionPolicy {
 	public ConnectionAdmissionPolicy(
 			SignalingProperties properties,
 			SignalingMetrics metrics) {
-		int maxConnections = properties.getMaxConnections();
-		int maxConnectionsPerClient = properties.getMaxConnectionsPerClient();
-		if (maxConnections < 1) {
-			throw new IllegalArgumentException("maxConnections must be positive");
-		}
-		if (maxConnectionsPerClient < 1) {
-			throw new IllegalArgumentException("maxConnectionsPerClient must be positive");
-		}
-		this.maxConnections = maxConnections;
-		this.maxConnectionsPerClient = maxConnectionsPerClient;
+		this.maxConnections = properties.maxConnections();
+		this.maxConnectionsPerClient = properties.maxConnectionsPerClient();
 		this.metrics = metrics;
 	}
 

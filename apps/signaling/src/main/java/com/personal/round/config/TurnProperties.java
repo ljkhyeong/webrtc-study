@@ -1,114 +1,101 @@
 package com.personal.round.config;
 
-import java.util.ArrayList;
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import java.time.Duration;
 import java.util.List;
+import org.hibernate.validator.constraints.time.DurationMax;
+import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
+@Validated
 @ConfigurationProperties(prefix = "round.turn")
-public class TurnProperties {
+public record TurnProperties(
+		List<String> urls,
+		String sharedSecret,
+		@NotNull(message = "round.turn.credential-ttl must be configured")
+		@DurationMin(
+				minutes = 5,
+				message = "round.turn.credential-ttl must be at least 5m")
+		@DurationMax(
+				days = 7,
+				message = "round.turn.credential-ttl must be at most 7d")
+		Duration credentialTtl,
+		@NotNull(message = "round.turn.rate-limit-window must be configured")
+		@DurationMin(
+				seconds = 1,
+				message = "round.turn.rate-limit-window must be at least 1s")
+		@DurationMax(
+				hours = 1,
+				message = "round.turn.rate-limit-window must be at most 1h")
+		Duration rateLimitWindow,
+		@Min(value = 1, message = "round.turn.rate-limit-max-requests must be at least 1")
+		@Max(
+				value = 10_000,
+				message = "round.turn.rate-limit-max-requests must be at most 10000")
+		int rateLimitMaxRequests,
+		@Min(
+				value = 1,
+				message = "round.turn.rate-limit-global-max-requests must be at least 1")
+		@Max(
+				value = 1_000_000,
+				message = "round.turn.rate-limit-global-max-requests must be at most 1000000")
+		int rateLimitGlobalMaxRequests,
+		@Min(value = 1, message = "round.turn.rate-limit-max-clients must be at least 1")
+		@Max(
+				value = 1_000_000,
+				message = "round.turn.rate-limit-max-clients must be at most 1000000")
+		int rateLimitMaxClients) {
 
-	private List<String> urls = new ArrayList<>();
-	private String sharedSecret = "";
-	private long credentialTtlSeconds = 600;
-	private long rateLimitWindowSeconds = 60;
-	private int rateLimitMaxRequests = 12;
-	private int rateLimitGlobalMaxRequests = 8;
-	private int rateLimitMaxClients = 10_000;
-
-	public List<String> getUrls() {
-		return urls.stream().filter(url -> url != null && !url.isBlank()).toList();
+	public TurnProperties {
+		urls = urls == null
+				? List.of()
+				: urls.stream()
+						.filter(url -> url != null && !url.isBlank())
+						.toList();
+		sharedSecret = sharedSecret == null ? "" : sharedSecret;
 	}
 
-	public void setUrls(List<String> urls) {
-		this.urls = urls == null ? new ArrayList<>() : new ArrayList<>(urls);
+	public boolean enabled() {
+		return !urls.isEmpty() && !sharedSecret.isBlank();
 	}
 
-	public String getSharedSecret() {
-		return sharedSecret;
+	@Override
+	public String toString() {
+		return "TurnProperties[urls=<"
+				+ urls.size()
+				+ " configured>, sharedSecret=<redacted>, credentialTtl="
+				+ credentialTtl
+				+ ", rateLimitWindow="
+				+ rateLimitWindow
+				+ ", rateLimitMaxRequests="
+				+ rateLimitMaxRequests
+				+ ", rateLimitGlobalMaxRequests="
+				+ rateLimitGlobalMaxRequests
+				+ ", rateLimitMaxClients="
+				+ rateLimitMaxClients
+				+ "]";
 	}
 
-	public void setSharedSecret(String sharedSecret) {
-		this.sharedSecret = sharedSecret == null ? "" : sharedSecret;
+	@AssertTrue(
+			message = "round.turn.urls and round.turn.shared-secret must be configured together")
+	public boolean isConfigurationComplete() {
+		return urls.isEmpty() == sharedSecret.isBlank();
 	}
 
-	public long getCredentialTtlSeconds() {
-		return credentialTtlSeconds;
+	@AssertTrue(
+			message =
+					"round.turn.urls must contain only credential-free turn: or turns: URLs")
+	public boolean isEveryUrlCredentialFree() {
+		return urls.stream().allMatch(TurnProperties::isCredentialFreeTurnUrl);
 	}
 
-	public void setCredentialTtlSeconds(long credentialTtlSeconds) {
-		this.credentialTtlSeconds = credentialTtlSeconds;
-	}
-
-	public long getRateLimitWindowSeconds() {
-		return rateLimitWindowSeconds;
-	}
-
-	public void setRateLimitWindowSeconds(long rateLimitWindowSeconds) {
-		this.rateLimitWindowSeconds = rateLimitWindowSeconds;
-	}
-
-	public int getRateLimitMaxRequests() {
-		return rateLimitMaxRequests;
-	}
-
-	public void setRateLimitMaxRequests(int rateLimitMaxRequests) {
-		this.rateLimitMaxRequests = rateLimitMaxRequests;
-	}
-
-	public int getRateLimitGlobalMaxRequests() {
-		return rateLimitGlobalMaxRequests;
-	}
-
-	public void setRateLimitGlobalMaxRequests(int rateLimitGlobalMaxRequests) {
-		this.rateLimitGlobalMaxRequests = rateLimitGlobalMaxRequests;
-	}
-
-	public int getRateLimitMaxClients() {
-		return rateLimitMaxClients;
-	}
-
-	public void setRateLimitMaxClients(int rateLimitMaxClients) {
-		this.rateLimitMaxClients = rateLimitMaxClients;
-	}
-
-	public boolean isEnabled() {
-		return !getUrls().isEmpty() && !sharedSecret.isBlank();
-	}
-
-	public void validate() {
-		boolean hasUrls = !getUrls().isEmpty();
-		boolean hasSecret = !sharedSecret.isBlank();
-		if (hasUrls != hasSecret) {
-			throw new IllegalArgumentException(
-					"round.turn.urls and round.turn.shared-secret must be configured together");
-		}
-		for (String url : getUrls()) {
-			if (!(url.startsWith("turn:") || url.startsWith("turns:"))
-					|| url.chars().anyMatch(Character::isWhitespace)
-					|| url.contains("@")) {
-				throw new IllegalArgumentException(
-						"round.turn.urls must contain only credential-free turn: or turns: URLs");
-			}
-		}
-		if (credentialTtlSeconds < 300 || credentialTtlSeconds > 7 * 24 * 60 * 60) {
-			throw new IllegalArgumentException(
-					"round.turn.credential-ttl-seconds must be between 300 and 604800");
-		}
-		if (rateLimitWindowSeconds < 1 || rateLimitWindowSeconds > 3_600) {
-			throw new IllegalArgumentException(
-					"round.turn.rate-limit-window-seconds must be between 1 and 3600");
-		}
-		if (rateLimitMaxRequests < 1 || rateLimitMaxRequests > 10_000) {
-			throw new IllegalArgumentException(
-					"round.turn.rate-limit-max-requests must be between 1 and 10000");
-		}
-		if (rateLimitGlobalMaxRequests < 1 || rateLimitGlobalMaxRequests > 1_000_000) {
-			throw new IllegalArgumentException(
-					"round.turn.rate-limit-global-max-requests must be between 1 and 1000000");
-		}
-		if (rateLimitMaxClients < 1 || rateLimitMaxClients > 1_000_000) {
-			throw new IllegalArgumentException(
-					"round.turn.rate-limit-max-clients must be between 1 and 1000000");
-		}
+	private static boolean isCredentialFreeTurnUrl(String url) {
+		return (url.startsWith("turn:") || url.startsWith("turns:"))
+				&& url.chars().noneMatch(Character::isWhitespace)
+				&& !url.contains("@");
 	}
 }

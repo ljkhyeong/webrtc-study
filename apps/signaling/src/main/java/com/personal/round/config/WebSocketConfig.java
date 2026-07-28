@@ -27,11 +27,10 @@ public class WebSocketConfig implements WebSocketConfigurer {
 			ConnectionAdmissionPolicy admissionPolicy,
 			SignalingProperties properties,
 			Environment environment) {
-		properties.validate();
 		this.handler = handler;
 		boolean production = environment.acceptsProfiles(Profiles.of("production"));
 		this.originInterceptor = new OriginHandshakeInterceptor(
-				new OriginPolicy(properties.getAllowedOrigins(), production));
+				new OriginPolicy(properties.allowedOrigins(), production));
 		this.admissionInterceptor =
 				new ConnectionAdmissionHandshakeInterceptor(signalingService);
 		this.admissionHandler =
@@ -49,8 +48,8 @@ public class WebSocketConfig implements WebSocketConfigurer {
 	@Bean
 	ServletServerContainerFactoryBean webSocketContainer(SignalingProperties properties) {
 		ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
-		container.setMaxTextMessageBufferSize(properties.getMaxTextPayloadBytes());
-		container.setMaxBinaryMessageBufferSize(properties.getMaxTextPayloadBytes());
+		container.setMaxTextMessageBufferSize(properties.maxTextPayloadBytes());
+		container.setMaxBinaryMessageBufferSize(properties.maxTextPayloadBytes());
 		return container;
 	}
 }

@@ -69,16 +69,15 @@ public class SignalingService implements SmartLifecycle {
 			SignalingProperties properties,
 			SignalingMetrics metrics,
 			Clock clock) {
-		properties.validate();
 		this.objectMapper = objectMapper;
 		this.metrics = metrics;
 		this.clock = clock;
-		this.maxRoomSize = properties.getMaxRoomSize();
-		this.maxConnections = properties.getMaxConnections();
-		this.unjoinedTimeoutMs = properties.getUnjoinedTimeoutMs();
-		this.abuseWindowMs = properties.getAbuseWindowMs();
-		this.maxFramesPerSessionWindow = properties.getMaxFramesPerSessionWindow();
-		this.maxFramesGlobalWindow = properties.getMaxFramesGlobalWindow();
+		this.maxRoomSize = properties.maxRoomSize();
+		this.maxConnections = properties.maxConnections();
+		this.unjoinedTimeoutMs = properties.unjoinedTimeout().toMillis();
+		this.abuseWindowMs = properties.abuseWindow().toMillis();
+		this.maxFramesPerSessionWindow = properties.maxFramesPerSessionWindow();
+		this.maxFramesGlobalWindow = properties.maxFramesGlobalWindow();
 		metrics.updateState(0, 0, 0);
 	}
 

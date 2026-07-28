@@ -20,7 +20,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 			"server.address=127.0.0.1",
 			"round.signaling.allowed-origins=http://localhost:5173",
 			"round.signaling.max-connections-per-client=1",
-			"round.signaling.heartbeat-interval-ms=60000"
+			"round.signaling.heartbeat-interval=60s"
 		})
 class WebSocketEndpointIntegrationTest {
 

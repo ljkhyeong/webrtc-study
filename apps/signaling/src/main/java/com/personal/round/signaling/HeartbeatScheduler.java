@@ -12,7 +12,7 @@ public class HeartbeatScheduler {
 		this.signalingService = signalingService;
 	}
 
-	@Scheduled(fixedDelayString = "${round.signaling.heartbeat-interval-ms:30000}")
+	@Scheduled(fixedDelayString = "${round.signaling.heartbeat-interval}")
 	public void sweep() {
 		signalingService.heartbeatSweep();
 	}

@@ -36,18 +36,18 @@ round:
     max-room-size: ${MAX_ROOM_SIZE:6}
     max-connections: ${MAX_SIGNALING_CONNECTIONS:1000}
     max-connections-per-client: ${MAX_SIGNALING_CONNECTIONS_PER_CLIENT:12}
-    heartbeat-interval-ms: ${HEARTBEAT_INTERVAL_MS:30000}
-    unjoined-timeout-ms: ${UNJOINED_SOCKET_TIMEOUT_MS:15000}
-    unjoined-sweep-interval-ms: ${UNJOINED_SOCKET_SWEEP_MS:1000}
-    abuse-window-ms: ${SIGNALING_ABUSE_WINDOW_MS:10000}
+    heartbeat-interval: ${HEARTBEAT_INTERVAL_MS:30000}ms
+    unjoined-timeout: ${UNJOINED_SOCKET_TIMEOUT_MS:15000}ms
+    unjoined-sweep-interval: ${UNJOINED_SOCKET_SWEEP_MS:1000}ms
+    abuse-window: ${SIGNALING_ABUSE_WINDOW_MS:10000}ms
     max-frames-per-session-window: ${SIGNALING_MAX_FRAMES_PER_SESSION:600}
     max-frames-global-window: ${SIGNALING_MAX_FRAMES_GLOBAL:3600}
     max-text-payload-bytes: 65536
   turn:
     urls: ${TURN_URLS:}
     shared-secret: ${TURN_SHARED_SECRET:}
-    credential-ttl-seconds: ${TURN_CREDENTIAL_TTL_SECONDS:600}
-    rate-limit-window-seconds: ${TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS:60}
+    credential-ttl: ${TURN_CREDENTIAL_TTL_SECONDS:600}s
+    rate-limit-window: ${TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS:60}s
     rate-limit-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS:12}
     rate-limit-global-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS:8}
     rate-limit-max-clients: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS:10000}

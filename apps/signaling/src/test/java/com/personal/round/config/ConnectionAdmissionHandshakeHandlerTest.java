@@ -39,10 +39,8 @@ class ConnectionAdmissionHandshakeHandlerTest {
 	@BeforeEach
 	void setUp() {
 		service = mock(SignalingService.class);
-		SignalingProperties properties = new SignalingProperties();
-		properties.setMaxConnectionsPerClient(1);
 		policy = new ConnectionAdmissionPolicy(
-				properties,
+				TestProperties.signalingWithConnectionLimits(6, 1_000, 1),
 				new SignalingMetrics(new SimpleMeterRegistry()));
 		delegate = mock(HandshakeHandler.class);
 		handler = new ConnectionAdmissionHandshakeHandler(service, policy, delegate);

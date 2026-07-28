@@ -2,7 +2,7 @@ package com.personal.round.signaling;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.personal.round.config.SignalingProperties;
+import com.personal.round.config.TestProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetSocketAddress;
 import org.junit.jupiter.api.Test;
@@ -66,11 +66,10 @@ class ConnectionAdmissionPolicyTest {
 	private static ConnectionAdmissionPolicy policy(
 			int maxConnections,
 			int maxConnectionsPerClient,
-		SimpleMeterRegistry registry) {
-		SignalingProperties properties = new SignalingProperties();
-		properties.setMaxRoomSize(1);
-		properties.setMaxConnections(maxConnections);
-		properties.setMaxConnectionsPerClient(maxConnectionsPerClient);
-		return new ConnectionAdmissionPolicy(properties, new SignalingMetrics(registry));
+			SimpleMeterRegistry registry) {
+		return new ConnectionAdmissionPolicy(
+				TestProperties.signalingWithConnectionLimits(
+						1, maxConnections, maxConnectionsPerClient),
+				new SignalingMetrics(registry));
 	}
 }

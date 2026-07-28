@@ -20,7 +20,7 @@ class WebSocketConfigTest {
 				mock(SignalingWebSocketHandler.class),
 				mock(SignalingService.class),
 				mock(ConnectionAdmissionPolicy.class),
-				new SignalingProperties(),
+				TestProperties.signaling(),
 				environment))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("HTTPS");

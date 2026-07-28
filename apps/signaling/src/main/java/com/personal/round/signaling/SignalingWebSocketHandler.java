@@ -33,7 +33,7 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 			SignalingProperties properties) {
 		this.parser = parser;
 		this.signalingService = signalingService;
-		this.maxTextPayloadBytes = properties.getMaxTextPayloadBytes();
+		this.maxTextPayloadBytes = properties.maxTextPayloadBytes();
 	}
 
 	@Override

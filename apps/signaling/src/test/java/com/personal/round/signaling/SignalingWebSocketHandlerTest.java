@@ -5,7 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.personal.round.config.SignalingProperties;
+import com.personal.round.config.TestProperties;
 import com.personal.round.protocol.ProtocolParser;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,9 +25,8 @@ class SignalingWebSocketHandlerTest {
 	@BeforeEach
 	void setUp() {
 		service = mock(SignalingService.class);
-		SignalingProperties properties = new SignalingProperties();
 		handler = new SignalingWebSocketHandler(
-				new ProtocolParser(new ObjectMapper()), service, properties);
+				new ProtocolParser(new ObjectMapper()), service, TestProperties.signaling());
 		session = mock(WebSocketSession.class);
 		when(session.getId()).thenReturn("session");
 		when(service.acceptInboundFrame(session)).thenReturn(true);

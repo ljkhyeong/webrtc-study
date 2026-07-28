@@ -16,11 +16,11 @@ import tools.jackson.databind.ObjectMapper;
 		webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
 		properties = {
 			"server.address=127.0.0.1",
-			"round.signaling.heartbeat-interval-ms=60000",
+			"round.signaling.heartbeat-interval=60s",
 			"round.turn.urls=turn:turn.example.com:3478,turns:turn.example.com:5349?transport=tcp",
 			"round.turn.shared-secret=integration-shared-secret",
-			"round.turn.credential-ttl-seconds=3600",
-			"round.turn.rate-limit-window-seconds=60",
+			"round.turn.credential-ttl=1h",
+			"round.turn.rate-limit-window=60s",
 			"round.turn.rate-limit-max-requests=2",
 			"round.turn.rate-limit-global-max-requests=3"
 		})

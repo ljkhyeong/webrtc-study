@@ -12,7 +12,7 @@ public class UnjoinedSessionScheduler {
 		this.signalingService = signalingService;
 	}
 
-	@Scheduled(fixedDelayString = "${round.signaling.unjoined-sweep-interval-ms:1000}")
+	@Scheduled(fixedDelayString = "${round.signaling.unjoined-sweep-interval}")
 	public void sweep() {
 		signalingService.expireUnjoinedSessions();
 	}

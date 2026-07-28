@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.personal.round.config.SignalingProperties;
+import com.personal.round.config.TestProperties;
 import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ProtocolParser;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -432,9 +433,8 @@ class SignalingServiceTest {
 	@Test
 	void dropsGlobalOverloadWithoutClosingAnArbitrarySession() throws Exception {
 		service.shutdown();
-		SignalingProperties properties = properties(6);
-		properties.setMaxFramesPerSessionWindow(10);
-		properties.setMaxFramesGlobalWindow(12);
+		SignalingProperties properties =
+				TestProperties.signalingWithFrameLimits(6, 10, 12);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		TestPeer first = peer("global-first");
@@ -458,15 +458,14 @@ class SignalingServiceTest {
 				.count()).isEqualTo(1);
 		assertThat(service.acceptInboundFrame(
 				first.session(),
-				clock.millis() + properties.getAbuseWindowMs())).isTrue();
+				clock.millis() + properties.abuseWindow().toMillis())).isTrue();
 	}
 
 	@Test
 	void globalOverloadDoesNotTurnAValidPongIntoAHeartbeatTimeout() throws Exception {
 		service.shutdown();
-		SignalingProperties properties = properties(2);
-		properties.setMaxFramesPerSessionWindow(2);
-		properties.setMaxFramesGlobalWindow(2);
+		SignalingProperties properties =
+				TestProperties.signalingWithFrameLimits(2, 2, 2);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
@@ -499,9 +498,8 @@ class SignalingServiceTest {
 	@Test
 	void pongStillDisconnectsTheSessionThatExceedsItsOwnFrameWindow() throws Exception {
 		service.shutdown();
-		SignalingProperties properties = properties(1);
-		properties.setMaxFramesPerSessionWindow(1);
-		properties.setMaxFramesGlobalWindow(10);
+		SignalingProperties properties =
+				TestProperties.signalingWithFrameLimits(1, 1, 10);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
@@ -529,8 +527,8 @@ class SignalingServiceTest {
 	@Test
 	void rejectsConnectionsBeyondTheConfiguredGlobalLimit() throws Exception {
 		service.shutdown();
-		SignalingProperties properties = properties(2);
-		properties.setMaxConnections(2);
+		SignalingProperties properties =
+				TestProperties.signalingWithConnectionLimits(2, 2, 2);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		TestPeer first = peer("limit-first");
@@ -551,16 +549,12 @@ class SignalingServiceTest {
 	void releasesAdmissionReservationsOnDisconnectConnectRejectionAndShutdown()
 			throws Exception {
 		service.shutdown();
-		SignalingProperties properties = properties(1);
-		properties.setMaxConnections(1);
+		SignalingProperties properties =
+				TestProperties.signalingWithConnectionLimits(1, 1, 1);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
-		SignalingProperties admissionProperties = new SignalingProperties();
-		admissionProperties.setMaxRoomSize(1);
-		admissionProperties.setMaxConnections(3);
-		admissionProperties.setMaxConnectionsPerClient(3);
 		ConnectionAdmissionPolicy policy = new ConnectionAdmissionPolicy(
-				admissionProperties,
+				TestProperties.signalingWithConnectionLimits(1, 3, 3),
 				new SignalingMetrics(new SimpleMeterRegistry()));
 		TestPeer accepted = peer("reserved-accepted");
 		TestPeer rejected = peer("reserved-rejected");
@@ -612,9 +606,7 @@ class SignalingServiceTest {
 	}
 
 	private static SignalingProperties properties(int maxRoomSize) {
-		SignalingProperties properties = new SignalingProperties();
-		properties.setMaxRoomSize(maxRoomSize);
-		return properties;
+		return TestProperties.signaling(maxRoomSize);
 	}
 
 	private SignalingService service(

@@ -14,7 +14,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 		webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
 		properties = {
 			"server.address=127.0.0.1",
-			"round.signaling.heartbeat-interval-ms=60000"
+			"round.signaling.heartbeat-interval=60s"
 		})
 class HealthIntegrationTest {
 
