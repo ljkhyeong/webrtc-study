@@ -32,11 +32,13 @@ limited to six participants because upload bandwidth and CPU use grow with every
 
 ## Identity and authorization boundary
 
-The standalone MVP intentionally uses an invitation-capability model: possession of a valid room
-ID is enough to join, and display names are not verified identities. Spring Security is therefore
-not installed just to create the appearance of authentication without a user or membership source.
-The WebSocket Origin policy, connection admission, frame limits, and TURN issuance quotas are abuse
-controls; they do not turn an anonymous visitor into an authorized study member.
+Inside the standalone MVP, possession of a valid room ID is enough to join and display names are not
+verified identities. The production Caddy adds one coarse shared access credential in front of the
+static app, WebSocket upgrade, and TURN credential endpoint. This blocks anonymous internet access,
+but everyone who knows the shared credential still has the same capability. Spring Security is
+therefore not installed just to create the appearance of per-user authentication without a user or
+membership source. The edge credential, WebSocket Origin policy, connection admission, frame
+limits, and TURN issuance quotas are layered pilot controls; they do not establish study membership.
 
 BATON integration should reuse BATON's existing security model at two explicit seams:
 
@@ -58,10 +60,11 @@ WebSocket frames after the HTTP upgrade.
 use HTTPS/WSS. A production deployment also needs a TURN service for users behind restrictive
 NAT or corporate networks; STUN alone cannot guarantee connectivity.
 
-Caddy is the only public HTTP entrypoint. It serves the static browser build and proxies
-`/signal`, `/healthz`, and `/api/turn-credentials` to one private signaling instance. Room state
-is in memory, so running multiple signaling replicas would split one logical room until a shared
-room registry and cross-node relay are introduced.
+Caddy is the only public HTTP entrypoint. It requires the standalone shared access credential for
+the static browser build, `/signal`, and `/api/turn-credentials`, strips the Authorization header
+before proxying, and leaves only `/healthz` public for availability checks. Room state is in memory,
+so running multiple signaling replicas would split one logical room until a shared room registry
+and cross-node relay are introduced.
 
 The coturn shared secret exists only in the signaling and TURN runtimes. The browser requests a
 time-limited HMAC credential from `/api/turn-credentials`; no long-lived TURN password is compiled

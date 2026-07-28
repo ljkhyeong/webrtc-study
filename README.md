@@ -56,8 +56,13 @@ npm run check
 | `HOST`                                           | `0.0.0.0`               | signaling bind 주소           |
 | `ALLOWED_ORIGINS`                                | `http://localhost:5173` | 쉼표로 구분한 허용 Origin     |
 | `MAX_ROOM_SIZE`                                  | `6`                     | 방 최대 참가자 수             |
+| `MAX_SIGNALING_CONNECTIONS`                      | `1000`                  | 서버 전체 signaling 연결 제한 |
 | `MAX_SIGNALING_CONNECTIONS_PER_CLIENT`           | `12`                    | IP별 동시 signaling 연결 제한 |
 | `HEARTBEAT_INTERVAL_MS`                          | `30000`                 | 연결 상태 확인 주기(ms)       |
+| `SIGNALING_ABUSE_WINDOW_MS`                      | `10000`                 | 수신 프레임 고정 윈도우(ms)   |
+| `SIGNALING_MAX_FRAMES_PER_SESSION`               | `600`                   | 윈도우당 세션 프레임 제한     |
+| `SIGNALING_MAX_FRAMES_PER_CLIENT`                | `1200`                  | 윈도우당 IP 합산 프레임 제한  |
+| `SIGNALING_MAX_FRAMES_GLOBAL`                    | `3600`                  | 윈도우당 서버 프레임 제한     |
 | `VITE_SIGNALING_URL`                             | 현재 호스트의 `/signal` | 브라우저가 연결할 WSS/WS 주소 |
 | `VITE_STUN_URLS`                                 | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소       |
 | `VITE_TURN_CREDENTIALS_URL`                      | `/api/turn-credentials` | 만료형 TURN credential API    |
@@ -65,10 +70,26 @@ npm run check
 | `TURN_URLS`                                      | 없음                    | 서버가 브라우저에 전달할 TURN |
 | `TURN_SHARED_SECRET`                             | 없음                    | signaling과 coturn 공유 비밀  |
 | `TURN_CREDENTIAL_TTL_SECONDS`                    | `600`                   | TURN credential 수명(초)      |
-| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`      | `60`                    | IP별 발급 제한 구간(초)       |
+| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`      | `600`                   | IP별 발급 제한 구간(초)       |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`        | `12`                    | 구간당 IP별 최대 발급 수      |
-| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS` | `8`                     | 구간당 서버 전체 최대 발급 수 |
+| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS` | `24`                    | 구간당 서버 전체 최대 발급 수 |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`         | `10000`                 | rate-limit 상태 최대 IP 수    |
+
+프레임 제한은 세션, IP 합산, 서버 전체 순서로 적용됩니다. 세션 초과 연결은 닫고 IP 또는
+서버 전체 제한을 넘은 프레임은 다른 클라이언트에 영향을 주지 않도록 버립니다. IP 합산
+제한은 세션 제한 이상이어야 하고, 서버 전체 제한은 고정 윈도우 경계 차이를 고려해 IP
+합산 제한의 두 배 이상이어야 합니다. TURN 발급 제한도 같은 전역 여유 규칙을 사용합니다.
+마지막 연결이 끊겨도 IP별 프레임 상태는 현재 abuse window가 끝날 때까지 유지되므로 같은
+IP의 재연결로 quota를 초기화할 수 없습니다. 만료된 비활성 상태는 연결 시점과 주기적
+sweep에서 정리되며, 상태 맵이 가득 차면 활성 상태를 보존하고 비활성 상태만 제거합니다.
+
+TURN 기본 발급 구간은 credential TTL과 같은 600초입니다. IP당 12회는 같은 NAT 뒤의
+6명 참가자가 최초 발급 후 8분경 한 번씩 자동 갱신할 수 있게 하고 서버 전체는 24회로
+제한합니다. TTL이나 브라우저 갱신 시점을 변경하면 발급 구간과 한도도 함께 검토해야
+합니다. 운영 Compose의 Caddy는 공유 접근 자격을 요구해 익명 요청을 차단하지만, 이를
+알고 있는 사용자를 서로 구분하거나 스터디 멤버십까지 확인하지는 않습니다. 따라서
+전역 발급 quota와 coturn quota는 계속 유지하며, BATON 통합 시 사용자별 인증과
+스터디 권한 검사로 교체해야 합니다.
 
 ## 저장소 구조
 
@@ -95,9 +116,11 @@ packages/
 제한합니다.
 
 운영 배포에는 Caddy, 단일 Java signaling 인스턴스, coturn을 포함한 Compose 구성이
-준비되어 있습니다. 서버 준비, DNS, 방화벽, 인증서, relay-only 검증과 롤백 절차는
-[배포 가이드](docs/deployment.md)를 따르세요. 스터디 그룹에 공개하기 전에는
-[파일럿 체크리스트](docs/pilot-checklist.md)를 모두 통과해야 합니다.
+준비되어 있습니다. 외부 앱·WebSocket·TURN credential API는 HTTPS Caddy의 공유 접근
+인증 뒤에 놓이고, `/healthz`만 공개됩니다. 서버 준비, 접근 비밀번호 hash, DNS,
+방화벽, 인증서, relay-only 검증과 롤백 절차는 [배포 가이드](docs/deployment.md)를
+따르세요. 스터디 그룹에 공개하기 전에는 [파일럿 체크리스트](docs/pilot-checklist.md)를
+모두 통과해야 합니다.
 
 ## BATON 통합 방향
 

@@ -4,11 +4,14 @@ set -Eeuo pipefail
 usage() {
   cat <<'EOF'
 Usage: ROUND_URL=https://round.example.com \
+       ROUND_ACCESS_USER=round-study \
+       ROUND_ACCESS_PASSWORD='<shared pilot password>' \
        TURN_PROBE_HOST=turn.example.com \
        ops/turn/probe.sh
 
 Fetches a fresh short-lived TURN credential over HTTPS, then creates
 authenticated client-to-client relay traffic through each configured transport.
+The shared pilot password is required but is never printed.
 
 Optional environment variables:
   TURN_PROBE_TRANSPORTS       Comma-separated udp,tcp,tls (default: udp,tcp,tls)
@@ -47,6 +50,9 @@ require_command jq
 require_command timeout
 
 round_url=${ROUND_URL:-}
+access_user=${ROUND_ACCESS_USER:-}
+access_password=${ROUND_ACCESS_PASSWORD:-}
+unset ROUND_ACCESS_PASSWORD
 turn_host=${TURN_PROBE_HOST:-}
 transport_list=${TURN_PROBE_TRANSPORTS:-udp,tcp,tls}
 udp_port=${TURN_PROBE_UDP_PORT:-3478}
@@ -55,6 +61,13 @@ probe_timeout=${TURN_PROBE_TIMEOUT_SECONDS:-20}
 probe_image=${TURN_PROBE_IMAGE:-coturn/coturn:4.14.0-r0-alpine}
 
 [[ "$round_url" == https://* ]] || fail "ROUND_URL must use https://"
+[[ "$access_user" =~ ^[A-Za-z0-9._-]+$ ]] \
+  || fail "ROUND_ACCESS_USER must use only letters, numbers, dot, underscore, or hyphen"
+[[ -n "$access_password" ]] || fail "ROUND_ACCESS_PASSWORD must be nonempty"
+[[ "$access_password" != *$'\r'* && "$access_password" != *$'\n'* ]] \
+  || fail "ROUND_ACCESS_PASSWORD must contain no line break"
+LC_ALL=C [[ "$access_password" =~ ^[[:print:]]+$ ]] \
+  || fail "ROUND_ACCESS_PASSWORD must contain only printable characters"
 case "$turn_host" in
   '' | -* | *[!A-Za-z0-9.-]*)
     fail "TURN_PROBE_HOST must be a DNS hostname"
@@ -73,21 +86,38 @@ validate_port TURN_PROBE_TLS_PORT "$tls_port"
 [[ "$probe_timeout" =~ ^[1-9][0-9]*$ ]] \
   || fail "TURN_PROBE_TIMEOUT_SECONDS must be a positive integer"
 
+umask 077
 credential_file=$(mktemp)
+curl_config_file=$(mktemp)
 cleanup() {
-  rm -f -- "$credential_file"
+  rm -f -- "$credential_file" "$curl_config_file"
 }
 trap cleanup EXIT
-umask 077
+chmod 0600 "$credential_file" "$curl_config_file"
+
+escape_curl_config_value() {
+  local value=$1
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  printf '%s' "$value"
+}
+
+printf 'user = "%s:%s"\n' \
+  "$(escape_curl_config_value "$access_user")" \
+  "$(escape_curl_config_value "$access_password")" \
+  >"$curl_config_file"
+access_password=
 
 credential_url=${round_url%/}/api/turn-credentials
-curl \
+curl --disable \
+  --config "$curl_config_file" \
   --fail \
   --silent \
   --show-error \
   --connect-timeout 5 \
   --max-time 10 \
   --request POST \
+  --basic \
   --header "Origin: ${round_url%/}" \
   --header "Sec-Fetch-Site: same-origin" \
   --output "$credential_file" \

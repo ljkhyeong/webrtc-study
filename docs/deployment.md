@@ -3,7 +3,9 @@
 This stack runs one in-memory Java signaling replica behind Caddy and a
 host-networked coturn relay. Caddy serves the Vite build, terminates HTTPS/WSS,
 and proxies only `/signal`, `/healthz`, and `/api/turn-credentials` to the
-unpublished signaling port.
+unpublished signaling port. The standalone pilot places one shared Caddy Basic
+Auth gate in front of the static app, WebSocket upgrade, and TURN credential
+endpoint; only `/healthz` remains public.
 
 ## Production prerequisites
 
@@ -43,7 +45,9 @@ addresses and ports; stateful return traffic must also be allowed.
 The sample also limits abuse and overload:
 
 - `TURN_USER_QUOTA=12` permits up to 12 concurrent allocations for one issued
-  user. A six-person mesh needs at most five peer allocations per participant.
+  user. A six-person mesh can create candidates for five peer connections, and
+  the remaining quota leaves room for pooled candidates and ICE recovery.
+  Revisit this value from observed allocations in the real relay-only pilot.
 - `TURN_TOTAL_QUOTA=120` caps allocations across the server.
 - `TURN_MAX_BPS=2000000` caps each TURN session at 2,000,000 bytes/s per input
   and output stream.
@@ -62,6 +66,8 @@ Create the runtime environment from the tracked sample:
 cp ops/production.env.example ops/production.env
 chmod 0600 ops/production.env
 openssl rand -hex 32
+docker run --rm -it caddy:2.11.4-alpine \
+  caddy hash-password --algorithm argon2id
 ```
 
 Paste the generated 64-character value into `TURN_SHARED_SECRET`. This file is
@@ -69,8 +75,26 @@ ignored by both Git and the Docker build context. The secret is passed only at
 container runtime to signaling and coturn; it is never compiled into the web
 bundle or an image layer.
 
+The Caddy command prompts without echoing the plaintext password. Paste its
+entire `$argon2id$...` output between the single quotes in
+`ROUND_ACCESS_PASSWORD_HASH=''`; the quotes prevent Compose from interpreting
+the hash's dollar signs as environment interpolation. Keep the chosen plaintext
+password out of the env file, shell history, Git, images, and logs. Set
+`ROUND_ACCESS_USER` to a simple shared pilot username without a colon, then
+deliver the username and plaintext password to the intended study members over
+a separate trusted channel.
+
 Set these values carefully:
 
+- `ROUND_DOMAIN` must be served through HTTPS. HTTP Basic Auth only encodes
+  credentials and is unsafe without TLS; deployed browser media and signaling
+  also require HTTPS/WSS.
+- `ROUND_ACCESS_USER` and `ROUND_ACCESS_PASSWORD_HASH` protect every external
+  route except `/healthz`. Caddy verifies the explicit Argon2id hash and removes
+  `Authorization` before proxying to signaling. The shared credential is a
+  temporary standalone-pilot boundary: it cannot identify participants,
+  enforce study membership, or revoke one member. BATON authentication and
+  meeting membership authorization must replace it before broader access.
 - `ROUND_DOMAIN` and `ALLOWED_ORIGINS` must describe the same exact HTTPS
   origin. Do not use a wildcard origin.
 - `TURN_URLS` should advertise UDP, TCP, and TLS routes for the TURN hostname.
@@ -78,17 +102,38 @@ Set these values carefully:
   expiring HMAC credentials.
 - `TURN_CREDENTIAL_TTL_SECONDS` defaults to 600 seconds and can be adjusted
   without rebuilding an image. The endpoint and external probe issue or fetch
-  a fresh credential on every request.
+  a fresh credential on every request. If the TTL changes, review and normally
+  align the issuance window so credentials do not outlive the intended
+  rate-limit horizon.
 - `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`,
   `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`,
   `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS`, and
   `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS` bound credential endpoint abuse.
-  The defaults permit 12 requests per client and eight requests across the
-  standalone server in 60 seconds while tracking up to 10,000 clients.
+  With the ten-minute credential TTL, the matching ten-minute default window
+  permits 12 requests per client and 24 requests across the standalone server
+  while tracking up to 10,000 clients. Twelve covers both the initial issue and
+  the scheduled eight-minute refresh for six room participants behind one NAT.
+  The global quota must be at least twice the per-client quota. If the browser
+  refresh timing changes, review these values together.
   Browser requests must be exact same-origin POST requests. Origin and Fetch
   Metadata validation is browser abuse mitigation, not authentication; a
-  non-browser client can construct those headers until BATON identity and
-  study membership are connected.
+  non-browser client that knows or steals the shared Caddy credential can
+  construct those headers, spend the global issuance quota, or accumulate live
+  credentials that consume coturn relay allocations and bandwidth. The edge
+  gate blocks anonymous internet callers, while the standalone quotas limit but
+  do not eliminate abuse by a credential holder until BATON identity and study
+  membership are connected.
+- `MAX_SIGNALING_CONNECTIONS=1000` and
+  `MAX_SIGNALING_CONNECTIONS_PER_CLIENT=12` bound concurrent WebSocket
+  handshakes. `SIGNALING_ABUSE_WINDOW_MS=10000` applies frame limits of 600 per
+  session, 1,200 per effective client address, and 3,600 globally through
+  `SIGNALING_MAX_FRAMES_PER_SESSION`, `SIGNALING_MAX_FRAMES_PER_CLIENT`, and
+  `SIGNALING_MAX_FRAMES_GLOBAL`. Session overages close only that connection;
+  client and global overages drop the frame. The global frame limit must be at
+  least twice the client limit. Disconnecting and reconnecting from the same
+  address does not reset its current client window. Expired inactive windows
+  are cleaned on connect and by the periodic sweep; the bounded map evicts only
+  inactive entries and never active client state.
 - `VITE_ICE_TRANSPORT_POLICY=all` is the normal release setting. The tag-based
   release workflow also publishes a separate `-relay` edge image to prove media
   crosses TURN rather than a direct candidate. Never use that relay-only image
@@ -218,19 +263,26 @@ Run the authenticated relay probe from a Linux monitoring host outside the TURN
 server and its NAT:
 
 ```bash
+read -r -p 'ROUND access user: ' ROUND_ACCESS_USER
+read -r -s -p 'ROUND access password: ' ROUND_ACCESS_PASSWORD
+printf '\n'
+export ROUND_ACCESS_USER ROUND_ACCESS_PASSWORD
 ROUND_URL=https://round.example.com \
 TURN_PROBE_HOST=turn.example.com \
 TURN_PROBE_IMAGE=coturn/coturn:4.14.0-r0-alpine \
 ops/turn/probe.sh
+unset ROUND_ACCESS_PASSWORD
 ```
 
 The monitor needs `curl`, `jq`, GNU `timeout`, and Docker. Pin
 `TURN_PROBE_IMAGE` to the same reviewed coturn digest as the deployment. The
-probe fetches a fresh short-lived credential without printing it, verifies the
+probe uses the shared access credential without printing the password, fetches
+a fresh short-lived TURN credential without printing it, verifies the
 advertised URLs and expiry, and creates authenticated client-to-client relay
-traffic over UDP, TCP, and TLS. Treat a nonzero exit as a deployment failure.
-Run it every one to five minutes from the external network and alert after an
-appropriate number of consecutive failures.
+traffic over UDP, TCP, and TLS. Store the monitor's plaintext password in its
+secret manager, not in the deployment env file or command arguments. Treat a
+nonzero exit as a deployment failure. Run it every one to five minutes from the
+external network and alert after an appropriate number of consecutive failures.
 
 The credential response contains `urls`, `username`, `credential`, and
 `expiresAt` (epoch seconds), but never the shared secret. Confirm separately in
@@ -254,6 +306,10 @@ omit request headers and URIs entirely.
 - Rotate `TURN_SHARED_SECRET` by updating the env file and recreating signaling
   and turn together. Previously issued credentials stop working after coturn
   switches secrets, so plan a short maintenance window.
+- Treat disclosure of the shared pilot password as disclosure of every room.
+  Generate a new password and Argon2id hash, update
+  `ROUND_ACCESS_PASSWORD_HASH`, recreate only `edge`, redistribute the new
+  plaintext out of band, and revoke the old credential immediately.
 - Keep the relay range consistent in the env file, coturn firewall, router
   forwarding, and cloud security group.
 - Roll back by restoring all three prior immutable image references and running

@@ -21,11 +21,21 @@ document.
 ## Public network path
 
 - [ ] HTTP redirects to HTTPS.
-- [ ] The web app loads over HTTPS without mixed-content warnings.
-- [ ] `wss://<domain>/signal` accepts the exact production Origin.
+- [ ] HTTP Basic Auth is never accepted over plaintext HTTP; the web app loads
+      over HTTPS without mixed-content warnings.
+- [ ] Missing or incorrect shared credentials receive `401` for the static app,
+      `/signal`, and `/api/turn-credentials`, while `/healthz` remains public.
+- [ ] Authenticated `wss://<domain>/signal` accepts the exact production Origin,
+      and the authenticated TURN credential POST succeeds.
 - [ ] A foreign, missing, wildcard, or non-HTTPS Origin is rejected.
 - [ ] The signaling container port is not reachable directly from the public
       internet.
+- [ ] Only the Argon2id password hash is stored in the deployment env; the
+      plaintext shared password is absent from Git, images, shell history, and
+      logs, and `Authorization` is removed before proxying to signaling.
+- [ ] The shared credential was delivered out of band, its leak-and-rotation
+      procedure was rehearsed, and the team accepts that it is temporary until
+      BATON identity and study-membership authorization replace it.
 - [ ] TURN shared secrets are absent from Git, image history, browser bundles,
       access logs, and application logs.
 - [ ] Visiting an invite path leaves no room code in Caddy access logs, while
@@ -101,14 +111,16 @@ toggle, leave, rejoin, invite-copy behavior, and zero unexpected console errors.
 - [ ] `docker compose up -d --wait --wait-timeout 120` passes the local
       signaling, edge, and TURN-listener startup gates.
 - [ ] The external authenticated TURN probe passes UDP, TCP, and TLS from a
-      network outside the TURN host and its NAT.
+      network outside the TURN host and its NAT using monitor credentials from
+      a secret store.
 - [ ] A nonzero external TURN probe result triggers the pilot deployment gate
       or the configured production alert.
 - [ ] Edge `/healthz` and the local STUN listener are not accepted as proof of
       public TURN authentication or relay-media health.
-- [ ] Active rooms, peers, rejected joins, invalid frames, queue overflow, and
-      heartbeat closures are observable without logging room IDs, names, SDP,
-      ICE candidates, or chat text.
+- [ ] Active rooms, peers, rejected connections and joins, invalid or
+      session/client/global-limited frames, queue overflow, and heartbeat
+      closures are observable without logging room IDs, names, SDP, ICE
+      candidates, or chat text.
 - [ ] A graceful SIGTERM rejects new joins, closes existing sockets with a
       restart-appropriate code, and exits within the configured timeout.
 - [ ] The previous image can be restored and smoke-tested in five minutes.

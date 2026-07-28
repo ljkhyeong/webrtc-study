@@ -13,7 +13,9 @@
 
 http://127.0.0.1:8080 {
 	handle /healthz {
-		reverse_proxy signaling:8787
+		reverse_proxy signaling:8787 {
+			header_up -Authorization
+		}
 	}
 
 	respond 404
@@ -21,6 +23,11 @@ http://127.0.0.1:8080 {
 
 {$ROUND_DOMAIN} {
 	encode zstd gzip
+
+	@requiresPilotAccess not path /healthz
+	basic_auth @requiresPilotAccess argon2id {
+		{$ROUND_ACCESS_USER} {$ROUND_ACCESS_PASSWORD_HASH}
+	}
 
 	@skipAccessLog {
 		not path /signal /api/turn-credentials /healthz
@@ -38,15 +45,21 @@ http://127.0.0.1:8080 {
 	}
 
 	handle /signal {
-		reverse_proxy signaling:8787
+		reverse_proxy signaling:8787 {
+			header_up -Authorization
+		}
 	}
 
 	handle /api/turn-credentials {
-		reverse_proxy signaling:8787
+		reverse_proxy signaling:8787 {
+			header_up -Authorization
+		}
 	}
 
 	handle /healthz {
-		reverse_proxy signaling:8787
+		reverse_proxy signaling:8787 {
+			header_up -Authorization
+		}
 	}
 
 	handle /assets/* {
