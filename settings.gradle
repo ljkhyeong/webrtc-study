@@ -1,0 +1,4 @@
+rootProject.name = 'round'
+
+include('apps:signaling')
+project(':apps:signaling').projectDir = file('apps/signaling')

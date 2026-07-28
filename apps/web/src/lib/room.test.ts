@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canonicalRoomUrl,
   createRoomId,
   isValidRoomId,
   normalizeRoomId,
@@ -23,8 +24,18 @@ describe('room helpers', () => {
   it('parses only complete room routes', () => {
     expect(roomIdFromPath('/room/abcd-efgh-jkmp')).toBe('abcd-efgh-jkmp');
     expect(roomIdFromPath('/room/short')).toBeNull();
+    expect(roomIdFromPath('/room/%E0%A4%A')).toBeNull();
     expect(roomIdFromPath('/settings')).toBeNull();
     expect(pathForRoom('abcd-efgh-jkmp')).toBe('/room/abcd-efgh-jkmp');
+  });
+
+  it('removes query credentials and fragments from copied room links', () => {
+    expect(
+      canonicalRoomUrl(
+        'abcd-efgh-jkmp',
+        'https://round.example/room/abcd-efgh-jkmp?ticket=secret#meeting-state',
+      ),
+    ).toBe('https://round.example/room/abcd-efgh-jkmp');
   });
 
   it('keeps display names compact and readable', () => {

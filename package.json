@@ -13,19 +13,21 @@
   "packageManager": "npm@11.7.0",
   "scripts": {
     "predev": "npm run build:packages",
-    "dev": "concurrently --kill-others-on-fail --names signaling,web --prefix-colors blue,green \"npm run dev -w @round/signaling\" \"npm run dev -w @round/web\"",
+    "dev:signaling": "node scripts/run-gradle.mjs :apps:signaling:bootRun",
+    "dev": "concurrently --kill-others-on-fail --names signaling,web --prefix-colors blue,green \"npm run dev:signaling\" \"npm run dev -w @round/web\"",
     "build:packages": "npm run build -w @round/protocol && npm run build -w @round/rtc-core",
-    "build": "npm run build:packages && npm run build -w @round/signaling && npm run build -w @round/web",
-    "typecheck": "npm run typecheck -w @round/protocol && npm run typecheck -w @round/rtc-core && npm run typecheck -w @round/signaling && npm run typecheck -w @round/web",
+    "build:signaling": "./gradlew --no-daemon :apps:signaling:bootJar",
+    "build": "npm run build:packages && npm run build:signaling && npm run build -w @round/web",
+    "typecheck": "npm run typecheck -w @round/protocol && npm run typecheck -w @round/rtc-core && npm run typecheck -w @round/web && ./gradlew --no-daemon :apps:signaling:compileJava :apps:signaling:compileTestJava",
     "pretest": "npm run build -w @round/protocol",
-    "test": "npm run test -w @round/protocol && npm run test -w @round/rtc-core && npm run test -w @round/signaling && npm run test -w @round/web",
+    "test": "npm run test -w @round/protocol && npm run test -w @round/rtc-core && npm run test -w @round/web && ./gradlew --no-daemon :apps:signaling:test",
     "check": "npm run typecheck && npm run test && npm run build",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format": "prettier --write --ignore-unknown .",
+    "format:check": "prettier --check --ignore-unknown ."
   },
   "devDependencies": {
     "concurrently": "10.0.4",
     "prettier": "3.9.6",
-    "typescript": "5.7.3"
+    "typescript": "7.0.2"
   }
 }

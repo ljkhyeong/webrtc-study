@@ -1,0 +1,3 @@
+production.env
+certs/*
+!certs/.gitignore

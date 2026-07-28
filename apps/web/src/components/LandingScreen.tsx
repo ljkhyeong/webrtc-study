@@ -117,7 +117,7 @@ export function LandingScreen({
                     onChange={(event) => setRoomId(normalizeRoomId(event.target.value))}
                   />
                   <button type="submit" disabled={!isValidRoomId(normalizedRoomId)}>
-                    참가
+                    준비
                   </button>
                 </div>
               </>
@@ -125,7 +125,7 @@ export function LandingScreen({
 
             {invitedRoomId ? (
               <button className="primary-action" type="submit">
-                방에 들어가기
+                입장 준비
                 <ArrowIcon />
               </button>
             ) : null}
@@ -168,7 +168,7 @@ export function LandingScreen({
       </main>
 
       <footer className="landing-footer">
-        <p>카메라와 마이크 권한은 방에 들어갈 때 요청합니다.</p>
+        <p>카메라와 마이크 권한은 ‘장치 확인’을 누를 때만 요청합니다.</p>
         {invitedRoomId && onGoHome ? (
           <button type="button" onClick={onGoHome}>
             다른 방 만들기

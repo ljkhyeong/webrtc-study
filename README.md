@@ -11,10 +11,12 @@ ROUND의 첫 버전은 최대 6명이 브라우저끼리 직접 연결되는 mes
 
 - 읽기 쉬운 방 코드와 공유 가능한 초대 링크
 - 카메라·마이크 기반 다자간 WebRTC 통화
+- 입장 전 미리보기와 카메라·마이크 선택
 - 마이크 음소거와 카메라 켜기/끄기
 - WebRTC DataChannel 기반 휘발성 텍스트 채팅
 - 참가자 입장·퇴장과 연결 상태 표시
-- 카메라/마이크 권한 거부 시 미디어 없이 입장
+- 한쪽 미디어 권한만 허용해도 음성 전용 또는 영상 전용으로 입장
+- 일시적인 signaling·ICE 연결 장애 자동 복구
 - 데스크톱과 모바일 반응형 화면
 
 계정, 녹화, 화면 공유, 채팅 저장, 관리자 기능은 아직 포함하지 않습니다.
@@ -25,12 +27,17 @@ ROUND의 첫 버전은 최대 6명이 브라우저끼리 직접 연결되는 mes
 
 - Node.js 22 이상
 - npm 11 이상
+- Java 21
 
 ```bash
 npm install
 cp .env.example .env
 npm run dev
 ```
+
+Gradle은 저장소의 Wrapper를 사용하므로 별도로 설치하지 않아도 됩니다. `npm run dev`가
+루트 `.env`를 Spring Boot와 Vite 양쪽에 전달하고 signaling 서버와 웹 앱을 함께
+실행합니다.
 
 브라우저에서 [http://localhost:5173](http://localhost:5173)을 엽니다. 서로 다른 브라우저
 프로필이나 시크릿 창을 함께 열면 2명 입장을 로컬에서 확인할 수 있습니다.
@@ -43,24 +50,61 @@ npm run check
 
 ## 환경 변수
 
-| 변수                   | 기본값                  | 설명                          |
-| ---------------------- | ----------------------- | ----------------------------- |
-| `PORT`                 | `8787`                  | signaling HTTP/WebSocket 포트 |
-| `HOST`                 | `0.0.0.0`               | signaling bind 주소           |
-| `ALLOWED_ORIGINS`      | `http://localhost:5173` | 쉼표로 구분한 허용 Origin     |
-| `MAX_ROOM_SIZE`        | `6`                     | 방 최대 참가자 수             |
-| `VITE_SIGNALING_URL`   | 현재 호스트의 `/signal` | 브라우저가 연결할 WSS/WS 주소 |
-| `VITE_STUN_URLS`       | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소       |
-| `VITE_TURN_URL`        | 없음                    | 운영용 TURN 주소              |
-| `VITE_TURN_USERNAME`   | 없음                    | TURN 사용자 이름              |
-| `VITE_TURN_CREDENTIAL` | 없음                    | TURN credential               |
+| 변수                                             | 기본값                  | 설명                            |
+| ------------------------------------------------ | ----------------------- | ------------------------------- |
+| `PORT`                                           | `8787`                  | signaling HTTP/WebSocket 포트   |
+| `HOST`                                           | `0.0.0.0`               | signaling bind 주소             |
+| `ALLOWED_ORIGINS`                                | `http://localhost:5173` | 쉼표로 구분한 허용 Origin       |
+| `MAX_ROOM_SIZE`                                  | `6`                     | 방 최대 참가자 수               |
+| `MAX_SIGNALING_CONNECTIONS`                      | `1000`                  | 서버 전체 signaling 연결 제한   |
+| `MAX_SIGNALING_CONNECTIONS_PER_CLIENT`           | `12`                    | IP별 동시 signaling 연결 제한   |
+| `HEARTBEAT_INTERVAL_MS`                          | `30000`                 | 연결 상태 확인 주기(ms)         |
+| `SIGNALING_SHUTDOWN_CLOSE_TIMEOUT_MS`            | `5000`                  | 종료 시 전체 close 제한(ms)     |
+| `SIGNALING_ABUSE_WINDOW_MS`                      | `10000`                 | 수신 프레임 고정 윈도우(ms)     |
+| `SIGNALING_MAX_FRAMES_PER_SESSION`               | `600`                   | 윈도우당 세션 프레임 제한       |
+| `SIGNALING_MAX_FRAMES_PER_CLIENT`                | `1200`                  | 윈도우당 IP 합산 프레임 제한    |
+| `SIGNALING_MAX_FRAMES_GLOBAL`                    | `3600`                  | 윈도우당 서버 프레임 제한       |
+| `SIGNALING_MAX_BYTES_PER_SESSION`                | `4194304`               | 윈도우당 세션 수신 바이트 제한  |
+| `SIGNALING_MAX_BYTES_PER_CLIENT`                 | `8388608`               | 윈도우당 IP 합산 바이트 제한    |
+| `SIGNALING_MAX_BYTES_GLOBAL`                     | `25165824`              | 윈도우당 서버 수신 바이트 제한  |
+| `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES`             | `2097152`               | peer별 송신 대기 바이트 제한    |
+| `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL`      | `67108864`              | 서버 전체 송신 대기 바이트 제한 |
+| `VITE_SIGNALING_URL`                             | 현재 호스트의 `/signal` | 브라우저가 연결할 WSS/WS 주소   |
+| `VITE_STUN_URLS`                                 | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소         |
+| `VITE_TURN_CREDENTIALS_URL`                      | `/api/turn-credentials` | 만료형 TURN credential API      |
+| `VITE_ICE_TRANSPORT_POLICY`                      | `all`                   | `relay`이면 TURN만 강제         |
+| `TURN_URLS`                                      | 없음                    | 서버가 브라우저에 전달할 TURN   |
+| `TURN_SHARED_SECRET`                             | 없음                    | signaling과 coturn 공유 비밀    |
+| `TURN_CREDENTIAL_TTL_SECONDS`                    | `600`                   | TURN credential 수명(초)        |
+| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`      | `600`                   | IP별 발급 제한 구간(초)         |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`        | `12`                    | 구간당 IP별 최대 발급 수        |
+| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS` | `24`                    | 구간당 서버 전체 최대 발급 수   |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`         | `10000`                 | rate-limit 상태 최대 IP 수      |
+
+프레임 수와 수신 바이트 제한은 세션, IP 합산, 서버 전체 순서로 함께 적용됩니다. 세션
+초과 연결은 닫고 IP 또는 서버 전체 제한을 넘은 프레임은 다른 클라이언트에 영향을 주지
+않도록 버립니다. IP 합산 제한은 세션 제한 이상이어야 하고, 서버 전체 제한은 고정
+윈도우 경계 차이를 고려해 IP 합산 제한의 두 배 이상이어야 합니다. 송신 큐는 peer별
+프레임·바이트 제한과 서버 전체 64MiB 바이트 제한을 함께 적용합니다. TURN 발급 제한도
+같은 전역 여유 규칙을 사용합니다.
+마지막 연결이 끊겨도 IP별 프레임 상태는 현재 abuse window가 끝날 때까지 유지되므로 같은
+IP의 재연결로 quota를 초기화할 수 없습니다. 만료된 비활성 상태는 연결 시점과 주기적
+sweep에서 정리되며, 상태 맵이 가득 차면 활성 상태를 보존하고 비활성 상태만 제거합니다.
+
+TURN 기본 발급 구간은 credential TTL과 같은 600초입니다. IP당 12회는 같은 NAT 뒤의
+6명 참가자가 최초 발급 후 8분경 한 번씩 자동 갱신할 수 있게 하고 서버 전체는 24회로
+제한합니다. TTL이나 브라우저 갱신 시점을 변경하면 발급 구간과 한도도 함께 검토해야
+합니다. 운영 Compose의 Caddy는 공유 접근 자격을 요구해 익명 요청을 차단하지만, 이를
+알고 있는 사용자를 서로 구분하거나 스터디 멤버십까지 확인하지는 않습니다. 따라서
+전역 발급 quota와 coturn quota는 계속 유지하며, BATON 통합 시 사용자별 인증과
+스터디 권한 검사로 교체해야 합니다.
 
 ## 저장소 구조
 
 ```text
 apps/
   web/          React + Vite 화면
-  signaling/    Node.js WebSocket signaling 서버
+  signaling/    Java 21 + Spring Boot WebSocket signaling 서버
 packages/
   protocol/     클라이언트/서버 공유 메시지 계약
   rtc-core/     React에 의존하지 않는 WebRTC 엔진
@@ -74,14 +118,24 @@ packages/
 사용하려면 웹은 HTTPS, signaling은 WSS로 배포해야 합니다.
 
 기본 STUN 설정만으로는 회사·학교망이나 제한적인 NAT 환경에서 연결을 보장할 수 없습니다.
-실사용 배포에는 coturn 같은 TURN 서버를 연결하는 것을 권장합니다. mesh 방식은 참가자마다
-업로드 스트림 수가 늘어나므로 첫 버전은 6명으로 제한합니다.
+실사용 배포에는 coturn 같은 TURN 서버가 필요합니다. ROUND는 TURN shared secret을 브라우저
+번들에 넣지 않고 Java 서버가 짧은 수명의 credential을 발급합니다. mesh 방식은 참가자마다
+업로드 스트림 수가 늘어나므로 영상은 기본 640×360, 최대 15fps이며 첫 버전은 6명으로
+제한합니다.
+
+운영 배포에는 Caddy, 단일 Java signaling 인스턴스, coturn을 포함한 Compose 구성이
+준비되어 있습니다. 외부 앱·WebSocket·TURN credential API는 HTTPS Caddy의 공유 접근
+인증 뒤에 놓이고, `/healthz`만 공개됩니다. 서버 준비, 접근 비밀번호 hash, DNS,
+방화벽, 인증서, relay-only 검증과 롤백 절차는 [배포 가이드](docs/deployment.md)를
+따르세요. 스터디 그룹에 공개하기 전에는 [파일럿 체크리스트](docs/pilot-checklist.md)를
+모두 통과해야 합니다.
 
 ## BATON 통합 방향
 
-`@round/rtc-core`는 React, 라우터, CSS 프레임워크를 import하지 않습니다. 이후 BATON에서는
-이 패키지를 `features/meeting` 어댑터에서 감싸고, 방 접근 권한만 BATON의 인증 모델에 맞춰
-연결할 수 있습니다.
+`@round/rtc-core`는 React, 라우터, CSS 프레임워크를 import하지 않습니다. Java signaling
+코드도 `com.personal.round.signaling` 아래에 격리되어 있습니다. 이후 BATON에서는
+WebRTC 코어를 `features/meeting` 어댑터에서 감싸고, signaling 패키지를 BATON의 inbound
+adapter로 옮긴 뒤 방 접근 권한만 BATON 인증 모델에 맞춰 연결할 수 있습니다.
 
 BATON의 현재 Caddy 설정은 `Permissions-Policy`에서 카메라와 마이크를 차단하고 있으므로
 통합 시 해당 헤더와 WebSocket `connect-src` 정책을 함께 조정해야 합니다.

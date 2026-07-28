@@ -19,6 +19,19 @@ function initials(name: string) {
   return Array.from(name.trim()).slice(0, 2).join('').toUpperCase() || '?';
 }
 
+function connectionLabel(connectionState: string) {
+  switch (connectionState) {
+    case 'disconnected':
+      return '재연결 중';
+    case 'failed':
+      return '연결 실패';
+    case 'closed':
+      return '연결 종료';
+    default:
+      return '연결 중';
+  }
+}
+
 export function VideoTile({ participant }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -62,6 +75,13 @@ export function VideoTile({ participant }: VideoTileProps) {
         >
           <span>{initials(participant.displayName)}</span>
         </div>
+      ) : null}
+      {!isConnected ? (
+        <span
+          className={`video-tile__connection video-tile__connection--${participant.connectionState}`}
+        >
+          {connectionLabel(participant.connectionState)}
+        </span>
       ) : null}
 
       <div className="video-tile__shade" />

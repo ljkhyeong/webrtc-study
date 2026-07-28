@@ -7,7 +7,6 @@
     "jsx": "react-jsx",
     "noEmit": true,
     "types": ["vite/client"],
-    "baseUrl": ".",
     "paths": {
       "@round/rtc-core": ["../../packages/rtc-core/src/index.ts"]
     }

@@ -51,10 +51,22 @@ export function roomIdFromPath(pathname: string) {
     return null;
   }
 
-  const roomId = normalizeRoomId(decodeURIComponent(match[1]!));
-  return isValidRoomId(roomId) ? roomId : null;
+  try {
+    const roomId = normalizeRoomId(decodeURIComponent(match[1]!));
+    return isValidRoomId(roomId) ? roomId : null;
+  } catch {
+    return null;
+  }
 }
 
 export function pathForRoom(roomId: string) {
   return `/room/${encodeURIComponent(roomId)}`;
+}
+
+export function canonicalRoomUrl(roomId: string, currentUrl: string) {
+  const current = new URL(currentUrl);
+  if (current.protocol !== 'https:' && current.protocol !== 'http:') {
+    throw new Error('Room links require an HTTP origin');
+  }
+  return new URL(pathForRoom(roomId), current.origin).toString();
 }

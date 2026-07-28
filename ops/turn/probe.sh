@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: ROUND_URL=https://round.example.com \
+       ROUND_ACCESS_USER=round-study \
+       ROUND_ACCESS_PASSWORD='<shared pilot password>' \
+       TURN_PROBE_HOST=turn.example.com \
+       ops/turn/probe.sh
+
+Fetches a fresh short-lived TURN credential over HTTPS, then creates
+authenticated client-to-client relay traffic through each configured transport.
+The shared pilot password is required but is never printed.
+
+Optional environment variables:
+  TURN_PROBE_TRANSPORTS       Comma-separated udp,tcp,tls (default: udp,tcp,tls)
+  TURN_PROBE_UDP_PORT         TURN UDP/TCP listener (default: 3478)
+  TURN_PROBE_TLS_PORT         TURN TLS listener (default: 5349)
+  TURN_PROBE_TIMEOUT_SECONDS  Per-transport timeout (default: 20)
+  TURN_PROBE_IMAGE            Coturn utility image (default: deployment image)
+  TURN_PROBE_CA_FILE          Optional PEM CA bundle for a private TURN CA
+EOF
+}
+
+case "${1:-}" in
+  '')
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+fail() {
+  printf 'round-turn-probe: %s\n' "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "missing required command: $1"
+}
+
+require_command curl
+require_command docker
+require_command jq
+require_command timeout
+
+probe_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+tls_verifier=$probe_dir/verify-tls.sh
+round_url=${ROUND_URL:-}
+access_user=${ROUND_ACCESS_USER:-}
+access_password=${ROUND_ACCESS_PASSWORD:-}
+unset ROUND_ACCESS_PASSWORD
+turn_host=${TURN_PROBE_HOST:-}
+transport_list=${TURN_PROBE_TRANSPORTS:-udp,tcp,tls}
+udp_port=${TURN_PROBE_UDP_PORT:-3478}
+tls_port=${TURN_PROBE_TLS_PORT:-5349}
+probe_timeout=${TURN_PROBE_TIMEOUT_SECONDS:-20}
+probe_image=${TURN_PROBE_IMAGE:-coturn/coturn:4.14.0-r0-alpine}
+tls_ca_file=${TURN_PROBE_CA_FILE:-}
+
+[[ "$round_url" == https://* ]] || fail "ROUND_URL must use https://"
+[[ "$access_user" =~ ^[A-Za-z0-9._-]+$ ]] \
+  || fail "ROUND_ACCESS_USER must use only letters, numbers, dot, underscore, or hyphen"
+[[ -n "$access_password" ]] || fail "ROUND_ACCESS_PASSWORD must be nonempty"
+[[ "$access_password" != *$'\r'* && "$access_password" != *$'\n'* ]] \
+  || fail "ROUND_ACCESS_PASSWORD must contain no line break"
+LC_ALL=C [[ "$access_password" =~ ^[[:print:]]+$ ]] \
+  || fail "ROUND_ACCESS_PASSWORD must contain only printable characters"
+case "$turn_host" in
+  '' | -* | *[!A-Za-z0-9.-]*)
+    fail "TURN_PROBE_HOST must be a DNS hostname"
+    ;;
+esac
+
+validate_port() {
+  local name=$1
+  local value=$2
+  [[ "$value" =~ ^[0-9]+$ ]] || fail "$name must be an integer"
+  (( value >= 1 && value <= 65535 )) || fail "$name must be between 1 and 65535"
+}
+
+validate_port TURN_PROBE_UDP_PORT "$udp_port"
+validate_port TURN_PROBE_TLS_PORT "$tls_port"
+[[ "$probe_timeout" =~ ^[1-9][0-9]*$ ]] \
+  || fail "TURN_PROBE_TIMEOUT_SECONDS must be a positive integer"
+
+umask 077
+credential_file=$(mktemp)
+curl_config_file=$(mktemp)
+cleanup() {
+  rm -f -- "$credential_file" "$curl_config_file"
+}
+trap cleanup EXIT
+chmod 0600 "$credential_file" "$curl_config_file"
+
+escape_curl_config_value() {
+  local value=$1
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  printf '%s' "$value"
+}
+
+printf 'user = "%s:%s"\n' \
+  "$(escape_curl_config_value "$access_user")" \
+  "$(escape_curl_config_value "$access_password")" \
+  >"$curl_config_file"
+access_password=
+
+credential_url=${round_url%/}/api/turn-credentials
+curl --disable \
+  --config "$curl_config_file" \
+  --fail \
+  --silent \
+  --show-error \
+  --connect-timeout 5 \
+  --max-time 10 \
+  --request POST \
+  --basic \
+  --header "Origin: ${round_url%/}" \
+  --header "Sec-Fetch-Site: same-origin" \
+  --output "$credential_file" \
+  "$credential_url" \
+  || fail "credential endpoint request failed"
+
+username=$(jq -er '.username | strings | select(length > 0)' "$credential_file") \
+  || fail "credential response has no username"
+credential=$(jq -er '.credential | strings | select(length > 0)' "$credential_file") \
+  || fail "credential response has no credential"
+expires_at=$(jq -er '.expiresAt | numbers | floor' "$credential_file") \
+  || fail "credential response has no numeric expiresAt"
+
+now=$(date +%s)
+(( expires_at > now + 60 )) || fail "credential expires too soon"
+
+export TURN_PROBE_USERNAME=$username
+export TURN_PROBE_CREDENTIAL=$credential
+export TURN_PROBE_HOST=$turn_host
+
+verify_tls_endpoint() {
+  require_command openssl
+  [[ -r "$tls_verifier" ]] || fail "TLS verifier is missing or unreadable"
+  if [[ -n "$tls_ca_file" && ! -r "$tls_ca_file" ]]; then
+    fail "TURN_PROBE_CA_FILE must be readable"
+  fi
+
+  local command=(bash "$tls_verifier" "$turn_host" "$tls_port")
+  if [[ -n "$tls_ca_file" ]]; then
+    command+=("$tls_ca_file")
+  fi
+
+  if ! timeout "${probe_timeout}s" "${command[@]}" >/dev/null 2>&1; then
+    fail "tls certificate chain or hostname verification failed"
+  fi
+
+  printf 'TURN TLS certificate verification passed.\n'
+}
+
+probe_transport() {
+  local transport=$1
+  local expected_url
+  local port
+
+  case "$transport" in
+    udp)
+      expected_url="turn:$turn_host:$udp_port?transport=udp"
+      port=$udp_port
+      ;;
+    tcp)
+      expected_url="turn:$turn_host:$udp_port?transport=tcp"
+      port=$udp_port
+      ;;
+    tls)
+      expected_url="turns:$turn_host:$tls_port?transport=tcp"
+      port=$tls_port
+      ;;
+    *)
+      fail "unsupported transport: $transport"
+      ;;
+  esac
+
+  jq -e --arg expected "$expected_url" \
+    '.urls | arrays | index($expected) != null' \
+    "$credential_file" >/dev/null \
+    || fail "credential response does not advertise the $transport transport"
+
+  if [[ "$transport" == tls ]]; then
+    verify_tls_endpoint
+  fi
+
+  export TURN_PROBE_PORT=$port
+  export TURN_PROBE_TRANSPORT=$transport
+
+  if ! timeout "${probe_timeout}s" docker run --rm \
+    -e TURN_PROBE_CREDENTIAL \
+    -e TURN_PROBE_HOST \
+    -e TURN_PROBE_PORT \
+    -e TURN_PROBE_TRANSPORT \
+    -e TURN_PROBE_USERNAME \
+    --entrypoint /bin/sh \
+    "$probe_image" \
+    -eu -c '
+      case "$TURN_PROBE_TRANSPORT" in
+        udp)
+          exec /usr/bin/turnutils_uclient \
+            -y -c -n 1 -p "$TURN_PROBE_PORT" \
+            -u "$TURN_PROBE_USERNAME" -w "$TURN_PROBE_CREDENTIAL" \
+            "$TURN_PROBE_HOST"
+          ;;
+        tcp)
+          exec /usr/bin/turnutils_uclient \
+            -t -y -c -n 1 -p "$TURN_PROBE_PORT" \
+            -u "$TURN_PROBE_USERNAME" -w "$TURN_PROBE_CREDENTIAL" \
+            "$TURN_PROBE_HOST"
+          ;;
+        tls)
+          exec /usr/bin/turnutils_uclient \
+            -t -S -y -c -n 1 -p "$TURN_PROBE_PORT" \
+            -E /etc/ssl/certs/ca-certificates.crt \
+            -u "$TURN_PROBE_USERNAME" -w "$TURN_PROBE_CREDENTIAL" \
+            "$TURN_PROBE_HOST"
+          ;;
+      esac
+    ' >/dev/null 2>&1; then
+    fail "$transport authenticated relay probe failed"
+  fi
+
+  printf 'TURN probe passed: %s\n' "$transport"
+}
+
+IFS=',' read -r -a transports <<<"$transport_list"
+(( ${#transports[@]} > 0 )) || fail "TURN_PROBE_TRANSPORTS must not be empty"
+
+for transport in "${transports[@]}"; do
+  [[ -n "$transport" ]] || fail "TURN_PROBE_TRANSPORTS contains an empty value"
+  probe_transport "$transport"
+done
+
+printf 'TURN authenticated relay probe passed for every requested transport.\n'

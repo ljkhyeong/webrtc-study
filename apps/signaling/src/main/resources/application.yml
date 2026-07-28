@@ -1,0 +1,60 @@
+server:
+  address: ${HOST:0.0.0.0}
+  port: ${PORT:8787}
+  forward-headers-strategy: native
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      group:
+        readiness:
+          include: readinessState,signaling
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  metrics:
+    tags:
+      application: round-signaling
+
+round:
+  signaling:
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+    max-room-size: ${MAX_ROOM_SIZE:6}
+    max-connections: ${MAX_SIGNALING_CONNECTIONS:1000}
+    max-connections-per-client: ${MAX_SIGNALING_CONNECTIONS_PER_CLIENT:12}
+    heartbeat-interval: ${HEARTBEAT_INTERVAL_MS:30000}ms
+    unjoined-timeout: ${UNJOINED_SOCKET_TIMEOUT_MS:15000}ms
+    unjoined-sweep-interval: ${UNJOINED_SOCKET_SWEEP_MS:1000}ms
+    shutdown-close-timeout: ${SIGNALING_SHUTDOWN_CLOSE_TIMEOUT_MS:5000}ms
+    abuse-window: ${SIGNALING_ABUSE_WINDOW_MS:10000}ms
+    max-frames-per-session-window: ${SIGNALING_MAX_FRAMES_PER_SESSION:600}
+    max-frames-per-client-window: ${SIGNALING_MAX_FRAMES_PER_CLIENT:1200}
+    max-frames-global-window: ${SIGNALING_MAX_FRAMES_GLOBAL:3600}
+    max-bytes-per-session-window: ${SIGNALING_MAX_BYTES_PER_SESSION:4194304}
+    max-bytes-per-client-window: ${SIGNALING_MAX_BYTES_PER_CLIENT:8388608}
+    max-bytes-global-window: ${SIGNALING_MAX_BYTES_GLOBAL:25165824}
+    max-outbound-queue-bytes: ${SIGNALING_MAX_OUTBOUND_QUEUE_BYTES:2097152}
+    max-outbound-queue-bytes-global: ${SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL:67108864}
+    max-text-payload-bytes: 65536
+  turn:
+    urls: ${TURN_URLS:}
+    shared-secret: ${TURN_SHARED_SECRET:}
+    credential-ttl: ${TURN_CREDENTIAL_TTL_SECONDS:600}s
+    rate-limit-window: ${TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS:600}s
+    rate-limit-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS:12}
+    rate-limit-global-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS:24}
+    rate-limit-max-clients: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS:10000}
