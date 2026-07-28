@@ -76,19 +76,19 @@ class SignalingServiceTest {
 
 		service.handle(ada.session(), join("Ada"));
 		JsonNode adaJoined = ada.nextJson();
-		String adaPeerId = adaJoined.at("/payload/peerId").asText();
+		String adaPeerId = adaJoined.at("/payload/peerId").asString();
 		assertThat(adaJoined.at("/payload/participants").size()).isZero();
 
 		service.handle(grace.session(), join("Grace"));
 		JsonNode graceJoined = grace.nextJson();
-		String gracePeerId = graceJoined.at("/payload/peerId").asText();
-		assertThat(graceJoined.at("/payload/participants/0/peerId").asText())
+		String gracePeerId = graceJoined.at("/payload/peerId").asString();
+		assertThat(graceJoined.at("/payload/participants/0/peerId").asString())
 				.isEqualTo(adaPeerId);
-		assertThat(ada.nextJson().at("/payload/participant/peerId").asText())
+		assertThat(ada.nextJson().at("/payload/participant/peerId").asString())
 				.isEqualTo(gracePeerId);
 
 		service.handle(linus.session(), join("Linus"));
-		String linusPeerId = linus.nextJson().at("/payload/peerId").asText();
+		String linusPeerId = linus.nextJson().at("/payload/peerId").asString();
 		ada.nextJson();
 		grace.nextJson();
 
@@ -101,18 +101,18 @@ class SignalingServiceTest {
 						{"description":{"type":"offer","sdp":"v=0"}}
 						"""))));
 		JsonNode relayed = ada.nextJson();
-		assertThat(relayed.get("from").asText()).isEqualTo(gracePeerId);
+		assertThat(relayed.get("from").asString()).isEqualTo(gracePeerId);
 		assertThat(relayed.has("to")).isFalse();
 		assertThat(relayed.has("requestId")).isFalse();
-		assertThat(relayed.at("/payload/description/sdp").asText()).isEqualTo("v=0");
+		assertThat(relayed.at("/payload/description/sdp").asString()).isEqualTo("v=0");
 
 		service.handle(grace.session(), new ClientMessage.Leave(ROOM_ID, null));
-		assertThat(ada.nextJson().at("/payload/peerId").asText()).isEqualTo(gracePeerId);
-		assertThat(linus.nextJson().at("/payload/peerId").asText()).isEqualTo(gracePeerId);
+		assertThat(ada.nextJson().at("/payload/peerId").asString()).isEqualTo(gracePeerId);
+		assertThat(linus.nextJson().at("/payload/peerId").asString()).isEqualTo(gracePeerId);
 
 		service.handle(grace.session(), join("Grace again"));
 		JsonNode rejoined = grace.nextJson();
-		assertThat(rejoined.get("type").asText()).isEqualTo("room.joined");
+		assertThat(rejoined.get("type").asString()).isEqualTo("room.joined");
 		assertThat(rejoined.at("/payload/participants").size()).isEqualTo(2);
 
 		service.disconnect(grace.session());
@@ -136,7 +136,7 @@ class SignalingServiceTest {
 		assertError(ada.nextJson(), "NOT_IN_ROOM");
 
 		service.handle(ada.session(), join("Ada"));
-		String adaPeerId = ada.nextJson().at("/payload/peerId").asText();
+		String adaPeerId = ada.nextJson().at("/payload/peerId").asString();
 		service.handle(ada.session(), relay("rtc.offer", OTHER_ROOM_ID, adaPeerId));
 		assertError(ada.nextJson(), "ROOM_MISMATCH");
 
@@ -177,12 +177,12 @@ class SignalingServiceTest {
 		long joinedCount = peers.stream()
 				.filter(peer -> peer.hasMessage(
 						node -> node.has("type")
-								&& "room.joined".equals(node.get("type").asText())))
+								&& "room.joined".equals(node.get("type").asString())))
 				.count();
 		long fullCount = peers.stream()
 				.filter(peer -> peer.hasMessage(
-						node -> node.at("/payload/code").isTextual()
-								&& "ROOM_FULL".equals(node.at("/payload/code").asText())))
+						node -> node.at("/payload/code").isString()
+								&& "ROOM_FULL".equals(node.at("/payload/code").asString())))
 				.count();
 		assertThat(joinedCount).isEqualTo(6);
 		assertThat(fullCount).isEqualTo(6);
@@ -204,7 +204,7 @@ class SignalingServiceTest {
 		service.handle(responsive.session(), join("Responsive"));
 		responsive.nextJson();
 		service.handle(sleeping.session(), join("Sleeping laptop"));
-		String sleepingPeerId = sleeping.nextJson().at("/payload/peerId").asText();
+		String sleepingPeerId = sleeping.nextJson().at("/payload/peerId").asString();
 		responsive.nextJson();
 
 		service.heartbeatSweep();
@@ -216,7 +216,8 @@ class SignalingServiceTest {
 		sleeping.awaitClosed();
 		assertThat(sleeping.closeStatus().get())
 				.isEqualTo(new CloseStatus(4000, "Heartbeat timeout"));
-		assertThat(responsive.nextJson().at("/payload/peerId").asText()).isEqualTo(sleepingPeerId);
+		assertThat(responsive.nextJson().at("/payload/peerId").asString())
+				.isEqualTo(sleepingPeerId);
 		assertThat(service.participantCount(ROOM_ID)).isOne();
 		assertThat(meterRegistry.get("round.signaling.heartbeat.closes").counter().count())
 				.isEqualTo(1);
@@ -242,8 +243,8 @@ class SignalingServiceTest {
 					new ClientMessage.Join(OTHER_ROOM_ID, null, "Independent peer"));
 			JsonNode joined = independent.nextJson();
 
-			assertThat(joined.get("type").asText()).isEqualTo("room.joined");
-			assertThat(joined.get("roomId").asText()).isEqualTo(OTHER_ROOM_ID);
+			assertThat(joined.get("type").asString()).isEqualTo("room.joined");
+			assertThat(joined.get("roomId").asString()).isEqualTo(OTHER_ROOM_ID);
 			assertThat(service.participantCount(OTHER_ROOM_ID)).isOne();
 		}
 		finally {
@@ -265,7 +266,7 @@ class SignalingServiceTest {
 
 			service.handle(grace.session(), join("Grace"));
 			JsonNode graceJoined = grace.nextJson();
-			String adaPeerId = graceJoined.at("/payload/participants/0/peerId").asText();
+			String adaPeerId = graceJoined.at("/payload/participants/0/peerId").asString();
 
 			service.handle(grace.session(), relay("rtc.offer", ROOM_ID, adaPeerId));
 			service.handle(grace.session(), new ClientMessage.Relay(
@@ -296,13 +297,13 @@ class SignalingServiceTest {
 		service.handle(ada.session(), join("Ada"));
 		ada.nextJson();
 		service.handle(grace.session(), join("Grace"));
-		String gracePeerId = grace.nextJson().at("/payload/peerId").asText();
+		String gracePeerId = grace.nextJson().at("/payload/peerId").asString();
 		ada.nextJson();
 
 		grace.failNextSend();
 		service.sendInvalidMessage(grace.session(), "force a transport write");
 
-		assertThat(ada.nextJson().at("/payload/peerId").asText()).isEqualTo(gracePeerId);
+		assertThat(ada.nextJson().at("/payload/peerId").asString()).isEqualTo(gracePeerId);
 		grace.awaitClosed();
 		assertThat(service.participantCount(ROOM_ID)).isOne();
 		service.disconnect(grace.session());
@@ -425,7 +426,7 @@ class SignalingServiceTest {
 
 			fallbackService.handle(peer.session(), join("Fallback"));
 
-			assertThat(peer.nextJson().get("type").asText()).isEqualTo("room.joined");
+			assertThat(peer.nextJson().get("type").asString()).isEqualTo("room.joined");
 			fallbackService.stop();
 		}
 	}
@@ -727,8 +728,8 @@ class SignalingServiceTest {
 	}
 
 	private static void assertError(JsonNode message, String code) {
-		assertThat(message.get("type").asText()).isEqualTo("error");
-		assertThat(message.at("/payload/code").asText()).isEqualTo(code);
+		assertThat(message.get("type").asString()).isEqualTo("error");
+		assertThat(message.at("/payload/code").asString()).isEqualTo(code);
 	}
 
 	private record TestPeer(
@@ -808,7 +809,7 @@ class SignalingServiceTest {
 								try {
 									return objectMapper.readTree(textMessage.getPayload())
 											.get("type")
-											.asText();
+											.asString();
 								}
 								catch (Exception exception) {
 									throw new AssertionError(exception);
