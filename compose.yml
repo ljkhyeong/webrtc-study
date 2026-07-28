@@ -56,8 +56,8 @@ services:
       dockerfile: Dockerfile
       target: signaling-runtime
       args:
-        JAVA_BUILD_IMAGE: ${JAVA_BUILD_IMAGE:-eclipse-temurin:21.0.10_7-jdk-alpine-3.22}
-        JAVA_RUNTIME_IMAGE: ${JAVA_RUNTIME_IMAGE:-eclipse-temurin:21.0.10_7-jre-alpine-3.22}
+        JAVA_BUILD_IMAGE: ${JAVA_BUILD_IMAGE:-eclipse-temurin:21.0.11_10-jdk-alpine-3.23}
+        JAVA_RUNTIME_IMAGE: ${JAVA_RUNTIME_IMAGE:-eclipse-temurin:21.0.11_10-jre-alpine-3.23}
     environment:
       HOST: 0.0.0.0
       PORT: '8787'
