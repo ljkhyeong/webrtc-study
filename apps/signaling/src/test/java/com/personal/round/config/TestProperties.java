@@ -16,13 +16,14 @@ public final class TestProperties {
 	private static final Duration DEFAULT_UNJOINED_SWEEP_INTERVAL = Duration.ofSeconds(1);
 	private static final Duration DEFAULT_ABUSE_WINDOW = Duration.ofSeconds(10);
 	private static final int DEFAULT_MAX_FRAMES_PER_SESSION_WINDOW = 600;
+	private static final int DEFAULT_MAX_FRAMES_PER_CLIENT_WINDOW = 1_200;
 	private static final int DEFAULT_MAX_FRAMES_GLOBAL_WINDOW = 3_600;
 	private static final int DEFAULT_MAX_TEXT_PAYLOAD_BYTES = 64 * 1024;
 
 	private static final Duration DEFAULT_TURN_CREDENTIAL_TTL = Duration.ofMinutes(10);
-	private static final Duration DEFAULT_TURN_RATE_LIMIT_WINDOW = Duration.ofMinutes(1);
+	private static final Duration DEFAULT_TURN_RATE_LIMIT_WINDOW = Duration.ofMinutes(10);
 	private static final int DEFAULT_TURN_RATE_LIMIT_MAX_REQUESTS = 12;
-	private static final int DEFAULT_TURN_RATE_LIMIT_GLOBAL_MAX_REQUESTS = 8;
+	private static final int DEFAULT_TURN_RATE_LIMIT_GLOBAL_MAX_REQUESTS = 24;
 	private static final int DEFAULT_TURN_RATE_LIMIT_MAX_CLIENTS = 10_000;
 
 	private TestProperties() {
@@ -43,6 +44,22 @@ public final class TestProperties {
 			int maxRoomSize,
 			int maxConnections,
 			int maxConnectionsPerClient) {
+		return signalingWithConnectionAndFrameLimits(
+				maxRoomSize,
+				maxConnections,
+				maxConnectionsPerClient,
+				DEFAULT_MAX_FRAMES_PER_SESSION_WINDOW,
+				DEFAULT_MAX_FRAMES_PER_CLIENT_WINDOW,
+				DEFAULT_MAX_FRAMES_GLOBAL_WINDOW);
+	}
+
+	public static SignalingProperties signalingWithConnectionAndFrameLimits(
+			int maxRoomSize,
+			int maxConnections,
+			int maxConnectionsPerClient,
+			int maxFramesPerSessionWindow,
+			int maxFramesPerClientWindow,
+			int maxFramesGlobalWindow) {
 		return new SignalingProperties(
 				DEFAULT_ALLOWED_ORIGINS,
 				maxRoomSize,
@@ -52,27 +69,24 @@ public final class TestProperties {
 				DEFAULT_UNJOINED_TIMEOUT,
 				DEFAULT_UNJOINED_SWEEP_INTERVAL,
 				DEFAULT_ABUSE_WINDOW,
-				DEFAULT_MAX_FRAMES_PER_SESSION_WINDOW,
-				DEFAULT_MAX_FRAMES_GLOBAL_WINDOW,
+				maxFramesPerSessionWindow,
+				maxFramesPerClientWindow,
+				maxFramesGlobalWindow,
 				DEFAULT_MAX_TEXT_PAYLOAD_BYTES);
 	}
 
 	public static SignalingProperties signalingWithFrameLimits(
 			int maxRoomSize,
 			int maxFramesPerSessionWindow,
+			int maxFramesPerClientWindow,
 			int maxFramesGlobalWindow) {
-		return new SignalingProperties(
-				DEFAULT_ALLOWED_ORIGINS,
+		return signalingWithConnectionAndFrameLimits(
 				maxRoomSize,
 				DEFAULT_MAX_CONNECTIONS,
 				DEFAULT_MAX_CONNECTIONS_PER_CLIENT,
-				DEFAULT_HEARTBEAT_INTERVAL,
-				DEFAULT_UNJOINED_TIMEOUT,
-				DEFAULT_UNJOINED_SWEEP_INTERVAL,
-				DEFAULT_ABUSE_WINDOW,
 				maxFramesPerSessionWindow,
-				maxFramesGlobalWindow,
-				DEFAULT_MAX_TEXT_PAYLOAD_BYTES);
+				maxFramesPerClientWindow,
+				maxFramesGlobalWindow);
 	}
 
 	public static TurnProperties turn(List<String> urls, String sharedSecret) {

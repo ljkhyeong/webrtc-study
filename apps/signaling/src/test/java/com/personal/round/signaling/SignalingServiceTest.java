@@ -11,8 +11,10 @@ import com.personal.round.config.TestProperties;
 import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ProtocolParser;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.net.InetSocketAddress;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -45,7 +47,7 @@ class SignalingServiceTest {
 	private static final String OTHER_ROOM_ID = "qrst-uvwx-yz23";
 
 	private ObjectMapper objectMapper;
-	private Clock clock;
+	private MutableClock clock;
 	private SimpleMeterRegistry meterRegistry;
 	private ExecutorService outboundExecutor;
 	private SignalingService service;
@@ -53,7 +55,9 @@ class SignalingServiceTest {
 	@BeforeEach
 	void setUp() {
 		objectMapper = new ObjectMapper();
-		clock = Clock.fixed(Instant.parse("2026-07-26T00:00:00Z"), ZoneOffset.UTC);
+		clock = new MutableClock(
+				Instant.parse("2026-07-26T00:00:00Z"),
+				ZoneOffset.UTC);
 		meterRegistry = new SimpleMeterRegistry();
 		outboundExecutor = Executors.newThreadPerTaskExecutor(
 				Thread.ofVirtual().name("round-signaling-test-", 0).factory());
@@ -454,11 +458,12 @@ class SignalingServiceTest {
 
 	@Test
 	void allowsSixPeerIceBurstButClosesAConnectionThatExceedsItsWindow() throws Exception {
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties(6));
 		List<TestPeer> peers = new ArrayList<>();
 		for (int index = 0; index < 6; index++) {
 			TestPeer peer = peer("burst-" + index);
 			peers.add(peer);
-			assertThat(service.connect(peer.session())).isTrue();
+			connectFrom(policy, "192.0.2." + (index + 1), peer);
 		}
 
 		for (TestPeer peer : peers) {
@@ -485,17 +490,21 @@ class SignalingServiceTest {
 	}
 
 	@Test
-	void dropsGlobalOverloadWithoutClosingAnArbitrarySession() throws Exception {
+	void dropsAnExhaustedClientWithoutClosingItsSessionsOrSpendingAnotherClientQuota()
+			throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithFrameLimits(6, 10, 12);
+				TestProperties.signalingWithFrameLimits(6, 4, 6, 20);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
-		TestPeer first = peer("global-first");
-		TestPeer second = peer("global-second");
-		connect(first, second);
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
+		TestPeer first = peer("client-first");
+		TestPeer second = peer("client-second");
+		TestPeer otherClient = peer("client-other");
+		connectFrom(policy, "192.0.2.10", first, second);
+		connectFrom(policy, "192.0.2.11", otherClient);
 
-		for (int frame = 0; frame < 6; frame++) {
+		for (int frame = 0; frame < 3; frame++) {
 			assertThat(service.acceptInboundFrame(first.session())).isTrue();
 			assertThat(service.acceptInboundFrame(second.session())).isTrue();
 		}
@@ -503,15 +512,165 @@ class SignalingServiceTest {
 		assertThat(service.acceptInboundFrame(first.session())).isFalse();
 		assertThat(first.closeStatus().get()).isNull();
 		assertThat(second.closeStatus().get()).isNull();
-		assertThat(service.connectedPeerCount()).isEqualTo(2);
+		assertThat(service.acceptInboundFrame(otherClient.session())).isTrue();
+		assertThat(meterRegistry.get("round.signaling.frames.client_rate_limited")
+				.counter()
+				.count()).isEqualTo(1);
 		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+				.counter()
+				.count()).isZero();
+		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+				.counter()
+				.count()).isZero();
+
+		assertThat(service.acceptInboundFrame(first.session())).isFalse();
+		first.awaitClosed();
+		assertThat(first.closeStatus().get())
+				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
+		assertThat(second.closeStatus().get()).isNull();
+		assertThat(otherClient.closeStatus().get()).isNull();
+		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+				.counter()
+				.count()).isEqualTo(1);
+	}
+
+	@Test
+	void preservesClientQuotaAcrossDisconnectAndReconnectWithinTheWindow() throws Exception {
+		service.stop();
+		SignalingProperties properties =
+				TestProperties.signalingWithFrameLimits(6, 2, 2, 6);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
+		TestPeer first = peer("reconnect-first");
+		connectFrom(policy, "192.0.2.20", first);
+		assertThat(service.acceptInboundFrame(first.session())).isTrue();
+		assertThat(service.acceptInboundFrame(first.session())).isTrue();
+
+		service.disconnect(first.session());
+		assertThat(service.trackedInboundClientCount()).isOne();
+		assertThat(service.activeInboundClientCount()).isZero();
+
+		TestPeer reconnected = peer("reconnect-second");
+		connectFrom(policy, "192.0.2.20", reconnected);
+
+		assertThat(service.acceptInboundFrame(reconnected.session())).isFalse();
+		assertThat(reconnected.closeStatus().get()).isNull();
+		assertThat(service.connectedPeerCount()).isOne();
+		assertThat(meterRegistry.get("round.signaling.frames.client_rate_limited")
+				.counter()
+				.count()).isEqualTo(1);
+	}
+
+	@Test
+	void removesExpiredInactiveClientWindowsOnConnectAndPeriodicSweep() throws Exception {
+		SignalingProperties properties = properties(6);
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
+		TestPeer first = peer("expired-on-connect");
+		connectFrom(policy, "192.0.2.21", first);
+		assertThat(service.acceptInboundFrame(first.session())).isTrue();
+		service.disconnect(first.session());
+		assertThat(service.trackedInboundClientCount()).isOne();
+
+		clock.advanceMillis(properties.abuseWindow().toMillis());
+		TestPeer second = peer("expired-on-sweep");
+		connectFrom(policy, "192.0.2.22", second);
+		assertThat(service.trackedInboundClientCount()).isOne();
+		assertThat(service.acceptInboundFrame(second.session())).isTrue();
+		service.disconnect(second.session());
+
+		clock.advanceMillis(properties.abuseWindow().toMillis() - 1);
+		service.expireUnjoinedSessions();
+		assertThat(service.trackedInboundClientCount()).isOne();
+
+		clock.advanceMillis(1);
+		service.expireUnjoinedSessions();
+		assertThat(service.trackedInboundClientCount()).isZero();
+	}
+
+	@Test
+	void boundsClientWindowsByEvictingOnlyInactiveState() throws Exception {
+		service.stop();
+		SignalingProperties properties =
+				TestProperties.signalingWithConnectionAndFrameLimits(
+						1, 2, 2, 2, 2, 6);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
+		TestPeer active = peer("bounded-active");
+		TestPeer inactive = peer("bounded-inactive");
+		connectFrom(policy, "192.0.2.23", active);
+		connectFrom(policy, "192.0.2.24", inactive);
+		assertThat(service.acceptInboundFrame(active.session())).isTrue();
+		assertThat(service.acceptInboundFrame(inactive.session())).isTrue();
+		service.disconnect(inactive.session());
+		assertThat(service.trackedInboundClientCount()).isEqualTo(2);
+		assertThat(service.activeInboundClientCount()).isOne();
+
+		TestPeer replacement = peer("bounded-replacement");
+		connectFrom(policy, "192.0.2.25", replacement);
+
+		assertThat(service.trackedInboundClientCount()).isEqualTo(2);
+		assertThat(service.activeInboundClientCount()).isEqualTo(2);
+		service.disconnect(active.session());
+		assertThat(service.trackedInboundClientCount()).isEqualTo(2);
+		assertThat(service.activeInboundClientCount()).isOne();
+	}
+
+	@Test
+	void stopClearsRetainedInactiveClientWindows() throws Exception {
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties(6));
+		TestPeer peer = peer("retained-until-stop");
+		connectFrom(policy, "192.0.2.26", peer);
+		assertThat(service.acceptInboundFrame(peer.session())).isTrue();
+		service.disconnect(peer.session());
+		assertThat(service.trackedInboundClientCount()).isOne();
+
+		service.stop();
+
+		assertThat(service.trackedInboundClientCount()).isZero();
+		assertThat(service.activeInboundClientCount()).isZero();
+	}
+
+	@Test
+	void dropsGlobalOverloadWithoutClosingAnArbitrarySession() throws Exception {
+		service.stop();
+		SignalingProperties properties =
+				TestProperties.signalingWithFrameLimits(6, 10, 10, 20);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
+		TestPeer first = peer("global-first");
+		TestPeer second = peer("global-second");
+		TestPeer third = peer("global-third");
+		connectFrom(policy, "192.0.2.30", first);
+		connectFrom(policy, "192.0.2.31", second);
+		connectFrom(policy, "192.0.2.32", third);
+
+		for (int frame = 0; frame < 7; frame++) {
+			assertThat(service.acceptInboundFrame(first.session())).isTrue();
+			assertThat(service.acceptInboundFrame(second.session())).isTrue();
+		}
+		for (int frame = 0; frame < 6; frame++) {
+			assertThat(service.acceptInboundFrame(third.session())).isTrue();
+		}
+
+		assertThat(service.acceptInboundFrame(third.session())).isFalse();
+		assertThat(first.closeStatus().get()).isNull();
+		assertThat(second.closeStatus().get()).isNull();
+		assertThat(third.closeStatus().get()).isNull();
+		assertThat(service.connectedPeerCount()).isEqualTo(3);
+		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+				.counter()
+				.count()).isZero();
+		assertThat(meterRegistry.get("round.signaling.frames.client_rate_limited")
 				.counter()
 				.count()).isZero();
 		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
 				.counter()
 				.count()).isEqualTo(1);
 		assertThat(service.acceptInboundFrame(
-				first.session(),
+				third.session(),
 				clock.millis() + properties.abuseWindow().toMillis())).isTrue();
 	}
 
@@ -519,19 +678,24 @@ class SignalingServiceTest {
 	void globalOverloadDoesNotTurnAValidPongIntoAHeartbeatTimeout() throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithFrameLimits(2, 2, 2);
+				TestProperties.signalingWithFrameLimits(3, 1, 1, 2);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
 				new ProtocolParser(objectMapper),
 				service,
 				properties);
-		TestPeer load = peer("pong-global-load");
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
+		TestPeer firstLoad = peer("pong-global-load-first");
+		TestPeer secondLoad = peer("pong-global-load-second");
 		TestPeer responsive = peer("pong-global-responsive");
-		connect(load, responsive);
-		assertThat(service.acceptInboundFrame(load.session())).isTrue();
-		assertThat(service.acceptInboundFrame(load.session())).isTrue();
-		service.disconnect(load.session());
+		connectFrom(policy, "192.0.2.40", firstLoad);
+		connectFrom(policy, "192.0.2.41", secondLoad);
+		connectFrom(policy, "192.0.2.42", responsive);
+		assertThat(service.acceptInboundFrame(firstLoad.session())).isTrue();
+		assertThat(service.acceptInboundFrame(secondLoad.session())).isTrue();
+		service.disconnect(firstLoad.session());
+		service.disconnect(secondLoad.session());
 
 		service.heartbeatSweep();
 		responsive.awaitMessage(PingMessage.class::isInstance);
@@ -553,7 +717,7 @@ class SignalingServiceTest {
 	void pongStillDisconnectsTheSessionThatExceedsItsOwnFrameWindow() throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithFrameLimits(1, 1, 10);
+				TestProperties.signalingWithFrameLimits(1, 1, 1, 2);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
@@ -613,9 +777,9 @@ class SignalingServiceTest {
 		TestPeer accepted = peer("reserved-accepted");
 		TestPeer rejected = peer("reserved-rejected");
 		attachReservation(accepted, policy.reserve(
-				new java.net.InetSocketAddress("192.0.2.30", 41_000)).reservation());
+				new InetSocketAddress("192.0.2.30", 41_000)).reservation());
 		attachReservation(rejected, policy.reserve(
-				new java.net.InetSocketAddress("192.0.2.31", 41_000)).reservation());
+				new InetSocketAddress("192.0.2.31", 41_000)).reservation());
 
 		assertThat(service.connect(accepted.session())).isTrue();
 		assertThat(service.connect(rejected.session())).isFalse();
@@ -629,7 +793,7 @@ class SignalingServiceTest {
 
 		TestPeer stoppedPeer = peer("reserved-stop");
 		attachReservation(stoppedPeer, policy.reserve(
-				new java.net.InetSocketAddress("192.0.2.32", 41_000)).reservation());
+				new InetSocketAddress("192.0.2.32", 41_000)).reservation());
 		assertThat(service.connect(stoppedPeer.session())).isTrue();
 
 		service.stop();
@@ -640,6 +804,26 @@ class SignalingServiceTest {
 	private void connect(TestPeer... peers) {
 		for (TestPeer peer : peers) {
 			service.connect(peer.session());
+		}
+	}
+
+	private ConnectionAdmissionPolicy admissionPolicy(SignalingProperties properties) {
+		return new ConnectionAdmissionPolicy(
+				properties,
+				new SignalingMetrics(new SimpleMeterRegistry()));
+	}
+
+	private void connectFrom(
+			ConnectionAdmissionPolicy policy,
+			String clientAddress,
+			TestPeer... peers) {
+		int port = 41_000;
+		for (TestPeer peer : peers) {
+			ConnectionAdmissionPolicy.Admission admission =
+					policy.reserve(new InetSocketAddress(clientAddress, port++));
+			assertThat(admission.accepted()).isTrue();
+			attachReservation(peer, admission.reservation());
+			assertThat(service.connect(peer.session())).isTrue();
 		}
 	}
 
@@ -730,6 +914,36 @@ class SignalingServiceTest {
 	private static void assertError(JsonNode message, String code) {
 		assertThat(message.get("type").asString()).isEqualTo("error");
 		assertThat(message.at("/payload/code").asString()).isEqualTo(code);
+	}
+
+	private static final class MutableClock extends Clock {
+
+		private Instant instant;
+		private final ZoneId zone;
+
+		private MutableClock(Instant instant, ZoneId zone) {
+			this.instant = instant;
+			this.zone = zone;
+		}
+
+		private void advanceMillis(long millis) {
+			instant = instant.plusMillis(millis);
+		}
+
+		@Override
+		public ZoneId getZone() {
+			return zone;
+		}
+
+		@Override
+		public Clock withZone(ZoneId requestedZone) {
+			return new MutableClock(instant, requestedZone);
+		}
+
+		@Override
+		public Instant instant() {
+			return instant;
+		}
 	}
 
 	private record TestPeer(

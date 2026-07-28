@@ -34,7 +34,12 @@ class LegacyDurationEnvironmentBindingIntegrationTest {
 		assertThat(signaling.unjoinedTimeout()).isEqualTo(Duration.ofSeconds(20));
 		assertThat(signaling.unjoinedSweepInterval()).isEqualTo(Duration.ofMillis(750));
 		assertThat(signaling.abuseWindow()).isEqualTo(Duration.ofSeconds(12));
+		assertThat(signaling.maxFramesPerSessionWindow()).isEqualTo(600);
+		assertThat(signaling.maxFramesPerClientWindow()).isEqualTo(1_200);
+		assertThat(signaling.maxFramesGlobalWindow()).isEqualTo(3_600);
 		assertThat(turn.credentialTtl()).isEqualTo(Duration.ofMinutes(15));
 		assertThat(turn.rateLimitWindow()).isEqualTo(Duration.ofSeconds(45));
+		assertThat(turn.rateLimitMaxRequests()).isEqualTo(12);
+		assertThat(turn.rateLimitGlobalMaxRequests()).isEqualTo(24);
 	}
 }

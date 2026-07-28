@@ -122,6 +122,10 @@ public final class ConnectionAdmissionPolicy {
 			this.clientKey = clientKey;
 		}
 
+		String clientKey() {
+			return clientKey;
+		}
+
 		@Override
 		public void close() {
 			owner.release(this);

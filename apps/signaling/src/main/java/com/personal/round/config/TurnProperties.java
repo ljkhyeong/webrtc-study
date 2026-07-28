@@ -93,6 +93,14 @@ public record TurnProperties(
 		return urls.stream().allMatch(TurnProperties::isCredentialFreeTurnUrl);
 	}
 
+	@AssertTrue(
+			message =
+					"round.turn.rate-limit-global-max-requests must be at least twice "
+							+ "rate-limit-max-requests")
+	public boolean isGlobalRateLimitAtLeastTwiceClientLimit() {
+		return (long) rateLimitGlobalMaxRequests >= 2L * rateLimitMaxRequests;
+	}
+
 	private static boolean isCredentialFreeTurnUrl(String url) {
 		return (url.startsWith("turn:") || url.startsWith("turns:"))
 				&& url.chars().noneMatch(Character::isWhitespace)

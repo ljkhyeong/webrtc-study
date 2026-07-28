@@ -55,6 +55,10 @@ public record SignalingProperties(
 		int maxFramesPerSessionWindow,
 		@Min(
 				value = 1,
+				message = "round.signaling.max-frames-per-client-window must be at least 1")
+		int maxFramesPerClientWindow,
+		@Min(
+				value = 1,
 				message = "round.signaling.max-frames-global-window must be at least 1")
 		int maxFramesGlobalWindow,
 		@Min(value = 1, message = "round.signaling.max-text-payload-bytes must be at least 1")
@@ -88,9 +92,17 @@ public record SignalingProperties(
 
 	@AssertTrue(
 			message =
-					"round.signaling.max-frames-global-window must not be lower than "
+					"round.signaling.max-frames-per-client-window must not be lower than "
 							+ "max-frames-per-session-window")
-	public boolean isGlobalFrameLimitAtLeastSessionLimit() {
-		return maxFramesGlobalWindow >= maxFramesPerSessionWindow;
+	public boolean isClientFrameLimitAtLeastSessionLimit() {
+		return maxFramesPerClientWindow >= maxFramesPerSessionWindow;
+	}
+
+	@AssertTrue(
+			message =
+					"round.signaling.max-frames-global-window must be at least twice "
+							+ "max-frames-per-client-window")
+	public boolean isGlobalFrameLimitAtLeastTwiceClientLimit() {
+		return (long) maxFramesGlobalWindow >= 2L * maxFramesPerClientWindow;
 	}
 }

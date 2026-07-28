@@ -27,12 +27,13 @@ class ConfigurationPropertiesBindingTest {
 					"round.signaling.unjoined-sweep-interval=1s",
 					"round.signaling.abuse-window=10s",
 					"round.signaling.max-frames-per-session-window=600",
+					"round.signaling.max-frames-per-client-window=1200",
 					"round.signaling.max-frames-global-window=3600",
 					"round.signaling.max-text-payload-bytes=65536",
 					"round.turn.credential-ttl=10m",
-					"round.turn.rate-limit-window=60s",
+					"round.turn.rate-limit-window=600s",
 					"round.turn.rate-limit-max-requests=12",
-					"round.turn.rate-limit-global-max-requests=8",
+					"round.turn.rate-limit-global-max-requests=24",
 					"round.turn.rate-limit-max-clients=10000");
 
 	@Test
@@ -54,8 +55,11 @@ class ConfigurationPropertiesBindingTest {
 					assertThat(signaling.unjoinedTimeout()).isEqualTo(Duration.ofSeconds(20));
 					assertThat(signaling.unjoinedSweepInterval()).isEqualTo(Duration.ofMillis(750));
 					assertThat(signaling.abuseWindow()).isEqualTo(Duration.ofSeconds(10));
+					assertThat(signaling.maxFramesPerClientWindow()).isEqualTo(1_200);
 					assertThat(turn.credentialTtl()).isEqualTo(Duration.ofHours(1));
 					assertThat(turn.rateLimitWindow()).isEqualTo(Duration.ofSeconds(45));
+					assertThat(turn.rateLimitMaxRequests()).isEqualTo(12);
+					assertThat(turn.rateLimitGlobalMaxRequests()).isEqualTo(24);
 					assertThat(turn.enabled()).isFalse();
 					assertThat(turn.urls()).isEmpty();
 					assertThat(turn.sharedSecret()).isEmpty();
@@ -80,6 +84,7 @@ class ConfigurationPropertiesBindingTest {
 				defaults.unjoinedSweepInterval(),
 				defaults.abuseWindow(),
 				defaults.maxFramesPerSessionWindow(),
+				defaults.maxFramesPerClientWindow(),
 				defaults.maxFramesGlobalWindow(),
 				defaults.maxTextPayloadBytes());
 		TurnProperties turn = new TurnProperties(
@@ -130,7 +135,8 @@ class ConfigurationPropertiesBindingTest {
 		contextRunner
 				.withPropertyValues(
 						"round.signaling.unjoined-sweep-interval=16s",
-						"round.signaling.max-frames-global-window=599")
+						"round.signaling.max-frames-per-client-window=599",
+						"round.signaling.max-frames-global-window=1197")
 				.run(context -> {
 					Throwable failure = context.getStartupFailure();
 
@@ -140,9 +146,26 @@ class ConfigurationPropertiesBindingTest {
 									"round.signaling.unjoined-sweep-interval must not exceed "
 											+ "unjoined-timeout")
 							.hasStackTraceContaining(
-									"round.signaling.max-frames-global-window must not be lower "
+									"round.signaling.max-frames-per-client-window must not be lower "
 											+ "than max-frames-per-session-window");
+					assertThat(failure)
+							.hasStackTraceContaining(
+									"round.signaling.max-frames-global-window must be at least "
+											+ "twice max-frames-per-client-window");
 				});
+	}
+
+	@Test
+	void validatesFrameRelationshipsWithoutIntegerOverflow() {
+		contextRunner
+				.withPropertyValues(
+						"round.signaling.max-frames-per-session-window=1",
+						"round.signaling.max-frames-per-client-window=1500000000",
+						"round.signaling.max-frames-global-window=2000000000")
+				.run(context -> assertThat(context.getStartupFailure())
+						.hasStackTraceContaining(
+								"round.signaling.max-frames-global-window must be at least "
+										+ "twice max-frames-per-client-window"));
 	}
 
 	@Test

@@ -155,7 +155,7 @@ async function loadRtcConfiguration(): Promise<LoadedRtcConfiguration> {
   return {
     configuration: {
       iceServers,
-      iceCandidatePoolSize: 4,
+      iceCandidatePoolSize: 1,
       iceTransportPolicy: configuredPolicy,
     },
     turnExpiresAt: credentials?.expiresAt ?? null,

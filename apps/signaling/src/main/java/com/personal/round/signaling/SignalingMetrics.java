@@ -16,6 +16,7 @@ public final class SignalingMetrics {
 	private final Counter alreadyJoinedRejections;
 	private final Counter invalidFrames;
 	private final Counter rateLimitedFrames;
+	private final Counter clientRateLimitedFrames;
 	private final Counter overloadedFrames;
 	private final Counter serverCapacityRejections;
 	private final Counter clientCapacityRejections;
@@ -45,6 +46,10 @@ public final class SignalingMetrics {
 				.register(registry);
 		rateLimitedFrames = Counter.builder("round.signaling.frames.rate_limited")
 				.description("Inbound WebSocket frames rejected by per-session abuse limits")
+				.register(registry);
+		clientRateLimitedFrames = Counter.builder(
+						"round.signaling.frames.client_rate_limited")
+				.description("Inbound WebSocket frames dropped by per-client abuse limits")
 				.register(registry);
 		overloadedFrames = Counter.builder("round.signaling.frames.overloaded")
 				.description("Inbound WebSocket frames dropped by the global overload guard")
@@ -85,6 +90,10 @@ public final class SignalingMetrics {
 
 	void recordRateLimitedFrame() {
 		rateLimitedFrames.increment();
+	}
+
+	void recordClientRateLimitedFrame() {
+		clientRateLimitedFrames.increment();
 	}
 
 	void recordOverloadedFrame() {

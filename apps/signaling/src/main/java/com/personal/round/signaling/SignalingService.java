@@ -45,11 +45,14 @@ public class SignalingService implements SmartLifecycle {
 			new CloseStatus(1008, "Inbound frame rate exceeded");
 	private static final CloseStatus CONNECTION_LIMIT =
 			new CloseStatus(1013, "Server connection limit reached");
+	private static final String UNRESERVED_CLIENT = "<unreserved>";
 	static final int MAX_OUTBOUND_QUEUE_SIZE = 256;
 
 	private final Object monitor = new Object();
 	private final Object lifecycleMonitor = new Object();
 	private final Map<String, Peer> connectedPeers = new HashMap<>();
+	private final LinkedHashMap<String, ClientInboundState> inboundClients =
+			new LinkedHashMap<>(16, 0.75f, true);
 	private final Map<String, LinkedHashMap<String, Peer>> rooms = new HashMap<>();
 	private final ExecutorService outboundExecutor;
 	private final ObjectMapper objectMapper;
@@ -60,6 +63,7 @@ public class SignalingService implements SmartLifecycle {
 	private final long unjoinedTimeoutMs;
 	private final long abuseWindowMs;
 	private final int maxFramesPerSessionWindow;
+	private final int maxFramesPerClientWindow;
 	private final int maxFramesGlobalWindow;
 	private final RateWindow globalInboundWindow = new RateWindow();
 	private volatile boolean acceptingConnections;
@@ -81,6 +85,7 @@ public class SignalingService implements SmartLifecycle {
 		this.unjoinedTimeoutMs = properties.unjoinedTimeout().toMillis();
 		this.abuseWindowMs = properties.abuseWindow().toMillis();
 		this.maxFramesPerSessionWindow = properties.maxFramesPerSessionWindow();
+		this.maxFramesPerClientWindow = properties.maxFramesPerClientWindow();
 		this.maxFramesGlobalWindow = properties.maxFramesGlobalWindow();
 		metrics.updateState(0, 0, 0);
 	}
@@ -91,6 +96,8 @@ public class SignalingService implements SmartLifecycle {
 		boolean accepted;
 		boolean reservationTransferred = false;
 		synchronized (monitor) {
+			long nowMillis = clock.millis();
+			removeExpiredInactiveClientStatesLocked(nowMillis);
 			if (!acceptingConnections) {
 				workPlan.close(session, SERVER_SHUTDOWN);
 				accepted = false;
@@ -102,17 +109,35 @@ public class SignalingService implements SmartLifecycle {
 			}
 			else {
 				if (!connectedPeers.containsKey(session.getId())) {
-					connectedPeers.put(
-							session.getId(),
-							new Peer(
-									UUID.randomUUID().toString(),
-									session,
-									clock.millis(),
-									reservation));
-					reservationTransferred = true;
+					String clientKey = reservation == null
+							? UNRESERVED_CLIENT
+							: reservation.clientKey();
+					ClientInboundState clientInboundState =
+							retainClientInboundStateLocked(clientKey);
+					if (clientInboundState == null) {
+						metrics.recordConnectionRejectedServerCapacity();
+						workPlan.close(session, CONNECTION_LIMIT);
+						accepted = false;
+					}
+					else {
+						connectedPeers.put(
+								session.getId(),
+								new Peer(
+										UUID.randomUUID().toString(),
+										session,
+										nowMillis,
+										reservation,
+										clientKey,
+										clientInboundState));
+						reservationTransferred = true;
+						refreshMetricsLocked();
+						accepted = true;
+					}
 				}
-				refreshMetricsLocked();
-				accepted = true;
+				else {
+					refreshMetricsLocked();
+					accepted = true;
+				}
 			}
 		}
 		if (!reservationTransferred && reservation != null) {
@@ -136,6 +161,7 @@ public class SignalingService implements SmartLifecycle {
 		synchronized (monitor) {
 			Peer peer = connectedPeers.get(session.getId());
 			if (peer != null && peer.connected) {
+				touchClientInboundStateLocked(peer);
 				boolean sessionAllowed = peer.inboundWindow.tryAcquire(
 						nowMillis, abuseWindowMs, maxFramesPerSessionWindow);
 				if (!sessionAllowed) {
@@ -144,13 +170,20 @@ public class SignalingService implements SmartLifecycle {
 					workPlan.close(session, RATE_LIMITED);
 				}
 				else {
-					boolean globalAllowed = globalInboundWindow.tryAcquire(
-							nowMillis, abuseWindowMs, maxFramesGlobalWindow);
-					if (globalAllowed) {
-						accepted = true;
+					boolean clientAllowed = peer.clientInboundState.inboundWindow.tryAcquire(
+							nowMillis, abuseWindowMs, maxFramesPerClientWindow);
+					if (!clientAllowed) {
+						metrics.recordClientRateLimitedFrame();
 					}
 					else {
-						metrics.recordOverloadedFrame();
+						boolean globalAllowed = globalInboundWindow.tryAcquire(
+								nowMillis, abuseWindowMs, maxFramesGlobalWindow);
+						if (globalAllowed) {
+							accepted = true;
+						}
+						else {
+							metrics.recordOverloadedFrame();
+						}
 					}
 				}
 			}
@@ -263,6 +296,7 @@ public class SignalingService implements SmartLifecycle {
 					workPlan.close(peer.session, JOIN_TIMEOUT);
 				}
 			}
+			removeExpiredInactiveClientStatesLocked(nowMillis);
 		}
 		execute(workPlan);
 	}
@@ -291,6 +325,20 @@ public class SignalingService implements SmartLifecycle {
 	public int connectedPeerCount() {
 		synchronized (monitor) {
 			return connectedPeers.size();
+		}
+	}
+
+	int trackedInboundClientCount() {
+		synchronized (monitor) {
+			return inboundClients.size();
+		}
+	}
+
+	int activeInboundClientCount() {
+		synchronized (monitor) {
+			return (int) inboundClients.values().stream()
+					.filter(state -> state.activeConnections > 0)
+					.count();
 		}
 	}
 
@@ -434,12 +482,54 @@ public class SignalingService implements SmartLifecycle {
 		if (peer != null && peer.connected) {
 			peer.connected = false;
 			peer.releaseReservation();
+			releaseClientInboundStateLocked(peer);
 			peer.outbound.clear();
 			removePeerFromRoom(peer, workPlan);
 			refreshMetricsLocked();
 			return true;
 		}
 		return false;
+	}
+
+	private void releaseClientInboundStateLocked(Peer peer) {
+		ClientInboundState state = peer.clientInboundState;
+		state.activeConnections--;
+	}
+
+	private ClientInboundState retainClientInboundStateLocked(String clientKey) {
+		ClientInboundState state = inboundClients.get(clientKey);
+		if (state == null) {
+			evictInactiveClientStatesForCapacityLocked();
+			if (inboundClients.size() >= maxConnections) {
+				return null;
+			}
+			state = new ClientInboundState();
+			inboundClients.put(clientKey, state);
+		}
+		state.activeConnections++;
+		return state;
+	}
+
+	private void touchClientInboundStateLocked(Peer peer) {
+		// inboundClients is access-ordered so active traffic stays behind inactive LRU entries.
+		inboundClients.get(peer.clientKey);
+	}
+
+	private void evictInactiveClientStatesForCapacityLocked() {
+		var iterator = inboundClients.entrySet().iterator();
+		while (inboundClients.size() >= maxConnections && iterator.hasNext()) {
+			if (iterator.next().getValue().activeConnections == 0) {
+				iterator.remove();
+			}
+		}
+	}
+
+	private void removeExpiredInactiveClientStatesLocked(long nowMillis) {
+		inboundClients.entrySet().removeIf(entry -> {
+			ClientInboundState state = entry.getValue();
+			return state.activeConnections == 0
+					&& state.inboundWindow.isExpired(nowMillis, abuseWindowMs);
+		});
 	}
 
 	private void removePeerFromRoom(Peer peer, WorkPlan workPlan) {
@@ -644,6 +734,7 @@ public class SignalingService implements SmartLifecycle {
 				if (!running
 						&& !acceptingConnections
 						&& connectedPeers.isEmpty()
+						&& inboundClients.isEmpty()
 						&& rooms.isEmpty()) {
 					return;
 				}
@@ -658,6 +749,7 @@ public class SignalingService implements SmartLifecycle {
 					peer.outbound.clear();
 				});
 				connectedPeers.clear();
+				inboundClients.clear();
 				rooms.clear();
 				globalInboundWindow.reset();
 				refreshMetricsLocked();
@@ -721,16 +813,22 @@ public class SignalingService implements SmartLifecycle {
 		private long unjoinedSinceMillis;
 		private final RateWindow inboundWindow = new RateWindow();
 		private final ConnectionAdmissionPolicy.Reservation reservation;
+		private final String clientKey;
+		private final ClientInboundState clientInboundState;
 
 		private Peer(
 				String peerId,
 				WebSocketSession session,
 				long connectedAtMillis,
-				ConnectionAdmissionPolicy.Reservation reservation) {
+				ConnectionAdmissionPolicy.Reservation reservation,
+				String clientKey,
+				ClientInboundState clientInboundState) {
 			this.peerId = peerId;
 			this.session = session;
 			this.unjoinedSinceMillis = connectedAtMillis;
 			this.reservation = reservation;
+			this.clientKey = clientKey;
+			this.clientInboundState = clientInboundState;
 		}
 
 		private void releaseReservation() {
@@ -738,6 +836,12 @@ public class SignalingService implements SmartLifecycle {
 				reservation.close();
 			}
 		}
+	}
+
+	private static final class ClientInboundState {
+
+		private final RateWindow inboundWindow = new RateWindow();
+		private int activeConnections;
 	}
 
 	private record Participant(String peerId, String displayName) {
@@ -760,8 +864,16 @@ public class SignalingService implements SmartLifecycle {
 				startedAtMillis = nowMillis;
 				count = 0;
 			}
-			count++;
+			if (count < Integer.MAX_VALUE) {
+				count++;
+			}
 			return count <= maximum;
+		}
+
+		private boolean isExpired(long nowMillis, long windowMillis) {
+			return startedAtMillis == Long.MIN_VALUE
+					|| nowMillis < startedAtMillis
+					|| nowMillis - startedAtMillis >= windowMillis;
 		}
 
 		private void reset() {

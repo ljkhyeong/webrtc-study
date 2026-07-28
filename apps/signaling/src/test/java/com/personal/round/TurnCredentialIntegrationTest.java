@@ -22,7 +22,7 @@ import tools.jackson.databind.ObjectMapper;
 			"round.turn.credential-ttl=1h",
 			"round.turn.rate-limit-window=60s",
 			"round.turn.rate-limit-max-requests=2",
-			"round.turn.rate-limit-global-max-requests=3"
+			"round.turn.rate-limit-global-max-requests=4"
 		})
 class TurnCredentialIntegrationTest {
 
@@ -47,7 +47,8 @@ class TurnCredentialIntegrationTest {
 		HttpResponse<String> second = post("198.51.100.10");
 		HttpResponse<String> limited = post("198.51.100.10");
 		HttpResponse<String> otherClient = post("198.51.100.11");
-		HttpResponse<String> globallyLimited = post("198.51.100.12");
+		HttpResponse<String> anotherClient = post("198.51.100.12");
+		HttpResponse<String> globallyLimited = post("198.51.100.13");
 		HttpResponse<String> metric = getPath(
 				"/actuator/metrics/round.turn.credentials.rate_limited");
 		JsonNode firstCredentials = new ObjectMapper().readTree(first.body());
@@ -79,6 +80,7 @@ class TurnCredentialIntegrationTest {
 				.hasValueSatisfying(seconds -> assertThat(seconds).isBetween(1L, 60L));
 		assertThat(limited.body()).isEmpty();
 		assertThat(otherClient.statusCode()).isEqualTo(200);
+		assertThat(anotherClient.statusCode()).isEqualTo(200);
 		assertThat(globallyLimited.statusCode()).isEqualTo(429);
 		assertThat(globallyLimited.headers().firstValue("cache-control"))
 				.contains("no-store");

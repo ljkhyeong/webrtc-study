@@ -41,13 +41,14 @@ round:
     unjoined-sweep-interval: ${UNJOINED_SOCKET_SWEEP_MS:1000}ms
     abuse-window: ${SIGNALING_ABUSE_WINDOW_MS:10000}ms
     max-frames-per-session-window: ${SIGNALING_MAX_FRAMES_PER_SESSION:600}
+    max-frames-per-client-window: ${SIGNALING_MAX_FRAMES_PER_CLIENT:1200}
     max-frames-global-window: ${SIGNALING_MAX_FRAMES_GLOBAL:3600}
     max-text-payload-bytes: 65536
   turn:
     urls: ${TURN_URLS:}
     shared-secret: ${TURN_SHARED_SECRET:}
     credential-ttl: ${TURN_CREDENTIAL_TTL_SECONDS:600}s
-    rate-limit-window: ${TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS:60}s
+    rate-limit-window: ${TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS:600}s
     rate-limit-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS:12}
-    rate-limit-global-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS:8}
+    rate-limit-global-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS:24}
     rate-limit-max-clients: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS:10000}

@@ -65,6 +65,30 @@ class TurnCredentialServiceTest {
 	}
 
 	@Test
+	void allowsSixSameNatParticipantsToRefreshAtEightMinutesAndLimitsTheThirteenthIssue() {
+		TurnProperties properties = enabledProperties();
+		MutableClock clock = new MutableClock(1_800_000_000);
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		TurnCredentialService service = service(properties, clock, registry);
+
+		for (int participant = 0; participant < 6; participant++) {
+			issued(service.issueFor("192.0.2.10"));
+		}
+		clock.advanceSeconds(480);
+		for (int refresh = 0; refresh < 6; refresh++) {
+			issued(service.issueFor("192.0.2.10"));
+		}
+
+		TurnCredentialService.RateLimited thirteenth =
+				rateLimited(service.issueFor("192.0.2.10"));
+		assertThat(thirteenth.retryAfterSeconds()).isEqualTo(120);
+		assertThat(registry.get("round.turn.credentials.issued").counter().count())
+				.isEqualTo(12);
+		assertThat(registry.get("round.turn.credentials.rate_limited").counter().count())
+				.isEqualTo(1);
+	}
+
+	@Test
 	void isDisabledOnlyWhenBothSecretAndUrlsAreAbsent() {
 		TurnProperties disabled = TestProperties.turn(List.of(), "");
 		MutableClock clock = new MutableClock(1_800_000_000);
@@ -117,13 +141,13 @@ class TurnCredentialServiceTest {
 				rateLimited(service.issueFor("198.51.100.10"));
 
 		assertThat(first.username()).isNotEqualTo(second.username());
-		assertThat(limited.retryAfterSeconds()).isEqualTo(60);
+		assertThat(limited.retryAfterSeconds()).isEqualTo(600);
 
-		clock.advanceSeconds(30);
+		clock.advanceSeconds(300);
 		assertThat(rateLimited(service.issueFor("198.51.100.10")).retryAfterSeconds())
-				.isEqualTo(30);
+				.isEqualTo(300);
 
-		clock.advanceSeconds(30);
+		clock.advanceSeconds(300);
 		TurnCredentials afterReset = issued(service.issueFor("198.51.100.10"));
 		assertThat(afterReset.username()).isNotIn(first.username(), second.username());
 		assertThat(registry.get("round.turn.credentials.rate_limited").counter().count())
@@ -135,7 +159,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void rateLimitsIssuanceAcrossClientAddressesAndResetsAtTheWindowBoundary() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 10, 2, 10_000);
+				TURN_URLS, SHARED_SECRET, 1, 2, 10_000);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -145,14 +169,14 @@ class TurnCredentialServiceTest {
 		TurnCredentialService.RateLimited limited =
 				rateLimited(service.issueFor("198.51.100.12"));
 
-		assertThat(limited.retryAfterSeconds()).isEqualTo(60);
+		assertThat(limited.retryAfterSeconds()).isEqualTo(600);
 		assertThat(service.trackedClientCount()).isEqualTo(2);
 
-		clock.advanceSeconds(30);
+		clock.advanceSeconds(300);
 		assertThat(rateLimited(service.issueFor("198.51.100.12")).retryAfterSeconds())
-				.isEqualTo(30);
+				.isEqualTo(300);
 
-		clock.advanceSeconds(30);
+		clock.advanceSeconds(300);
 		issued(service.issueFor("198.51.100.12"));
 		assertThat(registry.get("round.turn.credentials.rate_limited").counter().count())
 				.isEqualTo(2);
@@ -206,6 +230,18 @@ class TurnCredentialServiceTest {
 				.extracting(ConstraintViolation::getMessage)
 				.allSatisfy(message -> assertThat(message)
 						.doesNotContain(SHARED_SECRET));
+	}
+
+	@Test
+	void requiresGlobalQuotaForTwoMisalignedClientWindows() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				TURN_URLS, SHARED_SECRET, 4, 7, 10_000);
+
+		assertThat(violations(properties))
+				.extracting(ConstraintViolation::getMessage)
+				.contains(
+						"round.turn.rate-limit-global-max-requests must be at least twice "
+								+ "rate-limit-max-requests");
 	}
 
 	private static TurnProperties enabledProperties() {

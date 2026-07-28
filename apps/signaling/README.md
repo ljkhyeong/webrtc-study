@@ -20,10 +20,23 @@ won the race is closed with WebSocket status 1001. Existing sessions are also
 closed with 1001 and room state is cleared idempotently.
 
 An unjoined socket is closed after `UNJOINED_SOCKET_TIMEOUT_MS` (15 seconds by
-default). Incoming frames use a 10-second fixed window with defaults of 600
-frames per session and 3,600 globally. These defaults allow a six-person ICE
-candidate burst while bounding sustained floods. `MAX_SIGNALING_CONNECTIONS`
-defaults to 1,000.
+default). Incoming frames use a 10-second fixed window and are admitted in
+session, effective client address, then global order. Defaults are 600 frames
+per session, 1,200 across one client address, and 3,600 globally. A session
+overage closes only that abusive connection; client and global overages drop
+the frame without closing an arbitrary peer. An inactive client window remains
+until its fixed window expires, so disconnecting and reconnecting from the same
+address cannot reset quota. Expired inactive windows are removed on connect and
+by the periodic unjoined-session sweep. The map is bounded by
+`MAX_SIGNALING_CONNECTIONS`; capacity pressure evicts only inactive
+least-recently-used entries and never active client state.
+`MAX_SIGNALING_CONNECTIONS` defaults to 1,000 and
+`MAX_SIGNALING_CONNECTIONS_PER_CLIENT` defaults to 12.
+
+The client frame limit must be at least the session limit. The global limit
+must be at least twice the client limit so one client's two misaligned fixed
+windows cannot consume the server budget. The defaults retain a six-person ICE
+candidate burst while bounding sustained floods.
 
 Micrometer publishes these signaling meters:
 
@@ -33,6 +46,9 @@ Micrometer publishes these signaling meters:
 - `round.signaling.joins.rejected` (`reason=room_full|already_joined`)
 - `round.signaling.frames.invalid`
 - `round.signaling.frames.rate_limited`
+- `round.signaling.frames.client_rate_limited`
+- `round.signaling.frames.overloaded`
+- `round.signaling.connections.rejected` (`reason=server_capacity|client_capacity`)
 - `round.signaling.outbound.queue.overflows`
 - `round.signaling.heartbeat.closes`
 - `round.turn.credentials.issued`
@@ -53,10 +69,18 @@ Credential issuance uses these additional bounded rate-limit settings:
 
 | Environment variable                             | Default | Purpose                                                   |
 | ------------------------------------------------ | ------: | --------------------------------------------------------- |
-| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`      |    `60` | Fixed issuance window                                     |
+| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`      |   `600` | Fixed issuance window                                     |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`        |    `12` | Successful issues per effective client address and window |
-| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS` |     `8` | Successful issues across this server and window           |
+| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS` |    `24` | Successful issues across this server and window           |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`         | `10000` | Maximum client windows retained in the in-memory LRU      |
+
+The default ten-minute issuance window matches the ten-minute credential TTL.
+Twelve issues per address cover the initial issue and the scheduled refresh for
+all six room participants behind one NAT, while 24 global issues provide
+server-wide headroom. The global quota must be at least twice the per-client
+quota so one client cannot consume it across misaligned fixed-window
+boundaries. If operators change the credential TTL or browser refresh timing,
+they should review and normally align the issuance window and quotas as well.
 
 The credential endpoint returns a no-store response:
 
@@ -79,8 +103,11 @@ seconds in the current window.
 
 Origin and Fetch Metadata checks prevent another website from spending a
 visitor's quota through a browser. They do not authenticate non-browser clients,
-which can construct these headers. The limits and short TTL are standalone MVP
-abuse mitigation until BATON identity and study membership protect issuance.
+which can construct these headers. An unauthenticated client can therefore
+spend the global issuance quota or accumulate live credentials that consume
+coturn relay allocations and bandwidth. The limits and short TTL bound, but do
+not remove, that relay-exhaustion risk until BATON identity and study membership
+protect issuance.
 
 When TURN is intentionally disabled, the endpoint returns an empty no-store
 HTTP 204 response so local STUN-only development does not create a false
