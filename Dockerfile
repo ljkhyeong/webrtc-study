@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1.7
 
 ARG NODE_IMAGE=node:22.23.0-alpine3.24
+ARG CADDY_BUILDER_IMAGE=caddy:2.11.4-builder-alpine
 ARG CADDY_IMAGE=caddy:2.11.4-alpine
+ARG CADDY_VERSION=v2.11.4
+ARG CADDY_RATE_LIMIT_MODULE=github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db
 ARG JAVA_BUILD_IMAGE=eclipse-temurin:21.0.11_10-jdk-alpine-3.23
 ARG JAVA_RUNTIME_IMAGE=eclipse-temurin:21.0.11_10-jre-alpine-3.23
 ARG COTURN_IMAGE=coturn/coturn:4.14.0-r0-alpine
@@ -31,8 +34,19 @@ RUN VITE_STUN_URLS="${VITE_STUN_URLS}" \
        VITE_ICE_TRANSPORT_POLICY="${VITE_ICE_TRANSPORT_POLICY}" \
        npm run build -w @round/web
 
-FROM ${CADDY_IMAGE} AS web-runtime
+FROM ${CADDY_BUILDER_IMAGE} AS caddy-build
+ARG CADDY_VERSION
+ARG CADDY_RATE_LIMIT_MODULE
+RUN GOTOOLCHAIN=local xcaddy build "${CADDY_VERSION}" \
+    --output /usr/bin/caddy \
+    --with "${CADDY_RATE_LIMIT_MODULE}" \
+    && caddy list-modules | grep -Fxq 'http.handlers.rate_limit'
+
+FROM ${CADDY_IMAGE} AS caddy-runtime
+COPY --from=caddy-build /usr/bin/caddy /usr/bin/caddy
 COPY ops/caddy/Caddyfile /etc/caddy/Caddyfile
+
+FROM caddy-runtime AS web-runtime
 COPY --from=web-build /workspace/apps/web/dist /srv
 
 EXPOSE 80 443 443/udp

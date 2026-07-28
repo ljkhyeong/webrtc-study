@@ -7,7 +7,8 @@ Usage: ops/ci/validate-deployment.sh [--check-only]
 
 Validates the production Compose interpolation, shell scripts, Caddyfile, and
 every Dockerfile runtime target. By default it also builds all Compose images.
-Use --check-only for local linting without building the final images.
+Use --check-only to skip the final Compose images. The small custom Caddy
+validation target is always built so module compatibility is actually checked.
 EOF
 }
 
@@ -44,6 +45,7 @@ require_command() {
 }
 
 require_command docker
+require_command jq
 require_command openssl
 docker compose version >/dev/null
 
@@ -68,7 +70,7 @@ TURN_SHARED_SECRET=$(openssl rand -hex 32)
 TURN_TLS_CERT_FILE="$fixture_dir/turn-cert.pem"
 TURN_TLS_KEY_FILE="$fixture_dir/turn-key.pem"
 ROUND_ACCESS_USER=round-ci
-ROUND_ACCESS_PASSWORD_HASH='$argon2id$v=19$m=47104,t=1,p=1$zJPvVe48N64JUa9MFlVhiw$b5Tznu0PxnA4TciY6qYe2BFPxncF1ePQaeNukHhH1cU'
+ROUND_ACCESS_PASSWORD_HASH='$2a$12$RJKd/exBEqUGjd.mtH9URu8H/TGJgwahZV8tA.xhPCM/4rdHfpmYS'
 export TURN_SHARED_SECRET TURN_TLS_CERT_FILE TURN_TLS_KEY_FILE
 export ROUND_ACCESS_USER ROUND_ACCESS_PASSWORD_HASH
 
@@ -80,16 +82,50 @@ sh -n ops/turn/entrypoint.sh
 bash -n ops/turn/probe.sh
 bash ops/turn/probe.sh --help >/dev/null
 
-caddy_image=${CADDY_IMAGE:-caddy:2.11.4-alpine}
-printf 'Validating Caddy configuration...\n'
+caddy_validation_image=round-caddy-validation:local
+printf 'Building the pinned custom Caddy runtime...\n'
+docker build \
+  --target caddy-runtime \
+  --tag "$caddy_validation_image" \
+  .
+
+printf 'Verifying the rate-limit module and Caddy configuration...\n'
+docker run --rm "$caddy_validation_image" caddy list-modules --skip-standard \
+  | grep -Fxq 'http.handlers.rate_limit'
 docker run --rm \
   -e ACME_EMAIL=ci@round.invalid \
   -e ROUND_ACCESS_PASSWORD_HASH \
   -e ROUND_ACCESS_USER \
   -e ROUND_DOMAIN=round.invalid \
-  -v "$repo_root/ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-  "$caddy_image" \
+  "$caddy_validation_image" \
   caddy validate --config /etc/caddy/Caddyfile
+
+printf 'Verifying the adapted rate-limit policy and handler order...\n'
+docker run --rm \
+  -e ACME_EMAIL=ci@round.invalid \
+  -e ROUND_ACCESS_PASSWORD_HASH \
+  -e ROUND_ACCESS_USER \
+  -e ROUND_DOMAIN=round.invalid \
+  "$caddy_validation_image" \
+  caddy adapt --config /etc/caddy/Caddyfile \
+  | jq -e '
+      ([.. | objects]) as $objects
+      | ([$objects[] | select(has("handler")) | .handler]) as $handlers
+      | ([$objects[] | select(.handler? == "rate_limit")][0]) as $rate
+      | ($handlers | index("rate_limit")) as $rate_index
+      | ($handlers | index("authentication")) as $auth_index
+      | ($rate_index != null)
+        and ($auth_index != null)
+        and ($rate_index < $auth_index)
+        and ($rate.sweep_interval == 60000000000)
+        and ($rate.rate_limits.pilot_client.key == "{http.request.remote.host}")
+        and ($rate.rate_limits.pilot_client.max_events == 96)
+        and ($rate.rate_limits.pilot_client.window == 300000000000)
+        and ($rate.rate_limits.pilot_client.ipv6_prefix == 64)
+        and ($rate.rate_limits.pilot_client.match[0].not[0].path == ["/healthz"])
+        and ($rate.rate_limits.pilot_client.match[0].header.Authorization == ["*"])
+        and (($rate.rate_limits | keys) == ["pilot_client"])
+    ' >/dev/null
 
 printf 'Checking Dockerfile runtime targets...\n'
 for target in web-runtime signaling-runtime turn-runtime; do

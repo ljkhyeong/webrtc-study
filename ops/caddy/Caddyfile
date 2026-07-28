@@ -25,7 +25,20 @@ http://127.0.0.1:8080 {
 	encode zstd gzip
 
 	@requiresPilotAccess not path /healthz
-	basic_auth @requiresPilotAccess argon2id {
+	rate_limit {
+		zone pilot_client {
+			match {
+				not path /healthz
+				header Authorization *
+			}
+			key {remote_host}
+			events 96
+			window 5m
+			ipv6_prefix 64
+		}
+		sweep_interval 1m
+	}
+	basic_auth @requiresPilotAccess bcrypt {
 		{$ROUND_ACCESS_USER} {$ROUND_ACCESS_PASSWORD_HASH}
 	}
 
