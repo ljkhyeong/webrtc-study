@@ -12,6 +12,8 @@ endpoint; only `/healthz` remains public.
 - A Linux host with Docker Engine and Docker Compose. Coturn uses
   `network_mode: host`; Docker Desktop is useful for image validation but is
   not a production TURN topology.
+- At least two logical CPUs, with capacity reserved for signaling and TURN.
+  The edge CPU quota is a ceiling, not a dedicated or reserved core.
 - One static public IPv4 address.
 - `A` records for the web hostname (for example `round.example.com`) and the
   TURN hostname (for example `turn.example.com`). Point TURN directly at the
@@ -71,7 +73,7 @@ cp ops/production.env.example ops/production.env
 chmod 0600 ops/production.env
 openssl rand -hex 32
 docker run --rm -it caddy:2.11.4-alpine \
-  caddy hash-password --algorithm argon2id
+  caddy hash-password --algorithm bcrypt --bcrypt-cost 12
 ```
 
 Paste the generated 64-character value into `TURN_SHARED_SECRET`. This file is
@@ -80,13 +82,14 @@ container runtime to signaling and coturn; it is never compiled into the web
 bundle or an image layer.
 
 The Caddy command prompts without echoing the plaintext password. Paste its
-entire `$argon2id$...` output between the single quotes in
+entire `$2a$12$...` or `$2b$12$...` output between the single quotes in
 `ROUND_ACCESS_PASSWORD_HASH=''`; the quotes prevent Compose from interpreting
 the hash's dollar signs as environment interpolation. Keep the chosen plaintext
 password out of the env file, shell history, Git, images, and logs. Set
 `ROUND_ACCESS_USER` to a simple shared pilot username without a colon, then
-deliver the username and plaintext password to the intended study members over
-a separate trusted channel.
+choose a random 24–32 character ASCII password (bcrypt considers at most 72
+input bytes), and deliver the username and plaintext password to the intended
+study members over a separate trusted channel.
 
 Set these values carefully:
 
@@ -94,11 +97,39 @@ Set these values carefully:
   credentials and is unsafe without TLS; deployed browser media and signaling
   also require HTTPS/WSS.
 - `ROUND_ACCESS_USER` and `ROUND_ACCESS_PASSWORD_HASH` protect every external
-  route except `/healthz`. Caddy verifies the explicit Argon2id hash and removes
-  `Authorization` before proxying to signaling. The shared credential is a
-  temporary standalone-pilot boundary: it cannot identify participants,
-  enforce study membership, or revoke one member. BATON authentication and
-  meeting membership authorization must replace it before broader access.
+  route except `/healthz`. Caddy verifies the explicit bcrypt cost-12 hash and
+  removes `Authorization` before proxying to signaling. Requests carrying an
+  `Authorization` header are limited before authentication to 96 per client
+  network in a five-minute sliding window. Headerless browser challenges are
+  not counted because they do not run a password hash. There is intentionally
+  no anonymous global quota: a shared pre-authentication bucket would let one
+  caller consume the budget and lock every participant out. Caddy uses a
+  cost-14 fake bcrypt comparison for unknown usernames, so the client budget is
+  sized against that more expensive failure path rather than only the configured
+  cost-12 hash. IPv6 clients are grouped by `/64`, and the public health check
+  does not consume the budget. The current four-file bundle uses about 36
+  credential-bearing requests when six fresh browsers share one NAT; all six
+  rounds of simultaneous signaling retries add another 36, leaving 24 requests
+  for limited recovery traffic. This sliding-window budget limits request count,
+  not concurrent bcrypt work. One client network can therefore submit many
+  syntactically valid credentials with distinct nonexistent usernames
+  concurrently, force the cost-14 fake-hash path, and temporarily saturate the
+  edge's CPU before the 96-request budget is exhausted. The edge container is
+  limited to one CPU worth of scheduler time, 256 MiB of memory, and 128
+  processes. Those ceilings bound edge resource consumption on a host with
+  spare capacity, but they do not reserve a CPU or guarantee availability. A
+  one-CPU host can still be saturated, and existing WebSocket traffic can be
+  delayed because every public signaling connection traverses the same edge.
+  Run the checklist's measured burst gate against a six-person representative
+  peak on the actual multi-CPU pilot host before accepting this risk. This is
+  not sufficient protection for an unrestricted public service. A distributed
+  attack from many client networks is likewise a residual risk. Upstream
+  network filtering or BATON identity, a session login boundary, and a bounded
+  pre-authentication work queue are needed before broader exposure. The shared
+  credential is a temporary
+  standalone-pilot boundary: it cannot identify participants, enforce study
+  membership, or revoke one member. BATON authentication and meeting membership
+  authorization must replace it before broader access.
 - `ROUND_DOMAIN` and `ALLOWED_ORIGINS` must describe the same exact HTTPS
   origin. Do not use a wildcard origin.
 - `TURN_URLS` should advertise UDP, TCP, and TLS routes for the TURN hostname.
@@ -211,15 +242,18 @@ docker compose --env-file ops/production.env config --quiet
 ```
 
 CI runs the same interpolation against temporary dummy credentials and
-certificates, validates all deployment scripts and the Caddyfile, checks every
-Dockerfile runtime target, and builds all three images:
+certificates, builds the pinned custom Caddy runtime, verifies that its
+rate-limit module is present, validates the Caddyfile with that exact binary,
+checks every Dockerfile runtime target, and builds all three images:
 
 ```bash
 bash ops/ci/validate-deployment.sh
 ```
 
-For a local syntax and target check that does not build final images, add
-`--check-only`.
+For a local syntax and target check that does not build the three final Compose
+images, add `--check-only`. That mode still builds the smaller custom Caddy
+validation target because a stock Caddy binary cannot parse or validate the
+rate-limit directive.
 
 Build the three target images and start the stack:
 
@@ -248,6 +282,13 @@ directly through the Linux host network. Signaling listens on `8787` solely on
 the internal Compose network. Its room membership is held in memory, so
 `deploy.replicas` is intentionally fixed at one; horizontal scaling requires a
 shared room registry and cross-node signaling before it is safe.
+
+The edge binary includes the community `github.com/mholt/caddy-ratelimit`
+module pinned to commit
+`5625512f24f6f59d6f64fb3aafe5eecff0b286db`. It is not an official Caddy
+module. Treat changes to that pin like any other security-sensitive dependency:
+review upstream code and compatibility, rebuild the validation target, and let
+the release workflow produce a fresh SBOM instead of tracking a moving branch.
 
 ## Verify the running service
 
@@ -311,7 +352,7 @@ omit request headers and URIs entirely.
   and turn together. Previously issued credentials stop working after coturn
   switches secrets, so plan a short maintenance window.
 - Treat disclosure of the shared pilot password as disclosure of every room.
-  Generate a new password and Argon2id hash, update
+  Generate a new password and bcrypt cost-12 hash, update
   `ROUND_ACCESS_PASSWORD_HASH`, recreate only `edge`, redistribute the new
   plaintext out of band, and revoke the old credential immediately.
 - Keep the relay range consistent in the env file, coturn firewall, router

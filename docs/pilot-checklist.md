@@ -25,12 +25,32 @@ document.
       over HTTPS without mixed-content warnings.
 - [ ] Missing or incorrect shared credentials receive `401` for the static app,
       `/signal`, and `/api/turn-credentials`, while `/healthz` remains public.
+- [ ] More than 96 credential-bearing requests from one client network within
+      five minutes receive `429`, while headerless challenges and `/healthz` do
+      not consume that expensive-authentication budget.
+- [ ] On the actual pilot host with at least two logical CPUs, send 96
+      simultaneous, syntactically valid Basic requests whose usernames are all
+      distinct and confirmed absent from the Caddy user map, and whose passwords
+      are also distinct. This guarantees the cost-14 unknown-user fake-hash path
+      instead of the cheaper configured-user cost-12 path. Run the burst while
+      six physical participants maintain the representative peak session,
+      preferably with the relay-only image so TURN and signaling carry their
+      pilot peak together. Record edge and host CPU, memory, container restarts,
+      direct signaling `/healthz`, public `/healthz`, and a correctly
+      authenticated request from a second network. All six participants must
+      keep audio, video, and chat connected; both health requests and the
+      second-network request must complete within five seconds; no container may
+      restart or be OOM-killed; and all measurements must return to their
+      pre-test range within three minutes after the invalid requests finish.
+      Record that the attacking network remains intentionally limited for the
+      remainder of its five-minute window. Accept this standalone-pilot residual
+      risk explicitly before exposure.
 - [ ] Authenticated `wss://<domain>/signal` accepts the exact production Origin,
       and the authenticated TURN credential POST succeeds.
 - [ ] A foreign, missing, wildcard, or non-HTTPS Origin is rejected.
 - [ ] The signaling container port is not reachable directly from the public
       internet.
-- [ ] Only the Argon2id password hash is stored in the deployment env; the
+- [ ] Only the bcrypt cost-12 password hash is stored in the deployment env; the
       plaintext shared password is absent from Git, images, shell history, and
       logs, and `Authorization` is removed before proxying to signaling.
 - [ ] The shared credential was delivered out of band, its leak-and-rotation
