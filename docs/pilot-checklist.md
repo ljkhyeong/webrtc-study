@@ -59,8 +59,9 @@ document.
 - [ ] TURN shared secrets are absent from Git, image history, browser bundles,
       access logs, and application logs.
 - [ ] Visiting an invite path leaves no room code in Caddy access logs, while
-      `/signal`, `/healthz`, and `/api/turn-credentials` remain observable with
-      headers removed and query strings redacted.
+      every route—including shared-auth `401` and rate-limit `429`—remains
+      visible by status with headers and URI removed and client addresses
+      hashed.
 
 ## Relay-only test
 
@@ -136,6 +137,9 @@ toggle, leave, rejoin, invite-copy behavior, and zero unexpected console errors.
 - [ ] The external authenticated TURN probe passes UDP, TCP, and TLS from a
       network outside the TURN host and its NAT using monitor credentials from
       a secret store.
+- [ ] The TLS probe verifies both the certificate chain and
+      `TURN_PROBE_HOST`; an untrusted certificate or hostname mismatch makes the
+      deployment gate fail before relay traffic is attempted.
 - [ ] A nonzero external TURN probe result triggers the pilot deployment gate
       or the configured production alert.
 - [ ] Edge `/healthz` and the local STUN listener are not accepted as proof of

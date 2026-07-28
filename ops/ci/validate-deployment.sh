@@ -80,7 +80,26 @@ docker compose --env-file ops/production.env.example config --quiet
 printf 'Validating deployment shell scripts...\n'
 sh -n ops/turn/entrypoint.sh
 bash -n ops/turn/probe.sh
+bash -n ops/turn/verify-tls.sh
+bash -n ops/turn/test-tls-verification.sh
 bash ops/turn/probe.sh --help >/dev/null
+bash ops/turn/test-tls-verification.sh
+
+tls_gate_line=$(
+  grep -nF '    verify_tls_endpoint' ops/turn/probe.sh \
+    | head -n 1 \
+    | cut -d: -f1
+)
+tls_client_line=$(
+  grep -nF 'exec /usr/bin/turnutils_uclient' ops/turn/probe.sh \
+    | tail -n 1 \
+    | cut -d: -f1
+)
+[[ -n "$tls_gate_line" && -n "$tls_client_line" ]]
+(( tls_gate_line < tls_client_line ))
+grep -Fq -- '-servername "$host"' ops/turn/verify-tls.sh
+grep -Fq -- '-verify_hostname "$host"' ops/turn/verify-tls.sh
+grep -Fq -- '-verify_return_error' ops/turn/verify-tls.sh
 
 caddy_validation_image=round-caddy-validation:local
 printf 'Building the pinned custom Caddy runtime...\n'

@@ -19,6 +19,7 @@ Optional environment variables:
   TURN_PROBE_TLS_PORT         TURN TLS listener (default: 5349)
   TURN_PROBE_TIMEOUT_SECONDS  Per-transport timeout (default: 20)
   TURN_PROBE_IMAGE            Coturn utility image (default: deployment image)
+  TURN_PROBE_CA_FILE          Optional PEM CA bundle for a private TURN CA
 EOF
 }
 
@@ -49,6 +50,8 @@ require_command docker
 require_command jq
 require_command timeout
 
+probe_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+tls_verifier=$probe_dir/verify-tls.sh
 round_url=${ROUND_URL:-}
 access_user=${ROUND_ACCESS_USER:-}
 access_password=${ROUND_ACCESS_PASSWORD:-}
@@ -59,6 +62,7 @@ udp_port=${TURN_PROBE_UDP_PORT:-3478}
 tls_port=${TURN_PROBE_TLS_PORT:-5349}
 probe_timeout=${TURN_PROBE_TIMEOUT_SECONDS:-20}
 probe_image=${TURN_PROBE_IMAGE:-coturn/coturn:4.14.0-r0-alpine}
+tls_ca_file=${TURN_PROBE_CA_FILE:-}
 
 [[ "$round_url" == https://* ]] || fail "ROUND_URL must use https://"
 [[ "$access_user" =~ ^[A-Za-z0-9._-]+$ ]] \
@@ -138,6 +142,25 @@ export TURN_PROBE_USERNAME=$username
 export TURN_PROBE_CREDENTIAL=$credential
 export TURN_PROBE_HOST=$turn_host
 
+verify_tls_endpoint() {
+  require_command openssl
+  [[ -r "$tls_verifier" ]] || fail "TLS verifier is missing or unreadable"
+  if [[ -n "$tls_ca_file" && ! -r "$tls_ca_file" ]]; then
+    fail "TURN_PROBE_CA_FILE must be readable"
+  fi
+
+  local command=(bash "$tls_verifier" "$turn_host" "$tls_port")
+  if [[ -n "$tls_ca_file" ]]; then
+    command+=("$tls_ca_file")
+  fi
+
+  if ! timeout "${probe_timeout}s" "${command[@]}" >/dev/null 2>&1; then
+    fail "tls certificate chain or hostname verification failed"
+  fi
+
+  printf 'TURN TLS certificate verification passed.\n'
+}
+
 probe_transport() {
   local transport=$1
   local expected_url
@@ -165,6 +188,10 @@ probe_transport() {
     '.urls | arrays | index($expected) != null' \
     "$credential_file" >/dev/null \
     || fail "credential response does not advertise the $transport transport"
+
+  if [[ "$transport" == tls ]]; then
+    verify_tls_endpoint
+  fi
 
   export TURN_PROBE_PORT=$port
   export TURN_PROBE_TRANSPORT=$transport

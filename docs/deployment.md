@@ -199,21 +199,35 @@ docker compose --env-file ops/production.env up -d --no-deps --force-recreate tu
 
 ## Publish immutable release images
 
-Set the non-secret GitHub Actions repository variable `ROUND_STUN_URLS` to the
-comma-separated production STUN URLs compiled into the browser bundle. Use the
-production TURN hostname, for example `stun:turn.example.com:3478`. The release
-workflow fails before publishing if this variable is missing.
-
 After the release candidate is merged and its normal branch CI is green, create
-and push an annotated SemVer tag:
+an annotated SemVer tag. Put the comma-separated production STUN URLs compiled
+into the browser bundle in exactly one `ROUND_STUN_URLS=` line in the tag
+message. Use the production TURN hostname, for example:
 
 ```bash
-git tag -a v0.1.0-rc.1 -m "ROUND v0.1.0-rc.1"
+git tag -a v0.1.0-rc.1 \
+  -m "ROUND v0.1.0-rc.1" \
+  -m "ROUND_STUN_URLS=stun:turn.example.com:3478"
 git push origin v0.1.0-rc.1
 ```
 
+The release workflow rejects lightweight tags, tags that no longer resolve to
+the triggering commit, forced tag updates, malformed STUN URI lists, and release
+or full SHA image tags that already exist. It records the annotated tag object's
+Git ID and verifies that the object is unchanged immediately before promotion.
+Keeping the browser build input in that object prevents a mutable repository
+variable from silently changing a run's output. Protect `v*` tags from updates
+and deletion with a repository tag ruleset so queued and manually rerun
+workflows cannot observe a replaced tag object.
+
 `.github/workflows/release-images.yml` reruns repository and deployment checks,
-then publishes Linux AMD64 and ARM64 images to GHCR:
+then builds Linux AMD64 and ARM64 manifests under digest-only references. It
+checks that every build completed and that all final tags are still unused
+before promoting the four digests, then verifies that all eight promoted tags
+resolve to the expected build digests. Release workflow runs are serialized per
+repository and retained in the release queue. The user-facing production edge
+is promoted last so an earlier promotion failure does not expose the entrypoint
+tag:
 
 ```text
 ghcr.io/<owner>/round-edge:<tag>
@@ -226,7 +240,10 @@ Each image also receives a full `sha-<commit>` tag. The workflow summary records
 the manifest digest for every image. Copy the normal edge, signaling, and TURN
 digest references into `ops/production.env`; use the relay-only edge digest
 only for the relay gate. Never move or overwrite an existing release or SHA
-tag.
+tag. GHCR cannot promote tags across multiple image repositories atomically, so
+an infrastructure failure during the final promotion can leave only a subset
+of tags visible. Treat every visible tag as consumed, do not rerun over it, and
+publish a new SemVer tag only after investigating the failed release.
 
 Ensure the production host can pull the packages before deployment. Public
 packages need no registry credential. A private package requires a narrowly
@@ -294,7 +311,12 @@ the release workflow produce a fresh SBOM instead of tracking a moving branch.
 
 ```bash
 curl --fail --silent --show-error https://round.example.com/healthz
-openssl s_client -connect turn.example.com:5349 -servername turn.example.com </dev/null
+openssl s_client \
+  -connect turn.example.com:5349 \
+  -servername turn.example.com \
+  -verify_hostname turn.example.com \
+  -verify_return_error \
+  </dev/null >/dev/null
 docker compose --env-file ops/production.env logs --tail=100 edge signaling turn
 ```
 
@@ -302,7 +324,10 @@ The Compose TURN healthcheck is a local unauthenticated STUN listener check. It
 is useful for container liveness and makes `docker compose up --wait` fail when
 coturn is not listening, but it does not prove that public TURN allocation,
 authentication, NAT forwarding, or relay media works. Likewise, a passing edge
-`/healthz` proves only Caddy-to-signaling reachability.
+`/healthz` proves only Caddy-to-signaling reachability. Keep both
+`-verify_hostname` and `-verify_return_error` on the manual TLS check: a plain
+`s_client` connection can complete even when certificate verification reports
+an error.
 
 Run the authenticated relay probe from a Linux monitoring host outside the TURN
 server and its NAT:
@@ -319,14 +344,17 @@ ops/turn/probe.sh
 unset ROUND_ACCESS_PASSWORD
 ```
 
-The monitor needs `curl`, `jq`, GNU `timeout`, and Docker. Pin
+The monitor needs `curl`, `jq`, `openssl`, GNU `timeout`, and Docker. Pin
 `TURN_PROBE_IMAGE` to the same reviewed coturn digest as the deployment. The
 probe uses the shared access credential without printing the password, fetches
 a fresh short-lived TURN credential without printing it, verifies the
-advertised URLs and expiry, and creates authenticated client-to-client relay
-traffic over UDP, TCP, and TLS. Store the monitor's plaintext password in its
-secret manager, not in the deployment env file or command arguments. Treat a
-nonzero exit as a deployment failure. Run it every one to five minutes from the
+advertised URLs and expiry, verifies the TLS certificate chain and DNS hostname
+with the monitor host's OpenSSL trust store, and only then creates authenticated
+client-to-client relay traffic over UDP, TCP, and TLS. For an intentionally
+private TURN CA, set `TURN_PROBE_CA_FILE` to its readable PEM CA bundle; do not
+disable verification. Store the monitor's plaintext password in its secret
+manager, not in the deployment env file or command arguments. Treat a nonzero
+exit as a deployment failure. Run it every one to five minutes from the
 external network and alert after an appropriate number of consecutive failures.
 
 The credential response contains `urls`, `username`, `credential`, and
@@ -335,12 +363,13 @@ two browser/network combinations that WebSocket signaling connects and that
 `chrome://webrtc-internals` or the equivalent browser diagnostics shows a
 `relay` ICE candidate.
 
-Caddy emits access logs only for `/signal`, `/healthz`, and
-`/api/turn-credentials`. Request headers are removed and query strings are
-redacted before encoding the log, so invite paths, referrers, cookies, and
-credential-like query data do not enter Caddy access logs. Application and TURN
-logs must follow the same no-room-code and no-credential rule. Caddy error logs
-omit request headers and URIs entirely.
+Caddy emits an access record for every route so shared-auth failures and
+rate-limit responses remain observable. Request headers and the complete URI are
+removed before encoding, while client and remote addresses are replaced with a
+short stable hash. This preserves status-level correlation for `401` and `429`
+without storing invite room codes, referrers, cookies, query credentials, or raw
+IP addresses. Application and TURN logs must follow the same no-room-code and
+no-credential rule. Caddy error logs omit request headers and URIs entirely.
 
 ## Operations
 
@@ -357,5 +386,8 @@ omit request headers and URIs entirely.
   plaintext out of band, and revoke the old credential immediately.
 - Keep the relay range consistent in the env file, coturn firewall, router
   forwarding, and cloud security group.
-- Roll back by restoring all three prior immutable image references and running
-  `docker compose ... up -d --no-build`. Do not scale signaling above one.
+- Roll back by restoring the previous edge, signaling, and TURN digest
+  references as one tested set, then run
+  `docker compose --env-file ops/production.env up -d --no-build`. Do not
+  substitute mutable release tags during rollback, and do not scale signaling
+  above one.
