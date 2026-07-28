@@ -946,6 +946,11 @@ textarea:focus-visible {
   box-shadow: 0 0 0 3px rgb(222 101 79 / 14%);
 }
 
+.connection-state--partial-failure i {
+  background: var(--coral);
+  box-shadow: 0 0 0 3px rgb(222 101 79 / 14%);
+}
+
 .participant-count svg {
   width: 14px;
 }
@@ -1255,11 +1260,18 @@ textarea:focus-visible {
   background: var(--mint-bright);
 }
 
-.room-notice {
+.room-notice-stack {
   position: absolute;
   top: 34px;
   left: 50%;
   z-index: 12;
+  display: grid;
+  width: min(80%, 640px);
+  gap: 8px;
+  transform: translateX(-50%);
+}
+
+.room-notice {
   max-width: min(80%, 640px);
   margin: 0;
   padding: 10px 14px;
@@ -1267,7 +1279,14 @@ textarea:focus-visible {
   border-radius: 9px;
   font-size: 0.72rem;
   line-height: 1.5;
-  transform: translateX(-50%);
+}
+
+.room-notice-stack .room-notice {
+  max-width: none;
+}
+
+.room-notice .connecting-layer__actions {
+  margin-top: 12px;
 }
 
 .room-notice--warning {

@@ -14,6 +14,12 @@ import { pathForRoom, roomIdFromPath, sanitizeDisplayName } from './lib/room';
 import { loadTurnCredentials, turnCredentialRefreshDelayMs } from './lib/turn';
 
 const DISPLAY_NAME_STORAGE_KEY = 'round:display-name';
+const PEER_CONNECTION_FAILURE_MESSAGE =
+  '일부 참가자와 직접 연결하지 못했습니다. 현재 연결은 유지됩니다. 모두 다시 연결하려면 방에 다시 입장해 주세요.';
+
+function isTerminalPeerWarning(issue: RoomIssue | null | undefined): boolean {
+  return issue?.code === 'peer-connection-timeout' || issue?.code === 'peer-negotiation-failed';
+}
 
 const statusLabels: Record<RoomSessionStatus, string> = {
   idle: '방 준비 중',
@@ -58,12 +64,26 @@ export function roomWarningMessage(issue: RoomIssue | null | undefined): string 
       return '스터디 서버에 다시 연결하는 중입니다. 카메라와 마이크는 유지되지만 참가자 연결은 다시 설정됩니다.';
     case 'rtc-configuration-update-failed':
       return '일부 참가자의 TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.';
+    case 'peer-connection-timeout':
+    case 'peer-negotiation-failed':
+      return PEER_CONNECTION_FAILURE_MESSAGE;
     default:
       return issue.message;
   }
 }
 
-function roomStatusLabel(
+function chatErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  if (message.startsWith('Chat delivery to ')) {
+    return '연결 가능한 참가자가 없어 메시지를 보내지 못했습니다. 입력한 내용은 그대로 두었습니다.';
+  }
+  if (message.startsWith('Chat delivery queue for ')) {
+    return '메시지 전송 대기열이 가득 찼습니다. 잠시 후 다시 시도해 주세요.';
+  }
+  return message || '메시지를 보내지 못했습니다.';
+}
+
+export function roomStatusLabel(
   status: RoomSessionStatus,
   participants: readonly ParticipantView[],
 ): string {
@@ -74,6 +94,9 @@ function roomStatusLabel(
   const remoteParticipants = participants.filter((participant) => !participant.isLocal);
   if (remoteParticipants.length === 0) {
     return '입장 완료 · 대기 중';
+  }
+  if (remoteParticipants.some((participant) => participant.connectionState === 'failed')) {
+    return '일부 참가자 연결 실패';
   }
   if (remoteParticipants.every((participant) => participant.connectionState === 'connected')) {
     return '통화 연결됨';
@@ -370,12 +393,18 @@ function ActiveRoom({
     onLeave();
   };
 
-  const handleSendMessage = (text: string) => {
+  const handleSendMessage = (text: string): boolean => {
     try {
-      sessionRef.current?.sendChat(text);
+      const session = sessionRef.current;
+      if (session === null) {
+        throw new Error('Room session is unavailable');
+      }
+      session.sendChat(text);
       setActionError('');
+      return true;
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : '메시지를 보내지 못했습니다.');
+      setActionError(chatErrorMessage(error));
+      return false;
     }
   };
 
@@ -386,6 +415,9 @@ function ActiveRoom({
     videoAvailable: false,
     videoEnabled: false,
   };
+  const hasFailedRemotePeer = participants.some(
+    (participant) => !participant.isLocal && participant.connectionState === 'failed',
+  );
 
   return (
     <RoomView
@@ -396,7 +428,10 @@ function ActiveRoom({
       messages={messages}
       audioEnabled={localMedia.audioEnabled}
       videoEnabled={localMedia.videoEnabled}
-      mediaWarning={roomWarningMessage(snapshot?.warning)}
+      peerRecoveryMessage={hasFailedRemotePeer ? PEER_CONNECTION_FAILURE_MESSAGE : undefined}
+      mediaWarning={
+        isTerminalPeerWarning(snapshot?.warning) ? undefined : roomWarningMessage(snapshot?.warning)
+      }
       errorMessage={
         roomErrorMessage(snapshot?.error) || actionError || turnRefreshWarning || undefined
       }
