@@ -8,7 +8,6 @@ import com.personal.round.protocol.ServerMessageEncoder.Participant;
 import com.personal.round.protocol.SignalingErrorCode;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.util.ArrayDeque;
@@ -18,11 +17,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,15 +43,15 @@ public class SignalingService implements SmartLifecycle {
 	private static final CloseStatus HEARTBEAT_TIMEOUT =
 			new CloseStatus(4000, "Heartbeat timeout");
 	private static final CloseStatus SERVER_SHUTDOWN =
-			new CloseStatus(1001, "Server shutting down");
+			CloseStatus.GOING_AWAY.withReason("Server shutting down");
 	private static final CloseStatus OUTBOUND_QUEUE_OVERFLOW =
-			new CloseStatus(1011, "Outbound queue overflow");
+			CloseStatus.SERVER_ERROR.withReason("Outbound queue overflow");
 	private static final CloseStatus JOIN_TIMEOUT =
-			new CloseStatus(1008, "Room join timeout");
+			CloseStatus.POLICY_VIOLATION.withReason("Room join timeout");
 	private static final CloseStatus RATE_LIMITED =
-			new CloseStatus(1008, "Inbound frame rate exceeded");
+			CloseStatus.POLICY_VIOLATION.withReason("Inbound frame rate exceeded");
 	private static final CloseStatus CONNECTION_LIMIT =
-			new CloseStatus(1013, "Server connection limit reached");
+			CloseStatus.SERVICE_OVERLOAD.withReason("Server connection limit reached");
 	private static final CloseStatus ADMISSION_REQUIRED =
 			CloseStatus.SERVER_ERROR.withReason("Connection admission required");
 	static final int MAX_OUTBOUND_QUEUE_SIZE = 256;
@@ -470,9 +471,6 @@ public class SignalingService implements SmartLifecycle {
 		LinkedHashMap<String, Peer> room = rooms.computeIfAbsent(
 				message.roomId(), ignored -> new LinkedHashMap<>());
 		if (room.size() >= maxRoomSize) {
-			if (room.isEmpty()) {
-				rooms.remove(message.roomId(), room);
-			}
 			metrics.recordJoinRejectedRoomFull();
 			sendError(
 					peer,
@@ -1015,9 +1013,6 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	private static int payloadSizeBytes(WebSocketMessage<?> message) {
-		if (message instanceof TextMessage textMessage) {
-			return textMessage.getPayload().getBytes(StandardCharsets.UTF_8).length;
-		}
 		return message.getPayloadLength();
 	}
 
@@ -1034,52 +1029,41 @@ public class SignalingService implements SmartLifecycle {
 			return;
 		}
 
-		long deadlineNanos =
-				System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(shutdownCloseTimeoutMs);
-		CountDownLatch completion = new CountDownLatch(sessions.size());
+		AtomicInteger remainingSessions = new AtomicInteger(sessions.size());
+		List<Callable<Void>> closeTasks = sessions.stream()
+				.<Callable<Void>>map(session -> () -> {
+					try {
+						closeQuietly(session, SERVER_SHUTDOWN);
+						return null;
+					}
+					finally {
+						remainingSessions.decrementAndGet();
+					}
+				})
+				.toList();
 		ThreadFactory threadFactory = Thread.ofVirtual()
 				.name("round-signaling-close-", 0)
 				.factory();
-		List<Thread> closeThreads = new ArrayList<>(sessions.size());
-		for (WebSocketSession session : sessions) {
-			if (System.nanoTime() >= deadlineNanos) {
-				break;
-			}
-			Thread thread = threadFactory.newThread(() -> {
-				try {
-					closeQuietly(session, SERVER_SHUTDOWN);
-				}
-				finally {
-					completion.countDown();
-				}
-			});
-			closeThreads.add(thread);
-			thread.start();
-		}
-
-		boolean completed = false;
+		ExecutorService closeExecutor = Executors.newThreadPerTaskExecutor(threadFactory);
 		try {
-			long remainingNanos = deadlineNanos - System.nanoTime();
-			completed = remainingNanos > 0
-					&& completion.await(remainingNanos, TimeUnit.NANOSECONDS);
-			if (!completed) {
+			closeExecutor.invokeAll(
+					closeTasks,
+					shutdownCloseTimeoutMs,
+					TimeUnit.MILLISECONDS);
+			if (remainingSessions.get() > 0) {
 				log.warn(
 						"Signaling shutdown close deadline elapsed with {} sessions remaining",
-						completion.getCount());
+						remainingSessions.get());
 			}
 		}
 		catch (InterruptedException exception) {
 			Thread.currentThread().interrupt();
 			log.warn(
 					"Signaling shutdown was interrupted with {} sessions remaining",
-					completion.getCount());
+					remainingSessions.get());
 		}
 		finally {
-			if (!completed) {
-				closeThreads.stream()
-						.filter(Thread::isAlive)
-						.forEach(Thread::interrupt);
-			}
+			closeExecutor.shutdownNow();
 		}
 	}
 

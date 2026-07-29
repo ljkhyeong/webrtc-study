@@ -1282,10 +1282,14 @@ class SignalingServiceTest {
 				new ClientAddressKeyResolver());
 		TestPeer accepted = peer("reserved-accepted");
 		TestPeer rejected = peer("reserved-rejected");
-		attachReservation(accepted, policy.reserve(
-				new InetSocketAddress("192.0.2.30", 41_000)).reservation());
-		attachReservation(rejected, policy.reserve(
-				new InetSocketAddress("192.0.2.31", 41_000)).reservation());
+		attachReservation(
+				accepted,
+				acceptedReservation(policy.reserve(
+						new InetSocketAddress("192.0.2.30", 41_000))));
+		attachReservation(
+				rejected,
+				acceptedReservation(policy.reserve(
+						new InetSocketAddress("192.0.2.31", 41_000))));
 
 		assertThat(service.connect(accepted.session())).isTrue();
 		assertThat(service.connect(rejected.session())).isFalse();
@@ -1298,8 +1302,10 @@ class SignalingServiceTest {
 		assertThat(policy.activeReservationCount()).isZero();
 
 		TestPeer stoppedPeer = peer("reserved-stop");
-		attachReservation(stoppedPeer, policy.reserve(
-				new InetSocketAddress("192.0.2.32", 41_000)).reservation());
+		attachReservation(
+				stoppedPeer,
+				acceptedReservation(policy.reserve(
+						new InetSocketAddress("192.0.2.32", 41_000))));
 		assertThat(service.connect(stoppedPeer.session())).isTrue();
 
 		service.stop();
@@ -1319,8 +1325,7 @@ class SignalingServiceTest {
 				new InetSocketAddress(
 						"198.51.100." + nextTestClientAddress++,
 						41_000));
-		assertThat(admission.accepted()).isTrue();
-		attachReservation(peer, admission.reservation());
+		attachReservation(peer, acceptedReservation(admission));
 	}
 
 	private ConnectionAdmissionPolicy admissionPolicy(SignalingProperties properties) {
@@ -1338,8 +1343,7 @@ class SignalingServiceTest {
 		for (TestPeer peer : peers) {
 			ConnectionAdmissionPolicy.Admission admission =
 					policy.reserve(new InetSocketAddress(clientAddress, port++));
-			assertThat(admission.accepted()).isTrue();
-			attachReservation(peer, admission.reservation());
+			attachReservation(peer, acceptedReservation(admission));
 			assertThat(service.connect(peer.session())).isTrue();
 		}
 	}
@@ -1393,6 +1397,12 @@ class SignalingServiceTest {
 		Map<String, Object> attributes = new HashMap<>();
 		attributes.put(ConnectionAdmissionPolicy.RESERVATION_ATTRIBUTE, reservation);
 		when(peer.session().getAttributes()).thenReturn(attributes);
+	}
+
+	private static ConnectionAdmissionPolicy.Reservation acceptedReservation(
+			ConnectionAdmissionPolicy.Admission admission) {
+		assertThat(admission).isInstanceOf(ConnectionAdmissionPolicy.Accepted.class);
+		return ((ConnectionAdmissionPolicy.Accepted) admission).reservation();
 	}
 
 	private TestPeer peer(

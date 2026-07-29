@@ -1,7 +1,9 @@
 package com.personal.round.config;
 
 import com.personal.round.signaling.ConnectionAdmissionPolicy;
+import com.personal.round.signaling.ConnectionAdmissionPolicy.Accepted;
 import com.personal.round.signaling.ConnectionAdmissionPolicy.Admission;
+import com.personal.round.signaling.ConnectionAdmissionPolicy.Rejected;
 import com.personal.round.signaling.ConnectionAdmissionPolicy.Rejection;
 import com.personal.round.signaling.SignalingService;
 import jakarta.servlet.ServletContext;
@@ -50,14 +52,28 @@ public final class ConnectionAdmissionHandshakeHandler
 		}
 
 		Admission admission = admissionPolicy.reserve(request.getRemoteAddress());
-		if (!admission.accepted()) {
-			response.setStatusCode(admission.rejection() == Rejection.CLIENT_CAPACITY
-					? HttpStatus.TOO_MANY_REQUESTS
-					: HttpStatus.SERVICE_UNAVAILABLE);
-			return false;
-		}
+		return switch (admission) {
+			case Accepted accepted -> doAdmittedHandshake(
+					request,
+					response,
+					wsHandler,
+					attributes,
+					accepted.reservation());
+			case Rejected rejected -> {
+				response.setStatusCode(rejected.reason() == Rejection.CLIENT_CAPACITY
+						? HttpStatus.TOO_MANY_REQUESTS
+						: HttpStatus.SERVICE_UNAVAILABLE);
+				yield false;
+			}
+		};
+	}
 
-		ConnectionAdmissionPolicy.Reservation reservation = admission.reservation();
+	private boolean doAdmittedHandshake(
+			ServerHttpRequest request,
+			ServerHttpResponse response,
+			WebSocketHandler wsHandler,
+			Map<String, Object> attributes,
+			ConnectionAdmissionPolicy.Reservation reservation) {
 		attributes.put(ConnectionAdmissionPolicy.RESERVATION_ATTRIBUTE, reservation);
 		boolean upgraded = false;
 		try {

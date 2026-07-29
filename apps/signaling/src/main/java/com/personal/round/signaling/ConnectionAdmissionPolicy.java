@@ -5,6 +5,7 @@ import com.personal.round.net.ClientAddressKeyResolver;
 import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -36,18 +37,18 @@ public final class ConnectionAdmissionPolicy {
 		synchronized (monitor) {
 			if (activeReservations >= maxConnections) {
 				metrics.recordConnectionRejectedServerCapacity();
-				return Admission.rejected(Rejection.SERVER_CAPACITY);
+				return new Rejected(Rejection.SERVER_CAPACITY);
 			}
 
 			int clientConnections = connectionsByClient.getOrDefault(clientKey, 0);
 			if (clientConnections >= maxConnectionsPerClient) {
 				metrics.recordConnectionRejectedClientCapacity();
-				return Admission.rejected(Rejection.CLIENT_CAPACITY);
+				return new Rejected(Rejection.CLIENT_CAPACITY);
 			}
 
 			activeReservations++;
 			connectionsByClient.put(clientKey, clientConnections + 1);
-			return Admission.accepted(new Reservation(this, clientKey));
+			return new Accepted(new Reservation(this, clientKey));
 		}
 	}
 
@@ -81,23 +82,24 @@ public final class ConnectionAdmissionPolicy {
 	}
 
 	public enum Rejection {
-		NONE,
 		SERVER_CAPACITY,
 		CLIENT_CAPACITY
 	}
 
-	public record Admission(Reservation reservation, Rejection rejection) {
+	public sealed interface Admission permits Accepted, Rejected {
+	}
 
-		private static Admission accepted(Reservation reservation) {
-			return new Admission(reservation, Rejection.NONE);
+	public record Accepted(Reservation reservation) implements Admission {
+
+		public Accepted {
+			Objects.requireNonNull(reservation, "reservation");
 		}
+	}
 
-		private static Admission rejected(Rejection rejection) {
-			return new Admission(null, rejection);
-		}
+	public record Rejected(Rejection reason) implements Admission {
 
-		public boolean accepted() {
-			return reservation != null;
+		public Rejected {
+			Objects.requireNonNull(reason, "reason");
 		}
 	}
 
