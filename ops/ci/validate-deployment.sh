@@ -110,7 +110,7 @@ docker build \
 
 printf 'Verifying the rate-limit module and Caddy configuration...\n'
 docker run --rm "$caddy_validation_image" caddy list-modules --skip-standard \
-  | grep -Fxq 'http.handlers.rate_limit'
+  | grep -Fx 'http.handlers.rate_limit' >/dev/null
 docker run --rm \
   -e ACME_EMAIL=ci@round.invalid \
   -e ROUND_ACCESS_PASSWORD_HASH \
