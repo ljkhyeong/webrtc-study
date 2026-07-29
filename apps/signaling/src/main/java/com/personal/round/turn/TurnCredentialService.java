@@ -7,8 +7,6 @@ import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.util.Base64;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -24,11 +22,9 @@ public class TurnCredentialService {
 	private final Clock clock;
 	private final TurnCredentialMetrics metrics;
 	private final ClientAddressKeyResolver clientAddressKeyResolver;
+	private final TurnIssuanceLimiter issuanceLimiter;
 	private final SecureRandom secureRandom = new SecureRandom();
 	private final AtomicLong issuanceSequence = new AtomicLong();
-	private final Map<String, IssuanceWindow> issuanceWindowsByClient;
-	private final long rateLimitWindowMillis;
-	private IssuanceWindow globalIssuanceWindow;
 
 	public TurnCredentialService(
 			TurnProperties properties,
@@ -39,13 +35,7 @@ public class TurnCredentialService {
 		this.clock = clock;
 		this.metrics = metrics;
 		this.clientAddressKeyResolver = clientAddressKeyResolver;
-		this.rateLimitWindowMillis = properties.rateLimitWindow().toMillis();
-		this.issuanceWindowsByClient = new LinkedHashMap<>(16, 0.75f, true) {
-			@Override
-			protected boolean removeEldestEntry(Map.Entry<String, IssuanceWindow> eldest) {
-				return size() > properties.rateLimitMaxClients();
-			}
-		};
+		this.issuanceLimiter = new TurnIssuanceLimiter(properties);
 	}
 
 	public IssueResult issueFor(String clientAddress) {
@@ -54,39 +44,12 @@ public class TurnCredentialService {
 		}
 
 		String clientKey = clientAddressKeyResolver.resolve(clientAddress);
-		long nowMillis;
-		synchronized (issuanceWindowsByClient) {
-			nowMillis = clock.millis();
-			IssuanceWindow clientWindow = currentWindow(
-					issuanceWindowsByClient.get(clientKey), nowMillis);
-			IssuanceWindow globalWindow = currentWindow(globalIssuanceWindow, nowMillis);
-			long retryAfterSeconds = 0;
-			if (clientWindow != null
-					&& clientWindow.issued >= properties.rateLimitMaxRequests()) {
-				retryAfterSeconds = clientWindow.retryAfterSeconds(
-						nowMillis, rateLimitWindowMillis);
-			}
-			if (globalWindow != null
-					&& globalWindow.issued >= properties.rateLimitGlobalMaxRequests()) {
-				retryAfterSeconds = Math.max(
-						retryAfterSeconds,
-						globalWindow.retryAfterSeconds(nowMillis, rateLimitWindowMillis));
-			}
-			if (retryAfterSeconds > 0) {
-				metrics.recordRateLimited();
-				return new RateLimited(retryAfterSeconds);
-			}
-
-			if (clientWindow == null) {
-				clientWindow = new IssuanceWindow(nowMillis);
-				issuanceWindowsByClient.put(clientKey, clientWindow);
-			}
-			if (globalWindow == null) {
-				globalWindow = new IssuanceWindow(nowMillis);
-				globalIssuanceWindow = globalWindow;
-			}
-			clientWindow.issued++;
-			globalWindow.issued++;
+		long nowMillis = clock.millis();
+		TurnIssuanceLimiter.Acquisition acquisition =
+				issuanceLimiter.tryAcquire(clientKey, nowMillis);
+		if (acquisition instanceof TurnIssuanceLimiter.Rejected rejected) {
+			metrics.recordRateLimited();
+			return new RateLimited(rejected.retryAfterSeconds());
 		}
 
 		long expiresAt = Math.addExact(
@@ -100,16 +63,7 @@ public class TurnCredentialService {
 	}
 
 	int trackedClientCount() {
-		synchronized (issuanceWindowsByClient) {
-			return issuanceWindowsByClient.size();
-		}
-	}
-
-	private IssuanceWindow currentWindow(IssuanceWindow window, long nowMillis) {
-		if (window == null || window.isExpired(nowMillis, rateLimitWindowMillis)) {
-			return null;
-		}
-		return window;
+		return issuanceLimiter.trackedClientCount();
 	}
 
 	private String randomToken() {
@@ -130,7 +84,9 @@ public class TurnCredentialService {
 					mac.doFinal(username.getBytes(StandardCharsets.UTF_8)));
 		}
 		catch (GeneralSecurityException exception) {
-			throw new IllegalStateException("TURN credential signing is unavailable");
+			throw new IllegalStateException(
+					"TURN credential signing is unavailable",
+					exception);
 		}
 	}
 
@@ -151,26 +107,5 @@ public class TurnCredentialService {
 
 	public enum Disabled implements IssueResult {
 		INSTANCE
-	}
-
-	private static final class IssuanceWindow {
-
-		private final long startedAtMillis;
-		private int issued;
-
-		private IssuanceWindow(long startedAtMillis) {
-			this.startedAtMillis = startedAtMillis;
-		}
-
-		private boolean isExpired(long nowMillis, long windowMillis) {
-			return nowMillis >= startedAtMillis
-					&& nowMillis - startedAtMillis >= windowMillis;
-		}
-
-		private long retryAfterSeconds(long nowMillis, long windowMillis) {
-			long elapsed = Math.max(0, nowMillis - startedAtMillis);
-			long remainingMillis = Math.max(1, windowMillis - elapsed);
-			return Math.max(1, (remainingMillis + 999) / 1_000);
-		}
 	}
 }

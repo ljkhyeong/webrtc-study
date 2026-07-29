@@ -4,8 +4,11 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Duration;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.hibernate.validator.constraints.time.DurationMax;
 import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -49,6 +52,9 @@ public record TurnProperties(
 				value = 1_000_000,
 				message = "round.turn.rate-limit-max-clients must be at most 1000000")
 		int rateLimitMaxClients) {
+
+	private static final Pattern TRANSPORT_QUERY =
+			Pattern.compile("transport=[A-Za-z0-9._~-]+", Pattern.CASE_INSENSITIVE);
 
 	public TurnProperties {
 		urls = urls == null
@@ -102,8 +108,44 @@ public record TurnProperties(
 	}
 
 	private static boolean isCredentialFreeTurnUrl(String url) {
-		return (url.startsWith("turn:") || url.startsWith("turns:"))
-				&& url.chars().noneMatch(Character::isWhitespace)
-				&& !url.contains("@");
+		try {
+			URI turnUri = new URI(url);
+			if (!isTurnScheme(turnUri.getScheme())
+					|| !turnUri.isOpaque()
+					|| turnUri.getRawFragment() != null) {
+				return false;
+			}
+
+			String schemeSpecificPart = turnUri.getRawSchemeSpecificPart();
+			int querySeparator = schemeSpecificPart.indexOf('?');
+			String endpoint = querySeparator < 0
+					? schemeSpecificPart
+					: schemeSpecificPart.substring(0, querySeparator);
+			String query = querySeparator < 0
+					? null
+					: schemeSpecificPart.substring(querySeparator + 1);
+			if (endpoint.isEmpty()
+					|| (query != null && !TRANSPORT_QUERY.matcher(query).matches())) {
+				return false;
+			}
+
+			URI endpointUri = new URI("turn://" + endpoint).parseServerAuthority();
+			int port = endpointUri.getPort();
+			return endpointUri.getRawUserInfo() == null
+					&& endpointUri.getHost() != null
+					&& !endpointUri.getHost().isBlank()
+					&& endpointUri.getRawPath().isEmpty()
+					&& endpointUri.getRawQuery() == null
+					&& endpointUri.getRawFragment() == null
+					&& !endpointUri.getRawAuthority().endsWith(":")
+					&& (port == -1 || (port >= 1 && port <= 65_535));
+		}
+		catch (URISyntaxException exception) {
+			return false;
+		}
+	}
+
+	private static boolean isTurnScheme(String scheme) {
+		return "turn".equalsIgnoreCase(scheme) || "turns".equalsIgnoreCase(scheme);
 	}
 }

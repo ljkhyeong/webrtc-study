@@ -218,21 +218,37 @@ class TurnCredentialServiceTest {
 	}
 
 	@Test
-	void boundsTheNumberOfTrackedClientWindows() {
+	void refusesUntrackedClientsWhenLiveWindowCapacityIsFullWithoutEvictingQuotaState() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
 				TURN_URLS, SHARED_SECRET, 1, 8, 2);
+		MutableClock clock = new MutableClock(1_800_000_000);
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(
 				properties,
-				new MutableClock(1_800_000_000),
-				new SimpleMeterRegistry());
+				clock,
+				registry);
 
 		issued(service.issueFor("198.51.100.1"));
+		clock.advanceSeconds(60);
 		issued(service.issueFor("198.51.100.2"));
+
+		assertThat(service.trackedClientCount()).isEqualTo(2);
+		assertThat(rateLimited(service.issueFor("198.51.100.3")).retryAfterSeconds())
+				.isEqualTo(540);
+		assertThat(rateLimited(service.issueFor("198.51.100.1")).retryAfterSeconds())
+				.isEqualTo(540);
+		assertThat(service.trackedClientCount()).isEqualTo(2);
+
+		clock.advanceSeconds(540);
 		issued(service.issueFor("198.51.100.3"));
 
 		assertThat(service.trackedClientCount()).isEqualTo(2);
-		assertThat(service.issueFor("198.51.100.2"))
-				.isInstanceOf(TurnCredentialService.RateLimited.class);
+		assertThat(rateLimited(service.issueFor("198.51.100.2")).retryAfterSeconds())
+				.isEqualTo(60);
+		assertThat(registry.get("round.turn.credentials.issued").counter().count())
+				.isEqualTo(3);
+		assertThat(registry.get("round.turn.credentials.rate_limited").counter().count())
+				.isEqualTo(3);
 	}
 
 	@Test
