@@ -5,6 +5,12 @@ owner, a date, and a passing result. Automated browser media stubs are useful
 for regression testing, but they do not replace the real-device checks in this
 document.
 
+This checklist validates the tracked standalone Compose and its shared Basic
+Auth boundary. `compose.yml` is intentionally fixed to
+`ROUND_AUTH_MODE=standalone`; do not mark these checks as evidence for a BATON
+deployment. A BATON-backed study must also pass the separate integration gate
+at the end of this document.
+
 ## Release candidate
 
 - [ ] The release commit is immutable and tagged.
@@ -160,5 +166,61 @@ toggle, leave, rejoin, invite-copy behavior, and zero unexpected console errors.
 4. Promote only if the full session completes without a manual page refresh or
    an unexplained media loss.
 
-Screen sharing, recording, persistent chat, accounts, BATON integration, and
-rooms larger than six are explicitly outside this pilot gate.
+Screen sharing, recording, persistent chat, accounts, and rooms larger than six
+are explicitly outside this pilot gate. BATON integration is outside the
+standalone gate above and has its own required checks below.
+
+## BATON integration gate
+
+Run these checks against the BATON-owned edge and a separately deployed ROUND
+instance. Do not change the bundled standalone Compose to perform them.
+
+- [ ] The ROUND deployment uses `ROUND_AUTH_MODE=baton`, the exact BATON
+      issuer, `aud=round`, the production HTTPS JWK Set URI, a maximum grant
+      lifetime of at most five minutes, and BATON's exact HTTPS origin. Removing
+      any required verifier setting makes startup fail.
+- [ ] BATON signs grants with an asymmetric private key that is absent from
+      ROUND. ROUND receives only the public JWK Set, and a rehearsed key
+      rotation keeps both public keys available for the required overlap.
+- [ ] BATON issues the grant only as an `HttpOnly`, `Secure`,
+      `SameSite=Strict` cookie scoped to
+      `/round/rooms/{roomId}` with no `Domain` attribute. Tokens are absent from
+      URLs, browser storage, proxy logs, application logs, and monitoring labels.
+- [ ] The edge maps `/round/rooms/{roomId}/signal` to
+      `/rooms/{roomId}/signal` and
+      `/round/rooms/{roomId}/turn-credentials` to
+      `/api/rooms/{roomId}/turn-credentials`, preserving the room ID,
+      WebSocket upgrade, original `Origin`, and cookie.
+- [ ] The edge discards client-supplied forwarding headers, sets the canonical
+      HTTPS host and client address itself, and applies a bounded pre-auth rate
+      limit to both room-scoped public paths.
+- [ ] Missing, malformed, expired, wrong-signature, wrong-issuer,
+      wrong-audience, and wrong-room grants are rejected for both WebSocket
+      upgrade and TURN credential issuance.
+- [ ] A grant with `iat` more than 60 seconds in the future or with
+      `exp - iat` above `ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS` is rejected.
+- [ ] A valid grant cannot join a different room by changing the public path,
+      internal path, or `room.join` payload, and the rejected attempt creates
+      no room or participant state.
+- [ ] A foreign, missing, wildcard, or non-HTTPS Origin is rejected even when
+      the request carries an otherwise valid grant.
+- [ ] The Java signaling port is reachable only from the BATON edge and
+      monitoring plane. `/actuator/prometheus` and
+      `/actuator/metrics/**` are private, and any public health rule exposes
+      only transport-only `GET /healthz`.
+- [ ] The BATON page's `Permissions-Policy` permits its own camera and
+      microphone use, and `connect-src` permits the room-scoped WSS endpoint
+      without widening either policy to unrelated origins.
+- [ ] A valid participant can complete signaling, obtain and refresh TURN
+      credentials, and reconnect after BATON issues a fresh grant. The test
+      records the current behavior that an already-established WebSocket is not
+      terminated merely because its grant expires.
+- [ ] BATON or its database can be unavailable without interrupting signaling
+      frames on an already-established socket; new grants and expired-session
+      reconnects remain fail-closed until BATON recovers.
+- [ ] The pilot records the current absence of a per-`sub` or per-`jti`
+      concurrent socket limit, monitors repeated room-slot/TURN use, and defines
+      the desired reconnect overlap before such a limit is introduced.
+- [ ] The BATON integration probe obtains a real short-lived participation
+      grant without printing it and validates UDP, TCP, and TLS relay paths;
+      the standalone Basic Auth probe is not used as proof of this boundary.

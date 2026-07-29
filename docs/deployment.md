@@ -1,4 +1,4 @@
-# ROUND production deployment
+# ROUND standalone production deployment
 
 This stack runs one in-memory Java signaling replica behind Caddy and a
 host-networked coturn relay. Caddy serves the Vite build, terminates HTTPS/WSS,
@@ -6,6 +6,124 @@ and proxies only `/signal`, `/healthz`, and `/api/turn-credentials` to the
 unpublished signaling port. The standalone pilot places one shared Caddy Basic
 Auth gate in front of the static app, WebSocket upgrade, and TURN credential
 endpoint; only `/healthz` remains public.
+
+The tracked `compose.yml`, `ops/caddy/Caddyfile`, and
+`ops/production.env.example` are one standalone deployment contract.
+`compose.yml` intentionally injects `ROUND_AUTH_MODE=standalone` as a literal;
+an operator cannot turn this stack into a BATON deployment by adding an
+environment variable. BATON integration needs its own edge configuration and
+deployment manifest as described in [BATON deployment contract](#baton-deployment-contract).
+Do not copy the shared Basic Auth edge unchanged and switch only the Java
+process to BATON mode.
+
+## BATON deployment contract
+
+ROUND remains a separately deployed service when BATON embeds a study room.
+BATON owns user identity, study membership, participation-grant issuance, and
+the public same-origin edge. ROUND owns only its in-memory room and peer state,
+WebSocket signaling, and TURN credential issuance. The services do not share a
+database, and ROUND verifies each participation grant locally rather than
+calling BATON for every signaling frame.
+
+The BATON-owned ROUND signaling manifest must configure all of these values:
+
+```dotenv
+SPRING_PROFILES_ACTIVE=production
+ROUND_AUTH_MODE=baton
+ROUND_AUTH_COOKIE_NAME=__Secure-round_access
+ROUND_AUTH_ISSUER=https://baton.example.com
+ROUND_AUTH_AUDIENCE=round
+ROUND_AUTH_JWK_SET_URI=https://baton.example.com/.well-known/jwks.json
+ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS=300
+ALLOWED_ORIGINS=https://baton.example.com
+```
+
+Use the exact issuer and JWK Set URI from the BATON environment. Production
+issuer and JWK URLs must use HTTPS. `ROUND_AUTH_AUDIENCE` must equal the
+participation grant's `aud`; keep `round` unless both services deliberately
+version this contract. ROUND needs only BATON's public JWK Set and must never
+receive BATON's private signing key. Missing verifier configuration must stop a
+BATON-mode instance from starting rather than downgrade it to standalone.
+`ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS` defaults to 300, may be configured only
+between 30 and 900 seconds, and is enforced against `exp - iat`. ROUND also
+rejects an `iat` more than 60 seconds in the future.
+
+BATON sets the participation grant as an `HttpOnly`, `Secure`,
+`SameSite=Strict` cookie named `__Secure-round_access` by default. Its path is
+scoped to `/round/rooms/{roomId}`, and the `Domain` attribute must be omitted
+so the cookie remains host-only. The grant must not be put in a query string,
+browser storage, proxy log, or client-visible JavaScript. The public and internal
+routes are a versioned integration contract:
+
+| Operation            | Browser-facing BATON path                | Private ROUND path                     |
+| -------------------- | ---------------------------------------- | -------------------------------------- |
+| WebSocket signaling  | `/round/rooms/{roomId}/signal`           | `/rooms/{roomId}/signal`               |
+| TURN credential POST | `/round/rooms/{roomId}/turn-credentials` | `/api/rooms/{roomId}/turn-credentials` |
+
+For signaling, the BATON edge removes the leading `/round` segment. For TURN
+credentials, it rewrites the public path to the table's `/api/rooms/...`
+endpoint. Both rewrites must preserve the same `roomId`. The edge must preserve
+the WebSocket upgrade and the browser's `Origin` header; it must not synthesize
+a trusted Origin. Configure `ALLOWED_ORIGINS` to BATON's exact HTTPS origin and
+keep the existing Origin and Fetch Metadata checks in addition to JWT
+verification. The edge must also allow camera and microphone for the BATON page
+through `Permissions-Policy` and include the room-scoped WSS path in its
+`connect-src` policy.
+
+BATON mode rejects wildcard, `null`, and non-loopback HTTP WebSocket origins
+even if the `production` profile is accidentally absent. The deployment must
+still set `SPRING_PROFILES_ACTIVE=production` so the rest of ROUND's production
+configuration validation remains active.
+
+The BATON edge must discard client-supplied `Forwarded` and
+`X-Forwarded-*` values, then set the canonical host, client address, and HTTPS
+scheme itself. Only that trusted edge may reach the signaling port. Apply a
+bounded pre-auth rate limit to both room-scoped public paths so invalid JWT
+signature checks and WebSocket upgrades cannot be used as an unbounded CPU
+workload; size the burst for normal reconnects by all six participants.
+
+Do not expose the Java signaling port on a host interface, load balancer, or
+public security group. Bind it only to a private container or service network
+reachable from the BATON edge and the monitoring plane. Keep exactly one ROUND
+signaling replica while room state is in memory; a generic round-robin load
+balancer would split one room across independent processes.
+
+Health and metrics have a narrower trust boundary than room traffic:
+
+- `GET /healthz` is transport-only and contains no BATON, room, or participant
+  state. Prefer an internal readiness probe. If an external uptime check is
+  required, expose only this exact path through a dedicated edge rule.
+- `/actuator/prometheus` and `/actuator/metrics/**` are for the private
+  monitoring network only. Never map them below BATON's public `/round/**`
+  prefix or expose the signaling port to collect them.
+- Only the two room-scoped paths in the table are public ROUND operations in
+  BATON mode. Do not proxy standalone `/signal` or
+  `/api/turn-credentials`.
+
+The participation grant is checked at the WebSocket upgrade and again against
+the requested room, but expiry does not terminate an already-established
+socket. BATON must issue a fresh grant before a WebSocket reconnect and before
+TURN credential refresh. A BATON-mode TURN credential is capped at the
+participation grant's `exp` even when the configured TURN TTL is longer. Key
+rotation needs an overlap window in which the JWK Set publishes both the
+retiring and new public key until every short-lived grant signed by the
+retiring key has expired.
+
+ROUND does not yet limit concurrent sockets by `sub` or `jti`. Room, client-IP,
+and server-wide limits remain active, but one authorized member can still
+occupy multiple room slots or consume TURN issuance quota. Decide the allowed
+reconnect overlap and multi-device policy before adding a per-subject limit;
+until then, alert on the corresponding connection and TURN rate-limit metrics.
+
+This repository's `ops/turn/probe.sh` authenticates with the standalone shared
+Basic credential and therefore is not a BATON authentication probe. A BATON
+deployment needs an integration probe that obtains a real short-lived grant
+through BATON, keeps the cookie out of command arguments and logs, and calls the
+room-scoped TURN endpoint. The TURN allocation and TLS checks after credential
+issuance remain the same.
+
+The complete claims and ownership decision are recorded in
+[ADR 0001](adr/0001-round-independent-service.md).
 
 ## Production prerequisites
 
@@ -299,6 +417,10 @@ directly through the Linux host network. Signaling listens on `8787` solely on
 the internal Compose network. Its room membership is held in memory, so
 `deploy.replicas` is intentionally fixed at one; horizontal scaling requires a
 shared room registry and cross-node signaling before it is safe.
+
+This statement applies to the bundled standalone stack. BATON deployments must
+provide the same private-port and single-replica guarantees in their own
+orchestrator rather than reusing this Compose file with an auth-mode override.
 
 The edge binary includes the community `github.com/mholt/caddy-ratelimit`
 module pinned to commit

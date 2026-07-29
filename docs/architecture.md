@@ -46,16 +46,19 @@ ticket in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie. The cookie path is 
 
 The browser and internal routing contracts are:
 
-| Purpose | Public same-origin path | ROUND internal path |
-| --- | --- | --- |
-| WebSocket signaling | `/round/rooms/{roomId}/signal` | `/rooms/{roomId}/signal` |
-| TURN credential | `/round/rooms/{roomId}/turn-credentials` | `/api/rooms/{roomId}/turn-credentials` |
+| Purpose             | Public same-origin path                  | ROUND internal path                    |
+| ------------------- | ---------------------------------------- | -------------------------------------- |
+| WebSocket signaling | `/round/rooms/{roomId}/signal`           | `/rooms/{roomId}/signal`               |
+| TURN credential     | `/round/rooms/{roomId}/turn-credentials` | `/api/rooms/{roomId}/turn-credentials` |
 
 ROUND verifies the signature, issuer, audience, expiry, and every required claim locally. The
-path `roomId` must match `room_id` for the WebSocket upgrade and TURN request. The verified ticket
-is carried into the WebSocket session, and `room.join` must match both the path and claim before
-room admission. BATON mode fails closed when the ticket or verifier configuration is missing or
-invalid. Standalone mode retains the existing coarse shared edge credential for the small pilot.
+default maximum grant lifetime is five minutes, with only 60 seconds of clock skew allowed for a
+future `iat`; longer grants are rejected even when their signature and `exp` are otherwise valid.
+The path `roomId` must match `room_id` for the WebSocket upgrade and TURN request. The verified
+ticket is carried into the WebSocket session, and `room.join` must match both the path and claim
+before room admission. BATON mode fails closed when the ticket or verifier configuration is
+missing or invalid. Standalone mode retains the existing coarse shared edge credential for the
+small pilot.
 
 The signaling service must continue to own peer IDs, overwrite the wire-level sender identity, and
 relay SDP/ICE only between peers that are currently in the same room. A generic MVC interceptor,
@@ -77,8 +80,9 @@ Security validates the participation cookie before either protected operation.
 Room state is in memory, so running multiple signaling replicas would split one logical room until
 a shared room registry, room routing, and cross-node relay are introduced. A participation ticket
 is checked at the WebSocket upgrade and room join, but its later expiry does not currently terminate
-an already authenticated socket. Short ticket lifetimes bound this risk; immediate membership
-revocation or long-running meetings will require explicit reauthentication or session termination.
+an already authenticated socket. Short ticket lifetimes limit reuse for new handshakes but do not
+bound the lifetime of an existing socket; immediate membership revocation or long-running meetings
+will require explicit reauthentication or session termination.
 
 The coturn shared secret exists only in the signaling and TURN runtimes. The browser requests a
 time-limited HMAC credential from `/api/turn-credentials` in standalone mode or the room-scoped

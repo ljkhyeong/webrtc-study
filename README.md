@@ -55,6 +55,12 @@ npm run check
 | `PORT`                                           | `8787`                  | signaling HTTP/WebSocket 포트   |
 | `HOST`                                           | `0.0.0.0`               | signaling bind 주소             |
 | `ALLOWED_ORIGINS`                                | `http://localhost:5173` | 쉼표로 구분한 허용 Origin       |
+| `ROUND_AUTH_MODE`                                | `standalone`            | `standalone` 또는 `baton`       |
+| `ROUND_AUTH_COOKIE_NAME`                         | `__Secure-round_access` | BATON 참여권 cookie 이름        |
+| `ROUND_AUTH_ISSUER`                              | 없음                    | 신뢰할 BATON JWT issuer         |
+| `ROUND_AUTH_AUDIENCE`                            | `round`                 | 참여권의 필수 audience          |
+| `ROUND_AUTH_JWK_SET_URI`                         | 없음                    | BATON 공개 JWK Set HTTPS URI    |
+| `ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS`          | `300`                   | 참여권 최대 허용 수명(초)       |
 | `MAX_ROOM_SIZE`                                  | `6`                     | 방 최대 참가자 수               |
 | `MAX_SIGNALING_CONNECTIONS`                      | `1000`                  | 서버 전체 signaling 연결 제한   |
 | `MAX_SIGNALING_CONNECTIONS_PER_CLIENT`           | `12`                    | IP별 동시 signaling 연결 제한   |

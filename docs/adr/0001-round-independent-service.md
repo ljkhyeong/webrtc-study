@@ -24,24 +24,25 @@ ROUND 배포를 요구하게 된다.
 
 ROUND는 BATON과 별도 저장소, 배포, 런타임을 유지한다. 각 서비스의 소유권은 다음과 같다.
 
-| 서비스 | 소유하는 정보와 책임 |
-| --- | --- |
-| BATON | 사용자 신원, 스터디, 스터디 참여 권한, 일정, 참여권 발급 |
-| ROUND | 휘발성 room·peer 상태, WebSocket signaling, SDP/ICE 전달, TURN credential 발급 |
+| 서비스 | 소유하는 정보와 책임                                                           |
+| ------ | ------------------------------------------------------------------------------ |
+| BATON  | 사용자 신원, 스터디, 스터디 참여 권한, 일정, 참여권 발급                       |
+| ROUND  | 휘발성 room·peer 상태, WebSocket signaling, SDP/ICE 전달, TURN credential 발급 |
 
 ROUND는 BATON 데이터베이스 또는 엔티티를 공유하지 않는다. WebSocket 프레임마다 BATON에
 동기 API 호출을 하지 않으며, BATON이 발급한 참여권을 ROUND가 로컬에서 검증한다. 미디어와
 DataChannel 채팅은 계속 브라우저 사이를 직접 흐르고 ROUND 애플리케이션에 저장되지 않는다.
+BATON 참여권으로 발급하는 TURN credential의 만료는 참여권 `exp`보다 늦지 않게 제한한다.
 
 ### 공개 경로와 내부 경로
 
 BATON과 ROUND는 브라우저에서 같은 Origin으로 보이도록 edge proxy 뒤에 배치한다. 외부
 경로와 ROUND 내부 경로의 계약은 다음과 같다.
 
-| 용도 | 브라우저가 사용하는 외부 경로 | ROUND 내부 경로 |
-| --- | --- | --- |
-| WebSocket signaling | `/round/rooms/{roomId}/signal` | `/rooms/{roomId}/signal` |
-| TURN credential | `/round/rooms/{roomId}/turn-credentials` | `/api/rooms/{roomId}/turn-credentials` |
+| 용도                | 브라우저가 사용하는 외부 경로            | ROUND 내부 경로                        |
+| ------------------- | ---------------------------------------- | -------------------------------------- |
+| WebSocket signaling | `/round/rooms/{roomId}/signal`           | `/rooms/{roomId}/signal`               |
+| TURN credential     | `/round/rooms/{roomId}/turn-credentials` | `/api/rooms/{roomId}/turn-credentials` |
 
 edge proxy는 외부 경로를 대응하는 내부 경로로 전달한다. `roomId`는 경로 세 곳, 즉 공개
 경로, 내부 경로, 참여권 claim에서 같은 값이어야 한다.
@@ -53,6 +54,7 @@ BATON은 참여권을 URL query parameter나 브라우저 저장소에 노출하
 - `Secure`
 - `SameSite=Strict`
 - `Path=/round/rooms/{roomId}`
+- `Domain` 속성 생략(host-only)
 
 방별 쿠키 경로는 같은 브라우저가 여러 방을 열었을 때 다른 방의 참여권이 signaling 또는
 TURN 요청에 실리는 것을 방지한다. WebSocket upgrade와 TURN credential POST에는 기존의
@@ -65,22 +67,24 @@ BATON은 개인키로 짧은 수명의 JWT 참여권을 서명하고, ROUND는 �
 
 참여권에는 다음 claim이 반드시 있어야 한다.
 
-| claim | 의미 |
-| --- | --- |
-| `iss` | 신뢰하도록 설정한 BATON issuer |
-| `aud` | 고정값 `round` |
-| `sub` | BATON 사용자 식별자 |
-| `exp` | 참여권 만료 시각 |
-| `iat` | 참여권 발급 시각 |
-| `jti` | 참여권 고유 식별자 |
-| `room_id` | 입장할 ROUND 방 식별자 |
+| claim      | 의미                              |
+| ---------- | --------------------------------- |
+| `iss`      | 신뢰하도록 설정한 BATON issuer    |
+| `aud`      | 고정값 `round`                    |
+| `sub`      | BATON 사용자 식별자               |
+| `exp`      | 참여권 만료 시각                  |
+| `iat`      | 참여권 발급 시각                  |
+| `jti`      | 참여권 고유 식별자                |
+| `room_id`  | 입장할 ROUND 방 식별자            |
 | `study_id` | 권한을 판정한 BATON 스터디 식별자 |
-| `role` | `host` 또는 `participant` |
+| `role`     | `host` 또는 `participant`         |
 
 ROUND는 서명 알고리즘과 공개키, `iss`, `aud`, 만료 시각, 필수 claim의 존재와 형식을 모두
-검증한다. URL 경로의 `roomId`와 `room_id`가 다르면 WebSocket upgrade 및 TURN credential
-요청을 거부한다. WebSocket 연결 후에는 검증된 참여권 정보를 세션에 보존하고
-`room.join`의 방 식별자도 경로 및 `room_id`와 일치할 때만 입장을 허용한다.
+검증한다. 기본 5분인 최대 참여권 수명과 60초 clock skew를 적용해 미래 `iat` 또는 설정된
+최대 수명보다 긴 `exp - iat`도 거부한다. URL 경로의 `roomId`와 `room_id`가 다르면
+WebSocket upgrade 및 TURN credential 요청을 거부한다. WebSocket 연결 후에는 검증된
+참여권 정보를 세션에 보존하고 `room.join`의 방 식별자도 경로 및 `room_id`와 일치할 때만
+입장을 허용한다.
 
 현재 ROUND는 참여권 replay 저장소를 두지 않으므로 `jti`는 추적과 향후 회수 기능을 위한
 식별자이며 one-time 사용을 보장하지 않는다. 문서와 구현에서 참여권을 one-time ticket으로
@@ -126,11 +130,15 @@ BATON 장애 중에도 이미 연결된 WebSocket의 signaling은 BATON 동기 �
   인스턴스로 확장하려면 shared room registry, 방 라우팅과 노드 간 signaling relay가 먼저
   필요하다.
 - 참여권이 만료되어도 이미 인증된 WebSocket을 즉시 자동 종료하지 않는다. 짧은 만료
-  시간으로 노출 구간을 제한하되, 즉시 권한 회수나 장시간 회의가 필요해지면 재인증 또는
-  세션 종료 정책을 별도로 도입해야 한다. BATON은 WebSocket 재연결과 TURN credential
-  갱신 전에 유효한 참여권을 다시 발급해야 한다.
+  시간은 새 연결에서 탈취 참여권을 재사용할 수 있는 구간만 제한하며 기존 socket의
+  수명을 제한하지 않는다. 즉시 권한 회수나 장시간 회의가 필요해지면 재인증 또는 세션
+  종료 정책을 별도로 도입해야 한다. BATON은 WebSocket 재연결과 TURN credential 갱신
+  전에 유효한 참여권을 다시 발급해야 한다.
 - 탈취된 참여권은 만료 전까지 사용할 수 있다. TLS, `HttpOnly`, `Secure`,
   `SameSite=Strict`, 방별 cookie path와 짧은 만료 시간을 함께 적용한다.
+- 동일한 `sub` 또는 `jti`의 동시 연결 수는 아직 별도로 제한하지 않는다. 현재 room,
+  IP, 서버 전체 제한만 적용하므로, 재연결 중첩 정책을 정하기 전까지 한 사용자가 여러
+  room slot을 점유할 수 있다.
 
 ## 검토했지만 채택하지 않은 대안
 
