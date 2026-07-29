@@ -130,12 +130,28 @@ packages/
 따르세요. 스터디 그룹에 공개하기 전에는 [파일럿 체크리스트](docs/pilot-checklist.md)를
 모두 통과해야 합니다.
 
-## BATON 통합 방향
+## BATON 연동 경계
 
-`@round/rtc-core`는 React, 라우터, CSS 프레임워크를 import하지 않습니다. Java signaling
-코드도 `com.personal.round.signaling` 아래에 격리되어 있습니다. 이후 BATON에서는
-WebRTC 코어를 `features/meeting` 어댑터에서 감싸고, signaling 패키지를 BATON의 inbound
-adapter로 옮긴 뒤 방 접근 권한만 BATON 인증 모델에 맞춰 연결할 수 있습니다.
+ROUND는 BATON 내부로 signaling 코드를 옮기지 않고 별도 저장소, 배포, 런타임을 유지합니다.
+BATON은 사용자·스터디·참여 권한을 소유하고, ROUND는 휘발성 room·peer 상태와 signaling,
+TURN credential 발급을 소유합니다. 두 서비스는 데이터베이스나 엔티티를 공유하지 않으며,
+ROUND는 signaling 프레임마다 BATON API를 호출하지 않습니다.
 
-BATON의 현재 Caddy 설정은 `Permissions-Policy`에서 카메라와 마이크를 차단하고 있으므로
-통합 시 해당 헤더와 WebSocket `connect-src` 정책을 함께 조정해야 합니다.
+BATON은 권한 확인 후 비대칭키로 서명한 짧은 수명의 JWT 참여권을 발급합니다. 참여권은
+`HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/round/rooms/{roomId}` 쿠키로 전달하고,
+ROUND는 공개키로 서명·issuer·audience와 필수 claim을 검증합니다. `room_id`는 URL 경로 및
+`room.join`의 방 식별자와 일치해야 합니다.
+
+BATON 연동 시 브라우저가 사용하는 공개 경로는 다음과 같습니다.
+
+- WebSocket: `/round/rooms/{roomId}/signal`
+- TURN credential: `/round/rooms/{roomId}/turn-credentials`
+
+edge proxy는 이를 ROUND 내부의 `/rooms/{roomId}/signal`과
+`/api/rooms/{roomId}/turn-credentials`로 전달합니다. standalone 모드의 기존 `/signal`,
+`/api/turn-credentials`와 Caddy 공유 접근 credential은 소규모 파일럿을 위해 유지하지만,
+BATON 모드는 유효한 참여권이 없으면 fail-closed로 요청을 거부합니다.
+
+BATON의 Caddy 설정에서는 카메라·마이크 `Permissions-Policy`, WebSocket `connect-src`,
+위 두 proxy 경로와 cookie path를 함께 구성해야 합니다. 전체 결정과 JWT claim 계약은
+[ADR 0001](docs/adr/0001-round-independent-service.md)을 참고하세요.

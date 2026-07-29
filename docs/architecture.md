@@ -1,7 +1,8 @@
 # ROUND architecture
 
-ROUND is intentionally split into four components so the real-time engine can move into BATON
-without bringing this MVP's visual layer with it.
+ROUND is intentionally split into four components and remains independently deployable from
+BATON. BATON integrates through an authenticated service boundary rather than absorbing the
+signaling runtime.
 
 ```text
 apps/web          React room UI
@@ -27,27 +28,34 @@ limited to six participants because upload bandwidth and CPU use grow with every
 - `apps/signaling` mirrors protocol v2 validation at its WebSocket boundary and keeps room state
   in memory under `com.personal.round.signaling`.
 - `apps/web` adapts room snapshots to React and owns all presentation.
-- Room identity is an opaque string. BATON authentication can be added in front of signaling
-  without changing the peer engine.
+- Room identity is an opaque string. BATON authorizes that room before issuing a participation
+  ticket without changing the peer engine.
 
 ## Identity and authorization boundary
 
-Inside the standalone MVP, possession of a valid room ID is enough to join and display names are not
-verified identities. The production Caddy adds one coarse shared access credential in front of the
-static app, WebSocket upgrade, and TURN credential endpoint. This blocks anonymous internet access,
-but everyone who knows the shared credential still has the same capability. Spring Security is
-therefore not installed just to create the appearance of per-user authentication without a user or
-membership source. The edge credential, WebSocket Origin policy, connection admission, frame
-limits, and TURN issuance quotas are layered pilot controls; they do not establish study membership.
+BATON owns users, studies, schedules, and the decision that a user may join a study room. ROUND owns
+only ephemeral room and peer state, raw WebSocket signaling, and TURN credential issuance. ROUND
+does not share BATON's database or entities and does not synchronously call BATON on every
+signaling frame.
 
-BATON integration should reuse BATON's existing security model at two explicit seams:
+After checking membership, BATON issues a short-lived, asymmetrically signed JWT participation
+ticket in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie. The cookie path is scoped to
+`/round/rooms/{roomId}` so tickets for multiple rooms do not collide. The required claims are
+`iss`, `aud=round`, `sub`, `exp`, `iat`, `jti`, `room_id`, `study_id`, and
+`role=host|participant`.
 
-1. Authenticate the `/signal` HTTP upgrade and the TURN credential POST through BATON's
-   `SecurityFilterChain`, preferably with the existing secure same-origin session cookie or a
-   short-lived one-time ticket rather than a long-lived token in the WebSocket URL.
-2. Carry the authenticated principal into the `WebSocketSession` and check BATON study membership
-   before accepting `room.join`. Protect TURN issuance with the same meeting membership and CSRF
-   policy.
+The browser and internal routing contracts are:
+
+| Purpose | Public same-origin path | ROUND internal path |
+| --- | --- | --- |
+| WebSocket signaling | `/round/rooms/{roomId}/signal` | `/rooms/{roomId}/signal` |
+| TURN credential | `/round/rooms/{roomId}/turn-credentials` | `/api/rooms/{roomId}/turn-credentials` |
+
+ROUND verifies the signature, issuer, audience, expiry, and every required claim locally. The
+path `roomId` must match `room_id` for the WebSocket upgrade and TURN request. The verified ticket
+is carried into the WebSocket session, and `room.join` must match both the path and claim before
+room admission. BATON mode fails closed when the ticket or verifier configuration is missing or
+invalid. Standalone mode retains the existing coarse shared edge credential for the small pilot.
 
 The signaling service must continue to own peer IDs, overwrite the wire-level sender identity, and
 relay SDP/ICE only between peers that are currently in the same room. A generic MVC interceptor,
@@ -60,15 +68,24 @@ WebSocket frames after the HTTP upgrade.
 use HTTPS/WSS. A production deployment also needs a TURN service for users behind restrictive
 NAT or corporate networks; STUN alone cannot guarantee connectivity.
 
-Caddy is the only public HTTP entrypoint. It requires the standalone shared access credential for
-the static browser build, `/signal`, and `/api/turn-credentials`, strips the Authorization header
-before proxying, and leaves only `/healthz` public for availability checks. Room state is in memory,
-so running multiple signaling replicas would split one logical room until a shared room registry
-and cross-node relay are introduced.
+Caddy is the only public HTTP entrypoint. In standalone mode it requires the shared access
+credential for the static browser build, `/signal`, and `/api/turn-credentials`, strips the
+Authorization header before proxying, and leaves only `/healthz` public for availability checks.
+In BATON mode the same-origin edge maps the room-scoped public paths above to ROUND and Spring
+Security validates the participation cookie before either protected operation.
+
+Room state is in memory, so running multiple signaling replicas would split one logical room until
+a shared room registry, room routing, and cross-node relay are introduced. A participation ticket
+is checked at the WebSocket upgrade and room join, but its later expiry does not currently terminate
+an already authenticated socket. Short ticket lifetimes bound this risk; immediate membership
+revocation or long-running meetings will require explicit reauthentication or session termination.
 
 The coturn shared secret exists only in the signaling and TURN runtimes. The browser requests a
-time-limited HMAC credential from `/api/turn-credentials`; no long-lived TURN password is compiled
-into the Vite bundle.
+time-limited HMAC credential from `/api/turn-credentials` in standalone mode or the room-scoped
+endpoint in BATON mode; no long-lived TURN password is compiled into the Vite bundle.
+
+The accepted service-boundary decision and complete claim contract are recorded in
+[ADR 0001](adr/0001-round-independent-service.md).
 
 ## Resilience boundary
 

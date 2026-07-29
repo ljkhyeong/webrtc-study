@@ -1,0 +1,144 @@
+# ADR 0001: ROUND를 BATON과 독립된 실시간 통신 서비스로 유지한다
+
+- 상태: 승인
+- 결정일: 2026-07-29
+
+## 맥락
+
+ROUND는 별도 저장소에서 웹 클라이언트, Java signaling 서버, WebRTC 프로토콜과 코어,
+coturn 배포 구성을 함께 관리한다. BATON에 스터디 기능을 붙일 때 기존 signaling 코드를
+BATON 애플리케이션 내부로 옮길 수도 있지만, 그렇게 하면 실시간 연결 수명주기와 BATON의
+회원·스터디 도메인 수명주기가 같은 배포 단위에 묶인다.
+
+반대로 ROUND가 BATON의 데이터베이스나 엔티티를 직접 참조하거나 signaling 프레임마다
+BATON API에 권한을 질의하면 두 서비스가 사실상 동시에 가용해야 한다. WebSocket 연결이
+이미 성립한 뒤에도 BATON의 지연과 장애가 SDP/ICE 교환에 전파되고, BATON 내부 모델 변경이
+ROUND 배포를 요구하게 된다.
+
+따라서 저장소와 런타임을 분리한 채 BATON의 권한 판정 결과를 짧은 수명의 서명된 참여권으로
+전달하는 경계가 필요하다.
+
+## 결정
+
+### 서비스와 데이터 소유권
+
+ROUND는 BATON과 별도 저장소, 배포, 런타임을 유지한다. 각 서비스의 소유권은 다음과 같다.
+
+| 서비스 | 소유하는 정보와 책임 |
+| --- | --- |
+| BATON | 사용자 신원, 스터디, 스터디 참여 권한, 일정, 참여권 발급 |
+| ROUND | 휘발성 room·peer 상태, WebSocket signaling, SDP/ICE 전달, TURN credential 발급 |
+
+ROUND는 BATON 데이터베이스 또는 엔티티를 공유하지 않는다. WebSocket 프레임마다 BATON에
+동기 API 호출을 하지 않으며, BATON이 발급한 참여권을 ROUND가 로컬에서 검증한다. 미디어와
+DataChannel 채팅은 계속 브라우저 사이를 직접 흐르고 ROUND 애플리케이션에 저장되지 않는다.
+
+### 공개 경로와 내부 경로
+
+BATON과 ROUND는 브라우저에서 같은 Origin으로 보이도록 edge proxy 뒤에 배치한다. 외부
+경로와 ROUND 내부 경로의 계약은 다음과 같다.
+
+| 용도 | 브라우저가 사용하는 외부 경로 | ROUND 내부 경로 |
+| --- | --- | --- |
+| WebSocket signaling | `/round/rooms/{roomId}/signal` | `/rooms/{roomId}/signal` |
+| TURN credential | `/round/rooms/{roomId}/turn-credentials` | `/api/rooms/{roomId}/turn-credentials` |
+
+edge proxy는 외부 경로를 대응하는 내부 경로로 전달한다. `roomId`는 경로 세 곳, 즉 공개
+경로, 내부 경로, 참여권 claim에서 같은 값이어야 한다.
+
+BATON은 참여권을 URL query parameter나 브라우저 저장소에 노출하지 않고 다음 속성의
+쿠키로 전달한다.
+
+- `HttpOnly`
+- `Secure`
+- `SameSite=Strict`
+- `Path=/round/rooms/{roomId}`
+
+방별 쿠키 경로는 같은 브라우저가 여러 방을 열었을 때 다른 방의 참여권이 signaling 또는
+TURN 요청에 실리는 것을 방지한다. WebSocket upgrade와 TURN credential POST에는 기존의
+정확한 Origin 검사도 계속 적용한다.
+
+### 참여권 계약
+
+BATON은 개인키로 짧은 수명의 JWT 참여권을 서명하고, ROUND는 대응하는 공개키로 오프라인
+검증한다. 공유 대칭키로 BATON과 ROUND 모두가 토큰을 발급할 수 있게 만들지 않는다.
+
+참여권에는 다음 claim이 반드시 있어야 한다.
+
+| claim | 의미 |
+| --- | --- |
+| `iss` | 신뢰하도록 설정한 BATON issuer |
+| `aud` | 고정값 `round` |
+| `sub` | BATON 사용자 식별자 |
+| `exp` | 참여권 만료 시각 |
+| `iat` | 참여권 발급 시각 |
+| `jti` | 참여권 고유 식별자 |
+| `room_id` | 입장할 ROUND 방 식별자 |
+| `study_id` | 권한을 판정한 BATON 스터디 식별자 |
+| `role` | `host` 또는 `participant` |
+
+ROUND는 서명 알고리즘과 공개키, `iss`, `aud`, 만료 시각, 필수 claim의 존재와 형식을 모두
+검증한다. URL 경로의 `roomId`와 `room_id`가 다르면 WebSocket upgrade 및 TURN credential
+요청을 거부한다. WebSocket 연결 후에는 검증된 참여권 정보를 세션에 보존하고
+`room.join`의 방 식별자도 경로 및 `room_id`와 일치할 때만 입장을 허용한다.
+
+현재 ROUND는 참여권 replay 저장소를 두지 않으므로 `jti`는 추적과 향후 회수 기능을 위한
+식별자이며 one-time 사용을 보장하지 않는다. 문서와 구현에서 참여권을 one-time ticket으로
+표현하지 않는다.
+
+`peerId`와 relay 메시지의 `from`은 계속 ROUND가 생성한다. BATON 사용자 식별자나 클라이언트
+입력값을 signaling 발신자 식별자로 신뢰하지 않는다.
+
+### 인증 모드
+
+ROUND는 다음 두 운영 모드를 구분한다.
+
+- `standalone`: 현재의 Caddy 공유 접근 credential을 유지한다. 이는 소규모 파일럿 접근
+  통제이며 사용자 신원이나 스터디 멤버십을 증명하지 않는다.
+- `baton`: 유효한 참여권이 없는 WebSocket upgrade와 TURN credential 요청을
+  fail-closed로 거부한다. 검증 키나 issuer 같은 필수 설정이 누락된 상태로 인증을
+  우회하지 않는다.
+
+BATON 장애 중에도 이미 연결된 WebSocket의 signaling은 BATON 동기 호출 없이 계속된다.
+새 참여권 발급 또는 만료 후 재연결이 필요한 사용자는 BATON이 복구될 때까지 기다려야 한다.
+
+## 결과
+
+### 장점
+
+- BATON의 도메인 모델과 ROUND의 실시간 연결 모델을 독립적으로 변경하고 배포할 수 있다.
+- BATON 데이터베이스 장애와 요청 지연이 개별 SDP/ICE 프레임 전달에 전파되지 않는다.
+- 비대칭 서명으로 ROUND는 참여권 검증 권한만 가지며 BATON 사용자 권한을 새로 발급할 수
+  없다.
+- 방별 경로와 쿠키 범위가 다중 방 참여권 혼선을 줄인다.
+- 향후 다른 애플리케이션도 같은 참여권 계약으로 ROUND를 사용할 수 있다.
+
+### 비용과 제약
+
+- BATON의 참여권 발급, edge 경로 변환, ROUND의 Spring Security 검증 설정을 함께
+  운영해야 한다.
+- BATON과 ROUND 사이에 JWT claim, 공개키 교체, 경로 호환성 계약이 생긴다.
+- 배포 전 두 서비스의 계약 호환성을 통합 테스트해야 한다.
+
+## 알려진 잔여 위험
+
+- ROUND의 room과 peer 상태는 메모리에 있으며 signaling은 단일 인스턴스로 운용한다. 여러
+  인스턴스로 확장하려면 shared room registry, 방 라우팅과 노드 간 signaling relay가 먼저
+  필요하다.
+- 참여권이 만료되어도 이미 인증된 WebSocket을 즉시 자동 종료하지 않는다. 짧은 만료
+  시간으로 노출 구간을 제한하되, 즉시 권한 회수나 장시간 회의가 필요해지면 재인증 또는
+  세션 종료 정책을 별도로 도입해야 한다. BATON은 WebSocket 재연결과 TURN credential
+  갱신 전에 유효한 참여권을 다시 발급해야 한다.
+- 탈취된 참여권은 만료 전까지 사용할 수 있다. TLS, `HttpOnly`, `Secure`,
+  `SameSite=Strict`, 방별 cookie path와 짧은 만료 시간을 함께 적용한다.
+
+## 검토했지만 채택하지 않은 대안
+
+- **signaling 코드를 BATON 내부로 이동:** 독립 배포와 장애 격리 이점을 잃고 BATON의
+  애플리케이션 수명주기에 실시간 연결을 결합하므로 채택하지 않는다.
+- **ROUND가 BATON DB 또는 엔티티를 공유:** 데이터 소유권이 흐려지고 스키마 변경이 공동
+  배포를 강제하므로 채택하지 않는다.
+- **프레임마다 BATON에 권한 질의:** BATON 장애와 지연이 signaling hot path에 전파되므로
+  채택하지 않는다.
+- **장기 bearer token을 WebSocket URL에 전달:** 브라우저 기록, proxy와 접근 로그에
+  노출될 수 있으므로 채택하지 않는다.
