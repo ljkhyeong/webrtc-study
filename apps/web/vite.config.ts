@@ -1,12 +1,12 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type ConfigEnv, type UserConfig } from 'vite';
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(currentDirectory, '../..');
 
-export default defineConfig(({ mode }) => {
+export function createViteConfig({ mode }: ConfigEnv): UserConfig {
   const environment = loadEnv(mode, repositoryRoot, '');
   const signalingPort = environment.PORT?.trim() || '8787';
 
@@ -23,7 +23,11 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       strictPort: true,
       proxy: {
-        '/api': `http://127.0.0.1:${signalingPort}`,
+        '/api': {
+          target: `http://127.0.0.1:${signalingPort}`,
+          changeOrigin: true,
+          xfwd: true,
+        },
         '/healthz': `http://127.0.0.1:${signalingPort}`,
         '/signal': {
           target: `ws://127.0.0.1:${signalingPort}`,
@@ -32,4 +36,6 @@ export default defineConfig(({ mode }) => {
       },
     },
   };
-});
+}
+
+export default defineConfig(createViteConfig);
