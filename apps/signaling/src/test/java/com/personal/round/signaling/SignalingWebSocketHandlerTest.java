@@ -3,6 +3,7 @@ package com.personal.round.signaling;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.AdditionalMatchers.aryEq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -58,8 +59,9 @@ class SignalingWebSocketHandlerTest {
 
 		handler.handleMessage(session, new TextMessage(oversized));
 
-		verify(session).close(new CloseStatus(1009, "Message exceeds 64 KiB"));
-		verify(service).disconnect(session);
+		var order = inOrder(service, session);
+		order.verify(service).disconnect(session);
+		order.verify(session).close(new CloseStatus(1009, "Message exceeds 64 KiB"));
 		verify(service, org.mockito.Mockito.never()).handle(any(), any());
 	}
 

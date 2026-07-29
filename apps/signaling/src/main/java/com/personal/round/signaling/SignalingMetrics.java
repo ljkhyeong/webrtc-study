@@ -25,6 +25,7 @@ public final class SignalingMetrics {
 	private final Counter globalByteLimitedFrames;
 	private final Counter serverCapacityRejections;
 	private final Counter clientCapacityRejections;
+	private final Counter missingReservationRejections;
 	private final Counter queueOverflows;
 	private final Counter globalQueueOverflows;
 	private final Counter heartbeatCloses;
@@ -76,6 +77,10 @@ public final class SignalingMetrics {
 		clientCapacityRejections = Counter.builder("round.signaling.connections.rejected")
 				.tag("reason", "client_capacity")
 				.description("WebSocket handshakes rejected by connection admission")
+				.register(registry);
+		missingReservationRejections = Counter.builder("round.signaling.connections.rejected")
+				.tag("reason", "missing_reservation")
+				.description("WebSocket sessions rejected because admission metadata was missing")
 				.register(registry);
 		queueOverflows = Counter.builder("round.signaling.outbound.queue.overflows")
 				.description("Peers closed because their outbound queue overflowed")
@@ -141,6 +146,10 @@ public final class SignalingMetrics {
 
 	void recordConnectionRejectedClientCapacity() {
 		clientCapacityRejections.increment();
+	}
+
+	void recordConnectionRejectedMissingReservation() {
+		missingReservationRejections.increment();
 	}
 
 	void recordQueueOverflow() {

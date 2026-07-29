@@ -20,7 +20,9 @@ public record SignalingProperties(
 		List<@NotBlank(message = "round.signaling.allowed-origins must not contain blank values") String>
 				allowedOrigins,
 		@Min(value = 1, message = "round.signaling.max-room-size must be at least 1")
-		@Max(value = 100, message = "round.signaling.max-room-size must be at most 100")
+		@Max(
+				value = MAX_SUPPORTED_ROOM_SIZE,
+				message = "round.signaling.max-room-size must be at most 6")
 		int maxRoomSize,
 		@Min(value = 1, message = "round.signaling.max-connections must be at least 1")
 		@Max(value = 5_000, message = "round.signaling.max-connections must be at most 5000")
@@ -116,6 +118,8 @@ public record SignalingProperties(
 				value = 65_536,
 				message = "round.signaling.max-text-payload-bytes must be exactly 65536")
 		int maxTextPayloadBytes) {
+
+	public static final int MAX_SUPPORTED_ROOM_SIZE = 6;
 
 	public SignalingProperties {
 		allowedOrigins = allowedOrigins == null ? List.of() : List.copyOf(allowedOrigins);

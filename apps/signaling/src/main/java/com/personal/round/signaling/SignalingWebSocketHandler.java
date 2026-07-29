@@ -5,7 +5,6 @@ import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.MalformedJsonException;
 import com.personal.round.protocol.ProtocolParser;
 import com.personal.round.protocol.ProtocolValidationException;
-import java.nio.charset.StandardCharsets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -21,7 +20,7 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 
 	private static final Logger log = LoggerFactory.getLogger(SignalingWebSocketHandler.class);
 	private static final CloseStatus MESSAGE_TOO_BIG =
-			new CloseStatus(1009, "Message exceeds 64 KiB");
+			CloseStatus.TOO_BIG_TO_PROCESS.withReason("Message exceeds 64 KiB");
 
 	private final ProtocolParser parser;
 	private final SignalingService signalingService;
@@ -45,11 +44,11 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 
 	@Override
 	protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-		int payloadBytes = message.getPayload().getBytes(StandardCharsets.UTF_8).length;
+		int payloadBytes = message.getPayloadLength();
 		if (payloadBytes > maxTextPayloadBytes) {
 			signalingService.recordInvalidFrame();
-			session.close(MESSAGE_TOO_BIG);
 			signalingService.disconnect(session);
+			session.close(MESSAGE_TOO_BIG);
 			return;
 		}
 		if (!signalingService.acceptInboundFrame(session, payloadBytes)) {
@@ -67,9 +66,7 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 			signalingService.sendInvalidMessage(session, exception.getMessage());
 		}
 		catch (RuntimeException exception) {
-			log.error(
-					"Unexpected signaling failure ({})",
-					exception.getClass().getSimpleName());
+			log.error("Unexpected signaling failure", exception);
 			signalingService.sendInternalError(session);
 		}
 	}

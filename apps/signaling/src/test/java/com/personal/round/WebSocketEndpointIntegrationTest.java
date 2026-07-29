@@ -30,13 +30,15 @@ class WebSocketEndpointIntegrationTest {
 	private int port;
 
 	@Test
-	void acceptsSignalQueryButRejectsTrailingSlashAndWrongOrigin() throws Exception {
+	void enforcesOriginPathAndPerClientAdmissionAtTheWebSocketBoundary() throws Exception {
 		StandardWebSocketClient client = new StandardWebSocketClient();
 		assertThatThrownBy(() -> connect(client, "/signal", "https://evil.example"))
 				.hasRootCauseInstanceOf(Exception.class);
 
 		WebSocketSession session = connect(client, "/signal?invite=room", ALLOWED_ORIGIN);
 		assertThat(session.isOpen()).isTrue();
+		assertThatThrownBy(() -> connect(client, "/signal", ALLOWED_ORIGIN))
+				.hasRootCauseInstanceOf(Exception.class);
 		session.close();
 
 		assertThatThrownBy(() -> connect(client, "/signal/", ALLOWED_ORIGIN))

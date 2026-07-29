@@ -52,7 +52,8 @@ public class SignalingService implements SmartLifecycle {
 			new CloseStatus(1008, "Inbound frame rate exceeded");
 	private static final CloseStatus CONNECTION_LIMIT =
 			new CloseStatus(1013, "Server connection limit reached");
-	private static final String UNRESERVED_CLIENT = "<unreserved>";
+	private static final CloseStatus ADMISSION_REQUIRED =
+			CloseStatus.SERVER_ERROR.withReason("Connection admission required");
 	static final int MAX_OUTBOUND_QUEUE_SIZE = 256;
 
 	private final Object monitor = new Object();
@@ -116,6 +117,16 @@ public class SignalingService implements SmartLifecycle {
 	public boolean connect(WebSocketSession session) {
 		ConnectionAdmissionPolicy.Reservation reservation = takeReservation(session);
 		WorkPlan workPlan = new WorkPlan();
+		if (reservation == null) {
+			log.error(
+					"WebSocket session {} reached signaling without an admission reservation",
+					session.getId());
+			metrics.recordConnectionRejectedMissingReservation();
+			workPlan.close(session, ADMISSION_REQUIRED);
+			execute(workPlan);
+			return false;
+		}
+
 		boolean accepted;
 		boolean reservationTransferred = false;
 		synchronized (monitor) {
@@ -132,9 +143,7 @@ public class SignalingService implements SmartLifecycle {
 			}
 			else {
 				if (!connectedPeers.containsKey(session.getId())) {
-					String clientKey = reservation == null
-							? UNRESERVED_CLIENT
-							: reservation.clientKey();
+					String clientKey = reservation.clientKey();
 					ClientInboundState clientInboundState =
 							retainClientInboundStateLocked(clientKey);
 					if (clientInboundState == null) {
@@ -163,7 +172,7 @@ public class SignalingService implements SmartLifecycle {
 				}
 			}
 		}
-		if (!reservationTransferred && reservation != null) {
+		if (!reservationTransferred) {
 			reservation.close();
 		}
 		execute(workPlan);
@@ -200,52 +209,56 @@ public class SignalingService implements SmartLifecycle {
 			Peer peer = connectedPeers.get(session.getId());
 			if (peer != null && peer.connected) {
 				touchClientInboundStateLocked(peer);
-				WindowDecision sessionDecision = peer.inboundWindow.tryAcquire(
-						nowMillis,
-						abuseWindowMs,
-						maxFramesPerSessionWindow,
-						maxBytesPerSessionWindow,
-						payloadBytes);
-				WindowDecision clientDecision =
-						peer.clientInboundState.inboundWindow.tryAcquire(
-								nowMillis,
-								abuseWindowMs,
-								maxFramesPerClientWindow,
-								maxBytesPerClientWindow,
-								payloadBytes);
-				WindowDecision globalDecision = globalInboundWindow.tryAcquire(
-						nowMillis,
-						abuseWindowMs,
-						maxFramesGlobalWindow,
-						maxBytesGlobalWindow,
-						payloadBytes);
-				if (sessionDecision != WindowDecision.ACCEPTED) {
+					WindowDecision sessionDecision = peer.inboundWindow.tryAcquire(
+							nowMillis,
+							abuseWindowMs,
+							maxFramesPerSessionWindow,
+							maxBytesPerSessionWindow,
+							payloadBytes);
+					if (sessionDecision != WindowDecision.ACCEPTED) {
 					if (sessionDecision == WindowDecision.BYTE_LIMITED) {
 						metrics.recordSessionByteLimitedFrame();
 					}
 					else {
 						metrics.recordRateLimitedFrame();
 					}
-					disconnectLocked(session.getId(), workPlan);
-					workPlan.close(session, RATE_LIMITED);
-				}
-				else if (clientDecision != WindowDecision.ACCEPTED) {
-					if (clientDecision == WindowDecision.BYTE_LIMITED) {
-						metrics.recordClientByteLimitedFrame();
+						disconnectLocked(session.getId(), workPlan);
+						workPlan.close(session, RATE_LIMITED);
 					}
 					else {
-						metrics.recordClientRateLimitedFrame();
+						WindowDecision clientDecision =
+								peer.clientInboundState.inboundWindow.tryAcquire(
+										nowMillis,
+										abuseWindowMs,
+										maxFramesPerClientWindow,
+										maxBytesPerClientWindow,
+										payloadBytes);
+						if (clientDecision != WindowDecision.ACCEPTED) {
+							if (clientDecision == WindowDecision.BYTE_LIMITED) {
+								metrics.recordClientByteLimitedFrame();
+							}
+							else {
+								metrics.recordClientRateLimitedFrame();
+							}
+						}
+						else {
+							WindowDecision globalDecision = globalInboundWindow.tryAcquire(
+									nowMillis,
+									abuseWindowMs,
+									maxFramesGlobalWindow,
+									maxBytesGlobalWindow,
+									payloadBytes);
+							if (globalDecision == WindowDecision.ACCEPTED) {
+								accepted = true;
+							}
+							else if (globalDecision == WindowDecision.BYTE_LIMITED) {
+								metrics.recordGlobalByteLimitedFrame();
+							}
+							else {
+								metrics.recordOverloadedFrame();
+							}
+						}
 					}
-				}
-				else if (globalDecision == WindowDecision.ACCEPTED) {
-					accepted = true;
-				}
-				else if (globalDecision == WindowDecision.BYTE_LIMITED) {
-					metrics.recordGlobalByteLimitedFrame();
-				}
-				else {
-					metrics.recordOverloadedFrame();
-				}
 			}
 		}
 		execute(workPlan);
@@ -958,9 +971,7 @@ public class SignalingService implements SmartLifecycle {
 		}
 
 		private void releaseReservation() {
-			if (reservation != null) {
-				reservation.close();
-			}
+			reservation.close();
 		}
 	}
 

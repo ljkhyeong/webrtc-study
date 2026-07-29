@@ -53,6 +53,8 @@ class SignalingServiceTest {
 	private MutableClock clock;
 	private SimpleMeterRegistry meterRegistry;
 	private ExecutorService outboundExecutor;
+	private ConnectionAdmissionPolicy defaultAdmissionPolicy;
+	private int nextTestClientAddress;
 	private SignalingService service;
 
 	@BeforeEach
@@ -64,12 +66,15 @@ class SignalingServiceTest {
 		meterRegistry = new SimpleMeterRegistry();
 		outboundExecutor = Executors.newThreadPerTaskExecutor(
 				Thread.ofVirtual().name("round-signaling-test-", 0).factory());
+		defaultAdmissionPolicy = admissionPolicy(properties(6));
+		nextTestClientAddress = 1;
 		service = service(properties(6), meterRegistry);
 	}
 
 	@AfterEach
 	void tearDown() {
 		service.stop();
+		assertThat(defaultAdmissionPolicy.activeReservationCount()).isZero();
 		outboundExecutor.close();
 		assertThat(outboundExecutor.isTerminated()).isTrue();
 	}
@@ -162,7 +167,7 @@ class SignalingServiceTest {
 		for (int index = 0; index < 12; index++) {
 			TestPeer peer = peer("session-" + index);
 			peers.add(peer);
-			service.connect(peer.session());
+			connect(peer);
 		}
 
 		CountDownLatch ready = new CountDownLatch(peers.size());
@@ -567,6 +572,7 @@ class SignalingServiceTest {
 		assertThat(service.isAcceptingConnections()).isFalse();
 
 		TestPeer beforeStart = peer("before-start");
+		attachDefaultReservation(beforeStart);
 		assertThat(service.connect(beforeStart.session())).isFalse();
 		beforeStart.awaitClosed();
 		assertThat(beforeStart.closeStatus().get())
@@ -596,7 +602,7 @@ class SignalingServiceTest {
 
 		service.start();
 		TestPeer restarted = peer("after-restart");
-		assertThat(service.connect(restarted.session())).isTrue();
+		connect(restarted);
 		assertThat(service.isRunning()).isTrue();
 		assertThat(service.isAcceptingConnections()).isTrue();
 
@@ -646,7 +652,7 @@ class SignalingServiceTest {
 				return null;
 			}).when(peer.session()).close(any(CloseStatus.class));
 			peers.add(peer);
-			assertThat(service.connect(peer.session())).isTrue();
+			connect(peer);
 		}
 
 		CompletableFuture<Void> stopped = CompletableFuture.runAsync(service::stop);
@@ -692,7 +698,7 @@ class SignalingServiceTest {
 				return null;
 			}).when(peer.session()).close(any(CloseStatus.class));
 			peers.add(peer);
-			assertThat(service.connect(peer.session())).isTrue();
+			connect(peer);
 		}
 
 		long startedAtNanos = System.nanoTime();
@@ -726,6 +732,7 @@ class SignalingServiceTest {
 					clock);
 			fallbackService.start();
 			TestPeer peer = peer("rejected-executor-fallback");
+			attachDefaultReservation(peer);
 			assertThat(fallbackService.connect(peer.session())).isTrue();
 			rejectingExecutor.shutdownNow();
 
@@ -852,6 +859,33 @@ class SignalingServiceTest {
 		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
 				.counter()
 				.count()).isEqualTo(1);
+	}
+
+	@Test
+	void rejectedSessionAndClientFramesDoNotConsumeGlobalQuota() throws Exception {
+		service.stop();
+		SignalingProperties properties =
+				TestProperties.signalingWithFrameLimits(6, 2, 2, 4);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
+		TestPeer exhaustedSession = peer("quota-session");
+		TestPeer exhaustedClient = peer("quota-client");
+		TestPeer otherClient = peer("quota-other-client");
+		connectFrom(policy, "192.0.2.40", exhaustedSession, exhaustedClient);
+		connectFrom(policy, "192.0.2.41", otherClient);
+
+		assertThat(service.acceptInboundFrame(exhaustedSession.session())).isTrue();
+		assertThat(service.acceptInboundFrame(exhaustedSession.session())).isTrue();
+
+		assertThat(service.acceptInboundFrame(exhaustedSession.session())).isFalse();
+		exhaustedSession.awaitClosed();
+		assertThat(service.acceptInboundFrame(exhaustedClient.session())).isFalse();
+
+		assertThat(service.acceptInboundFrame(otherClient.session())).isTrue();
+		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+				.counter()
+				.count()).isZero();
 	}
 
 	@Test
@@ -1201,6 +1235,9 @@ class SignalingServiceTest {
 		TestPeer first = peer("limit-first");
 		TestPeer second = peer("limit-second");
 		TestPeer rejected = peer("limit-rejected");
+		attachDefaultReservation(first);
+		attachDefaultReservation(second);
+		attachDefaultReservation(rejected);
 
 		assertThat(service.connect(first.session())).isTrue();
 		assertThat(service.connect(second.session())).isTrue();
@@ -1210,6 +1247,22 @@ class SignalingServiceTest {
 		assertThat(rejected.closeStatus().get())
 				.isEqualTo(new CloseStatus(1013, "Server connection limit reached"));
 		assertThat(service.connectedPeerCount()).isEqualTo(2);
+	}
+
+	@Test
+	void rejectsConnectionsWithoutAnAdmissionReservation() throws Exception {
+		TestPeer missingReservation = peer("missing-reservation");
+
+		assertThat(service.connect(missingReservation.session())).isFalse();
+
+		missingReservation.awaitClosed();
+		assertThat(missingReservation.closeStatus().get())
+				.isEqualTo(CloseStatus.SERVER_ERROR.withReason("Connection admission required"));
+		assertThat(service.connectedPeerCount()).isZero();
+		assertThat(meterRegistry.get("round.signaling.connections.rejected")
+				.tag("reason", "missing_reservation")
+				.counter()
+				.count()).isEqualTo(1);
 	}
 
 	@Test
@@ -1253,8 +1306,18 @@ class SignalingServiceTest {
 
 	private void connect(TestPeer... peers) {
 		for (TestPeer peer : peers) {
-			service.connect(peer.session());
+			attachDefaultReservation(peer);
+			assertThat(service.connect(peer.session())).isTrue();
 		}
+	}
+
+	private void attachDefaultReservation(TestPeer peer) {
+		ConnectionAdmissionPolicy.Admission admission = defaultAdmissionPolicy.reserve(
+				new InetSocketAddress(
+						"198.51.100." + nextTestClientAddress++,
+						41_000));
+		assertThat(admission.accepted()).isTrue();
+		attachReservation(peer, admission.reservation());
 	}
 
 	private ConnectionAdmissionPolicy admissionPolicy(SignalingProperties properties) {

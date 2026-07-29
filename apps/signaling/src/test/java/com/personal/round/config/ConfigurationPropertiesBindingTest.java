@@ -166,6 +166,15 @@ class ConfigurationPropertiesBindingTest {
 	}
 
 	@Test
+	void rejectsRoomSizesAboveTheSupportedMeshLimit() {
+		contextRunner
+				.withPropertyValues("round.signaling.max-room-size=7")
+				.run(context -> assertThat(context.getStartupFailure())
+						.hasStackTraceContaining(
+								"round.signaling.max-room-size must be at most 6"));
+	}
+
+	@Test
 	void rejectsInvalidTimingAndFrameRelationshipsDuringContextStartup() {
 		contextRunner
 				.withPropertyValues(
