@@ -54,6 +54,7 @@ describe('TURN credential loading', () => {
     });
 
     expect(fetcher).toHaveBeenCalledWith('/api/turn-credentials', {
+      credentials: 'same-origin',
       headers: { Accept: 'application/json' },
       method: 'POST',
       signal: expect.any(AbortSignal),

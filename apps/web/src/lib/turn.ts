@@ -52,6 +52,7 @@ export async function loadTurnCredentials(
 
   try {
     const response = await fetcher(options.endpoint ?? DEFAULT_ENDPOINT, {
+      credentials: 'same-origin',
       headers: { Accept: 'application/json' },
       method: 'POST',
       signal: controller.signal,
