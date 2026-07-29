@@ -11,6 +11,7 @@ import com.personal.round.config.TestProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
 import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ProtocolParser;
+import com.personal.round.protocol.ServerMessageEncoder;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetSocketAddress;
 import java.time.Clock;
@@ -50,6 +51,7 @@ class SignalingServiceTest {
 	private static final String OTHER_ROOM_ID = "qrst-uvwx-yz23";
 
 	private ObjectMapper objectMapper;
+	private ServerMessageEncoder serverMessageEncoder;
 	private MutableClock clock;
 	private SimpleMeterRegistry meterRegistry;
 	private ExecutorService outboundExecutor;
@@ -60,6 +62,7 @@ class SignalingServiceTest {
 	@BeforeEach
 	void setUp() {
 		objectMapper = new ObjectMapper();
+		serverMessageEncoder = new ServerMessageEncoder(objectMapper);
 		clock = new MutableClock(
 				Instant.parse("2026-07-26T00:00:00Z"),
 				ZoneOffset.UTC);
@@ -725,7 +728,7 @@ class SignalingServiceTest {
 		try (ExecutorService rejectingExecutor = Executors.newThreadPerTaskExecutor(
 				Thread.ofVirtual().name("round-signaling-rejected-test-", 0).factory())) {
 			SignalingService fallbackService = new SignalingService(
-					objectMapper,
+					serverMessageEncoder,
 					properties(1),
 					new SignalingMetrics(new SimpleMeterRegistry()),
 					rejectingExecutor,
@@ -1373,7 +1376,7 @@ class SignalingServiceTest {
 			SignalingProperties properties,
 			SimpleMeterRegistry registry) {
 		return new SignalingService(
-				objectMapper,
+				serverMessageEncoder,
 				properties,
 				new SignalingMetrics(registry),
 				outboundExecutor,

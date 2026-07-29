@@ -3,7 +3,9 @@ package com.personal.round.signaling;
 import com.personal.round.config.SignalingExecutionConfig;
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.protocol.ClientMessage;
-import com.personal.round.protocol.ProtocolParser;
+import com.personal.round.protocol.ServerMessageEncoder;
+import com.personal.round.protocol.ServerMessageEncoder.Participant;
+import com.personal.round.protocol.SignalingErrorCode;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -32,9 +34,6 @@ import org.springframework.web.socket.PingMessage;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketMessage;
 import org.springframework.web.socket.WebSocketSession;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ArrayNode;
-import tools.jackson.databind.node.ObjectNode;
 
 @Service
 public class SignalingService implements SmartLifecycle {
@@ -63,7 +62,7 @@ public class SignalingService implements SmartLifecycle {
 			new LinkedHashMap<>(16, 0.75f, true);
 	private final Map<String, LinkedHashMap<String, Peer>> rooms = new HashMap<>();
 	private final ExecutorService outboundExecutor;
-	private final ObjectMapper objectMapper;
+	private final ServerMessageEncoder serverMessageEncoder;
 	private final SignalingMetrics metrics;
 	private final Clock clock;
 	private final int maxRoomSize;
@@ -86,13 +85,13 @@ public class SignalingService implements SmartLifecycle {
 	private volatile boolean running;
 
 	public SignalingService(
-			ObjectMapper objectMapper,
+			ServerMessageEncoder serverMessageEncoder,
 			SignalingProperties properties,
 			SignalingMetrics metrics,
 			@Qualifier(SignalingExecutionConfig.OUTBOUND_EXECUTOR_BEAN)
 			ExecutorService outboundExecutor,
 			Clock clock) {
-		this.objectMapper = objectMapper;
+		this.serverMessageEncoder = serverMessageEncoder;
 		this.metrics = metrics;
 		this.outboundExecutor = outboundExecutor;
 		this.clock = clock;
@@ -289,7 +288,13 @@ public class SignalingService implements SmartLifecycle {
 		synchronized (monitor) {
 			Peer peer = connectedPeers.get(session.getId());
 			if (peer != null) {
-				sendError(peer, "INVALID_MESSAGE", detail, peer.roomId, null, workPlan);
+				sendError(
+						peer,
+						SignalingErrorCode.INVALID_MESSAGE,
+						detail,
+						peer.roomId,
+						null,
+						workPlan);
 			}
 		}
 		execute(workPlan);
@@ -306,7 +311,7 @@ public class SignalingService implements SmartLifecycle {
 			if (peer != null) {
 				sendError(
 						peer,
-						"INTERNAL_ERROR",
+						SignalingErrorCode.INTERNAL_ERROR,
 						"The signaling server could not process this message.",
 						peer.roomId,
 						null,
@@ -454,7 +459,7 @@ public class SignalingService implements SmartLifecycle {
 			metrics.recordJoinRejectedAlreadyJoined();
 			sendError(
 					peer,
-					"ALREADY_JOINED",
+					SignalingErrorCode.ALREADY_JOINED,
 					"Leave the current room before joining another room.",
 					peer.roomId,
 					message.requestId(),
@@ -471,7 +476,7 @@ public class SignalingService implements SmartLifecycle {
 			metrics.recordJoinRejectedRoomFull();
 			sendError(
 					peer,
-					"ROOM_FULL",
+					SignalingErrorCode.ROOM_FULL,
 					"This room is limited to " + maxRoomSize + " participants.",
 					message.roomId(),
 					message.requestId(),
@@ -488,24 +493,19 @@ public class SignalingService implements SmartLifecycle {
 		room.put(peer.peerId, peer);
 		refreshMetricsLocked();
 
-		ObjectNode joined = base("room.joined", message.roomId());
-		if (message.requestId() != null) {
-			joined.put("requestId", message.requestId());
-		}
-		ObjectNode joinedPayload = joined.putObject("payload");
-		joinedPayload.put("peerId", peer.peerId);
-		ArrayNode participantNodes = joinedPayload.putArray("participants");
-		for (Participant participant : participants) {
-			participantNodes.add(participantNode(participant));
-		}
-		if (!enqueue(peer, new TextMessage(joined.toString()), workPlan)) {
+		TextMessage joined = serverMessageEncoder.roomJoined(
+				message.roomId(),
+				message.requestId(),
+				peer.peerId,
+				participants);
+		if (!enqueue(peer, joined, workPlan)) {
 			return;
 		}
 		peer.announced = true;
 
-		ObjectNode peerJoined = base("peer.joined", message.roomId());
-		peerJoined.putObject("payload")
-				.set("participant", participantNode(new Participant(peer.peerId, peer.displayName)));
+		TextMessage peerJoined = serverMessageEncoder.peerJoined(
+				message.roomId(),
+				new Participant(peer.peerId, peer.displayName));
 		broadcast(room, peerJoined, peer.peerId, workPlan);
 	}
 
@@ -513,7 +513,7 @@ public class SignalingService implements SmartLifecycle {
 		if (peer.roomId == null) {
 			sendError(
 					peer,
-					"NOT_IN_ROOM",
+					SignalingErrorCode.NOT_IN_ROOM,
 					"Join a room before leaving it.",
 					message.roomId(),
 					message.requestId(),
@@ -523,7 +523,7 @@ public class SignalingService implements SmartLifecycle {
 		if (!peer.roomId.equals(message.roomId())) {
 			sendError(
 					peer,
-					"ROOM_MISMATCH",
+					SignalingErrorCode.ROOM_MISMATCH,
 					"The message room does not match the joined room.",
 					peer.roomId,
 					message.requestId(),
@@ -537,7 +537,7 @@ public class SignalingService implements SmartLifecycle {
 		if (peer.roomId == null) {
 			sendError(
 					peer,
-					"NOT_IN_ROOM",
+					SignalingErrorCode.NOT_IN_ROOM,
 					"Join a room before sending negotiation messages.",
 					message.roomId(),
 					message.requestId(),
@@ -547,7 +547,7 @@ public class SignalingService implements SmartLifecycle {
 		if (!peer.roomId.equals(message.roomId())) {
 			sendError(
 					peer,
-					"ROOM_MISMATCH",
+					SignalingErrorCode.ROOM_MISMATCH,
 					"The message room does not match the joined room.",
 					peer.roomId,
 					message.requestId(),
@@ -557,7 +557,7 @@ public class SignalingService implements SmartLifecycle {
 		if (peer.peerId.equals(message.to())) {
 			sendError(
 					peer,
-					"TARGET_SELF",
+					SignalingErrorCode.TARGET_SELF,
 					"A peer cannot relay a negotiation message to itself.",
 					peer.roomId,
 					message.requestId(),
@@ -570,7 +570,7 @@ public class SignalingService implements SmartLifecycle {
 		if (target == null) {
 			sendError(
 					peer,
-					"TARGET_NOT_FOUND",
+					SignalingErrorCode.TARGET_NOT_FOUND,
 					"The target peer is not in this room.",
 					peer.roomId,
 					message.requestId(),
@@ -578,10 +578,14 @@ public class SignalingService implements SmartLifecycle {
 			return;
 		}
 
-		ObjectNode relayed = base(message.type(), peer.roomId);
-		relayed.put("from", peer.peerId);
-		relayed.set("payload", message.payload().deepCopy());
-		enqueue(target, new TextMessage(relayed.toString()), workPlan);
+		enqueue(
+				target,
+				serverMessageEncoder.relay(
+						message.type(),
+						peer.roomId,
+						peer.peerId,
+						message.payload()),
+				workPlan);
 	}
 
 	private boolean disconnectLocked(String sessionId, WorkPlan workPlan) {
@@ -667,58 +671,30 @@ public class SignalingService implements SmartLifecycle {
 			return;
 		}
 
-		ObjectNode left = base("peer.left", roomId);
-		left.putObject("payload").put("peerId", peer.peerId);
+		TextMessage left = serverMessageEncoder.peerLeft(roomId, peer.peerId);
 		broadcast(room, left, null, workPlan);
 	}
 
 	private void broadcast(
 			Map<String, Peer> room,
-			ObjectNode message,
+			TextMessage message,
 			String excludedPeerId,
 			WorkPlan workPlan) {
 		for (Peer target : List.copyOf(room.values())) {
 			if (!target.peerId.equals(excludedPeerId)) {
-				enqueue(target, new TextMessage(message.toString()), workPlan);
+				enqueue(target, message, workPlan);
 			}
 		}
 	}
 
 	private void sendError(
 			Peer peer,
-			String code,
+			SignalingErrorCode code,
 			String message,
 			String roomId,
 			String requestId,
 			WorkPlan workPlan) {
-		ObjectNode error = objectMapper.createObjectNode();
-		error.put("v", ProtocolParser.PROTOCOL_VERSION);
-		error.put("type", "error");
-		if (roomId != null) {
-			error.put("roomId", roomId);
-		}
-		if (requestId != null) {
-			error.put("requestId", requestId);
-		}
-		ObjectNode payload = error.putObject("payload");
-		payload.put("code", code);
-		payload.put("message", message);
-		enqueue(peer, new TextMessage(error.toString()), workPlan);
-	}
-
-	private ObjectNode base(String type, String roomId) {
-		ObjectNode message = objectMapper.createObjectNode();
-		message.put("v", ProtocolParser.PROTOCOL_VERSION);
-		message.put("type", type);
-		message.put("roomId", roomId);
-		return message;
-	}
-
-	private ObjectNode participantNode(Participant participant) {
-		ObjectNode node = objectMapper.createObjectNode();
-		node.put("peerId", participant.peerId());
-		node.put("displayName", participant.displayName());
-		return node;
+		enqueue(peer, serverMessageEncoder.error(code, message, roomId, requestId), workPlan);
 	}
 
 	private boolean enqueue(
@@ -979,9 +955,6 @@ public class SignalingService implements SmartLifecycle {
 
 		private final UsageWindow inboundWindow = new UsageWindow();
 		private int activeConnections;
-	}
-
-	private record Participant(String peerId, String displayName) {
 	}
 
 	private enum HeartbeatState {
