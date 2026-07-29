@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 2 as const;
 
 export const CLIENT_MESSAGE_TYPES = [
   'room.join',
@@ -80,6 +80,7 @@ export interface RtcOfferClientMessage extends ClientMessageBase {
   to: string;
   payload: {
     description: OfferDescription;
+    negotiationId?: string;
   };
 }
 
@@ -88,6 +89,7 @@ export interface RtcAnswerClientMessage extends ClientMessageBase {
   to: string;
   payload: {
     description: AnswerDescription;
+    negotiationId?: string;
   };
 }
 
@@ -96,6 +98,7 @@ export interface RtcIceClientMessage extends ClientMessageBase {
   to: string;
   payload: {
     candidate: SerializedIceCandidate | null;
+    negotiationId?: string;
   };
 }
 
@@ -136,6 +139,7 @@ export interface RtcOfferServerMessage extends ServerMessageBase {
   from: string;
   payload: {
     description: OfferDescription;
+    negotiationId?: string;
   };
 }
 
@@ -144,6 +148,7 @@ export interface RtcAnswerServerMessage extends ServerMessageBase {
   from: string;
   payload: {
     description: AnswerDescription;
+    negotiationId?: string;
   };
 }
 
@@ -152,6 +157,7 @@ export interface RtcIceServerMessage extends ServerMessageBase {
   from: string;
   payload: {
     candidate: SerializedIceCandidate | null;
+    negotiationId?: string;
   };
 }
 

@@ -105,12 +105,14 @@ class SignalingServiceTest {
 				"must-not-be-relayed",
 				adaPeerId,
 				(ObjectNodeFixture.object(objectMapper, """
-						{"description":{"type":"offer","sdp":"v=0"}}
+						{"negotiationId":"negotiation-42",
+						 "description":{"type":"offer","sdp":"v=0"}}
 						"""))));
 		JsonNode relayed = ada.nextJson();
 		assertThat(relayed.get("from").asString()).isEqualTo(gracePeerId);
 		assertThat(relayed.has("to")).isFalse();
 		assertThat(relayed.has("requestId")).isFalse();
+		assertThat(relayed.at("/payload/negotiationId").asString()).isEqualTo("negotiation-42");
 		assertThat(relayed.at("/payload/description/sdp").asString()).isEqualTo("v=0");
 
 		service.handle(grace.session(), new ClientMessage.Leave(ROOM_ID, null));

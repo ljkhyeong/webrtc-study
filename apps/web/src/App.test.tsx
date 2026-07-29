@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { App, roomWarningMessage } from './App';
+import { App, roomStatusLabel, roomWarningMessage } from './App';
 
 describe('App pre-join boundary', () => {
   it('opens a direct invite link without requesting media or creating a WebSocket', () => {
@@ -53,5 +53,53 @@ describe('App pre-join boundary', () => {
     expect(warning).toContain('카메라와 마이크는 유지');
     expect(warning).toContain('참가자 연결은 다시 설정');
     expect(warning).not.toContain('현재 통화 정보는 유지');
+  });
+
+  it('describes an exhausted peer connection as a partial actionable failure', () => {
+    const timeoutWarning = roomWarningMessage({
+      code: 'peer-connection-timeout',
+      message: 'raw peer timeout',
+    });
+    const negotiationWarning = roomWarningMessage({
+      code: 'peer-negotiation-failed',
+      message: 'Connection to internal-peer-id failed',
+    });
+    const status = roomStatusLabel('active', [
+      {
+        peerId: 'self',
+        displayName: 'Jin',
+        isLocal: true,
+        audioEnabled: true,
+        videoEnabled: true,
+        connectionState: 'connected',
+      },
+      {
+        peerId: 'peer-a',
+        displayName: 'Ara',
+        isLocal: false,
+        audioEnabled: false,
+        videoEnabled: false,
+        connectionState: 'failed',
+      },
+    ]);
+
+    expect(status).toBe('일부 참가자 연결 실패');
+    for (const warning of [timeoutWarning, negotiationWarning]) {
+      expect(warning).toContain('일부 참가자');
+      expect(warning).toContain('현재 연결은 유지');
+      expect(warning).toContain('방에 다시 입장');
+    }
+    expect(timeoutWarning).not.toContain('raw peer timeout');
+    expect(negotiationWarning).not.toContain('internal-peer-id');
+  });
+
+  it('does not discard a later TURN warning', () => {
+    const warning = roomWarningMessage({
+      code: 'rtc-configuration-update-failed',
+      message: 'later warning',
+    });
+
+    expect(warning).toContain('TURN');
+    expect(warning).not.toContain('later warning');
   });
 });

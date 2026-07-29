@@ -32,11 +32,12 @@ interface RoomViewProps {
   messages: ChatMessageView[];
   audioEnabled: boolean;
   videoEnabled: boolean;
+  peerRecoveryMessage?: string | undefined;
   mediaWarning?: string | undefined;
   errorMessage?: string | undefined;
   onToggleAudio: () => void;
   onToggleVideo: () => void;
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string) => boolean;
   onReconnect: () => void;
   onLeave: () => void;
 }
@@ -113,6 +114,7 @@ export function RoomView({
   messages,
   audioEnabled,
   videoEnabled,
+  peerRecoveryMessage,
   mediaWarning,
   errorMessage,
   onToggleAudio,
@@ -168,8 +170,9 @@ export function RoomView({
       return;
     }
 
-    onSendMessage(text);
-    setMessage('');
+    if (onSendMessage(text)) {
+      setMessage('');
+    }
   };
 
   const toggleChat = () => {
@@ -178,6 +181,7 @@ export function RoomView({
 
   const isActive = status === 'active';
   const terminalConnectionError = !isActive && Boolean(errorMessage);
+  const partialPeerFailure = isActive && Boolean(peerRecoveryMessage);
   const gridSize = Math.min(Math.max(participants.length, 1), 6);
 
   return (
@@ -197,7 +201,11 @@ export function RoomView({
         </div>
 
         <div className="room-header__status">
-          <span className={`connection-state connection-state--${status}`}>
+          <span
+            className={`connection-state connection-state--${
+              partialPeerFailure ? 'partial-failure' : status
+            }`}
+          >
             <i />
             {statusLabel}
           </span>
@@ -251,9 +259,32 @@ export function RoomView({
             </div>
           ) : null}
 
-          {mediaWarning ? <p className="room-notice room-notice--warning">{mediaWarning}</p> : null}
-          {errorMessage && !terminalConnectionError ? (
-            <p className="room-notice room-notice--error">{errorMessage}</p>
+          {peerRecoveryMessage || mediaWarning || (errorMessage && !terminalConnectionError) ? (
+            <div className="room-notice-stack">
+              {peerRecoveryMessage ? (
+                <div className="room-notice room-notice--warning" role="alert">
+                  <span>{peerRecoveryMessage}</span>
+                  <div className="connecting-layer__actions">
+                    <button type="button" onClick={onReconnect}>
+                      방 다시 입장
+                    </button>
+                    <button type="button" onClick={onLeave}>
+                      나가기
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {mediaWarning ? (
+                <p className="room-notice room-notice--warning" role="status">
+                  {mediaWarning}
+                </p>
+              ) : null}
+              {errorMessage && !terminalConnectionError ? (
+                <p className="room-notice room-notice--error" role="alert">
+                  {errorMessage}
+                </p>
+              ) : null}
+            </div>
           ) : null}
         </section>
 

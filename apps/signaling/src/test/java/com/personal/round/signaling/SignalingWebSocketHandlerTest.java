@@ -70,7 +70,7 @@ class SignalingWebSocketHandlerTest {
 		handler.handleMessage(
 				session,
 				new TextMessage("""
-						{"v":1,"type":"room.leave","roomId":"abcd-efgh-jkmp"}
+						{"v":2,"type":"room.leave","roomId":"abcd-efgh-jkmp"}
 						"""));
 
 		verify(service, org.mockito.Mockito.never()).handle(any(), any());

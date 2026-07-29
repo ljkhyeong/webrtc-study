@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { PROTOCOL_VERSION } from '@round/protocol';
 import {
   createRoomSession,
   type RoomSession,
@@ -179,6 +180,9 @@ class FakePeerConnection {
   readonly offerOptions: (RTCOfferOptions | undefined)[] = [];
   readonly configurationCalls: RTCConfiguration[] = [];
   readonly createOfferErrors: Error[] = [];
+  createOfferDelayMs = 0;
+  setRemoteDescriptionDelayMs = 0;
+  answerIceUsernameFragment: string | null = null;
   setConfigurationError: Error | null = null;
   closed = false;
 
@@ -197,6 +201,11 @@ class FakePeerConnection {
 
   async createOffer(options?: RTCOfferOptions): Promise<RTCSessionDescriptionInit> {
     this.offerOptions.push(options);
+    if (this.createOfferDelayMs > 0) {
+      await new Promise<void>((resolve) => {
+        globalThis.setTimeout(resolve, this.createOfferDelayMs);
+      });
+    }
     const error = this.createOfferErrors.shift();
     if (error !== undefined) {
       throw error;
@@ -208,7 +217,13 @@ class FakePeerConnection {
   }
 
   async createAnswer(): Promise<RTCSessionDescriptionInit> {
-    return { type: 'answer', sdp: 'answer-sdp' };
+    return {
+      type: 'answer',
+      sdp:
+        this.answerIceUsernameFragment === null
+          ? 'answer-sdp'
+          : `answer-sdp\r\na=ice-ufrag:${this.answerIceUsernameFragment}`,
+    };
   }
 
   async setLocalDescription(description: RTCLocalSessionDescriptionInit): Promise<void> {
@@ -221,6 +236,11 @@ class FakePeerConnection {
   }
 
   async setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
+    if (this.setRemoteDescriptionDelayMs > 0) {
+      await new Promise<void>((resolve) => {
+        globalThis.setTimeout(resolve, this.setRemoteDescriptionDelayMs);
+      });
+    }
     this.remoteDescription = description as RTCSessionDescription;
     if (description.type === 'offer') {
       this.signalingState = 'have-remote-offer';
@@ -249,6 +269,21 @@ class FakePeerConnection {
   setConnectionState(state: RTCPeerConnectionState): void {
     this.connectionState = state;
     this.onconnectionstatechange?.({} as Event);
+  }
+
+  emitIceCandidate(usernameFragment: string): void {
+    const serialized = {
+      candidate: `candidate:${usernameFragment} ufrag ${usernameFragment}`,
+      sdpMid: '0',
+      sdpMLineIndex: 0,
+      usernameFragment,
+    };
+    this.onicecandidate?.({
+      candidate: {
+        ...serialized,
+        toJSON: () => serialized,
+      },
+    } as unknown as RTCPeerConnectionIceEvent);
   }
 }
 
@@ -344,7 +379,7 @@ async function joinSession(
   harness.socket.open();
   await flushMicrotasks();
   harness.socket.serverMessage({
-    v: 1,
+    v: PROTOCOL_VERSION,
     type: 'room.joined',
     roomId: ROOM_ID,
     payload: {
@@ -356,13 +391,28 @@ async function joinSession(
   await flushMicrotasks();
 }
 
+function latestOutgoingNegotiationId(harness: Harness, peerId: string): string | undefined {
+  const offers = harness.socket.messagesOfType('rtc.offer');
+  for (let index = offers.length - 1; index >= 0; index -= 1) {
+    const offer = offers[index];
+    if (offer?.to !== peerId || typeof offer.payload !== 'object' || offer.payload === null) {
+      continue;
+    }
+    const negotiationId = (offer.payload as Record<string, unknown>).negotiationId;
+    return typeof negotiationId === 'string' ? negotiationId : undefined;
+  }
+  return undefined;
+}
+
 async function answerPeer(harness: Harness, peerId: string): Promise<void> {
+  const negotiationId = latestOutgoingNegotiationId(harness, peerId);
   harness.socket.serverMessage({
-    v: 1,
+    v: PROTOCOL_VERSION,
     type: 'rtc.answer',
     roomId: ROOM_ID,
     from: peerId,
     payload: {
+      ...(negotiationId === undefined ? {} : { negotiationId }),
       description: { type: 'answer', sdp: 'remote-answer' },
     },
   });
@@ -408,7 +458,7 @@ describe('RoomSession', () => {
     expect(harness.socket.messagesOfType('room.join')).toHaveLength(1);
 
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'room.joined',
       roomId: 'abcd-efgh-jkmp',
       payload: { peerId: 'self', participants: [] },
@@ -553,6 +603,14 @@ describe('RoomSession', () => {
     }
   });
 
+  it('rejects a non-positive peer connection timeout', () => {
+    expect(() =>
+      createHarness({
+        recovery: { peerConnectionTimeoutMs: 0 },
+      }),
+    ).toThrow('recovery.peerConnectionTimeoutMs must be a positive integer');
+  });
+
   it('creates ordered data channels and offers from the new peer', async () => {
     const harness = createHarness();
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
@@ -563,11 +621,12 @@ describe('RoomSession', () => {
     expect(peer?.channels).toHaveLength(1);
     expect(harness.socket.messagesOfType('rtc.offer')).toEqual([
       {
-        v: 1,
+        v: PROTOCOL_VERSION,
         type: 'rtc.offer',
         roomId: 'abcd-efgh-jkmp',
         to: 'peer-a',
         payload: {
+          negotiationId: expect.any(String),
           description: { type: 'offer', sdp: 'offer-sdp' },
         },
       },
@@ -576,6 +635,685 @@ describe('RoomSession', () => {
       'self',
       'peer-a',
     ]);
+  });
+
+  it('recovers a peer stuck before first connection, recreates it once, then fails only that peer', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 20,
+          peerRecoveryTimeoutMs: 30,
+        },
+      });
+      await joinSession(
+        harness,
+        [
+          { peerId: 'y-healthy', displayName: 'Yuna' },
+          { peerId: 'z-stuck', displayName: 'Zoe' },
+        ],
+        'a-self',
+      );
+      await answerPeer(harness, 'y-healthy');
+      await answerPeer(harness, 'z-stuck');
+      const healthyPeer = harness.peerConnections[0];
+      const stuckPeer = harness.peerConnections[1];
+      healthyPeer?.setConnectionState('connected');
+
+      await vi.advanceTimersByTimeAsync(20);
+      await flushMicrotasks();
+
+      expect(stuckPeer?.offerOptions).toEqual([undefined, { iceRestart: true }]);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: { code: 'peer-connection-recovering' },
+      });
+      await answerPeer(harness, 'z-stuck');
+
+      await vi.advanceTimersByTimeAsync(30);
+      await flushMicrotasks();
+
+      const replacement = harness.peerConnections[2];
+      expect(stuckPeer?.closed).toBe(true);
+      expect(replacement?.offerOptions).toEqual([undefined]);
+      await answerPeer(harness, 'z-stuck');
+
+      await vi.advanceTimersByTimeAsync(20);
+      await flushMicrotasks();
+
+      expect(replacement?.closed).toBe(true);
+      expect(harness.peerConnections).toHaveLength(3);
+      expect(healthyPeer?.closed).toBe(false);
+      expect(harness.socket.closeCalls).toEqual([]);
+      expect(harness.audioTrack.stopped).toBe(false);
+      expect(harness.videoTrack.stopped).toBe(false);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: { code: 'peer-connection-timeout' },
+        participants: [
+          expect.objectContaining({ peerId: 'a-self', connectionState: 'connected' }),
+          expect.objectContaining({ peerId: 'y-healthy', connectionState: 'connected' }),
+          expect.objectContaining({ peerId: 'z-stuck', connectionState: 'failed' }),
+        ],
+      });
+      const partialChat = harness.session.sendChat('healthy peers stay connected');
+      expect(partialChat.deliveryState).toBe('sent');
+      expect(
+        healthyPeer?.channels[0]?.sent
+          .map((raw) => JSON.parse(raw) as { type: string; text?: string })
+          .filter(({ type }) => type === 'chat.message'),
+      ).toEqual([
+        expect.objectContaining({
+          type: 'chat.message',
+          text: 'healthy peers stay connected',
+        }),
+      ]);
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'peer.joined',
+        roomId: ROOM_ID,
+        payload: {
+          participant: { peerId: 'z-stuck', displayName: 'Zoe' },
+        },
+      });
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.offer',
+        roomId: ROOM_ID,
+        from: 'z-stuck',
+        payload: {
+          description: { type: 'offer', sdp: 'late-offer' },
+        },
+      });
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.answer',
+        roomId: ROOM_ID,
+        from: 'z-stuck',
+        payload: {
+          description: { type: 'answer', sdp: 'late-answer' },
+        },
+      });
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.ice',
+        roomId: ROOM_ID,
+        from: 'z-stuck',
+        payload: { candidate: null },
+      });
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(harness.peerConnections).toHaveLength(3);
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'peer.left',
+        roomId: ROOM_ID,
+        payload: { peerId: 'z-stuck' },
+      });
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'peer.joined',
+        roomId: ROOM_ID,
+        payload: {
+          participant: { peerId: 'z-stuck', displayName: 'Zoe' },
+        },
+      });
+      await flushMicrotasks();
+      expect(harness.peerConnections).toHaveLength(4);
+      expect(harness.session.getSnapshot().warning).toBeNull();
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels the initial connection deadline once a peer connects', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 20,
+          peerRecoveryTimeoutMs: 30,
+        },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      await answerPeer(harness, 'z-peer');
+      const peer = harness.peerConnections[0];
+
+      peer?.setConnectionState('connected');
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(peer?.closed).toBe(false);
+      expect(peer?.offerOptions).toEqual([undefined]);
+      expect(harness.peerConnections).toHaveLength(1);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: null,
+        error: null,
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears a transient timeout warning when ICE recovery connects the peer', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 20,
+          peerRecoveryTimeoutMs: 30,
+        },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      await answerPeer(harness, 'z-peer');
+      const peer = harness.peerConnections[0];
+
+      await vi.advanceTimersByTimeAsync(20);
+      await flushMicrotasks();
+      expect(harness.session.getSnapshot().warning).toMatchObject({
+        code: 'peer-connection-recovering',
+      });
+
+      await answerPeer(harness, 'z-peer');
+      peer?.setConnectionState('connected');
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(peer?.closed).toBe(false);
+      expect(harness.peerConnections).toHaveLength(1);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: null,
+        error: null,
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels a scheduled offer retry when the connection watchdog takes ownership', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 20,
+          peerRecoveryTimeoutMs: 100,
+          reconnectInitialDelayMs: 80,
+        },
+        onPeerConnectionCreated: (peer, index) => {
+          if (index === 0) {
+            peer.createOfferErrors.push(new Error('initial offer failure'));
+          }
+        },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      const peer = harness.peerConnections[0];
+
+      await vi.advanceTimersByTimeAsync(20);
+      await flushMicrotasks();
+      expect(peer?.offerOptions).toEqual([undefined, { iceRestart: true }]);
+
+      await vi.advanceTimersByTimeAsync(70);
+      await flushMicrotasks();
+      expect(peer?.offerOptions).toEqual([undefined, { iceRestart: true }]);
+
+      await answerPeer(harness, 'z-peer');
+      peer?.setConnectionState('connected');
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects a late offer retry after the connection watchdog takes ownership', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 20,
+          peerRecoveryTimeoutMs: 100,
+          reconnectInitialDelayMs: 10,
+        },
+        onPeerConnectionCreated: (peer, index) => {
+          if (index === 0) {
+            peer.createOfferDelayMs = 30;
+            peer.createOfferErrors.push(new Error('delayed initial offer failure'));
+          }
+        },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      const peer = harness.peerConnections[0];
+
+      await vi.advanceTimersByTimeAsync(20);
+      await flushMicrotasks();
+      expect(harness.session.getSnapshot().warning).toMatchObject({
+        code: 'peer-connection-recovering',
+      });
+
+      await vi.advanceTimersByTimeAsync(70);
+      await flushMicrotasks();
+      expect(peer?.offerOptions).toEqual([undefined]);
+      expect(harness.peerConnections).toHaveLength(1);
+
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the initial connection deadline when the remote peer leaves', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 20,
+          peerRecoveryTimeoutMs: 30,
+        },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      const peer = harness.peerConnections[0];
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'peer.left',
+        roomId: ROOM_ID,
+        payload: { peerId: 'z-peer' },
+      });
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(peer?.closed).toBe(true);
+      expect(harness.peerConnections).toHaveLength(1);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: null,
+        participants: [expect.objectContaining({ peerId: 'a-self' })],
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the initial connection deadline on local leave', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 20,
+          peerRecoveryTimeoutMs: 30,
+        },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      const peer = harness.peerConnections[0];
+
+      await harness.session.leave();
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(peer?.closed).toBe(true);
+      expect(harness.peerConnections).toHaveLength(1);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'ended',
+        participants: [],
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps timeout recovery offers on the deterministic initiator only', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 20,
+          peerRecoveryTimeoutMs: 30,
+        },
+      });
+      await joinSession(harness, [{ peerId: 'a-peer', displayName: 'Ara' }], 'z-self');
+      await answerPeer(harness, 'a-peer');
+      const initialPeer = harness.peerConnections[0];
+
+      await vi.advanceTimersByTimeAsync(20);
+      await flushMicrotasks();
+      expect(initialPeer?.offerOptions).toEqual([undefined]);
+
+      await vi.advanceTimersByTimeAsync(30);
+      await flushMicrotasks();
+
+      expect(harness.peerConnections).toHaveLength(2);
+      expect(harness.peerConnections[1]?.offerOptions).toEqual([]);
+      expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(1);
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ignores an answer from a retired negotiation after recreating the peer', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 20,
+          peerRecoveryTimeoutMs: 30,
+        },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      const retiredNegotiationId = latestOutgoingNegotiationId(harness, 'z-peer');
+      expect(retiredNegotiationId).toBeDefined();
+      if (retiredNegotiationId === undefined) {
+        throw new Error('Expected the initial offer to carry a negotiation id');
+      }
+
+      await vi.advanceTimersByTimeAsync(20);
+      await vi.advanceTimersByTimeAsync(30);
+      await flushMicrotasks();
+
+      const replacement = harness.peerConnections[1];
+      const currentNegotiationId = latestOutgoingNegotiationId(harness, 'z-peer');
+      expect(replacement).toBeDefined();
+      expect(currentNegotiationId).toBeDefined();
+      expect(currentNegotiationId).not.toBe(retiredNegotiationId);
+      if (currentNegotiationId === undefined) {
+        throw new Error('Expected the replacement offer to carry a negotiation id');
+      }
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.offer',
+        roomId: ROOM_ID,
+        from: 'z-peer',
+        payload: {
+          negotiationId: retiredNegotiationId,
+          description: { type: 'offer', sdp: 'retired-offer' },
+        },
+      });
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.answer',
+        roomId: ROOM_ID,
+        from: 'z-peer',
+        payload: {
+          negotiationId: retiredNegotiationId,
+          description: { type: 'answer', sdp: 'retired-answer' },
+        },
+      });
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.ice',
+        roomId: ROOM_ID,
+        from: 'z-peer',
+        payload: {
+          negotiationId: retiredNegotiationId,
+          candidate: {
+            candidate: 'candidate:retired',
+            sdpMid: '0',
+            sdpMLineIndex: 0,
+          },
+        },
+      });
+      await flushMicrotasks();
+
+      expect(replacement?.remoteDescription).toBeNull();
+      expect(replacement?.addedCandidates).toEqual([]);
+      expect(replacement?.closed).toBe(false);
+      expect(harness.session.getSnapshot().participants).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ peerId: 'z-peer', connectionState: 'negotiating' }),
+        ]),
+      );
+
+      await answerPeer(harness, 'z-peer');
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.ice',
+        roomId: ROOM_ID,
+        from: 'z-peer',
+        payload: {
+          negotiationId: currentNegotiationId,
+          candidate: {
+            candidate: 'candidate:current',
+            sdpMid: '0',
+            sdpMLineIndex: 0,
+          },
+        },
+      });
+      await flushMicrotasks();
+      replacement?.setConnectionState('connected');
+      expect(replacement?.remoteDescription?.sdp).toBe('remote-answer');
+      expect(replacement?.addedCandidates).toEqual([
+        {
+          candidate: 'candidate:current',
+          sdpMid: '0',
+          sdpMLineIndex: 0,
+        },
+      ]);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: null,
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not let an in-flight old answer mutate a newer remote-offer generation', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness();
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+      const peer = harness.peerConnections[0];
+      const previousNegotiationId = latestOutgoingNegotiationId(harness, 'peer-a');
+      expect(previousNegotiationId).toBeDefined();
+      if (peer === undefined || previousNegotiationId === undefined) {
+        throw new Error('Expected an established outgoing negotiation');
+      }
+      peer.setRemoteDescriptionDelayMs = 20;
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.answer',
+        roomId: ROOM_ID,
+        from: 'peer-a',
+        payload: {
+          negotiationId: previousNegotiationId,
+          description: { type: 'answer', sdp: 'old-answer' },
+        },
+      });
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.offer',
+        roomId: ROOM_ID,
+        from: 'peer-a',
+        payload: {
+          negotiationId: 'new-remote-generation',
+          description: { type: 'offer', sdp: 'new-remote-offer' },
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(20);
+      await flushMicrotasks();
+
+      expect(peer.closed).toBe(false);
+      expect(peer.remoteDescription).toMatchObject({
+        type: 'offer',
+        sdp: 'new-remote-offer',
+      });
+      expect(harness.socket.messagesOfType('rtc.answer').at(-1)).toMatchObject({
+        to: 'peer-a',
+        payload: {
+          negotiationId: 'new-remote-generation',
+          description: { type: 'answer', sdp: 'answer-sdp' },
+        },
+      });
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: null,
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets a newer remote offer supersede an older offer still being applied', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness();
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+      const peer = harness.peerConnections[0];
+      if (peer === undefined) {
+        throw new Error('Expected an established peer connection');
+      }
+      peer.setRemoteDescriptionDelayMs = 20;
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.offer',
+        roomId: ROOM_ID,
+        from: 'peer-a',
+        payload: {
+          negotiationId: 'older-remote-generation',
+          description: { type: 'offer', sdp: 'older-remote-offer' },
+        },
+      });
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.offer',
+        roomId: ROOM_ID,
+        from: 'peer-a',
+        payload: {
+          negotiationId: 'newer-remote-generation',
+          description: { type: 'offer', sdp: 'newer-remote-offer' },
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(20);
+      await flushMicrotasks();
+
+      expect(peer.remoteDescription).toMatchObject({
+        type: 'offer',
+        sdp: 'newer-remote-offer',
+      });
+      expect(harness.socket.messagesOfType('rtc.answer')).toEqual([
+        expect.objectContaining({
+          to: 'peer-a',
+          payload: {
+            negotiationId: 'newer-remote-generation',
+            description: { type: 'answer', sdp: 'answer-sdp' },
+          },
+        }),
+      ]);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: null,
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not relabel a retired local ICE candidate as the new negotiation', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    await answerPeer(harness, 'peer-a');
+    const peer = harness.peerConnections[0];
+    if (peer === undefined) {
+      throw new Error('Expected a peer connection');
+    }
+    peer.answerIceUsernameFragment = 'current-local-ufrag';
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'rtc.offer',
+      roomId: ROOM_ID,
+      from: 'peer-a',
+      payload: {
+        negotiationId: 'remote-next-generation',
+        description: { type: 'offer', sdp: 'remote-next-offer' },
+      },
+    });
+    peer.emitIceCandidate('retired-local-ufrag');
+    await flushMicrotasks();
+    peer.emitIceCandidate('current-local-ufrag');
+    await flushMicrotasks();
+
+    expect(harness.socket.messagesOfType('rtc.ice')).toEqual([
+      expect.objectContaining({
+        to: 'peer-a',
+        payload: {
+          negotiationId: 'remote-next-generation',
+          candidate: {
+            candidate: 'candidate:current-local-ufrag ufrag current-local-ufrag',
+            sdpMid: '0',
+            sdpMLineIndex: 0,
+            usernameFragment: 'current-local-ufrag',
+          },
+        },
+      }),
+    ]);
+    await harness.session.leave();
+  });
+
+  it('allows an exhausted peer id to start fresh after a full signaling reconnect', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 10,
+          peerRecoveryTimeoutMs: 10,
+        },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      await answerPeer(harness, 'z-peer');
+
+      await vi.advanceTimersByTimeAsync(10);
+      await answerPeer(harness, 'z-peer');
+      await vi.advanceTimersByTimeAsync(10);
+      await flushMicrotasks();
+      await answerPeer(harness, 'z-peer');
+      await vi.advanceTimersByTimeAsync(10);
+      await flushMicrotasks();
+
+      expect(harness.peerConnections).toHaveLength(2);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: { code: 'peer-connection-timeout' },
+      });
+
+      harness.socket.serverClose(1006, 'reset exhausted peers');
+      await flushMicrotasks();
+      expect(harness.sockets).toHaveLength(2);
+      harness.socket.open();
+      await flushMicrotasks();
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'room.joined',
+        roomId: ROOM_ID,
+        payload: {
+          peerId: 'b-self',
+          participants: [{ peerId: 'z-peer', displayName: 'Zoe' }],
+        },
+      });
+      await flushMicrotasks();
+
+      expect(harness.peerConnections).toHaveLength(3);
+      expect(harness.peerConnections[2]?.offerOptions).toEqual([undefined]);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: null,
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('retries one transient initial offer failure instead of leaving the peer failed', async () => {
@@ -621,6 +1359,50 @@ describe('RoomSession', () => {
     }
   });
 
+  it('clears an initial offer retry warning when a remote offer connects first', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          maxReconnectAttempts: 1,
+          reconnectInitialDelayMs: 100,
+        },
+        onPeerConnectionCreated: (peer) => {
+          peer.createOfferErrors.push(new Error('transient offer failure'));
+        },
+      });
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+      const peer = harness.peerConnections[0];
+      expect(harness.session.getSnapshot().warning).toMatchObject({
+        code: 'peer-negotiation-retrying',
+      });
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.offer',
+        roomId: ROOM_ID,
+        from: 'peer-a',
+        payload: {
+          negotiationId: 'remote-recovery',
+          description: { type: 'offer', sdp: 'remote-recovery-offer' },
+        },
+      });
+      await flushMicrotasks();
+      peer?.setConnectionState('connected');
+      await vi.advanceTimersByTimeAsync(150);
+
+      expect(peer?.offerOptions).toEqual([undefined]);
+      expect(peer?.closed).toBe(false);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: null,
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('stops the initial offer retry after the bounded second failure', async () => {
     vi.useFakeTimers();
     try {
@@ -657,6 +1439,97 @@ describe('RoomSession', () => {
         'Chat delivery to peer-a is unavailable',
       );
       expect(harness.session.getSnapshot().messages).toEqual([]);
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.offer',
+        roomId: ROOM_ID,
+        from: 'peer-a',
+        payload: {
+          description: { type: 'offer', sdp: 'late-offer' },
+        },
+      });
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.ice',
+        roomId: ROOM_ID,
+        from: 'peer-a',
+        payload: { candidate: null },
+      });
+      await flushMicrotasks();
+      await vi.runAllTimersAsync();
+      expect(harness.peerConnections).toHaveLength(1);
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not let repeated offers replace an already retried failed connection', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 100,
+          peerRecoveryTimeoutMs: 100,
+        },
+      });
+      await joinSession(harness, [{ peerId: 'a-peer', displayName: 'Ara' }], 'z-self');
+      await answerPeer(harness, 'a-peer');
+      const initialPeer = harness.peerConnections[0];
+      initialPeer?.setConnectionState('failed');
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.offer',
+        roomId: ROOM_ID,
+        from: 'a-peer',
+        payload: {
+          negotiationId: 'first-recovery',
+          description: { type: 'offer', sdp: 'first-recovery-offer' },
+        },
+      });
+      await flushMicrotasks();
+      const replacement = harness.peerConnections[1];
+      expect(initialPeer?.closed).toBe(true);
+      expect(replacement).toBeDefined();
+
+      replacement?.setConnectionState('failed');
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.offer',
+        roomId: ROOM_ID,
+        from: 'a-peer',
+        payload: {
+          negotiationId: 'second-recovery',
+          description: { type: 'offer', sdp: 'second-recovery-offer' },
+        },
+      });
+      await flushMicrotasks();
+
+      expect(replacement?.closed).toBe(true);
+      expect(harness.peerConnections).toHaveLength(2);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: { code: 'peer-connection-timeout' },
+        participants: expect.arrayContaining([
+          expect.objectContaining({ peerId: 'a-peer', connectionState: 'failed' }),
+        ]),
+      });
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'rtc.offer',
+        roomId: ROOM_ID,
+        from: 'a-peer',
+        payload: {
+          negotiationId: 'ignored-after-exhaustion',
+          description: { type: 'offer', sdp: 'ignored-after-exhaustion' },
+        },
+      });
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(harness.peerConnections).toHaveLength(2);
       await harness.session.leave();
     } finally {
       vi.useRealTimers();
@@ -724,7 +1597,7 @@ describe('RoomSession', () => {
       appliedIceServers.push({ urls: 'turn:injected-by-peer.example.test' });
     }
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'peer.joined',
       roomId: ROOM_ID,
       payload: {
@@ -846,7 +1719,7 @@ describe('RoomSession', () => {
     });
 
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'peer.joined',
       roomId: ROOM_ID,
       payload: {
@@ -871,7 +1744,7 @@ describe('RoomSession', () => {
     const stalePeer = harness.peerConnections[0];
 
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'peer.left',
       roomId: ROOM_ID,
       payload: { peerId: 'peer-a' },
@@ -886,7 +1759,7 @@ describe('RoomSession', () => {
     expect(stalePeer?.configurationCalls).toEqual([]);
 
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'peer.joined',
       roomId: ROOM_ID,
       payload: {
@@ -919,7 +1792,7 @@ describe('RoomSession', () => {
     await joinSession(harness);
 
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'peer.joined',
       roomId: 'abcd-efgh-jkmp',
       payload: {
@@ -927,7 +1800,7 @@ describe('RoomSession', () => {
       },
     });
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'rtc.ice',
       roomId: 'abcd-efgh-jkmp',
       from: 'peer-a',
@@ -946,7 +1819,7 @@ describe('RoomSession', () => {
     expect(peer?.addedCandidates).toEqual([]);
 
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'rtc.offer',
       roomId: 'abcd-efgh-jkmp',
       from: 'peer-a',
@@ -966,7 +1839,7 @@ describe('RoomSession', () => {
     ]);
     expect(harness.socket.messagesOfType('rtc.answer')).toEqual([
       {
-        v: 1,
+        v: PROTOCOL_VERSION,
         type: 'rtc.answer',
         roomId: 'abcd-efgh-jkmp',
         to: 'peer-a',
@@ -982,7 +1855,7 @@ describe('RoomSession', () => {
     await joinSession(harness);
 
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'peer.joined',
       roomId: ROOM_ID,
       payload: {
@@ -991,7 +1864,7 @@ describe('RoomSession', () => {
     });
     for (let index = 0; index <= 256; index += 1) {
       harness.socket.serverMessage({
-        v: 1,
+        v: PROTOCOL_VERSION,
         type: 'rtc.ice',
         roomId: ROOM_ID,
         from: 'peer-a',
@@ -1008,7 +1881,7 @@ describe('RoomSession', () => {
     await flushMicrotasks();
 
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'rtc.offer',
       roomId: ROOM_ID,
       from: 'peer-a',
@@ -1038,6 +1911,16 @@ describe('RoomSession', () => {
       code: 'ice-candidate-queue-overflow',
       message: 'Oldest pending ICE candidate for peer-a was discarded',
     });
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'peer.left',
+      roomId: ROOM_ID,
+      payload: { peerId: 'peer-a' },
+    });
+    await flushMicrotasks();
+    expect(harness.session.getSnapshot().warning).toBeNull();
+    await harness.session.leave();
   });
 
   it('toggles local tracks and announces media state', async () => {
@@ -1345,7 +2228,7 @@ describe('RoomSession', () => {
     await joinSession(harness);
 
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'peer.joined',
       roomId: 'abcd-efgh-jkmp',
       payload: {
@@ -1549,7 +2432,7 @@ describe('RoomSession', () => {
     harness.session.sendChat('do not report this as sent');
 
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'peer.left',
       roomId: ROOM_ID,
       payload: { peerId: 'peer-a' },
@@ -1593,7 +2476,7 @@ describe('RoomSession', () => {
 
       channel?.fail();
       harness.socket.serverMessage({
-        v: 1,
+        v: PROTOCOL_VERSION,
         type: 'peer.left',
         roomId: 'abcd-efgh-jkmp',
         payload: { peerId: 'peer-a' },
@@ -1645,7 +2528,7 @@ describe('RoomSession', () => {
 
     expect(harness.session.getRemoteStream('peer-a')).toBe(remoteStream as unknown as MediaStream);
     harness.socket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'peer.left',
       roomId: 'abcd-efgh-jkmp',
       payload: { peerId: 'peer-a' },
@@ -1695,7 +2578,7 @@ describe('RoomSession', () => {
     reconnectSocket.open();
     await flushMicrotasks();
     reconnectSocket.serverMessage({
-      v: 1,
+      v: PROTOCOL_VERSION,
       type: 'room.joined',
       roomId: ROOM_ID,
       payload: {
@@ -1981,11 +2864,12 @@ describe('RoomSession', () => {
       failedPeer?.setConnectionState('failed');
 
       harness.socket.serverMessage({
-        v: 1,
+        v: PROTOCOL_VERSION,
         type: 'rtc.offer',
         roomId: ROOM_ID,
         from: 'a-peer',
         payload: {
+          negotiationId: 'remote-restart',
           description: { type: 'offer', sdp: 'remote-restart-offer' },
         },
       });
@@ -2000,6 +2884,7 @@ describe('RoomSession', () => {
       expect(harness.socket.messagesOfType('rtc.answer').at(-1)).toMatchObject({
         to: 'a-peer',
         payload: {
+          negotiationId: 'remote-restart',
           description: { type: 'answer', sdp: 'answer-sdp' },
         },
       });
