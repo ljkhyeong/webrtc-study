@@ -86,9 +86,19 @@ WebSocket upgrade 및 TURN credential 요청을 거부한다. WebSocket 연결 �
 참여권 정보를 세션에 보존하고 `room.join`의 방 식별자도 경로 및 `room_id`와 일치할 때만
 입장을 허용한다.
 
-현재 ROUND는 참여권 replay 저장소를 두지 않으므로 `jti`는 추적과 향후 회수 기능을 위한
-식별자이며 one-time 사용을 보장하지 않는다. 문서와 구현에서 참여권을 one-time ticket으로
-표현하지 않는다.
+ROUND는 활성 handshake와 WebSocket에 한해 동일 `jti`의 동시 사용을 1개로 제한한다.
+연결이 종료되면 저장 상태도 제거하므로 만료 전 순차 재사용까지 막는 replay 저장소는
+아니다. 따라서 `jti`는 동시 replay 제한, 추적과 향후 회수 기능을 위한 식별자이며
+one-time 사용을 보장하지 않는다. 문서와 구현에서 참여권을 one-time ticket으로 표현하지
+않는다.
+
+동일 `(room_id, sub)`는 서로 다른 `study_id`나 `jti`를 사용하더라도 활성 handshake와
+WebSocket을 합쳐 2개까지만 허용한다. ROUND의 실제 room 경계는 `room_id`이므로
+`study_id`가 달라져도 같은 room의 제한을 분리하지 않는다. 두 번째 슬롯은 BATON이 새
+참여권을 발급한 재연결이 기존 socket과 잠시 겹치는 경우를 위한 것이다. 동일 참여권의
+두 번째 연결 또는 사용자-방의 세 번째 연결은 HTTP 429로 거부하며, 새 요청 때문에 기존
+socket을 종료하지 않는다. reservation은 `room.leave`가 아니라 socket 종료 시 해제된다.
+이 정책은 BATON 모드에만 적용한다.
 
 `peerId`와 relay 메시지의 `from`은 계속 ROUND가 생성한다. BATON 사용자 식별자나 클라이언트
 입력값을 signaling 발신자 식별자로 신뢰하지 않는다.
@@ -135,10 +145,13 @@ BATON 장애 중에도 이미 연결된 WebSocket의 signaling은 BATON 동기 �
   종료 정책을 별도로 도입해야 한다. BATON은 WebSocket 재연결과 TURN credential 갱신
   전에 유효한 참여권을 다시 발급해야 한다.
 - 탈취된 참여권은 만료 전까지 사용할 수 있다. TLS, `HttpOnly`, `Secure`,
-  `SameSite=Strict`, 방별 cookie path와 짧은 만료 시간을 함께 적용한다.
-- 동일한 `sub` 또는 `jti`의 동시 연결 수는 아직 별도로 제한하지 않는다. 현재 room,
-  IP, 서버 전체 제한만 적용하므로, 재연결 중첩 정책을 정하기 전까지 한 사용자가 여러
-  room slot을 점유할 수 있다.
+  `SameSite=Strict`, 방별 cookie path와 짧은 만료 시간을 함께 적용한다. 동일 `jti`의
+  동시 연결 제한은 두 번째 연결을 막지만, 공격자가 먼저 슬롯을 차지하거나 정상 연결이
+  종료된 뒤 만료 전에 순차 재사용하는 위험까지 제거하지는 않는다.
+- 참여자 연결 제한은 현재 단일 ROUND 프로세스의 메모리에만 존재한다. 다중 인스턴스
+  전환 시에는 shared room state와 함께 분산 admission registry를 도입해야 한다.
+- TURN credential 발급은 여전히 IP와 서버 전체 quota만 적용하며 `sub` 또는 `jti`별
+  quota는 없다. 한 참여자가 반복 갱신으로 공유 quota를 소비하는 위험은 별도로 남는다.
 
 ## 검토했지만 채택하지 않은 대안
 

@@ -218,9 +218,17 @@ instance. Do not change the bundled standalone Compose to perform them.
 - [ ] BATON or its database can be unavailable without interrupting signaling
       frames on an already-established socket; new grants and expired-session
       reconnects remain fail-closed until BATON recovers.
-- [ ] The pilot records the current absence of a per-`sub` or per-`jti`
-      concurrent socket limit, monitors repeated room-slot/TURN use, and defines
-      the desired reconnect overlap before such a limit is introduced.
+- [ ] A second concurrent WebSocket using the same `jti` receives HTTP 429
+      without evicting the established socket. After that socket closes, the
+      same still-valid grant can connect again because the policy is not a
+      permanent one-time-token store.
+- [ ] Two sockets for the same `(room_id, sub)` can overlap only with distinct
+      freshly issued `jti` values, even if their `study_id` values differ. A
+      third receives HTTP 429, and closing either accepted socket immediately
+      makes one slot available.
+- [ ] The BATON socket checks above do not change standalone behavior. TURN
+      issuance remains limited by client IP and server-wide quota rather than
+      by `sub` or `jti`, and its rate-limit metrics remain monitored.
 - [ ] The BATON integration probe obtains a real short-lived participation
       grant without printing it and validates UDP, TCP, and TLS relay paths;
       the standalone Basic Auth probe is not used as proof of this boundary.

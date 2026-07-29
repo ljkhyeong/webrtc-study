@@ -109,11 +109,19 @@ rotation needs an overlap window in which the JWK Set publishes both the
 retiring and new public key until every short-lived grant signed by the
 retiring key has expired.
 
-ROUND does not yet limit concurrent sockets by `sub` or `jti`. Room, client-IP,
-and server-wide limits remain active, but one authorized member can still
-occupy multiple room slots or consume TURN issuance quota. Decide the allowed
-reconnect overlap and multi-device policy before adding a per-subject limit;
-until then, alert on the corresponding connection and TURN rate-limit metrics.
+ROUND counts both in-progress handshakes and active sockets in BATON mode. The
+same `jti` may own one reservation, and the same
+`(room_id, sub)` may own two so that one reconnect with a freshly issued grant
+can overlap the old socket. Reusing the same grant concurrently or opening a
+third participant-room socket returns HTTP 429 without evicting an established
+connection. Closing the owning socket releases the slot; merely sending
+`room.leave` does not. These counters are process-local and therefore rely on
+the current single-replica deployment. Scale-out requires a shared admission
+registry together with shared room state and routing.
+
+The socket policy does not add a per-`sub` or per-`jti` TURN issuance quota.
+One authorized member can still spend the client-IP or global TURN allowance
+through repeated refreshes, so keep alerting on TURN rate-limit metrics.
 
 This repository's `ops/turn/probe.sh` authenticates with the standalone shared
 Basic credential and therefore is not a BATON authentication probe. A BATON

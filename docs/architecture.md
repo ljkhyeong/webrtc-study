@@ -60,6 +60,14 @@ before room admission. BATON mode fails closed when the ticket or verifier confi
 missing or invalid. Standalone mode retains the existing coarse shared edge credential for the
 small pilot.
 
+BATON connection admission counts both in-progress handshakes and established sockets. The same
+participation-grant `jti` can own only one reservation, while the same
+`(room_id, sub)` can own two reservations so a reconnect with a freshly issued grant may briefly
+overlap the old socket. A replay of the same grant or a third participant-room connection receives
+HTTP 429 without evicting either established socket. The reservation lasts for the whole socket
+lifetime rather than only room membership, so `room.leave` cannot be used to bypass the limit.
+Standalone mode is unaffected.
+
 The signaling service must continue to own peer IDs, overwrite the wire-level sender identity, and
 relay SDP/ICE only between peers that are currently in the same room. A generic MVC interceptor,
 argument resolver, or STOMP message rule cannot replace these checks because ROUND uses raw
@@ -77,12 +85,13 @@ Authorization header before proxying, and leaves only `/healthz` public for avai
 In BATON mode the same-origin edge maps the room-scoped public paths above to ROUND and Spring
 Security validates the participation cookie before either protected operation.
 
-Room state is in memory, so running multiple signaling replicas would split one logical room until
-a shared room registry, room routing, and cross-node relay are introduced. A participation ticket
-is checked at the WebSocket upgrade and room join, but its later expiry does not currently terminate
-an already authenticated socket. Short ticket lifetimes limit reuse for new handshakes but do not
-bound the lifetime of an existing socket; immediate membership revocation or long-running meetings
-will require explicit reauthentication or session termination.
+Room state and participation connection reservations are in memory, so running multiple signaling
+replicas would split one logical room and enforce each participant limit independently until a
+shared room registry, distributed admission registry, room routing, and cross-node relay are
+introduced. A participation ticket is checked at the WebSocket upgrade and room join, but its later
+expiry does not currently terminate an already authenticated socket. Short ticket lifetimes limit
+reuse for new handshakes but do not bound the lifetime of an existing socket; immediate membership
+revocation or long-running meetings will require explicit reauthentication or session termination.
 
 The coturn shared secret exists only in the signaling and TURN runtimes. The browser requests a
 time-limited HMAC credential from `/api/turn-credentials` in standalone mode or the room-scoped

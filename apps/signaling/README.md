@@ -38,6 +38,15 @@ least-recently-used entries and never active client state.
 `MAX_SIGNALING_CONNECTIONS` defaults to 1,000 and
 `MAX_SIGNALING_CONNECTIONS_PER_CLIENT` defaults to 12.
 
+BATON mode also reserves at most one in-flight or active WebSocket for the same
+participation-grant `jti`, and at most two for the same
+`(room_id, sub)`. The second participant-room slot permits one reconnect
+overlap only when BATON has issued a fresh `jti`. A replay of the same grant or
+a third participant-room socket receives HTTP 429; ROUND never evicts an
+established socket to admit the newcomer. The reservation remains owned until
+the socket closes, including while it is connected but not joined or after
+`room.leave`. Standalone mode retains only the server and client-IP limits.
+
 The client frame limit must be at least the session limit. The global limit
 must be at least twice the client limit so one client's two misaligned fixed
 windows cannot consume the server budget. The defaults retain a six-person ICE
@@ -55,7 +64,7 @@ Micrometer publishes these signaling meters:
 - `round.signaling.frames.client_rate_limited`
 - `round.signaling.frames.overloaded`
 - `round.signaling.connections.rejected`
-  (`reason=server_capacity|client_capacity|missing_reservation|missing_room_access`)
+  (`reason=server_capacity|client_capacity|participation_token_capacity|participant_room_capacity|missing_reservation|missing_room_access`)
 - `round.signaling.outbound.queue.overflows`
 - `round.signaling.heartbeat.closes`
 - `round.turn.credentials.issued`
