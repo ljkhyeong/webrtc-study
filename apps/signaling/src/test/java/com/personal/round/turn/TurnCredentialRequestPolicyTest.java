@@ -30,6 +30,8 @@ class TurnCredentialRequestPolicyTest {
 		MockHttpServletRequest missing = request("https", "study.example", 443);
 		MockHttpServletRequest malformed = request("https", "study.example", 443);
 		malformed.addHeader(HttpHeaders.ORIGIN, "https://study.example/path");
+		MockHttpServletRequest trailingSlash = request("https", "study.example", 443);
+		trailingSlash.addHeader(HttpHeaders.ORIGIN, "https://study.example/");
 		MockHttpServletRequest otherHost = request("https", "study.example", 443);
 		otherHost.addHeader(HttpHeaders.ORIGIN, "https://attacker.example");
 		MockHttpServletRequest otherPort = request("https", "study.example", 443);
@@ -37,6 +39,7 @@ class TurnCredentialRequestPolicyTest {
 
 		assertThat(policy.allows(missing)).isFalse();
 		assertThat(policy.allows(malformed)).isFalse();
+		assertThat(policy.allows(trailingSlash)).isFalse();
 		assertThat(policy.allows(otherHost)).isFalse();
 		assertThat(policy.allows(otherPort)).isFalse();
 	}

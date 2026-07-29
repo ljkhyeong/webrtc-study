@@ -1,8 +1,7 @@
 package com.personal.round.turn;
 
+import com.personal.round.net.HttpOrigin;
 import jakarta.servlet.http.HttpServletRequest;
-import java.net.URI;
-import java.net.URISyntaxException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 
@@ -31,49 +30,14 @@ final class TurnCredentialRequestPolicy {
 		}
 
 		try {
-			URI originUri = new URI(origin);
-			if (!isHttp(originUri.getScheme())
-					|| originUri.getHost() == null
-					|| originUri.getUserInfo() != null
-					|| originUri.getPort() < -1
-					|| originUri.getQuery() != null
-					|| originUri.getFragment() != null
-					|| hasPath(originUri)) {
-				return false;
-			}
-			return originUri.getScheme().equalsIgnoreCase(request.getScheme())
-					&& normalizeHost(originUri.getHost()).equalsIgnoreCase(
-							normalizeHost(request.getServerName()))
-					&& effectivePort(originUri.getScheme(), originUri.getPort())
-							== effectivePort(request.getScheme(), request.getServerPort());
+			return HttpOrigin.parse(origin)
+					.matches(
+							request.getScheme(),
+							request.getServerName(),
+							request.getServerPort());
 		}
-		catch (IllegalArgumentException | URISyntaxException ignored) {
+		catch (IllegalArgumentException ignored) {
 			return false;
 		}
-	}
-
-	private static boolean isHttp(String scheme) {
-		return "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
-	}
-
-	private static boolean hasPath(URI uri) {
-		return uri.getRawPath() != null && !uri.getRawPath().isEmpty();
-	}
-
-	private static String normalizeHost(String host) {
-		if (host != null
-				&& host.length() > 1
-				&& host.startsWith("[")
-				&& host.endsWith("]")) {
-			return host.substring(1, host.length() - 1);
-		}
-		return host;
-	}
-
-	private static int effectivePort(String scheme, int port) {
-		if (port >= 0) {
-			return port;
-		}
-		return "https".equalsIgnoreCase(scheme) ? 443 : 80;
 	}
 }
