@@ -15,11 +15,15 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.Map;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
+import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeFailureException;
 import org.springframework.web.socket.server.HandshakeHandler;
@@ -33,7 +37,7 @@ class ConnectionAdmissionHandshakeHandlerTest {
 	private ConnectionAdmissionPolicy policy;
 	private HandshakeHandler delegate;
 	private ConnectionAdmissionHandshakeHandler handler;
-	private ServerHttpRequest request;
+	private ServletServerHttpRequest request;
 	private ServerHttpResponse response;
 	private WebSocketHandler webSocketHandler;
 
@@ -46,11 +50,13 @@ class ConnectionAdmissionHandshakeHandlerTest {
 				new ClientAddressKeyResolver());
 		delegate = mock(HandshakeHandler.class);
 		handler = new ConnectionAdmissionHandshakeHandler(service, policy, delegate);
-		request = mock(ServerHttpRequest.class);
+		request = mock(ServletServerHttpRequest.class);
 		response = mock(ServerHttpResponse.class);
 		webSocketHandler = mock(WebSocketHandler.class);
 		when(service.isAcceptingConnections()).thenReturn(true);
+		when(request.getServletRequest()).thenReturn(mock(HttpServletRequest.class));
 		when(request.getRemoteAddress()).thenReturn(REMOTE_ADDRESS);
+		when(request.getHeaders()).thenReturn(new HttpHeaders());
 	}
 
 	@Test
@@ -134,6 +140,36 @@ class ConnectionAdmissionHandshakeHandlerTest {
 				webSocketHandler,
 				new HashMap<>())).isFalse();
 		verify(response).setStatusCode(HttpStatus.SERVICE_UNAVAILABLE);
+	}
+
+	@Test
+	void removesSensitiveHeadersBeforeTheUpgradeCopiesThemIntoTheSession() {
+		HttpHeaders originalHeaders = new HttpHeaders();
+		originalHeaders.add(HttpHeaders.COOKIE, "__Secure-round_access=raw-jwt");
+		originalHeaders.add(HttpHeaders.AUTHORIZATION, "Bearer raw-jwt");
+		originalHeaders.add(HttpHeaders.PROXY_AUTHORIZATION, "Basic proxy-secret");
+		originalHeaders.add(HttpHeaders.ORIGIN, "https://study.example.com");
+		when(request.getHeaders()).thenReturn(originalHeaders);
+		when(delegate.doHandshake(any(), any(), any(), any())).thenReturn(true);
+		Map<String, Object> attributes = new HashMap<>();
+
+		assertThat(handler.doHandshake(
+				request,
+				response,
+				webSocketHandler,
+				attributes)).isTrue();
+
+		ArgumentCaptor<ServerHttpRequest> requestCaptor =
+				ArgumentCaptor.forClass(ServerHttpRequest.class);
+		verify(delegate).doHandshake(requestCaptor.capture(), any(), any(), any());
+		HttpHeaders upgradeHeaders = requestCaptor.getValue().getHeaders();
+		assertThat(upgradeHeaders.containsHeader(HttpHeaders.COOKIE)).isFalse();
+		assertThat(upgradeHeaders.containsHeader(HttpHeaders.AUTHORIZATION)).isFalse();
+		assertThat(upgradeHeaders.containsHeader(HttpHeaders.PROXY_AUTHORIZATION)).isFalse();
+		assertThat(upgradeHeaders.get(HttpHeaders.ORIGIN))
+				.containsExactly("https://study.example.com");
+		assertThat(originalHeaders.containsHeader(HttpHeaders.COOKIE)).isTrue();
+		release(attributes);
 	}
 
 	private static void release(Map<String, Object> attributes) {

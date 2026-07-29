@@ -16,6 +16,7 @@ public final class SignalingMetrics {
 	private final AtomicLong outboundQueuedBytes = new AtomicLong();
 	private final Counter roomFullRejections;
 	private final Counter alreadyJoinedRejections;
+	private final Counter unauthorizedRoomRejections;
 	private final Counter invalidFrames;
 	private final Counter rateLimitedFrames;
 	private final Counter clientRateLimitedFrames;
@@ -26,6 +27,7 @@ public final class SignalingMetrics {
 	private final Counter serverCapacityRejections;
 	private final Counter clientCapacityRejections;
 	private final Counter missingReservationRejections;
+	private final Counter missingRoomAccessRejections;
 	private final Counter queueOverflows;
 	private final Counter globalQueueOverflows;
 	private final Counter heartbeatCloses;
@@ -53,6 +55,10 @@ public final class SignalingMetrics {
 		alreadyJoinedRejections = Counter.builder("round.signaling.joins.rejected")
 				.tag("reason", "already_joined")
 				.description("Room join requests rejected by the signaling service")
+				.register(registry);
+		unauthorizedRoomRejections = Counter.builder("round.signaling.joins.rejected")
+				.tag("reason", "unauthorized_room")
+				.description("Room join requests rejected by the verified room grant")
 				.register(registry);
 		invalidFrames = Counter.builder("round.signaling.frames.invalid")
 				.description("Malformed, unsupported, or oversized inbound WebSocket frames")
@@ -82,6 +88,10 @@ public final class SignalingMetrics {
 				.tag("reason", "missing_reservation")
 				.description("WebSocket sessions rejected because admission metadata was missing")
 				.register(registry);
+		missingRoomAccessRejections = Counter.builder("round.signaling.connections.rejected")
+				.tag("reason", "missing_room_access")
+				.description("WebSocket sessions rejected because verified room access was missing")
+				.register(registry);
 		queueOverflows = Counter.builder("round.signaling.outbound.queue.overflows")
 				.description("Peers closed because their outbound queue overflowed")
 				.register(registry);
@@ -110,6 +120,10 @@ public final class SignalingMetrics {
 
 	void recordJoinRejectedAlreadyJoined() {
 		alreadyJoinedRejections.increment();
+	}
+
+	void recordJoinRejectedUnauthorizedRoom() {
+		unauthorizedRoomRejections.increment();
 	}
 
 	void recordInvalidFrame() {
@@ -150,6 +164,10 @@ public final class SignalingMetrics {
 
 	void recordConnectionRejectedMissingReservation() {
 		missingReservationRejections.increment();
+	}
+
+	void recordConnectionRejectedMissingRoomAccess() {
+		missingRoomAccessRejections.increment();
 	}
 
 	void recordQueueOverflow() {

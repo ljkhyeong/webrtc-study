@@ -31,6 +31,13 @@ management:
       application: round-signaling
 
 round:
+  auth:
+    mode: ${ROUND_AUTH_MODE:standalone}
+    cookie-name: ${ROUND_AUTH_COOKIE_NAME:__Secure-round_access}
+    issuer: ${ROUND_AUTH_ISSUER:}
+    audience: ${ROUND_AUTH_AUDIENCE:round}
+    jwk-set-uri: ${ROUND_AUTH_JWK_SET_URI:}
+    max-grant-lifetime: ${ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS:300}s
   signaling:
     allowed-origins: ${ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
     max-room-size: ${MAX_ROOM_SIZE:6}

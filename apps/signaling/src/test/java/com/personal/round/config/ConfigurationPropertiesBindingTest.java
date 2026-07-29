@@ -3,6 +3,7 @@ package com.personal.round.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.personal.round.auth.RoundAuthProperties;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.time.Duration;
@@ -18,6 +19,10 @@ class ConfigurationPropertiesBindingTest {
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
 			.withUserConfiguration(PropertiesConfiguration.class)
 			.withPropertyValues(
+					"round.auth.mode=standalone",
+					"round.auth.cookie-name=__Secure-round_access",
+					"round.auth.audience=round",
+					"round.auth.max-grant-lifetime=5m",
 					"round.signaling.allowed-origins=http://localhost:5173",
 					"round.signaling.max-room-size=6",
 					"round.signaling.max-connections=1000",
@@ -144,6 +149,26 @@ class ConfigurationPropertiesBindingTest {
 							.hasStackTraceContaining(
 									"round.signaling.max-connections-per-client must not exceed "
 											+ "max-connections");
+				});
+	}
+
+	@Test
+	void rejectsIncompleteOrInsecureBatonVerifierConfigurationDuringContextStartup() {
+		contextRunner
+				.withPropertyValues(
+						"round.auth.mode=baton",
+						"round.auth.issuer=http://baton.example/oauth2",
+						"round.auth.jwk-set-uri=")
+				.run(context -> {
+					Throwable failure = context.getStartupFailure();
+
+					assertThat(failure).isNotNull();
+					assertThat(failure)
+							.hasStackTraceContaining(
+									"BATON auth mode requires issuer and jwk-set-uri")
+							.hasStackTraceContaining(
+									"BATON auth issuer and jwk-set-uri must use HTTPS "
+											+ "or loopback HTTP");
 				});
 	}
 
@@ -316,7 +341,11 @@ class ConfigurationPropertiesBindingTest {
 	}
 
 	@Configuration(proxyBeanMethods = false)
-	@EnableConfigurationProperties({SignalingProperties.class, TurnProperties.class})
+	@EnableConfigurationProperties({
+		RoundAuthProperties.class,
+		SignalingProperties.class,
+		TurnProperties.class
+	})
 	static class PropertiesConfiguration {
 	}
 }

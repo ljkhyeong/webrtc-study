@@ -11,33 +11,42 @@ public final class OriginPolicy {
 	private final boolean allowAny;
 
 	public OriginPolicy(Iterable<String> configuredOrigins) {
-		this(configuredOrigins, false);
+		this(configuredOrigins, SecurityMode.DEVELOPMENT);
 	}
 
-	public OriginPolicy(Iterable<String> configuredOrigins, boolean production) {
+	public OriginPolicy(
+			Iterable<String> configuredOrigins,
+			SecurityMode securityMode) {
 		Set<HttpOrigin> normalizedOrigins = new HashSet<>();
 		boolean wildcard = false;
 		boolean nullOrigin = false;
 		for (String configuredOrigin : configuredOrigins) {
 			if ("*".equals(configuredOrigin)) {
-				if (production) {
+				if (securityMode.forbidsRelaxedOrigins()) {
 					throw new IllegalArgumentException(
-							"Wildcard origins are forbidden in the production profile");
+							"Wildcard origins are forbidden in production and BATON modes");
 				}
 				wildcard = true;
 			}
 			else if ("null".equals(configuredOrigin)) {
-				if (production) {
+				if (securityMode.forbidsRelaxedOrigins()) {
 					throw new IllegalArgumentException(
-							"The null origin is forbidden in the production profile");
+							"The null origin is forbidden in production and BATON modes");
 				}
 				nullOrigin = true;
 			}
 			else {
 				HttpOrigin normalized = HttpOrigin.parseAllowingTrailingSlash(configuredOrigin);
-				if (production && !"https".equals(normalized.scheme())) {
+				if (securityMode.requiresHttps()
+						&& !"https".equals(normalized.scheme())) {
 					throw new IllegalArgumentException(
 							"Production origins must use HTTPS");
+				}
+				if (securityMode.allowsOnlySecureBatonOrigins()
+						&& !"https".equals(normalized.scheme())
+						&& !isLoopback(normalized.host())) {
+					throw new IllegalArgumentException(
+							"BATON origins must use HTTPS or loopback HTTP");
 				}
 				normalizedOrigins.add(normalized);
 			}
@@ -48,6 +57,10 @@ public final class OriginPolicy {
 		this.allowedOrigins = Set.copyOf(normalizedOrigins);
 		this.allowNull = nullOrigin;
 		this.allowAny = wildcard;
+	}
+
+	private static boolean isLoopback(String host) {
+		return "localhost".equals(host) || "127.0.0.1".equals(host) || "::1".equals(host);
 	}
 
 	public boolean allows(String origin) {
@@ -65,6 +78,32 @@ public final class OriginPolicy {
 		}
 		catch (IllegalArgumentException ignored) {
 			return false;
+		}
+	}
+
+	public enum SecurityMode {
+		DEVELOPMENT,
+		STANDALONE_PRODUCTION,
+		BATON_DEVELOPMENT,
+		BATON_PRODUCTION;
+
+		public static SecurityMode from(boolean production, boolean batonMode) {
+			if (batonMode) {
+				return production ? BATON_PRODUCTION : BATON_DEVELOPMENT;
+			}
+			return production ? STANDALONE_PRODUCTION : DEVELOPMENT;
+		}
+
+		private boolean forbidsRelaxedOrigins() {
+			return this != DEVELOPMENT;
+		}
+
+		private boolean requiresHttps() {
+			return this == STANDALONE_PRODUCTION || this == BATON_PRODUCTION;
+		}
+
+		private boolean allowsOnlySecureBatonOrigins() {
+			return this == BATON_DEVELOPMENT;
 		}
 	}
 }

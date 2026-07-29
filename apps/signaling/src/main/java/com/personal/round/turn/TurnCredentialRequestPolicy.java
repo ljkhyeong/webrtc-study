@@ -8,9 +8,9 @@ import org.springframework.stereotype.Component;
 /**
  * Rejects browser-driven cross-origin credential issuance before it consumes quota.
  *
- * <p>This is a browser boundary defense, not client authentication. Non-browser clients can
- * construct these headers and must eventually be replaced by BATON identity and meeting access
- * checks.
+ * <p>This is a browser boundary defense, not client authentication. In BATON mode, Spring Security
+ * and the room participation grant provide authentication and authorization; this policy remains
+ * as a same-origin defense before TURN quota is consumed.
  */
 @Component
 final class TurnCredentialRequestPolicy {

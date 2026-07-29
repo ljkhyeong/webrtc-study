@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.personal.round.config.OriginPolicy.SecurityMode;
 import java.util.HashMap;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -58,18 +59,51 @@ class OriginHandshakeInterceptorTest {
 
 	@Test
 	void productionProfileFailsFastForWildcardNullAndNonHttpsOrigins() {
-		assertThatThrownBy(() -> new OriginPolicy(List.of("*"), true))
+		assertThatThrownBy(() -> new OriginPolicy(
+				List.of("*"),
+				SecurityMode.STANDALONE_PRODUCTION))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("Wildcard");
-		assertThatThrownBy(() -> new OriginPolicy(List.of("null"), true))
+		assertThatThrownBy(() -> new OriginPolicy(
+				List.of("null"),
+				SecurityMode.STANDALONE_PRODUCTION))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("null origin");
-		assertThatThrownBy(() -> new OriginPolicy(List.of("http://study.example"), true))
+		assertThatThrownBy(() -> new OriginPolicy(
+				List.of("http://study.example"),
+				SecurityMode.STANDALONE_PRODUCTION))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("HTTPS");
 
-		assertThat(new OriginPolicy(List.of("https://study.example"), true)
+		assertThat(new OriginPolicy(
+				List.of("https://study.example"),
+				SecurityMode.STANDALONE_PRODUCTION)
 				.allows("https://study.example")).isTrue();
+	}
+
+	@Test
+	void batonModeRejectsUnsafeOriginsWithoutDependingOnTheProductionProfile() {
+		assertThatThrownBy(() -> new OriginPolicy(
+				List.of("*"),
+				SecurityMode.BATON_DEVELOPMENT))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("Wildcard");
+		assertThatThrownBy(() -> new OriginPolicy(
+				List.of("null"),
+				SecurityMode.BATON_DEVELOPMENT))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("null origin");
+		assertThatThrownBy(() -> new OriginPolicy(
+				List.of("http://baton.example"),
+				SecurityMode.BATON_DEVELOPMENT))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("HTTPS or loopback HTTP");
+
+		assertThat(new OriginPolicy(
+				List.of("http://127.0.0.1:5173", "https://baton.example"),
+				SecurityMode.BATON_DEVELOPMENT)
+				.allows("http://127.0.0.1:5173"))
+				.isTrue();
 	}
 
 	private OriginHandshakeInterceptor interceptor(List<String> origins) {

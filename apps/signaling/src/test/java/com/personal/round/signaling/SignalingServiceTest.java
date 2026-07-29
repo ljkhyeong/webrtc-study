@@ -6,6 +6,9 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.personal.round.auth.ParticipationGrant;
+import com.personal.round.auth.RoomAccessPolicy;
+import com.personal.round.auth.RoundAuthProperties;
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.config.TestProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
@@ -162,6 +165,63 @@ class SignalingServiceTest {
 
 		service.handle(ada.session(), relay("rtc.offer", ROOM_ID, "missing-peer"));
 		assertError(ada.nextJson(), "TARGET_NOT_FOUND");
+	}
+
+	@Test
+	void rejectsJoinOutsideTheVerifiedGrantBeforeCreatingRoomState() throws Exception {
+		SimpleMeterRegistry batonRegistry = new SimpleMeterRegistry();
+		SignalingService batonService = newBatonService(batonRegistry);
+		batonService.start();
+		try {
+			TestPeer peer = peer("baton-room-mismatch");
+			attachDefaultReservation(peer);
+			peer.session().getAttributes().put(
+					ParticipationGrant.SESSION_ATTRIBUTE,
+					grantFor(ROOM_ID));
+
+			assertThat(batonService.connect(peer.session())).isTrue();
+			batonService.handle(
+					peer.session(),
+					new ClientMessage.Join(OTHER_ROOM_ID, "join-other", "Mallory"));
+
+			assertError(peer.nextJson(), "ROOM_MISMATCH");
+			assertThat(batonService.roomCount()).isZero();
+			assertThat(batonService.participantCount(OTHER_ROOM_ID)).isZero();
+			assertThat(batonRegistry.get("round.signaling.joins.rejected")
+					.tag("reason", "unauthorized_room")
+					.counter()
+					.count())
+					.isOne();
+		}
+		finally {
+			batonService.stop();
+		}
+	}
+
+	@Test
+	void failsClosedWhenBatonHandshakeMetadataDoesNotReachTheSession() throws Exception {
+		SimpleMeterRegistry batonRegistry = new SimpleMeterRegistry();
+		SignalingService batonService = newBatonService(batonRegistry);
+		batonService.start();
+		try {
+			TestPeer peer = peer("baton-missing-room-access");
+			attachDefaultReservation(peer);
+
+			assertThat(batonService.connect(peer.session())).isFalse();
+
+			peer.awaitClosed();
+			assertThat(peer.closeStatus().get())
+					.isEqualTo(new CloseStatus(1008, "Room authorization required"));
+			assertThat(batonService.connectedPeerCount()).isZero();
+			assertThat(batonRegistry.get("round.signaling.connections.rejected")
+					.tag("reason", "missing_room_access")
+					.counter()
+					.count())
+					.isOne();
+		}
+		finally {
+			batonService.stop();
+		}
 	}
 
 	@Test
@@ -731,6 +791,7 @@ class SignalingServiceTest {
 					serverMessageEncoder,
 					properties(1),
 					new SignalingMetrics(new SimpleMeterRegistry()),
+					new RoomAccessPolicy(standaloneAuth()),
 					rejectingExecutor,
 					clock);
 			fallbackService.start();
@@ -1383,8 +1444,50 @@ class SignalingServiceTest {
 				serverMessageEncoder,
 				properties,
 				new SignalingMetrics(registry),
+				new RoomAccessPolicy(standaloneAuth()),
 				outboundExecutor,
 				clock);
+	}
+
+	private SignalingService newBatonService(SimpleMeterRegistry registry) {
+		return new SignalingService(
+				serverMessageEncoder,
+				properties(6),
+				new SignalingMetrics(registry),
+				new RoomAccessPolicy(batonAuth()),
+				outboundExecutor,
+				clock);
+	}
+
+	private static RoundAuthProperties standaloneAuth() {
+		return new RoundAuthProperties(
+				RoundAuthProperties.Mode.STANDALONE,
+				"__Secure-round_access",
+				null,
+				"round",
+				null,
+				Duration.ofMinutes(5));
+	}
+
+	private static RoundAuthProperties batonAuth() {
+		return new RoundAuthProperties(
+				RoundAuthProperties.Mode.BATON,
+				"__Secure-round_access",
+				"https://baton.example/oauth2",
+				"round",
+				"https://baton.example/oauth2/jwks",
+				Duration.ofMinutes(5));
+	}
+
+	private ParticipationGrant grantFor(String roomId) {
+		return new ParticipationGrant(
+				"baton-user-1",
+				"study-1",
+				roomId,
+				ParticipationGrant.Role.PARTICIPANT,
+				"grant-1",
+				clock.instant(),
+				clock.instant().plusSeconds(120));
 	}
 
 	private TestPeer peer(String id) throws Exception {

@@ -1,5 +1,7 @@
 package com.personal.round.signaling;
 
+import com.personal.round.auth.RoomAccess;
+import com.personal.round.auth.RoomAccessPolicy;
 import com.personal.round.config.SignalingExecutionConfig;
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.protocol.ClientMessage;
@@ -54,6 +56,8 @@ public class SignalingService implements SmartLifecycle {
 			CloseStatus.SERVICE_OVERLOAD.withReason("Server connection limit reached");
 	private static final CloseStatus ADMISSION_REQUIRED =
 			CloseStatus.SERVER_ERROR.withReason("Connection admission required");
+	private static final CloseStatus ROOM_ACCESS_REQUIRED =
+			CloseStatus.POLICY_VIOLATION.withReason("Room authorization required");
 	static final int MAX_OUTBOUND_QUEUE_SIZE = 256;
 
 	private final Object monitor = new Object();
@@ -65,6 +69,7 @@ public class SignalingService implements SmartLifecycle {
 	private final ExecutorService outboundExecutor;
 	private final ServerMessageEncoder serverMessageEncoder;
 	private final SignalingMetrics metrics;
+	private final RoomAccessPolicy roomAccessPolicy;
 	private final Clock clock;
 	private final int maxRoomSize;
 	private final int maxConnections;
@@ -89,11 +94,13 @@ public class SignalingService implements SmartLifecycle {
 			ServerMessageEncoder serverMessageEncoder,
 			SignalingProperties properties,
 			SignalingMetrics metrics,
+			RoomAccessPolicy roomAccessPolicy,
 			@Qualifier(SignalingExecutionConfig.OUTBOUND_EXECUTOR_BEAN)
 			ExecutorService outboundExecutor,
 			Clock clock) {
 		this.serverMessageEncoder = serverMessageEncoder;
 		this.metrics = metrics;
+		this.roomAccessPolicy = roomAccessPolicy;
 		this.outboundExecutor = outboundExecutor;
 		this.clock = clock;
 		this.maxRoomSize = properties.maxRoomSize();
@@ -123,6 +130,17 @@ public class SignalingService implements SmartLifecycle {
 					session.getId());
 			metrics.recordConnectionRejectedMissingReservation();
 			workPlan.close(session, ADMISSION_REQUIRED);
+			execute(workPlan);
+			return false;
+		}
+		RoomAccess roomAccess = roomAccessPolicy.resolve(session).orElse(null);
+		if (roomAccess == null) {
+			log.warn(
+					"WebSocket session {} reached signaling without verified room access",
+					session.getId());
+			metrics.recordConnectionRejectedMissingRoomAccess();
+			reservation.close();
+			workPlan.close(session, ROOM_ACCESS_REQUIRED);
 			execute(workPlan);
 			return false;
 		}
@@ -159,6 +177,7 @@ public class SignalingService implements SmartLifecycle {
 										session,
 										nowMillis,
 										reservation,
+										roomAccess,
 										clientKey,
 										clientInboundState));
 						reservationTransferred = true;
@@ -463,6 +482,17 @@ public class SignalingService implements SmartLifecycle {
 					SignalingErrorCode.ALREADY_JOINED,
 					"Leave the current room before joining another room.",
 					peer.roomId,
+					message.requestId(),
+					workPlan);
+			return;
+		}
+		if (!peer.roomAccess.allows(message.roomId())) {
+			metrics.recordJoinRejectedUnauthorizedRoom();
+			sendError(
+					peer,
+					SignalingErrorCode.ROOM_MISMATCH,
+					"The requested room is outside this connection's authorization.",
+					message.roomId(),
 					message.requestId(),
 					workPlan);
 			return;
@@ -926,6 +956,7 @@ public class SignalingService implements SmartLifecycle {
 		private long unjoinedSinceMillis;
 		private final UsageWindow inboundWindow = new UsageWindow();
 		private final ConnectionAdmissionPolicy.Reservation reservation;
+		private final RoomAccess roomAccess;
 		private final String clientKey;
 		private final ClientInboundState clientInboundState;
 
@@ -934,12 +965,14 @@ public class SignalingService implements SmartLifecycle {
 				WebSocketSession session,
 				long connectedAtMillis,
 				ConnectionAdmissionPolicy.Reservation reservation,
+				RoomAccess roomAccess,
 				String clientKey,
 				ClientInboundState clientInboundState) {
 			this.peerId = peerId;
 			this.session = session;
 			this.unjoinedSinceMillis = connectedAtMillis;
 			this.reservation = reservation;
+			this.roomAccess = roomAccess;
 			this.clientKey = clientKey;
 			this.clientInboundState = clientInboundState;
 		}

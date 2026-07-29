@@ -1,5 +1,6 @@
 package com.personal.round;
 
+import com.personal.round.auth.RoundAuthProperties;
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.config.TurnProperties;
 import org.springframework.boot.SpringApplication;
@@ -9,7 +10,11 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @EnableScheduling
 @SpringBootApplication
-@EnableConfigurationProperties({SignalingProperties.class, TurnProperties.class})
+@EnableConfigurationProperties({
+	RoundAuthProperties.class,
+	SignalingProperties.class,
+	TurnProperties.class
+})
 public class SignalingApplication {
 
 	public static void main(String[] args) {

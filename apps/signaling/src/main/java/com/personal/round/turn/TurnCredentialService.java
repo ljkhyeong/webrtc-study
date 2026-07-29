@@ -6,7 +6,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Base64;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -39,12 +41,32 @@ public class TurnCredentialService {
 	}
 
 	public IssueResult issueFor(String clientAddress) {
+		return issueFor(clientAddress, Instant.MAX);
+	}
+
+	public IssueResult issueFor(
+			String clientAddress,
+			Instant authorizationExpiresAt) {
+		Objects.requireNonNull(
+				authorizationExpiresAt,
+				"authorizationExpiresAt must not be null");
 		if (!properties.enabled()) {
 			return Disabled.INSTANCE;
 		}
 
 		String clientKey = clientAddressKeyResolver.resolve(clientAddress);
 		long nowMillis = clock.millis();
+		long nowEpochSecond = Math.floorDiv(nowMillis, 1_000);
+		long configuredExpiresAt = Math.addExact(
+				nowEpochSecond,
+				properties.credentialTtl().toSeconds());
+		long expiresAt = Math.min(
+				configuredExpiresAt,
+				authorizationExpiresAt.getEpochSecond());
+		if (expiresAt <= nowEpochSecond) {
+			return AuthorizationExpired.INSTANCE;
+		}
+
 		TurnIssuanceLimiter.Acquisition acquisition =
 				issuanceLimiter.tryAcquire(clientKey, nowMillis);
 		if (acquisition instanceof TurnIssuanceLimiter.Rejected rejected) {
@@ -52,8 +74,6 @@ public class TurnCredentialService {
 			return new RateLimited(rejected.retryAfterSeconds());
 		}
 
-		long expiresAt = Math.addExact(
-				Math.floorDiv(nowMillis, 1_000), properties.credentialTtl().toSeconds());
 		String username = expiresAt + ":" + randomToken();
 		String credential = sign(username);
 		TurnCredentials credentials = new TurnCredentials(
@@ -90,7 +110,8 @@ public class TurnCredentialService {
 		}
 	}
 
-	public sealed interface IssueResult permits Issued, RateLimited, Disabled {
+	public sealed interface IssueResult
+			permits Issued, RateLimited, AuthorizationExpired, Disabled {
 	}
 
 	public record Issued(TurnCredentials credentials) implements IssueResult {
@@ -103,6 +124,10 @@ public class TurnCredentialService {
 				throw new IllegalArgumentException("retryAfterSeconds must be positive");
 			}
 		}
+	}
+
+	public enum AuthorizationExpired implements IssueResult {
+		INSTANCE
 	}
 
 	public enum Disabled implements IssueResult {

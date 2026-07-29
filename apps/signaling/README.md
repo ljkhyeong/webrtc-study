@@ -1,16 +1,21 @@
 # ROUND signaling operations
 
-The signaling process exposes:
+The signaling process always exposes:
 
 - `GET /healthz` for the legacy transport-only health check
 - `GET /actuator/health/liveness` and `/actuator/health/readiness`
 - `GET /actuator/prometheus` and `/actuator/metrics`
-- `POST /api/turn-credentials` when coturn REST credentials are configured
-- WebSocket `/signal`
+
+Room operations depend on `ROUND_AUTH_MODE`:
+
+- `standalone`: WebSocket `/signal` and `POST /api/turn-credentials`
+- `baton`: authenticated WebSocket `/rooms/{roomId}/signal` and
+  `POST /api/rooms/{roomId}/turn-credentials`
 
 The `production` Spring profile fails during startup unless every configured
 `ALLOWED_ORIGINS` entry is an exact HTTPS origin. Wildcard, `null`, and HTTP
-origins are forbidden in that profile.
+origins are forbidden in that profile. BATON mode independently rejects
+wildcard, `null`, and non-loopback HTTP origins even when the profile is absent.
 
 ## Runtime safety
 
@@ -43,12 +48,14 @@ Micrometer publishes these signaling meters:
 - `round.signaling.rooms.active`
 - `round.signaling.peers.connected`
 - `round.signaling.peers.joined`
-- `round.signaling.joins.rejected` (`reason=room_full|already_joined`)
+- `round.signaling.joins.rejected`
+  (`reason=room_full|already_joined|unauthorized_room`)
 - `round.signaling.frames.invalid`
 - `round.signaling.frames.rate_limited`
 - `round.signaling.frames.client_rate_limited`
 - `round.signaling.frames.overloaded`
-- `round.signaling.connections.rejected` (`reason=server_capacity|client_capacity`)
+- `round.signaling.connections.rejected`
+  (`reason=server_capacity|client_capacity|missing_reservation|missing_room_access`)
 - `round.signaling.outbound.queue.overflows`
 - `round.signaling.heartbeat.closes`
 - `round.turn.credentials.issued`
@@ -81,6 +88,8 @@ server-wide headroom. The global quota must be at least twice the per-client
 quota so one client cannot consume it across misaligned fixed-window
 boundaries. If operators change the credential TTL or browser refresh timing,
 they should review and normally align the issuance window and quotas as well.
+In BATON mode the issued credential is additionally capped at the participation
+grant's `exp`, so a longer TURN TTL cannot extend the grant's authority.
 
 The credential endpoint returns a no-store response:
 
@@ -102,12 +111,11 @@ an empty no-store HTTP 429 response with `Retry-After` set to the remaining whol
 seconds in the current window.
 
 Origin and Fetch Metadata checks prevent another website from spending a
-visitor's quota through a browser. They do not authenticate non-browser clients,
-which can construct these headers. An unauthenticated client can therefore
-spend the global issuance quota or accumulate live credentials that consume
-coturn relay allocations and bandwidth. The limits and short TTL bound, but do
-not remove, that relay-exhaustion risk until BATON identity and study membership
-protect issuance.
+visitor's quota through a browser. In standalone mode they do not authenticate
+non-browser clients, which can construct these headers; the shared edge
+credential, issuance limits, and short TTL bound but do not remove that
+relay-exhaustion risk. BATON mode additionally requires a signed, room-scoped
+participation grant.
 
 When TURN is intentionally disabled, the endpoint returns an empty no-store
 HTTP 204 response so local STUN-only development does not create a false

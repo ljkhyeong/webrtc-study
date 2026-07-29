@@ -66,6 +66,26 @@ class TurnCredentialServiceTest {
 	}
 
 	@Test
+	void neverIssuesAProtectedCredentialBeyondTheGrantExpiry() {
+		TurnProperties properties = enabledProperties();
+		MutableClock clock = new MutableClock(1_800_000_000);
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		TurnCredentialService service = service(properties, clock, registry);
+
+		TurnCredentials credentials = issued(service.issueFor(
+				"192.0.2.10",
+				Instant.ofEpochSecond(1_800_000_120)));
+
+		assertThat(credentials.expiresAt()).isEqualTo(1_800_000_120);
+		assertThat(service.issueFor(
+				"192.0.2.10",
+				Instant.ofEpochSecond(1_800_000_000)))
+				.isSameAs(TurnCredentialService.AuthorizationExpired.INSTANCE);
+		assertThat(registry.get("round.turn.credentials.issued").counter().count())
+				.isOne();
+	}
+
+	@Test
 	void allowsSixSameNatParticipantsToRefreshAtEightMinutesAndLimitsTheThirteenthIssue() {
 		TurnProperties properties = enabledProperties();
 		MutableClock clock = new MutableClock(1_800_000_000);

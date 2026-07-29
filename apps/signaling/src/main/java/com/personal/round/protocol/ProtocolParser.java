@@ -3,7 +3,6 @@ package com.personal.round.protocol;
 import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.DeserializationFeature;
@@ -16,7 +15,7 @@ import tools.jackson.databind.node.ObjectNode;
 public class ProtocolParser {
 
 	public static final int PROTOCOL_VERSION = 2;
-	public static final int MAX_ROOM_ID_LENGTH = 14;
+	public static final int MAX_ROOM_ID_LENGTH = RoomIdFormat.MAX_LENGTH;
 	public static final int MAX_PEER_ID_LENGTH = 128;
 	public static final int MAX_DISPLAY_NAME_LENGTH = 64;
 	public static final int MAX_REQUEST_ID_LENGTH = 128;
@@ -27,11 +26,6 @@ public class ProtocolParser {
 
 	private static final Set<String> CLIENT_TYPES = Set.of(
 			"room.join", "room.leave", "rtc.offer", "rtc.answer", "rtc.ice");
-	private static final Pattern ROOM_ID_PATTERN = Pattern.compile(
-			"[abcdefghjkmnpqrstuvwxyz23456789]{4}"
-					+ "-[abcdefghjkmnpqrstuvwxyz23456789]{4}"
-					+ "-[abcdefghjkmnpqrstuvwxyz23456789]{4}");
-
 	private final ObjectReader objectReader;
 
 	public ProtocolParser(ObjectMapper objectMapper) {
@@ -189,7 +183,7 @@ public class ProtocolParser {
 
 	private static String roomId(JsonNode input, String path) {
 		String value = boundedString(input, MAX_ROOM_ID_LENGTH, path);
-		if (!ROOM_ID_PATTERN.matcher(value).matches()) {
+		if (!RoomIdFormat.isCanonical(value)) {
 			throw fail(
 					path,
 					"must contain three lowercase four-character invite segments separated by hyphens");
