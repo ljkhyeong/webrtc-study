@@ -2,10 +2,18 @@ package com.personal.round.signaling;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.config.TestProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetSocketAddress;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 class ConnectionAdmissionPolicyTest {
@@ -85,6 +93,164 @@ class ConnectionAdmissionPolicyTest {
 		assertThat(policy.activeReservationCount(samePrefix)).isOne();
 	}
 
+	@Test
+	void rejectsConcurrentReuseOfTheSameParticipationToken() {
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		ConnectionAdmissionPolicy policy = policy(4, 4, registry);
+		ParticipationGrant grant = grant(
+				"member-42",
+				"study-7",
+				"abcd-efgh-jkmp",
+				"ticket-1");
+
+		ConnectionAdmissionPolicy.Reservation first = acceptedReservation(
+				policy.reserve(FIRST_CLIENT, grant));
+
+		assertThat(policy.reserve(SECOND_CLIENT, grant))
+				.isEqualTo(new ConnectionAdmissionPolicy.Rejected(
+						ConnectionAdmissionPolicy.Rejection
+								.PARTICIPATION_TOKEN_CAPACITY));
+		assertThat(policy.activeParticipationTokenReservationCount(grant.tokenId()))
+				.isOne();
+		assertThat(policy.activeParticipantRoomReservationCount(grant)).isOne();
+		assertThat(registry.get("round.signaling.connections.rejected")
+				.tag("reason", "participation_token_capacity")
+				.counter()
+				.count()).isOne();
+
+		first.close();
+
+		assertThat(policy.activeParticipationTokenReservationCount(grant.tokenId()))
+				.isZero();
+		assertThat(policy.activeParticipantRoomReservationCount(grant)).isZero();
+		acceptedReservation(policy.reserve(SECOND_CLIENT, grant)).close();
+	}
+
+	@Test
+	void allowsOneFreshGrantReconnectOverlapAndRejectsAThirdParticipantSocket() {
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		ConnectionAdmissionPolicy policy = policy(6, 6, registry);
+		ParticipationGrant firstGrant = grant(
+				"member-42",
+				"study-7",
+				"abcd-efgh-jkmp",
+				"ticket-1");
+		ParticipationGrant reconnectGrant = grant(
+				"member-42",
+				"study-8",
+				"abcd-efgh-jkmp",
+				"ticket-2");
+		ParticipationGrant excessGrant = grant(
+				"member-42",
+				"study-9",
+				"abcd-efgh-jkmp",
+				"ticket-3");
+
+		ConnectionAdmissionPolicy.Reservation first = acceptedReservation(
+				policy.reserve(FIRST_CLIENT, firstGrant));
+		ConnectionAdmissionPolicy.Reservation reconnect = acceptedReservation(
+				policy.reserve(SECOND_CLIENT, reconnectGrant));
+
+		assertThat(policy.reserve(
+						new InetSocketAddress("192.0.2.12", 41_000),
+						excessGrant))
+				.isEqualTo(new ConnectionAdmissionPolicy.Rejected(
+						ConnectionAdmissionPolicy.Rejection
+								.PARTICIPANT_ROOM_CAPACITY));
+		assertThat(policy.activeParticipantRoomReservationCount(firstGrant))
+				.isEqualTo(2);
+		assertThat(registry.get("round.signaling.connections.rejected")
+				.tag("reason", "participant_room_capacity")
+				.counter()
+				.count()).isOne();
+
+		first.close();
+		ConnectionAdmissionPolicy.Reservation replacement = acceptedReservation(
+				policy.reserve(
+						new InetSocketAddress("192.0.2.12", 41_000),
+						excessGrant));
+
+		reconnect.close();
+		replacement.close();
+		assertThat(policy.activeParticipantRoomReservationCount(firstGrant)).isZero();
+	}
+
+	@Test
+	void doesNotApplyParticipationLimitsToStandaloneReservations() {
+		ConnectionAdmissionPolicy policy = policy(3, 3, new SimpleMeterRegistry());
+
+		ConnectionAdmissionPolicy.Reservation first = acceptedReservation(
+				policy.reserve(FIRST_CLIENT));
+		ConnectionAdmissionPolicy.Reservation second = acceptedReservation(
+				policy.reserve(FIRST_CLIENT));
+		ConnectionAdmissionPolicy.Reservation third = acceptedReservation(
+				policy.reserve(FIRST_CLIENT));
+
+		assertThat(policy.activeReservationCount()).isEqualTo(3);
+
+		first.close();
+		second.close();
+		third.close();
+	}
+
+	@Test
+	void admitsExactlyTwoConcurrentFreshGrantReservationsForOneParticipant()
+			throws Exception {
+		ConnectionAdmissionPolicy policy = policy(32, 32, new SimpleMeterRegistry());
+		int attempts = 20;
+		CountDownLatch ready = new CountDownLatch(attempts);
+		CountDownLatch start = new CountDownLatch(1);
+		List<Future<ConnectionAdmissionPolicy.Admission>> futures =
+				new ArrayList<>();
+
+		try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+			for (int index = 0; index < attempts; index++) {
+				int attempt = index;
+				futures.add(executor.submit(() -> {
+					ready.countDown();
+					start.await();
+					return policy.reserve(
+							new InetSocketAddress(
+									"192.0.2." + (attempt + 1),
+									41_000),
+							grant(
+									"member-42",
+									"study-7",
+									"abcd-efgh-jkmp",
+									"ticket-" + attempt));
+				}));
+			}
+
+			boolean allWorkersReady = ready.await(2, TimeUnit.SECONDS);
+			start.countDown();
+			assertThat(allWorkersReady).isTrue();
+
+			List<ConnectionAdmissionPolicy.Admission> admissions =
+					new ArrayList<>();
+			for (Future<ConnectionAdmissionPolicy.Admission> future : futures) {
+				admissions.add(future.get(2, TimeUnit.SECONDS));
+			}
+
+			List<ConnectionAdmissionPolicy.Reservation> accepted = admissions.stream()
+					.filter(ConnectionAdmissionPolicy.Accepted.class::isInstance)
+					.map(ConnectionAdmissionPolicy.Accepted.class::cast)
+					.map(ConnectionAdmissionPolicy.Accepted::reservation)
+					.toList();
+			assertThat(accepted).hasSize(2);
+			assertThat(admissions.stream()
+					.filter(ConnectionAdmissionPolicy.Rejected.class::isInstance)
+					.map(ConnectionAdmissionPolicy.Rejected.class::cast)
+					.map(ConnectionAdmissionPolicy.Rejected::reason))
+					.containsOnly(
+							ConnectionAdmissionPolicy.Rejection
+									.PARTICIPANT_ROOM_CAPACITY);
+
+			accepted.forEach(ConnectionAdmissionPolicy.Reservation::close);
+		}
+
+		assertThat(policy.activeReservationCount()).isZero();
+	}
+
 	private static ConnectionAdmissionPolicy policy(
 			int maxConnections,
 			int maxConnectionsPerClient,
@@ -104,5 +270,20 @@ class ConnectionAdmissionPolicyTest {
 			ConnectionAdmissionPolicy.Admission admission) {
 		assertAccepted(admission);
 		return ((ConnectionAdmissionPolicy.Accepted) admission).reservation();
+	}
+
+	private static ParticipationGrant grant(
+			String subject,
+			String studyId,
+			String roomId,
+			String tokenId) {
+		return new ParticipationGrant(
+				subject,
+				studyId,
+				roomId,
+				ParticipationGrant.Role.PARTICIPANT,
+				tokenId,
+				Instant.parse("2026-07-30T00:00:00Z"),
+				Instant.parse("2026-07-30T00:05:00Z"));
 	}
 }

@@ -199,6 +199,51 @@ class SignalingServiceTest {
 	}
 
 	@Test
+	void keepsTheParticipantReservationUntilSocketDisconnectAfterRoomLeave()
+			throws Exception {
+		SignalingService batonService = newBatonService(new SimpleMeterRegistry());
+		ConnectionAdmissionPolicy batonAdmissionPolicy =
+				admissionPolicy(properties(6));
+		ParticipationGrant grant = grantFor(ROOM_ID);
+		batonService.start();
+		try {
+			TestPeer peer = peer("baton-leave-reservation");
+			attachReservation(
+					peer,
+					acceptedReservation(batonAdmissionPolicy.reserve(
+							new InetSocketAddress("192.0.2.40", 41_000),
+							grant)));
+			peer.session().getAttributes().put(
+					ParticipationGrant.SESSION_ATTRIBUTE,
+					grant);
+
+			assertThat(batonService.connect(peer.session())).isTrue();
+			batonService.handle(peer.session(), join("Ada"));
+			peer.nextJson();
+
+			batonService.handle(
+					peer.session(),
+					new ClientMessage.Leave(ROOM_ID, null));
+
+			assertThat(batonAdmissionPolicy.activeParticipationTokenReservationCount(
+					grant.tokenId())).isOne();
+			assertThat(batonAdmissionPolicy.activeParticipantRoomReservationCount(
+					grant)).isOne();
+
+			batonService.disconnect(peer.session());
+
+			assertThat(batonAdmissionPolicy.activeParticipationTokenReservationCount(
+					grant.tokenId())).isZero();
+			assertThat(batonAdmissionPolicy.activeParticipantRoomReservationCount(
+					grant)).isZero();
+		}
+		finally {
+			batonService.stop();
+			assertThat(batonAdmissionPolicy.activeReservationCount()).isZero();
+		}
+	}
+
+	@Test
 	void failsClosedWhenBatonHandshakeMetadataDoesNotReachTheSession() throws Exception {
 		SimpleMeterRegistry batonRegistry = new SimpleMeterRegistry();
 		SignalingService batonService = newBatonService(batonRegistry);
@@ -1341,6 +1386,14 @@ class SignalingServiceTest {
 				TestProperties.signalingWithConnectionLimits(1, 3, 3),
 				new SignalingMetrics(new SimpleMeterRegistry()),
 				new ClientAddressKeyResolver());
+		TestPeer unclaimed = peer("reserved-unclaimed");
+		attachReservation(
+				unclaimed,
+				acceptedReservation(policy.reserve(
+						new InetSocketAddress("192.0.2.29", 41_000))));
+		service.releaseUnclaimedReservation(unclaimed.session());
+		assertThat(policy.activeReservationCount()).isZero();
+
 		TestPeer accepted = peer("reserved-accepted");
 		TestPeer rejected = peer("reserved-rejected");
 		attachReservation(

@@ -37,9 +37,14 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 
 	@Override
 	public void afterConnectionEstablished(WebSocketSession session) {
-		session.setTextMessageSizeLimit(maxTextPayloadBytes);
-		session.setBinaryMessageSizeLimit(maxTextPayloadBytes);
-		signalingService.connect(session);
+		try {
+			session.setTextMessageSizeLimit(maxTextPayloadBytes);
+			session.setBinaryMessageSizeLimit(maxTextPayloadBytes);
+			signalingService.connect(session);
+		}
+		finally {
+			signalingService.releaseUnclaimedReservation(session);
+		}
 	}
 
 	@Override

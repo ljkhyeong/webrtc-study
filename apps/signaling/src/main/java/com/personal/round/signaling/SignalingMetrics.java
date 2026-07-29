@@ -26,6 +26,8 @@ public final class SignalingMetrics {
 	private final Counter globalByteLimitedFrames;
 	private final Counter serverCapacityRejections;
 	private final Counter clientCapacityRejections;
+	private final Counter participationTokenCapacityRejections;
+	private final Counter participantRoomCapacityRejections;
 	private final Counter missingReservationRejections;
 	private final Counter missingRoomAccessRejections;
 	private final Counter queueOverflows;
@@ -84,6 +86,16 @@ public final class SignalingMetrics {
 				.tag("reason", "client_capacity")
 				.description("WebSocket handshakes rejected by connection admission")
 				.register(registry);
+		participationTokenCapacityRejections =
+				Counter.builder("round.signaling.connections.rejected")
+						.tag("reason", "participation_token_capacity")
+						.description("WebSocket handshakes rejected by connection admission")
+						.register(registry);
+		participantRoomCapacityRejections =
+				Counter.builder("round.signaling.connections.rejected")
+						.tag("reason", "participant_room_capacity")
+						.description("WebSocket handshakes rejected by connection admission")
+						.register(registry);
 		missingReservationRejections = Counter.builder("round.signaling.connections.rejected")
 				.tag("reason", "missing_reservation")
 				.description("WebSocket sessions rejected because admission metadata was missing")
@@ -160,6 +172,14 @@ public final class SignalingMetrics {
 
 	void recordConnectionRejectedClientCapacity() {
 		clientCapacityRejections.increment();
+	}
+
+	void recordConnectionRejectedParticipationTokenCapacity() {
+		participationTokenCapacityRejections.increment();
+	}
+
+	void recordConnectionRejectedParticipantRoomCapacity() {
+		participantRoomCapacityRejections.increment();
 	}
 
 	void recordConnectionRejectedMissingReservation() {

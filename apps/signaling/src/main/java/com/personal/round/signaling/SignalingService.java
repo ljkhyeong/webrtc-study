@@ -123,79 +123,89 @@ public class SignalingService implements SmartLifecycle {
 
 	public boolean connect(WebSocketSession session) {
 		ConnectionAdmissionPolicy.Reservation reservation = takeReservation(session);
-		WorkPlan workPlan = new WorkPlan();
-		if (reservation == null) {
-			log.error(
-					"WebSocket session {} reached signaling without an admission reservation",
-					session.getId());
-			metrics.recordConnectionRejectedMissingReservation();
-			workPlan.close(session, ADMISSION_REQUIRED);
-			execute(workPlan);
-			return false;
-		}
-		RoomAccess roomAccess = roomAccessPolicy.resolve(session).orElse(null);
-		if (roomAccess == null) {
-			log.warn(
-					"WebSocket session {} reached signaling without verified room access",
-					session.getId());
-			metrics.recordConnectionRejectedMissingRoomAccess();
-			reservation.close();
-			workPlan.close(session, ROOM_ACCESS_REQUIRED);
-			execute(workPlan);
-			return false;
-		}
-
-		boolean accepted;
 		boolean reservationTransferred = false;
-		synchronized (monitor) {
-			long nowMillis = clock.millis();
-			removeExpiredInactiveClientStatesLocked(nowMillis);
-			if (!acceptingConnections) {
-				workPlan.close(session, SERVER_SHUTDOWN);
-				accepted = false;
+		try {
+			WorkPlan workPlan = new WorkPlan();
+			if (reservation == null) {
+				log.error(
+						"WebSocket session {} reached signaling without an admission reservation",
+						session.getId());
+				metrics.recordConnectionRejectedMissingReservation();
+				workPlan.close(session, ADMISSION_REQUIRED);
+				execute(workPlan);
+				return false;
 			}
-			else if (connectedPeers.size() >= maxConnections
-					&& !connectedPeers.containsKey(session.getId())) {
-				workPlan.close(session, CONNECTION_LIMIT);
-				accepted = false;
+			RoomAccess roomAccess = roomAccessPolicy.resolve(session).orElse(null);
+			if (roomAccess == null) {
+				log.warn(
+						"WebSocket session {} reached signaling without verified room access",
+						session.getId());
+				metrics.recordConnectionRejectedMissingRoomAccess();
+				workPlan.close(session, ROOM_ACCESS_REQUIRED);
+				execute(workPlan);
+				return false;
 			}
-			else {
-				if (!connectedPeers.containsKey(session.getId())) {
-					String clientKey = reservation.clientKey();
-					ClientInboundState clientInboundState =
-							retainClientInboundStateLocked(clientKey);
-					if (clientInboundState == null) {
-						metrics.recordConnectionRejectedServerCapacity();
-						workPlan.close(session, CONNECTION_LIMIT);
-						accepted = false;
+
+			boolean accepted;
+			synchronized (monitor) {
+				long nowMillis = clock.millis();
+				removeExpiredInactiveClientStatesLocked(nowMillis);
+				if (!acceptingConnections) {
+					workPlan.close(session, SERVER_SHUTDOWN);
+					accepted = false;
+				}
+				else if (connectedPeers.size() >= maxConnections
+						&& !connectedPeers.containsKey(session.getId())) {
+					workPlan.close(session, CONNECTION_LIMIT);
+					accepted = false;
+				}
+				else {
+					if (!connectedPeers.containsKey(session.getId())) {
+						String clientKey = reservation.clientKey();
+						ClientInboundState clientInboundState =
+								retainClientInboundStateLocked(clientKey);
+						if (clientInboundState == null) {
+							metrics.recordConnectionRejectedServerCapacity();
+							workPlan.close(session, CONNECTION_LIMIT);
+							accepted = false;
+						}
+						else {
+							connectedPeers.put(
+									session.getId(),
+									new Peer(
+											UUID.randomUUID().toString(),
+											session,
+											nowMillis,
+											reservation,
+											roomAccess,
+											clientKey,
+											clientInboundState));
+							reservationTransferred = true;
+							refreshMetricsLocked();
+							accepted = true;
+						}
 					}
 					else {
-						connectedPeers.put(
-								session.getId(),
-								new Peer(
-										UUID.randomUUID().toString(),
-										session,
-										nowMillis,
-										reservation,
-										roomAccess,
-										clientKey,
-										clientInboundState));
-						reservationTransferred = true;
 						refreshMetricsLocked();
 						accepted = true;
 					}
 				}
-				else {
-					refreshMetricsLocked();
-					accepted = true;
-				}
+			}
+			execute(workPlan);
+			return accepted;
+		}
+		finally {
+			if (reservation != null && !reservationTransferred) {
+				reservation.close();
 			}
 		}
-		if (!reservationTransferred) {
+	}
+
+	void releaseUnclaimedReservation(WebSocketSession session) {
+		ConnectionAdmissionPolicy.Reservation reservation = takeReservation(session);
+		if (reservation != null) {
 			reservation.close();
 		}
-		execute(workPlan);
-		return accepted;
 	}
 
 	public boolean isAcceptingConnections() {

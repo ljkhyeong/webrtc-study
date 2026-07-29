@@ -7,15 +7,17 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.net.ClientAddressKeyResolver;
 import com.personal.round.signaling.ConnectionAdmissionPolicy;
 import com.personal.round.signaling.SignalingMetrics;
 import com.personal.round.signaling.SignalingService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import jakarta.servlet.http.HttpServletRequest;
 import java.net.InetSocketAddress;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
-import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -131,6 +133,37 @@ class ConnectionAdmissionHandshakeHandlerTest {
 	}
 
 	@Test
+	void mapsParticipationTokenCapacityToTooManyRequests() {
+		policy = new ConnectionAdmissionPolicy(
+				TestProperties.signalingWithConnectionLimits(6, 1_000, 4),
+				new SignalingMetrics(new SimpleMeterRegistry()),
+				new ClientAddressKeyResolver());
+		handler = new ConnectionAdmissionHandshakeHandler(service, policy, delegate);
+		when(delegate.doHandshake(any(), any(), any(), any())).thenReturn(true);
+		ParticipationGrant grant = grant();
+		Map<String, Object> firstAttributes = new HashMap<>();
+		firstAttributes.put(ParticipationGrant.SESSION_ATTRIBUTE, grant);
+		Map<String, Object> replayAttributes = new HashMap<>();
+		replayAttributes.put(ParticipationGrant.SESSION_ATTRIBUTE, grant);
+
+		assertThat(handler.doHandshake(
+				request,
+				response,
+				webSocketHandler,
+				firstAttributes)).isTrue();
+		assertThat(handler.doHandshake(
+				request,
+				response,
+				webSocketHandler,
+				replayAttributes)).isFalse();
+
+		verify(response).setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
+		assertThat(replayAttributes)
+				.doesNotContainKey(ConnectionAdmissionPolicy.RESERVATION_ATTRIBUTE);
+		release(firstAttributes);
+	}
+
+	@Test
 	void refusesBeforeAllocatingWhenShutdownHasStarted() {
 		when(service.isAcceptingConnections()).thenReturn(false);
 
@@ -178,5 +211,16 @@ class ConnectionAdmissionHandshakeHandlerTest {
 		assertThat(reservation)
 				.isInstanceOf(ConnectionAdmissionPolicy.Reservation.class);
 		((ConnectionAdmissionPolicy.Reservation) reservation).close();
+	}
+
+	private static ParticipationGrant grant() {
+		return new ParticipationGrant(
+				"member-42",
+				"study-7",
+				"abcd-efgh-jkmp",
+				ParticipationGrant.Role.PARTICIPANT,
+				"ticket-1",
+				Instant.parse("2026-07-30T00:00:00Z"),
+				Instant.parse("2026-07-30T00:05:00Z"));
 	}
 }

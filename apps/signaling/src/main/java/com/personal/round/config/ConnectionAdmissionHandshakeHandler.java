@@ -54,18 +54,25 @@ public final class ConnectionAdmissionHandshakeHandler
 			return false;
 		}
 
-		Admission admission = admissionPolicy.reserve(request.getRemoteAddress());
+		ParticipationGrant participationGrant = participationGrant(attributes);
+		Admission admission = admissionPolicy.reserve(
+				request.getRemoteAddress(),
+				participationGrant);
 		return switch (admission) {
 			case Accepted accepted -> doAdmittedHandshake(
 					request,
 					response,
 					wsHandler,
 					attributes,
-					accepted.reservation());
+					accepted.reservation(),
+					participationGrant);
 			case Rejected rejected -> {
-				response.setStatusCode(rejected.reason() == Rejection.CLIENT_CAPACITY
-						? HttpStatus.TOO_MANY_REQUESTS
-						: HttpStatus.SERVICE_UNAVAILABLE);
+				response.setStatusCode(switch (rejected.reason()) {
+					case CLIENT_CAPACITY,
+							PARTICIPATION_TOKEN_CAPACITY,
+							PARTICIPANT_ROOM_CAPACITY -> HttpStatus.TOO_MANY_REQUESTS;
+					case SERVER_CAPACITY -> HttpStatus.SERVICE_UNAVAILABLE;
+				});
 				yield false;
 			}
 		};
@@ -76,7 +83,8 @@ public final class ConnectionAdmissionHandshakeHandler
 			ServerHttpResponse response,
 			WebSocketHandler wsHandler,
 			Map<String, Object> attributes,
-			ConnectionAdmissionPolicy.Reservation reservation) {
+			ConnectionAdmissionPolicy.Reservation reservation,
+			ParticipationGrant participationGrant) {
 		attributes.put(ConnectionAdmissionPolicy.RESERVATION_ATTRIBUTE, reservation);
 		boolean upgraded = false;
 		try {
@@ -84,9 +92,9 @@ public final class ConnectionAdmissionHandshakeHandler
 				throw new HandshakeFailureException("ServletServerHttpRequest required");
 			}
 			Principal principal = servletRequest.getPrincipal();
-			Object grantCandidate = attributes.get(ParticipationGrant.SESSION_ATTRIBUTE);
-			if (grantCandidate instanceof ParticipationGrant grant) {
-				principal = RoomPrincipalHandshakeHandler.verifiedParticipantPrincipal(grant);
+			if (participationGrant != null) {
+				principal = RoomPrincipalHandshakeHandler.verifiedParticipantPrincipal(
+						participationGrant);
 			}
 			ServerHttpRequest sanitizedRequest =
 					new SensitiveHeaderRedactingServletServerHttpRequest(
@@ -107,6 +115,12 @@ public final class ConnectionAdmissionHandshakeHandler
 				reservation.close();
 			}
 		}
+	}
+
+	private static ParticipationGrant participationGrant(
+			Map<String, Object> attributes) {
+		Object candidate = attributes.get(ParticipationGrant.SESSION_ATTRIBUTE);
+		return candidate instanceof ParticipationGrant grant ? grant : null;
 	}
 
 	@Override

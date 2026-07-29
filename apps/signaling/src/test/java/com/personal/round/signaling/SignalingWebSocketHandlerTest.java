@@ -1,10 +1,13 @@
 package com.personal.round.signaling;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.AdditionalMatchers.aryEq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -116,5 +119,18 @@ class SignalingWebSocketHandlerTest {
 		verify(service).acceptInboundFrame(
 				session,
 				malformedMultibytePayload.getBytes(StandardCharsets.UTF_8).length);
+	}
+
+	@Test
+	void releasesAnUnclaimedReservationWhenSessionInitializationFails() {
+		doThrow(new IllegalStateException("container rejected message limit"))
+				.when(session)
+				.setTextMessageSizeLimit(anyInt());
+
+		assertThatThrownBy(() -> handler.afterConnectionEstablished(session))
+				.isInstanceOf(IllegalStateException.class);
+
+		verify(service).releaseUnclaimedReservation(session);
+		verify(service, never()).connect(session);
 	}
 }

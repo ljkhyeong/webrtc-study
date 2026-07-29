@@ -1,5 +1,6 @@
 package com.personal.round;
 
+import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.timeout;
@@ -7,10 +8,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.personal.round.signaling.SignalingWebSocketHandler;
+import com.personal.round.signaling.SignalingService;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -18,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
@@ -62,6 +66,8 @@ class BatonAuthBoundaryIntegrationTest {
 	private static final String ROOM_ID = "abcd-efgh-jkmp";
 	private static final String OTHER_ROOM_ID = "qrst-uvwx-yz23";
 	private static final String MATCHING_TOKEN = "matching-room-ticket";
+	private static final String RECONNECT_TOKEN = "reconnect-room-ticket";
+	private static final String EXCESS_TOKEN = "excess-room-ticket";
 	private static final String OTHER_ROOM_TOKEN = "other-room-ticket";
 	private static final String INVALID_TOKEN = "invalid-ticket";
 
@@ -77,12 +83,31 @@ class BatonAuthBoundaryIntegrationTest {
 	@MockitoSpyBean
 	private SignalingWebSocketHandler signalingWebSocketHandler;
 
+	@Autowired
+	private SignalingService signalingService;
+
 	@BeforeEach
 	void setUpDecoder() {
 		when(jwtDecoder.decode(MATCHING_TOKEN))
-				.thenReturn(participationJwt(MATCHING_TOKEN, ROOM_ID));
+				.thenReturn(participationJwt(
+						MATCHING_TOKEN,
+						ROOM_ID,
+						"ticket-1"));
+		when(jwtDecoder.decode(RECONNECT_TOKEN))
+				.thenReturn(participationJwt(
+						RECONNECT_TOKEN,
+						ROOM_ID,
+						"ticket-2"));
+		when(jwtDecoder.decode(EXCESS_TOKEN))
+				.thenReturn(participationJwt(
+						EXCESS_TOKEN,
+						ROOM_ID,
+						"ticket-3"));
 		when(jwtDecoder.decode(OTHER_ROOM_TOKEN))
-				.thenReturn(participationJwt(OTHER_ROOM_TOKEN, OTHER_ROOM_ID));
+				.thenReturn(participationJwt(
+						OTHER_ROOM_TOKEN,
+						OTHER_ROOM_ID,
+						"ticket-other-room"));
 		when(jwtDecoder.decode(INVALID_TOKEN))
 				.thenThrow(new BadJwtException("invalid test participation ticket"));
 	}
@@ -225,6 +250,62 @@ class BatonAuthBoundaryIntegrationTest {
 				"403");
 	}
 
+	@Test
+	void rejectsParticipationTokenReplayAndCapsFreshGrantReconnectOverlap()
+			throws Exception {
+		String path = "/rooms/" + ROOM_ID + "/signal";
+		WebSocketSession initial = connect(
+				new TextWebSocketHandler(),
+				path,
+				MATCHING_TOKEN);
+		try {
+			awaitConnectedPeers(1);
+			assertWebSocketRejected(
+					path,
+					MATCHING_TOKEN,
+					ALLOWED_ORIGIN,
+					"429");
+		}
+		finally {
+			initial.close();
+		}
+		awaitConnectedPeers(0);
+
+		WebSocketSession current = connect(
+				new TextWebSocketHandler(),
+				path,
+				MATCHING_TOKEN);
+		WebSocketSession reconnect = connect(
+				new TextWebSocketHandler(),
+				path,
+				RECONNECT_TOKEN);
+		try {
+			awaitConnectedPeers(2);
+			assertWebSocketRejected(
+					path,
+					EXCESS_TOKEN,
+					ALLOWED_ORIGIN,
+					"429");
+		}
+		finally {
+			current.close();
+			reconnect.close();
+		}
+		awaitConnectedPeers(0);
+
+		WebSocketSession replacement = connect(
+				new TextWebSocketHandler(),
+				path,
+				EXCESS_TOKEN);
+		try {
+			awaitConnectedPeers(1);
+		}
+		finally {
+			replacement.close();
+		}
+		awaitConnectedPeers(0);
+	}
+
 	private HttpResponse<String> get(String path, String token) throws Exception {
 		HttpRequest.Builder request = HttpRequest.newBuilder()
 				.uri(URI.create(origin() + path))
@@ -290,7 +371,10 @@ class BatonAuthBoundaryIntegrationTest {
 		}
 	}
 
-	private static Jwt participationJwt(String tokenValue, String roomId) {
+	private static Jwt participationJwt(
+			String tokenValue,
+			String roomId,
+			String tokenId) {
 		Instant now = Instant.now();
 		return Jwt.withTokenValue(tokenValue)
 				.header("alg", "RS256")
@@ -299,11 +383,17 @@ class BatonAuthBoundaryIntegrationTest {
 				.audience(List.of("round"))
 				.issuedAt(now.minusSeconds(30))
 				.expiresAt(now.plusSeconds(240))
-				.claim("jti", "ticket-" + roomId)
+				.claim("jti", tokenId)
 				.claim("study_id", "study-7")
 				.claim("room_id", roomId)
 				.claim("role", "participant")
 				.build();
+	}
+
+	private void awaitConnectedPeers(int expected) {
+		await().atMost(Duration.ofSeconds(2))
+				.untilAsserted(() -> assertThat(signalingService.connectedPeerCount())
+						.isEqualTo(expected));
 	}
 
 	private String origin() {
