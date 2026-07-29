@@ -3,10 +3,15 @@ package com.personal.round.protocol;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectReader;
 import tools.jackson.databind.node.ObjectNode;
 
 class ProtocolParserTest {
@@ -234,12 +239,29 @@ class ProtocolParserTest {
 
 	@Test
 	void rejectsMalformedJsonAndNonObjects() {
-		assertInvalid("{", "$");
+		assertThatThrownBy(() -> parser.parse(null))
+				.isInstanceOf(MalformedJsonException.class);
+		assertThatThrownBy(() -> parser.parse("{"))
+				.isInstanceOf(MalformedJsonException.class);
 		assertInvalid("[]", "$");
 		assertInvalid("null", "$");
 		assertThatThrownBy(() -> parser.parse(
 						"{\"v\":2,\"type\":\"room.leave\",\"roomId\":\"abcd-efgh-jkmp\"} true"))
 				.isInstanceOf(MalformedJsonException.class);
+	}
+
+	@Test
+	void doesNotHideUnexpectedRuntimeExceptionsFromJackson() {
+		ObjectMapper failingMapper = mock(ObjectMapper.class);
+		ObjectReader failingReader = mock(ObjectReader.class);
+		IllegalStateException failure = new IllegalStateException("reader failed unexpectedly");
+		when(failingMapper.reader(DeserializationFeature.FAIL_ON_TRAILING_TOKENS))
+				.thenReturn(failingReader);
+		when(failingReader.readTree(anyString())).thenThrow(failure);
+		ProtocolParser failingParser = new ProtocolParser(failingMapper);
+
+		assertThatThrownBy(() -> failingParser.parse("{}"))
+				.isSameAs(failure);
 	}
 
 	private void assertInvalid(String json, String expectedPath) {

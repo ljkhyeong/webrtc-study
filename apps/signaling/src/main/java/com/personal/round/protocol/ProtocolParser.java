@@ -5,9 +5,11 @@ import java.util.Collection;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
-import tools.jackson.core.JsonParser;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectReader;
 import tools.jackson.databind.node.ObjectNode;
 
 @Component
@@ -30,14 +32,17 @@ public class ProtocolParser {
 					+ "-[abcdefghjkmnpqrstuvwxyz23456789]{4}"
 					+ "-[abcdefghjkmnpqrstuvwxyz23456789]{4}");
 
-	private final ObjectMapper objectMapper;
+	private final ObjectReader objectReader;
 
 	public ProtocolParser(ObjectMapper objectMapper) {
-		this.objectMapper = objectMapper;
+		this.objectReader = objectMapper.reader(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 	}
 
 	public ClientMessage parse(String rawMessage) {
-		if (rawMessage != null && utf8ByteLength(rawMessage) > MAX_SIGNALING_FRAME_BYTES) {
+		if (rawMessage == null) {
+			throw new MalformedJsonException();
+		}
+		if (utf8ByteLength(rawMessage) > MAX_SIGNALING_FRAME_BYTES) {
 			throw fail(
 					"$",
 					"serialized message must contain at most "
@@ -46,16 +51,13 @@ public class ProtocolParser {
 		}
 
 		JsonNode parsed;
-		try (JsonParser jsonParser = objectMapper.createParser(rawMessage)) {
-			parsed = objectMapper.readTree(jsonParser);
-			if (parsed == null || parsed.isMissingNode() || jsonParser.nextToken() != null) {
-				throw new MalformedJsonException();
-			}
+		try {
+			parsed = objectReader.readTree(rawMessage);
 		}
-		catch (MalformedJsonException exception) {
-			throw exception;
+		catch (JacksonException exception) {
+			throw new MalformedJsonException();
 		}
-		catch (Exception exception) {
+		if (parsed == null || parsed.isMissingNode()) {
 			throw new MalformedJsonException();
 		}
 

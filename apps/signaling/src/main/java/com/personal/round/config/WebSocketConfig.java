@@ -18,7 +18,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
 	private final SignalingWebSocketHandler handler;
 	private final OriginHandshakeInterceptor originInterceptor;
-	private final ConnectionAdmissionHandshakeInterceptor admissionInterceptor;
 	private final ConnectionAdmissionHandshakeHandler admissionHandler;
 
 	public WebSocketConfig(
@@ -31,8 +30,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
 		boolean production = environment.acceptsProfiles(Profiles.of("production"));
 		this.originInterceptor = new OriginHandshakeInterceptor(
 				new OriginPolicy(properties.allowedOrigins(), production));
-		this.admissionInterceptor =
-				new ConnectionAdmissionHandshakeInterceptor(signalingService);
 		this.admissionHandler =
 				new ConnectionAdmissionHandshakeHandler(signalingService, admissionPolicy);
 	}
@@ -40,7 +37,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 	@Override
 	public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
 		registry.addHandler(handler, "/signal")
-				.addInterceptors(originInterceptor, admissionInterceptor)
+				.addInterceptors(originInterceptor)
 				.setHandshakeHandler(admissionHandler)
 				.setAllowedOriginPatterns("*");
 	}
