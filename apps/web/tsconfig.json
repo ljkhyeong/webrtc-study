@@ -11,5 +11,5 @@
       "@round/rtc-core": ["../../packages/rtc-core/src/index.ts"]
     }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts", "vite.config.test.ts"]
 }
