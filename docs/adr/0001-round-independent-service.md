@@ -2,6 +2,7 @@
 
 - 상태: 승인
 - 결정일: 2026-07-29
+- 개정일: 2026-07-30 (참여권 갱신과 active WebSocket lease)
 
 ## 맥락
 
@@ -39,13 +40,14 @@ BATON 참여권으로 발급하는 TURN credential의 만료는 참여권 `exp`�
 BATON과 ROUND는 브라우저에서 같은 Origin으로 보이도록 edge proxy 뒤에 배치한다. 외부
 경로와 ROUND 내부 경로의 계약은 다음과 같다.
 
-| 용도                | 브라우저가 사용하는 외부 경로            | ROUND 내부 경로                        |
-| ------------------- | ---------------------------------------- | -------------------------------------- |
-| WebSocket signaling | `/round/rooms/{roomId}/signal`           | `/rooms/{roomId}/signal`               |
-| TURN credential     | `/round/rooms/{roomId}/turn-credentials` | `/api/rooms/{roomId}/turn-credentials` |
+| 용도                | 브라우저가 사용하는 외부 경로                       | 처리 경계                               |
+| ------------------- | --------------------------------------------------- | --------------------------------------- |
+| 참여권 갱신         | `/round/rooms/{roomId}/participation-grant/refresh` | BATON이 직접 처리하며 ROUND로 전달 금지 |
+| WebSocket signaling | `/round/rooms/{roomId}/signal`                      | `/rooms/{roomId}/signal`                |
+| TURN credential     | `/round/rooms/{roomId}/turn-credentials`            | `/api/rooms/{roomId}/turn-credentials`  |
 
-edge proxy는 외부 경로를 대응하는 내부 경로로 전달한다. `roomId`는 경로 세 곳, 즉 공개
-경로, 내부 경로, 참여권 claim에서 같은 값이어야 한다.
+edge proxy는 signaling과 TURN 외부 경로만 대응하는 ROUND 내부 경로로 전달한다. 이 두
+요청의 `roomId`는 공개 경로, 내부 경로, 참여권 claim에서 같은 값이어야 한다.
 
 BATON은 참여권을 URL query parameter나 브라우저 저장소에 노출하지 않고 다음 속성의
 쿠키로 전달한다.
@@ -59,6 +61,25 @@ BATON은 참여권을 URL query parameter나 브라우저 저장소에 노출하
 방별 쿠키 경로는 같은 브라우저가 여러 방을 열었을 때 다른 방의 참여권이 signaling 또는
 TURN 요청에 실리는 것을 방지한다. WebSocket upgrade와 TURN credential POST에는 기존의
 정확한 Origin 검사도 계속 적용한다.
+
+### 참여권 갱신 계약
+
+BATON은 `POST /round/rooms/{roomId}/participation-grant/refresh`에서 인증된 사용자 신원과
+현재 스터디 멤버십을 다시 확인한다. 유효하면 새 `jti`와 만료 시각으로 위 방별 쿠키를
+회전하고 `Cache-Control: no-store`와 함께 다음 두 숫자 필드만 반환한다.
+
+```json
+{
+  "expiresAt": 1780000000,
+  "refreshAfterSeconds": 240
+}
+```
+
+JWT는 응답 본문이나 JavaScript에 반환하지 않는다. BATON은 정확한 동일 출처 `Origin`과
+`Sec-Fetch-Site: same-origin`을 요구하고 CORS를 허용하지 않는다. 브라우저는
+`refreshAfterSeconds`를 monotonic clock 기반 상대 시간으로 사용하며, 로컬 wall clock과
+`expiresAt`의 차이로 갱신 시점을 다시 계산하지 않는다. 중복 타이머와 TURN·WebSocket의
+동시 선행 확인은 single-flight 갱신 하나로 합친다.
 
 ### 참여권 계약
 
@@ -86,6 +107,13 @@ WebSocket upgrade 및 TURN credential 요청을 거부한다. WebSocket 연결 �
 참여권 정보를 세션에 보존하고 `room.join`의 방 식별자도 경로 및 `room_id`와 일치할 때만
 입장을 허용한다.
 
+검증된 참여권은 WebSocket 연결 당시의 immutable active lease가 된다. ROUND는 연결 직후,
+inbound quota 차감 전, outbound enqueue 전, heartbeat와 1초 주기 sweep에서 이를 확인한다.
+wall clock의 `exp`와 연결 시점에 고정한 monotonic 남은 수명 중 먼저 도달한 시점에 기존
+disconnect 경로로 상태를 한 번만 정리하고 `4001 / Participation grant expired`로 닫는다.
+따라서 시스템 시계가 뒤로 이동해도 lease가 늘어나지 않는다. standalone 연결에는 만료
+lease를 적용하지 않는다.
+
 ROUND는 활성 handshake와 WebSocket에 한해 동일 `jti`의 동시 사용을 1개로 제한한다.
 연결이 종료되면 저장 상태도 제거하므로 만료 전 순차 재사용까지 막는 replay 저장소는
 아니다. 따라서 `jti`는 동시 replay 제한, 추적과 향후 회수 기능을 위한 식별자이며
@@ -95,10 +123,10 @@ one-time 사용을 보장하지 않는다. 문서와 구현에서 참여권을 o
 동일 `(room_id, sub)`는 서로 다른 `study_id`나 `jti`를 사용하더라도 활성 handshake와
 WebSocket을 합쳐 2개까지만 허용한다. ROUND의 실제 room 경계는 `room_id`이므로
 `study_id`가 달라져도 같은 room의 제한을 분리하지 않는다. 두 번째 슬롯은 BATON이 새
-참여권을 발급한 재연결이 기존 socket과 잠시 겹치는 경우를 위한 것이다. 동일 참여권의
-두 번째 연결 또는 사용자-방의 세 번째 연결은 HTTP 429로 거부하며, 새 요청 때문에 기존
-socket을 종료하지 않는다. reservation은 `room.leave`가 아니라 socket 종료 시 해제된다.
-이 정책은 BATON 모드에만 적용한다.
+`jti`의 참여권을 갱신한 뒤 재연결이 기존 socket과 잠시 겹치는 경우를 위한 것이다. 동일
+참여권의 두 번째 연결 또는 사용자-방의 세 번째 연결은 HTTP 429로 거부하며, 새 요청
+때문에 기존 socket을 종료하지 않는다. reservation은 `room.leave`가 아니라 socket 종료
+시 해제된다. 이 정책은 BATON 모드에만 적용한다.
 
 `peerId`와 relay 메시지의 `from`은 계속 ROUND가 생성한다. BATON 사용자 식별자나 클라이언트
 입력값을 signaling 발신자 식별자로 신뢰하지 않는다.
@@ -113,8 +141,9 @@ ROUND는 다음 두 운영 모드를 구분한다.
   fail-closed로 거부한다. 검증 키나 issuer 같은 필수 설정이 누락된 상태로 인증을
   우회하지 않는다.
 
-BATON 장애 중에도 이미 연결된 WebSocket의 signaling은 BATON 동기 호출 없이 계속된다.
-새 참여권 발급 또는 만료 후 재연결이 필요한 사용자는 BATON이 복구될 때까지 기다려야 한다.
+BATON 장애 중에도 이미 연결된 WebSocket의 signaling은 BATON 동기 호출 없이 현재
+참여권 `exp`까지 계속된다. 갱신하지 못한 socket은 만료 시 `4001`로 닫히고, 새 참여권
+발급과 재연결은 BATON이 복구될 때까지 fail-closed다.
 
 ## 결과
 
@@ -133,17 +162,17 @@ BATON 장애 중에도 이미 연결된 WebSocket의 signaling은 BATON 동기 �
   운영해야 한다.
 - BATON과 ROUND 사이에 JWT claim, 공개키 교체, 경로 호환성 계약이 생긴다.
 - 배포 전 두 서비스의 계약 호환성을 통합 테스트해야 한다.
+- 호환 배포는 BATON 신원·멤버십·갱신 endpoint와 edge, 선갱신 web bundle, ROUND active
+  lease 순서로 진행해야 한다. 롤백은 역순으로 한다.
 
 ## 알려진 잔여 위험
 
 - ROUND의 room과 peer 상태는 메모리에 있으며 signaling은 단일 인스턴스로 운용한다. 여러
   인스턴스로 확장하려면 shared room registry, 방 라우팅과 노드 간 signaling relay가 먼저
   필요하다.
-- 참여권이 만료되어도 이미 인증된 WebSocket을 즉시 자동 종료하지 않는다. 짧은 만료
-  시간은 새 연결에서 탈취 참여권을 재사용할 수 있는 구간만 제한하며 기존 socket의
-  수명을 제한하지 않는다. 즉시 권한 회수나 장시간 회의가 필요해지면 재인증 또는 세션
-  종료 정책을 별도로 도입해야 한다. BATON은 WebSocket 재연결과 TURN credential 갱신
-  전에 유효한 참여권을 다시 발급해야 한다.
+- BATON의 멤버십 회수는 ROUND에 push되지 않으므로 브라우저의 다음 갱신 또는 현재 참여권
+  `exp`까지 반영이 지연될 수 있다. 더 즉각적인 회수가 필요하면 별도 revocation 채널이
+  필요하다.
 - 탈취된 참여권은 만료 전까지 사용할 수 있다. TLS, `HttpOnly`, `Secure`,
   `SameSite=Strict`, 방별 cookie path와 짧은 만료 시간을 함께 적용한다. 동일 `jti`의
   동시 연결 제한은 두 번째 연결을 막지만, 공격자가 먼저 슬롯을 차지하거나 정상 연결이

@@ -160,20 +160,32 @@ ROUND는 공개키로 서명·issuer·audience와 필수 claim을 검증합니�
 
 BATON 연동 시 브라우저가 사용하는 공개 경로는 다음과 같습니다.
 
+- 참여권 갱신: `POST /round/rooms/{roomId}/participation-grant/refresh`
 - WebSocket: `/round/rooms/{roomId}/signal`
 - TURN credential: `/round/rooms/{roomId}/turn-credentials`
 
 BATON이 제공하는 웹 번들은 빌드 시 `VITE_ROUND_AUTH_MODE=baton`을 주입하고
-`VITE_SIGNALING_URL`, `VITE_TURN_CREDENTIALS_URL`은 비워 둡니다. 브라우저는 두 endpoint를
+`VITE_SIGNALING_URL`, `VITE_TURN_CREDENTIALS_URL`은 비워 둡니다. 브라우저는 세 경로를
 같은 canonical `roomId`의 동일 출처 경로로 계산하며, BATON 모드에서 외부 endpoint
 override가 있거나 모드 값이 올바르지 않으면 standalone으로 강등하지 않고 연결을
 거부합니다. 이 Vite 값은 공개 설정일 뿐 참여권이나 다른 비밀을 포함하지 않습니다.
 
-edge proxy는 이를 ROUND 내부의 `/rooms/{roomId}/signal`과
+BATON은 참여권 갱신 경로에서 인증된 사용자와 현재 스터디 멤버십을 다시 확인하고, 새
+`jti`의 방별 쿠키를 회전합니다. 응답은 JWT 없이 `expiresAt`과
+`refreshAfterSeconds`만 반환합니다. 이 경로는 ROUND로 proxy하지 않습니다. edge proxy는
+나머지 두 경로만 ROUND 내부의 `/rooms/{roomId}/signal`과
 `/api/rooms/{roomId}/turn-credentials`로 전달합니다. standalone 모드의 기존 `/signal`,
 `/api/turn-credentials`와 Caddy 공유 접근 credential은 소규모 파일럿을 위해 유지하지만,
 BATON 모드는 유효한 참여권이 없으면 fail-closed로 요청을 거부합니다.
 
+브라우저는 입장, TURN 갱신, 모든 WebSocket 최초 연결·재연결 전에 참여권을 확인합니다.
+기존 socket은 연결 당시 참여권의 `exp`에서 `4001 / Participation grant expired`로
+종료되고, 제한된 자동 재연결이 미리 회전된 쿠키를 사용합니다. standalone 연결에는 이
+시간 제한과 갱신 흐름을 적용하지 않습니다.
+
 BATON의 Caddy 설정에서는 카메라·마이크 `Permissions-Policy`, WebSocket `connect-src`,
-위 두 proxy 경로와 cookie path를 함께 구성해야 합니다. 전체 결정과 JWT claim 계약은
+두 ROUND proxy 경로, BATON 갱신 경로와 cookie path를 함께 구성해야 합니다. 현재 BATON
+본체에는 인증된 사용자 신원·스터디 멤버십 경계가 아직 없으므로, 실제 참여권 발급·갱신
+E2E는 완료된 것으로 보지 않습니다. 공유 접근 키나 브라우저 display name으로 `sub`를
+만들어서는 안 됩니다. 전체 결정과 JWT claim 계약은
 [ADR 0001](docs/adr/0001-round-independent-service.md)을 참고하세요.

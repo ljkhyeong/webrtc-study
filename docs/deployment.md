@@ -25,6 +25,12 @@ WebSocket signaling, and TURN credential issuance. The services do not share a
 database, and ROUND verifies each participation grant locally rather than
 calling BATON for every signaling frame.
 
+This is a target integration contract, not evidence of a completed BATON E2E
+deployment. The current BATON application does not yet provide an authenticated
+user identity and study-membership boundary suitable for grant issuance. Do
+not derive `sub` from the shared access key, a client-supplied display name, or
+another self-asserted value.
+
 The BATON-owned ROUND signaling manifest must configure all of these values:
 
 ```dotenv
@@ -47,7 +53,7 @@ VITE_TURN_CREDENTIALS_URL=
 ```
 
 Vite embeds these non-secret values at build time. The browser then derives
-both public endpoints from the current origin and the canonical room ID. BATON
+all three public room paths from the current origin and the canonical room ID. BATON
 mode rejects non-empty endpoint overrides instead of silently bypassing the
 room-scoped cookie path. The tracked standalone image remains built for
 `VITE_ROUND_AUTH_MODE=standalone`.
@@ -87,10 +93,11 @@ so the cookie remains host-only. The grant must not be put in a query string,
 browser storage, proxy log, or client-visible JavaScript. The public and internal
 routes are a versioned integration contract:
 
-| Operation            | Browser-facing BATON path                | Private ROUND path                     |
-| -------------------- | ---------------------------------------- | -------------------------------------- |
-| WebSocket signaling  | `/round/rooms/{roomId}/signal`           | `/rooms/{roomId}/signal`               |
-| TURN credential POST | `/round/rooms/{roomId}/turn-credentials` | `/api/rooms/{roomId}/turn-credentials` |
+| Operation                   | Browser-facing BATON path                           | Processing boundary                    |
+| --------------------------- | --------------------------------------------------- | -------------------------------------- |
+| Participation-grant refresh | `/round/rooms/{roomId}/participation-grant/refresh` | BATON-owned; never proxied to ROUND    |
+| WebSocket signaling         | `/round/rooms/{roomId}/signal`                      | `/rooms/{roomId}/signal`               |
+| TURN credential POST        | `/round/rooms/{roomId}/turn-credentials`            | `/api/rooms/{roomId}/turn-credentials` |
 
 For signaling, the BATON edge removes the leading `/round` segment. For TURN
 credentials, it rewrites the public path to the table's `/api/rooms/...`
@@ -102,6 +109,22 @@ verification. The edge must also allow camera and microphone for the BATON page
 through `Permissions-Policy` and include the room-scoped WSS path in its
 `connect-src` policy.
 
+BATON handles the refresh POST itself. It must require an authenticated session,
+recheck current study membership, require the exact same-origin `Origin` and
+`Sec-Fetch-Site: same-origin`, expose no CORS policy, and apply a dedicated
+abuse limit. Success rotates the host-only room cookie with a fresh `jti` and
+expiry, sets `Cache-Control: no-store`, and returns exactly:
+
+```json
+{
+  "expiresAt": 1780000000,
+  "refreshAfterSeconds": 240
+}
+```
+
+No JWT or other token material may enter the response body or browser-visible
+JavaScript.
+
 BATON mode rejects wildcard, `null`, and non-loopback HTTP WebSocket origins
 even if the `production` profile is accidentally absent. The deployment must
 still set `SPRING_PROFILES_ACTIVE=production` so the rest of ROUND's production
@@ -110,9 +133,10 @@ configuration validation remains active.
 The BATON edge must discard client-supplied `Forwarded` and
 `X-Forwarded-*` values, then set the canonical host, client address, and HTTPS
 scheme itself. Only that trusted edge may reach the signaling port. Apply a
-bounded pre-auth rate limit to both room-scoped public paths so invalid JWT
-signature checks and WebSocket upgrades cannot be used as an unbounded CPU
-workload; size the burst for normal reconnects by all six participants.
+bounded pre-auth rate limit to all three room-scoped public paths so membership
+lookups, signing, invalid JWT signature checks, and WebSocket upgrades cannot
+be used as an unbounded CPU workload; size the burst for normal refreshes and
+reconnects by all six participants.
 
 Do not expose the Java signaling port on a host interface, load balancer, or
 public security group. Bind it only to a private container or service network
@@ -128,18 +152,28 @@ Health and metrics have a narrower trust boundary than room traffic:
 - `/actuator/prometheus` and `/actuator/metrics/**` are for the private
   monitoring network only. Never map them below BATON's public `/round/**`
   prefix or expose the signaling port to collect them.
-- Only the two room-scoped paths in the table are public ROUND operations in
-  BATON mode. Do not proxy standalone `/signal` or
-  `/api/turn-credentials`.
+- Only signaling and TURN in the table are public ROUND operations in BATON
+  mode. Participation-grant refresh remains in BATON. Do not proxy standalone
+  `/signal` or `/api/turn-credentials`.
 
-The participation grant is checked at the WebSocket upgrade and again against
-the requested room, but expiry does not terminate an already-established
-socket. BATON must issue a fresh grant before a WebSocket reconnect and before
-TURN credential refresh. A BATON-mode TURN credential is capped at the
-participation grant's `exp` even when the configured TURN TTL is longer. Key
-rotation needs an overlap window in which the JWK Set publishes both the
-retiring and new public key until every short-lived grant signed by the
-retiring key has expired.
+The BATON web flow is participation-grant refresh, TURN issuance, then
+WebSocket creation. It uses the server's relative `refreshAfterSeconds` on a
+monotonic browser clock, and refreshes before TURN renewal and every initial or
+reconnect WebSocket creation. Refresh rotates only the cookie and does not
+force an early socket reconnect.
+
+ROUND binds each socket to the grant used at its handshake. It checks expiry
+before inbound quota use and outbound enqueue, during heartbeat, and in a
+one-second sweep. At that grant's `exp`, or its connection-time monotonic
+deadline if the wall clock moves backwards, ROUND performs the normal
+idempotent disconnect and closes with `4001 / Participation grant expired`.
+An idle or unjoined expired socket is therefore closed no later than one sweep
+interval after expiry. The bounded browser reconnect then uses the refreshed
+cookie. Standalone sockets remain unbounded. A BATON-mode TURN credential is
+still capped at the participation grant's `exp` even when the configured TURN
+TTL is longer. Key rotation needs an overlap window in which the JWK Set
+publishes both the retiring and new public key until every short-lived grant
+signed by the retiring key has expired.
 
 ROUND counts both in-progress handshakes and active sockets in BATON mode. The
 same `jti` may own one reservation, and the same
@@ -168,12 +202,31 @@ but never add `sub`, room ID, `jti`, or client address as monitoring labels.
 The participant quota complements rather than replaces coturn's user and total
 allocation limits.
 
+Collect `round.signaling.authorization.closes` as an identity-free counter.
+Never add participant, room, `jti`, role, or address tags to it.
+
 This repository's `ops/turn/probe.sh` authenticates with the standalone shared
 Basic credential and therefore is not a BATON authentication probe. A BATON
 deployment needs an integration probe that obtains a real short-lived grant
-through BATON, keeps the cookie out of command arguments and logs, and calls the
-room-scoped TURN endpoint. The TURN allocation and TLS checks after credential
-issuance remain the same.
+through BATON, refreshes it without exposing the JWT, verifies a fresh `jti`
+cookie and no-store metadata response, keeps the cookie out of command
+arguments and logs, and calls the room-scoped TURN endpoint. The TURN
+allocation and TLS checks after credential issuance remain the same.
+
+### Compatible BATON rollout
+
+Deploy in this order:
+
+1. BATON authenticated identity, study-membership checks, the refresh endpoint,
+   and all three edge routes and limits.
+2. The BATON web bundle with proactive refresh and the pre-connect guard.
+3. ROUND signaling with active grant-lease closure.
+
+Deploying the web bundle before the refresh endpoint makes explicit entry fail
+closed. Deploying ROUND lease closure before the new web bundle makes old
+clients lose signaling at each short grant expiry without a refreshed cookie.
+Rollback in reverse order: ROUND lease closure, web bundle, then the BATON
+refresh route and identity boundary.
 
 The complete claims and ownership decision are recorded in
 [ADR 0001](adr/0001-round-independent-service.md).

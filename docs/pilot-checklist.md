@@ -175,6 +175,9 @@ standalone gate above and has its own required checks below.
 Run these checks against the BATON-owned edge and a separately deployed ROUND
 instance. Do not change the bundled standalone Compose to perform them.
 
+- [ ] BATON has a real authenticated user identity and current study-membership
+      authorization. A shared access key, display name, or other client claim is
+      not used as `sub`; without this boundary the BATON gate cannot pass.
 - [ ] The ROUND deployment uses `ROUND_AUTH_MODE=baton`, the exact BATON
       issuer, `aud=round`, the production HTTPS JWK Set URI, a maximum grant
       lifetime of at most five minutes, and BATON's exact HTTPS origin. Removing
@@ -190,14 +193,25 @@ instance. Do not change the bundled standalone Compose to perform them.
       `/rooms/{roomId}/signal` and
       `/round/rooms/{roomId}/turn-credentials` to
       `/api/rooms/{roomId}/turn-credentials`, preserving the room ID,
-      WebSocket upgrade, original `Origin`, and cookie.
+      WebSocket upgrade, original `Origin`, and cookie. It leaves
+      `/round/rooms/{roomId}/participation-grant/refresh` in BATON and never
+      proxies that path to ROUND.
 - [ ] The BATON-owned web bundle is built with `VITE_ROUND_AUTH_MODE=baton`
       and no signaling or TURN endpoint override. A direct invite remains at
-      prejoin without a protected request; explicit entry uses only the two
+      prejoin without a protected request; explicit entry uses only the three
       room-scoped public paths and never the standalone endpoints.
 - [ ] The edge discards client-supplied forwarding headers, sets the canonical
       HTTPS host and client address itself, and applies a bounded pre-auth rate
-      limit to both room-scoped public paths.
+      limit to all three room-scoped public paths.
+- [ ] Refresh requires an authenticated BATON session, rechecks current study
+      membership, exact same-origin `Origin`, and
+      `Sec-Fetch-Site: same-origin`, and exposes no CORS access. Success rotates
+      a host-only Strict cookie with a fresh `jti` and expiry, returns only
+      numeric `expiresAt` and `refreshAfterSeconds`, and sets
+      `Cache-Control: no-store`. No JWT reaches JavaScript, URLs, or logs.
+- [ ] Concurrent grant checks share one refresh request. The browser schedules
+      `refreshAfterSeconds` from a monotonic relative clock rather than
+      subtracting its wall clock from `expiresAt`.
 - [ ] Missing, malformed, expired, wrong-signature, wrong-issuer,
       wrong-audience, and wrong-room grants are rejected for both WebSocket
       upgrade and TURN credential issuance.
@@ -216,12 +230,19 @@ instance. Do not change the bundled standalone Compose to perform them.
       microphone use, and `connect-src` permits the room-scoped WSS endpoint
       without widening either policy to unrelated origins.
 - [ ] A valid participant can complete signaling, obtain and refresh TURN
-      credentials, and reconnect after BATON issues a fresh grant. The test
-      records the current behavior that an already-established WebSocket is not
-      terminated merely because its grant expires.
+      credentials, refresh the grant before expiry, and remain in one room for
+      at least two full grant lifetimes. At the old socket's own `exp`, ROUND
+      closes it with `4001 / Participation grant expired`; the browser uses the
+      refreshed cookie to reconnect without a page refresh while preserving
+      local media and chat history.
 - [ ] BATON or its database can be unavailable without interrupting signaling
-      frames on an already-established socket; new grants and expired-session
-      reconnects remain fail-closed until BATON recovers.
+      frames on an already-established socket only until its current grant
+      expires. Refresh and reconnect remain fail-closed, and the socket closes
+      at expiry, until BATON recovers.
+- [ ] An idle or unjoined socket is closed by `exp + 1s` at the latest, and
+      moving the ROUND wall clock backwards does not extend the monotonic lease
+      deadline. Expiry releases admission reservations, room membership,
+      outbound queue state, and gauges exactly once and emits one `peer.left`.
 - [ ] A second concurrent WebSocket using the same `jti` receives HTTP 429
       without evicting the established socket. After that socket closes, the
       same still-valid grant can connect again because the policy is not a
@@ -239,9 +260,17 @@ instance. Do not change the bundled standalone Compose to perform them.
       `scope` label. No participant, room, token, or address value appears in
       metrics or logs, and the monitoring runbook distinguishes participant,
       client, global, and state-capacity pressure.
+- [ ] `round.signaling.authorization.closes` is collected as an identity-free
+      counter without participant, room, `jti`, role, or address tags.
 - [ ] The BATON socket and TURN checks above do not change standalone behavior.
       Standalone TURN issuance remains limited by client IP and server-wide
-      quota without creating participant quota state.
+      quota without creating participant quota state. Standalone creates no
+      grant-refresh request, lease timer, or authorization-close event.
 - [ ] The BATON integration probe obtains a real short-lived participation
-      grant without printing it and validates UDP, TCP, and TLS relay paths;
-      the standalone Basic Auth probe is not used as proof of this boundary.
+      grant, refreshes the room cookie without printing either token, confirms
+      a fresh `jti` and the exact no-store metadata response, and validates UDP,
+      TCP, and TLS relay paths. The standalone Basic Auth probe is not used as
+      proof of this boundary.
+- [ ] Rollout was rehearsed in the order BATON identity/membership/refresh and
+      edge, new web bundle, then ROUND active lease. Rollback was rehearsed in
+      the exact reverse order.

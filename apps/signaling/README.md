@@ -12,6 +12,11 @@ Room operations depend on `ROUND_AUTH_MODE`:
 - `baton`: authenticated WebSocket `/rooms/{roomId}/signal` and
   `POST /api/rooms/{roomId}/turn-credentials`
 
+The BATON-owned
+`POST /round/rooms/{roomId}/participation-grant/refresh` route is deliberately
+not exposed by this process and must never be proxied to it. BATON rechecks
+identity and study membership before rotating the room-scoped cookie.
+
 The `production` Spring profile fails during startup unless every configured
 `ALLOWED_ORIGINS` entry is an exact HTTPS origin. Wildcard, `null`, and HTTP
 origins are forbidden in that profile. BATON mode independently rejects
@@ -37,6 +42,19 @@ by the periodic unjoined-session sweep. The map is bounded by
 least-recently-used entries and never active client state.
 `MAX_SIGNALING_CONNECTIONS` defaults to 1,000 and
 `MAX_SIGNALING_CONNECTIONS_PER_CLIENT` defaults to 12.
+Because the same scheduler enforces idle authorization expiry, its configurable
+interval is validated between 100 milliseconds and one second.
+
+In BATON mode, the verified grant becomes an immutable lease for the
+established WebSocket. ROUND checks the lease immediately after connection,
+before inbound quota consumption, before outbound enqueue, during heartbeat
+and pong handling, and in the one-second session sweep. Expiry uses both the
+grant's wall-clock `exp` and the remaining lifetime captured against a
+monotonic ticker at connection time, so a wall-clock rollback cannot extend
+the lease. An expired connection is removed through the normal idempotent
+disconnect path and closed with private status `4001` and exact reason
+`Participation grant expired`; an otherwise idle connection is closed within
+one sweep interval. Standalone room access has no lease deadline.
 
 BATON mode also reserves at most one in-flight or active WebSocket for the same
 participation-grant `jti`, and at most two for the same
@@ -67,6 +85,7 @@ Micrometer publishes these signaling meters:
   (`reason=server_capacity|client_capacity|participation_token_capacity|participant_room_capacity|missing_reservation|missing_room_access`)
 - `round.signaling.outbound.queue.overflows`
 - `round.signaling.heartbeat.closes`
+- `round.signaling.authorization.closes`
 - `round.turn.credentials.issued`
 - `round.turn.credentials.rate_limited`
   (`scope=client|participant|global|client_state_capacity|participant_state_capacity`)
@@ -74,7 +93,8 @@ Micrometer publishes these signaling meters:
 Meter tags are deliberately bounded. Room IDs, display names, session/peer IDs,
 SDP, ICE candidates, Origin/header values, TURN shared secrets, and issued TURN
 credentials must never be logged or used as meter tags. Transport logs contain
-only a fixed message and the exception class.
+only a fixed message and the exception class. The authorization-close meter is
+an identity-free counter with no participant, room, or grant tag.
 
 ## Coturn REST credentials
 
