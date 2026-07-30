@@ -529,6 +529,13 @@ docker compose --env-file ops/production.env pull
 docker compose --env-file ops/production.env up -d --no-build
 ```
 
+ROUND does not negotiate the additive `chat.ack` DataChannel capability. After
+the new stack passes the checks below, require every participant with an active
+ROUND tab to reload and rejoin before resuming chat. Do not treat a mixed
+old/new web-client room as a valid rollout: an old receiver may display a
+message without acknowledging it, causing the new sender to fail closed after
+the 45-second delivery deadline.
+
 Only Caddy uses Docker port publishing; coturn binds its documented ports
 directly through the Linux host network. Signaling listens on `8787` solely on
 the internal Compose network. Its room membership is held in memory, so
@@ -629,4 +636,6 @@ no-credential rule. Caddy error logs omit request headers and URIs entirely.
   references as one tested set, then run
   `docker compose --env-file ops/production.env up -d --no-build`. Do not
   substitute mutable release tags during rollback, and do not scale signaling
-  above one.
+  above one. After the rollback health checks pass, require every active ROUND
+  tab to reload and rejoin so no room mixes peer DataChannel capabilities from
+  the rolled-back and replaced web bundles.

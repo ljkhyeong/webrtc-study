@@ -7,7 +7,7 @@ signaling runtime.
 ```text
 apps/web          React room UI
 apps/signaling    Java 21 + Spring Boot raw WebSocket signaling server
-packages/protocol Shared, versioned signaling contract
+packages/protocol Shared, versioned signaling and peer DataChannel wire contracts
 packages/rtc-core Framework-free WebRTC room engine
 ```
 
@@ -30,6 +30,30 @@ limited to six participants because upload bandwidth and CPU use grow with every
 - `apps/web` adapts room snapshots to React and owns all presentation.
 - Room identity is an opaque string. BATON authorizes that room before issuing a participation
   grant without changing the peer engine.
+
+## DataChannel delivery boundary
+
+`@round/protocol` also owns the browser-to-browser `chat.message`, `chat.ack`, and
+`participant.media` frames. Chat remains ephemeral and peer-to-peer: the Java signaling service
+does not inspect, relay, acknowledge, or store these frames.
+
+A local message remains `pending` until every intended peer's current `RoomSession` validates and
+records the message and returns `chat.ack`. The acknowledgement means application acceptance, not
+that a person read the message. All acknowledgements produce `sent`; confirmed acknowledgements
+mixed with terminal peer failures produce `partial`; no confirmed recipient produces `failed`.
+Duplicate retransmissions are deduplicated by `(peerId, messageId)` but acknowledged again so an
+ACK lost during channel recovery can converge without displaying the chat twice.
+
+Each peer may own at most 50 unacknowledged chat frames, with a corresponding byte cap and a
+45-second absolute delivery deadline. The browser pauses normal chat before the DataChannel send
+buffer would exceed 256 KiB and resumes after `bufferedamountlow` at 64 KiB. Bounded ACK control
+frames are flushed before the latest coalesced media state and queued chat.
+
+`chat.ack` is an additive peer protocol frame and does not change the Java signaling protocol
+version. ROUND currently deploys the web client atomically rather than negotiating this capability:
+all pilot participants must reload after a web release. A stale client that does not implement ACK
+may display the chat, but the new sender fails closed with a receive-confirmation failure after the
+45-second deadline instead of reporting false success.
 
 ## Identity and authorization boundary
 

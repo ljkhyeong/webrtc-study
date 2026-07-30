@@ -78,6 +78,12 @@ should use home Wi-Fi and the other cellular tethering or another ISP.
       signaling or TURN image digests.
 - [ ] Both participants can see and hear each other.
 - [ ] Ordered DataChannel chat works in both directions.
+- [ ] Each sender leaves **전송 확인 중** only after the remote browser displays the message;
+      closing or timing out one recipient produces a partial or failed receive-confirmation state
+      without resending to recipients that already acknowledged it.
+- [ ] Every participant reloads the web client after a release; a deliberately stale pre-ACK
+      client fails closed at the 45-second receive-confirmation deadline rather than showing false
+      success.
 - [ ] `RTCPeerConnection.getStats()` shows a selected candidate pair whose
       local candidate type is `relay`.
 - [ ] UDP relay succeeds.
