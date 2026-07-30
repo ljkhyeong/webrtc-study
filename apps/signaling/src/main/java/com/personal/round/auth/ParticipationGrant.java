@@ -32,6 +32,11 @@ public record ParticipationGrant(
 	}
 
 	@Override
+	public Lease openLease(long currentEpochMillis, long currentMonotonicNanos) {
+		return Lease.until(expiresAt.toEpochMilli(), currentEpochMillis, currentMonotonicNanos);
+	}
+
+	@Override
 	public String toString() {
 		return "ParticipationGrant[role=%s, issuedAt=%s, expiresAt=%s]"
 				.formatted(role, issuedAt, expiresAt);

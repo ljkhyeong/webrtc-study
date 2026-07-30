@@ -8,4 +8,9 @@ enum StandaloneRoomAccess implements RoomAccess {
 	public boolean allows(String roomId) {
 		return true;
 	}
+
+	@Override
+	public Lease openLease(long currentEpochMillis, long currentMonotonicNanos) {
+		return Lease.withoutDeadline();
+	}
 }

@@ -1,5 +1,6 @@
 package com.personal.round.auth;
 
+import static com.personal.round.auth.ParticipationGrantTestFixtures.EXPIRES_AT;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.OTHER_ROOM_ID;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.ROOM_ID;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.batonProperties;
@@ -11,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -53,6 +55,31 @@ class RoomAccessPolicyTest {
 		WebSocketSession nullAttributes = mock(WebSocketSession.class);
 		when(nullAttributes.getAttributes()).thenReturn(null);
 		assertThat(policy.resolve(nullAttributes)).isEmpty();
+	}
+
+	@Test
+	void batonLeaseTreatsExpirationAsExclusiveAndKeepsItsOriginalDuration() {
+		long expiresAtMillis = EXPIRES_AT.toEpochMilli();
+		long connectedAtNanos = 100;
+		RoomAccess.Lease lease = grant().openLease(
+				expiresAtMillis - 1,
+				connectedAtNanos);
+
+		assertThat(lease.isExpired(expiresAtMillis - 1, connectedAtNanos)).isFalse();
+		assertThat(lease.isExpired(expiresAtMillis, connectedAtNanos)).isTrue();
+		assertThat(lease.isExpired(
+				expiresAtMillis - 10_000,
+				connectedAtNanos + TimeUnit.MILLISECONDS.toNanos(1))).isTrue();
+	}
+
+	@Test
+	void standaloneLeaseNeverExpires() {
+		RoomAccess access = new RoomAccessPolicy(standaloneProperties())
+				.resolve(sessionWith(new HashMap<>()))
+				.orElseThrow();
+		RoomAccess.Lease lease = access.openLease(0, 0);
+
+		assertThat(lease.isExpired(Long.MAX_VALUE, Long.MAX_VALUE)).isFalse();
 	}
 
 	private static WebSocketSession sessionWith(Map<String, Object> attributes) {

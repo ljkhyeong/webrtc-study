@@ -33,6 +33,7 @@ public final class SignalingMetrics {
 	private final Counter queueOverflows;
 	private final Counter globalQueueOverflows;
 	private final Counter heartbeatCloses;
+	private final Counter authorizationCloses;
 
 	public SignalingMetrics(MeterRegistry registry) {
 		Gauge.builder("round.signaling.rooms.active", activeRooms, AtomicInteger::get)
@@ -113,6 +114,9 @@ public final class SignalingMetrics {
 				.register(registry);
 		heartbeatCloses = Counter.builder("round.signaling.heartbeat.closes")
 				.description("Peers closed after failing the heartbeat check")
+				.register(registry);
+		authorizationCloses = Counter.builder("round.signaling.authorization.closes")
+				.description("WebSocket sessions closed because room authorization expired")
 				.register(registry);
 	}
 
@@ -200,6 +204,10 @@ public final class SignalingMetrics {
 
 	void recordHeartbeatClose() {
 		heartbeatCloses.increment();
+	}
+
+	void recordAuthorizationClose() {
+		authorizationCloses.increment();
 	}
 
 	private static Counter byteLimitCounter(MeterRegistry registry, String scope) {

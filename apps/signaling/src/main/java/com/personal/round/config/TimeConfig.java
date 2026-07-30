@@ -11,4 +11,9 @@ public class TimeConfig {
 	Clock systemClock() {
 		return Clock.systemUTC();
 	}
+
+	@Bean
+	MonotonicTicker monotonicTicker() {
+		return System::nanoTime;
+	}
 }

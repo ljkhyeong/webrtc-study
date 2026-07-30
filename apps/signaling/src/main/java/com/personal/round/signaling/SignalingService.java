@@ -2,6 +2,7 @@ package com.personal.round.signaling;
 
 import com.personal.round.auth.RoomAccess;
 import com.personal.round.auth.RoomAccessPolicy;
+import com.personal.round.config.MonotonicTicker;
 import com.personal.round.config.SignalingExecutionConfig;
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.protocol.ClientMessage;
@@ -58,6 +59,8 @@ public class SignalingService implements SmartLifecycle {
 			CloseStatus.SERVER_ERROR.withReason("Connection admission required");
 	private static final CloseStatus ROOM_ACCESS_REQUIRED =
 			CloseStatus.POLICY_VIOLATION.withReason("Room authorization required");
+	private static final CloseStatus PARTICIPATION_GRANT_EXPIRED =
+			new CloseStatus(4001, "Participation grant expired");
 	static final int MAX_OUTBOUND_QUEUE_SIZE = 256;
 
 	private final Object monitor = new Object();
@@ -71,6 +74,7 @@ public class SignalingService implements SmartLifecycle {
 	private final SignalingMetrics metrics;
 	private final RoomAccessPolicy roomAccessPolicy;
 	private final Clock clock;
+	private final MonotonicTicker monotonicTicker;
 	private final int maxRoomSize;
 	private final int maxConnections;
 	private final long heartbeatIntervalMs;
@@ -97,12 +101,14 @@ public class SignalingService implements SmartLifecycle {
 			RoomAccessPolicy roomAccessPolicy,
 			@Qualifier(SignalingExecutionConfig.OUTBOUND_EXECUTOR_BEAN)
 			ExecutorService outboundExecutor,
-			Clock clock) {
+			Clock clock,
+			MonotonicTicker monotonicTicker) {
 		this.serverMessageEncoder = serverMessageEncoder;
 		this.metrics = metrics;
 		this.roomAccessPolicy = roomAccessPolicy;
 		this.outboundExecutor = outboundExecutor;
 		this.clock = clock;
+		this.monotonicTicker = monotonicTicker;
 		this.maxRoomSize = properties.maxRoomSize();
 		this.maxConnections = properties.maxConnections();
 		this.heartbeatIntervalMs = properties.heartbeatInterval().toMillis();
@@ -149,8 +155,15 @@ public class SignalingService implements SmartLifecycle {
 			boolean accepted;
 			synchronized (monitor) {
 				long nowMillis = clock.millis();
+				long nowNanos = monotonicTicker.readNanos();
+				RoomAccess.Lease accessLease = roomAccess.openLease(nowMillis, nowNanos);
 				removeExpiredInactiveClientStatesLocked(nowMillis);
-				if (!acceptingConnections) {
+				if (accessLease.isExpired(nowMillis, nowNanos)) {
+					metrics.recordAuthorizationClose();
+					workPlan.close(session, PARTICIPATION_GRANT_EXPIRED);
+					accepted = false;
+				}
+				else if (!acceptingConnections) {
 					workPlan.close(session, SERVER_SHUTDOWN);
 					accepted = false;
 				}
@@ -178,6 +191,7 @@ public class SignalingService implements SmartLifecycle {
 											nowMillis,
 											reservation,
 											roomAccess,
+											accessLease,
 											clientKey,
 											clientInboundState));
 							reservationTransferred = true;
@@ -237,57 +251,66 @@ public class SignalingService implements SmartLifecycle {
 			long nowMillis = nowMillisSupplier.getAsLong();
 			Peer peer = connectedPeers.get(session.getId());
 			if (peer != null && peer.connected) {
+				if (closeForExpiredAuthorizationLocked(
+						peer,
+						nowMillis,
+						monotonicTicker.readNanos(),
+						workPlan)) {
+					peer = null;
+				}
+			}
+			if (peer != null && peer.connected) {
 				touchClientInboundStateLocked(peer);
-					WindowDecision sessionDecision = peer.inboundWindow.tryAcquire(
-							nowMillis,
-							abuseWindowMs,
-							maxFramesPerSessionWindow,
-							maxBytesPerSessionWindow,
-							payloadBytes);
-					if (sessionDecision != WindowDecision.ACCEPTED) {
+				WindowDecision sessionDecision = peer.inboundWindow.tryAcquire(
+						nowMillis,
+						abuseWindowMs,
+						maxFramesPerSessionWindow,
+						maxBytesPerSessionWindow,
+						payloadBytes);
+				if (sessionDecision != WindowDecision.ACCEPTED) {
 					if (sessionDecision == WindowDecision.BYTE_LIMITED) {
 						metrics.recordSessionByteLimitedFrame();
 					}
 					else {
 						metrics.recordRateLimitedFrame();
 					}
-						disconnectLocked(session.getId(), workPlan);
-						workPlan.close(session, RATE_LIMITED);
-					}
-					else {
-						WindowDecision clientDecision =
-								peer.clientInboundState.inboundWindow.tryAcquire(
-										nowMillis,
-										abuseWindowMs,
-										maxFramesPerClientWindow,
-										maxBytesPerClientWindow,
-										payloadBytes);
-						if (clientDecision != WindowDecision.ACCEPTED) {
-							if (clientDecision == WindowDecision.BYTE_LIMITED) {
-								metrics.recordClientByteLimitedFrame();
-							}
-							else {
-								metrics.recordClientRateLimitedFrame();
-							}
-						}
-						else {
-							WindowDecision globalDecision = globalInboundWindow.tryAcquire(
+					disconnectLocked(session.getId(), workPlan);
+					workPlan.close(session, RATE_LIMITED);
+				}
+				else {
+					WindowDecision clientDecision =
+							peer.clientInboundState.inboundWindow.tryAcquire(
 									nowMillis,
 									abuseWindowMs,
-									maxFramesGlobalWindow,
-									maxBytesGlobalWindow,
+									maxFramesPerClientWindow,
+									maxBytesPerClientWindow,
 									payloadBytes);
-							if (globalDecision == WindowDecision.ACCEPTED) {
-								accepted = true;
-							}
-							else if (globalDecision == WindowDecision.BYTE_LIMITED) {
-								metrics.recordGlobalByteLimitedFrame();
-							}
-							else {
-								metrics.recordOverloadedFrame();
-							}
+					if (clientDecision != WindowDecision.ACCEPTED) {
+						if (clientDecision == WindowDecision.BYTE_LIMITED) {
+							metrics.recordClientByteLimitedFrame();
+						}
+						else {
+							metrics.recordClientRateLimitedFrame();
 						}
 					}
+					else {
+						WindowDecision globalDecision = globalInboundWindow.tryAcquire(
+								nowMillis,
+								abuseWindowMs,
+								maxFramesGlobalWindow,
+								maxBytesGlobalWindow,
+								payloadBytes);
+						if (globalDecision == WindowDecision.ACCEPTED) {
+							accepted = true;
+						}
+						else if (globalDecision == WindowDecision.BYTE_LIMITED) {
+							metrics.recordGlobalByteLimitedFrame();
+						}
+						else {
+							metrics.recordOverloadedFrame();
+						}
+					}
+				}
 			}
 		}
 		execute(workPlan);
@@ -301,7 +324,7 @@ public class SignalingService implements SmartLifecycle {
 			if (peer == null) {
 				workPlan.close(session, CloseStatus.SERVER_ERROR);
 			}
-			else {
+			else if (!closeForExpiredAuthorizationLocked(peer, workPlan)) {
 				switch (message) {
 					case ClientMessage.Join join -> join(peer, join, workPlan);
 					case ClientMessage.Leave leave -> leave(peer, leave, workPlan);
@@ -352,9 +375,11 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	public void markAlive(WebSocketSession session, byte[] pongPayload) {
+		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
 			Peer peer = connectedPeers.get(session.getId());
 			if (peer != null
+					&& !closeForExpiredAuthorizationLocked(peer, workPlan)
 					&& peer.expectedPongPayload != null
 					&& (peer.heartbeatState == HeartbeatState.PING_QUEUED
 							|| peer.heartbeatState == HeartbeatState.AWAITING_PONG)
@@ -365,14 +390,23 @@ public class SignalingService implements SmartLifecycle {
 				peer.expectedPongPayload = null;
 			}
 		}
+		execute(workPlan);
 	}
 
 	public void heartbeatSweep() {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
 			long nowMillis = clock.millis();
+			long nowNanos = monotonicTicker.readNanos();
 			for (Peer peer : new ArrayList<>(connectedPeers.values())) {
 				if (!peer.connected) {
+					continue;
+				}
+				if (closeForExpiredAuthorizationLocked(
+						peer,
+						nowMillis,
+						nowNanos,
+						workPlan)) {
 					continue;
 				}
 				switch (peer.heartbeatState) {
@@ -428,8 +462,19 @@ public class SignalingService implements SmartLifecycle {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
 			long nowMillis = nowMillisSupplier.getAsLong();
+			long nowNanos = monotonicTicker.readNanos();
 			for (Peer peer : new ArrayList<>(connectedPeers.values())) {
-				if (!peer.connected || peer.unjoinedSinceMillis < 0
+				if (!peer.connected) {
+					continue;
+				}
+				if (closeForExpiredAuthorizationLocked(
+						peer,
+						nowMillis,
+						nowNanos,
+						workPlan)) {
+					continue;
+				}
+				if (peer.unjoinedSinceMillis < 0
 						|| nowMillis < peer.unjoinedSinceMillis) {
 					continue;
 				}
@@ -626,6 +671,29 @@ public class SignalingService implements SmartLifecycle {
 				workPlan);
 	}
 
+	private boolean closeForExpiredAuthorizationLocked(Peer peer, WorkPlan workPlan) {
+		return closeForExpiredAuthorizationLocked(
+				peer,
+				clock.millis(),
+				monotonicTicker.readNanos(),
+				workPlan);
+	}
+
+	private boolean closeForExpiredAuthorizationLocked(
+			Peer peer,
+			long currentEpochMillis,
+			long currentMonotonicNanos,
+			WorkPlan workPlan) {
+		if (!peer.accessLease.isExpired(currentEpochMillis, currentMonotonicNanos)) {
+			return false;
+		}
+		if (disconnectLocked(peer.session.getId(), workPlan)) {
+			metrics.recordAuthorizationClose();
+			workPlan.close(peer.session, PARTICIPATION_GRANT_EXPIRED);
+		}
+		return true;
+	}
+
 	private boolean disconnectLocked(String sessionId, WorkPlan workPlan) {
 		Peer peer = connectedPeers.remove(sessionId);
 		if (peer != null && peer.connected) {
@@ -739,7 +807,7 @@ public class SignalingService implements SmartLifecycle {
 			Peer peer,
 			WebSocketMessage<?> message,
 			WorkPlan workPlan) {
-		if (!peer.connected) {
+		if (!peer.connected || closeForExpiredAuthorizationLocked(peer, workPlan)) {
 			return false;
 		}
 
@@ -967,6 +1035,7 @@ public class SignalingService implements SmartLifecycle {
 		private final UsageWindow inboundWindow = new UsageWindow();
 		private final ConnectionAdmissionPolicy.Reservation reservation;
 		private final RoomAccess roomAccess;
+		private final RoomAccess.Lease accessLease;
 		private final String clientKey;
 		private final ClientInboundState clientInboundState;
 
@@ -976,6 +1045,7 @@ public class SignalingService implements SmartLifecycle {
 				long connectedAtMillis,
 				ConnectionAdmissionPolicy.Reservation reservation,
 				RoomAccess roomAccess,
+				RoomAccess.Lease accessLease,
 				String clientKey,
 				ClientInboundState clientInboundState) {
 			this.peerId = peerId;
@@ -983,6 +1053,7 @@ public class SignalingService implements SmartLifecycle {
 			this.unjoinedSinceMillis = connectedAtMillis;
 			this.reservation = reservation;
 			this.roomAccess = roomAccess;
+			this.accessLease = accessLease;
 			this.clientKey = clientKey;
 			this.clientInboundState = clientInboundState;
 		}

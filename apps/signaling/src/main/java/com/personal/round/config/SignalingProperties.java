@@ -46,6 +46,11 @@ public record SignalingProperties(
 		@DurationMin(
 				millis = 100,
 				message = "round.signaling.unjoined-sweep-interval must be at least 100ms")
+		@DurationMax(
+				seconds = 1,
+				message =
+						"round.signaling.unjoined-sweep-interval must be at most 1s "
+								+ "for authorization expiry enforcement")
 		Duration unjoinedSweepInterval,
 		@NotNull(message = "round.signaling.shutdown-close-timeout must be configured")
 		@DurationMin(

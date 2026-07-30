@@ -206,6 +206,16 @@ class ConfigurationPropertiesBindingTest {
 	}
 
 	@Test
+	void rejectsSessionSweepIntervalsAboveTheAuthorizationExpiryBudget() {
+		contextRunner
+				.withPropertyValues("round.signaling.unjoined-sweep-interval=1001ms")
+				.run(context -> assertThat(context.getStartupFailure())
+						.hasStackTraceContaining(
+								"round.signaling.unjoined-sweep-interval must be at most 1s "
+										+ "for authorization expiry enforcement"));
+	}
+
+	@Test
 	void rejectsInvalidTimingAndFrameRelationshipsDuringContextStartup() {
 		contextRunner
 				.withPropertyValues(
