@@ -61,6 +61,27 @@ describe('TURN credential loading', () => {
     });
   });
 
+  it('posts to a room-scoped BATON endpoint without putting credentials in the URL', async () => {
+    const endpoint = '/round/rooms/abcd-efgh-jkmp/turn-credentials';
+    const fetcher = vi.fn(async () => response(204));
+
+    await expect(
+      loadTurnCredentials({
+        endpoint,
+        fetcher: fetcher as typeof fetch,
+      }),
+    ).resolves.toBeNull();
+
+    expect(fetcher).toHaveBeenCalledWith(endpoint, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+      method: 'POST',
+      signal: expect.any(AbortSignal),
+    });
+    expect(endpoint).not.toMatch(/[?#]/);
+    expect(endpoint).not.toMatch(/token|ticket|authorization/i);
+  });
+
   it.each([204, 404])(
     'treats a disabled endpoint status %i as STUN-only local development',
     async (status) => {

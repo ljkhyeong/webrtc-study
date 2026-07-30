@@ -11,6 +11,7 @@ import { PrejoinScreen } from './components/PrejoinScreen';
 import { RoomView, type ChatMessageView } from './components/RoomView';
 import type { ParticipantView } from './components/VideoTile';
 import { pathForRoom, roomIdFromPath, sanitizeDisplayName } from './lib/room';
+import { resolveRoomEndpoints, type RoomEndpoints } from './lib/room-endpoints';
 import { loadTurnCredentials, turnCredentialRefreshDelayMs } from './lib/turn';
 
 const DISPLAY_NAME_STORAGE_KEY = 'round:display-name';
@@ -124,28 +125,12 @@ function storeDisplayName(displayName: string) {
   }
 }
 
-function signalingUrl() {
-  const configuredUrl = import.meta.env.VITE_SIGNALING_URL?.trim();
-  if (configuredUrl) {
-    if (configuredUrl.startsWith('https://')) {
-      return configuredUrl.replace(/^https:/, 'wss:');
-    }
-    if (configuredUrl.startsWith('http://')) {
-      return configuredUrl.replace(/^http:/, 'ws:');
-    }
-    return configuredUrl;
-  }
-
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/signal`;
-}
-
 interface LoadedRtcConfiguration {
   readonly configuration: RTCConfiguration;
   readonly turnExpiresAt: number | null;
 }
 
-async function loadRtcConfiguration(): Promise<LoadedRtcConfiguration> {
+async function loadRtcConfiguration(turnCredentialsUrl: string): Promise<LoadedRtcConfiguration> {
   const stunUrls = (
     import.meta.env.VITE_STUN_URLS ?? 'stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302'
   )
@@ -154,12 +139,9 @@ async function loadRtcConfiguration(): Promise<LoadedRtcConfiguration> {
     .filter(Boolean);
   const iceServers: RTCIceServer[] = stunUrls.length > 0 ? [{ urls: stunUrls }] : [];
 
-  const credentialsEndpoint = import.meta.env.VITE_TURN_CREDENTIALS_URL?.trim();
   let credentials;
   try {
-    credentials = await loadTurnCredentials(
-      credentialsEndpoint ? { endpoint: credentialsEndpoint } : {},
-    );
+    credentials = await loadTurnCredentials({ endpoint: turnCredentialsUrl });
   } catch (error) {
     throw new Error('TURN 서버 정보를 받지 못했습니다. 잠시 후 다시 시도해 주세요.', {
       cause: error,
@@ -236,6 +218,22 @@ function ActiveRoom({
     let isCurrentSession = true;
     let unsubscribe = () => {};
     let turnRefreshTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+    let endpoints: RoomEndpoints;
+
+    try {
+      endpoints = resolveRoomEndpoints({
+        roomId,
+        authMode: import.meta.env.VITE_ROUND_AUTH_MODE,
+        location: window.location,
+        signalingUrl: import.meta.env.VITE_SIGNALING_URL,
+        turnCredentialsUrl: import.meta.env.VITE_TURN_CREDENTIALS_URL,
+      });
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : 'ROUND 브라우저 연결 설정이 올바르지 않습니다.',
+      );
+      return;
+    }
 
     const scheduleTurnRefresh = (expiresAt: number) => {
       if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
@@ -263,7 +261,7 @@ function ActiveRoom({
 
     const refreshTurnConfiguration = async () => {
       try {
-        const loaded = await loadRtcConfiguration();
+        const loaded = await loadRtcConfiguration(endpoints.turnCredentialsUrl);
         if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
           return;
         }
@@ -288,7 +286,7 @@ function ActiveRoom({
 
     const startSession = async () => {
       try {
-        const loaded = await loadRtcConfiguration();
+        const loaded = await loadRtcConfiguration(endpoints.turnCredentialsUrl);
         if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
           return;
         }
@@ -298,7 +296,7 @@ function ActiveRoom({
           session = createRoomSession({
             roomId,
             displayName,
-            signalingUrl: signalingUrl(),
+            signalingUrl: endpoints.signalingUrl,
             rtcConfiguration: loaded.configuration,
             preparedMediaStream: takePreparedMediaStream(),
             mediaConstraints: {
