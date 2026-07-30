@@ -10,6 +10,11 @@ import { LandingScreen } from './components/LandingScreen';
 import { PrejoinScreen } from './components/PrejoinScreen';
 import { RoomView, type ChatMessageView } from './components/RoomView';
 import type { ParticipantView } from './components/VideoTile';
+import {
+  createWithPreparedMedia,
+  stopMediaStreamTracks,
+  withPreparedMediaFailureCleanup,
+} from './lib/prepared-media';
 import { pathForRoom, roomIdFromPath, sanitizeDisplayName } from './lib/room';
 import { resolveRoomEndpoints, type RoomEndpoints } from './lib/room-endpoints';
 import { loadTurnCredentials, turnCredentialRefreshDelayMs } from './lib/turn';
@@ -195,6 +200,7 @@ function usePathname() {
 interface ActiveRoomProps {
   displayName: string;
   roomId: string;
+  releasePreparedMediaStream: () => void;
   takePreparedMediaStream: () => MediaStream | null;
   onReconnect: () => void;
   onLeave: () => void;
@@ -203,6 +209,7 @@ interface ActiveRoomProps {
 function ActiveRoom({
   displayName,
   roomId,
+  releasePreparedMediaStream,
   takePreparedMediaStream,
   onReconnect,
   onLeave,
@@ -218,22 +225,7 @@ function ActiveRoom({
     let isCurrentSession = true;
     let unsubscribe = () => {};
     let turnRefreshTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
-    let endpoints: RoomEndpoints;
-
-    try {
-      endpoints = resolveRoomEndpoints({
-        roomId,
-        authMode: import.meta.env.VITE_ROUND_AUTH_MODE,
-        location: window.location,
-        signalingUrl: import.meta.env.VITE_SIGNALING_URL,
-        turnCredentialsUrl: import.meta.env.VITE_TURN_CREDENTIALS_URL,
-      });
-    } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : 'ROUND 브라우저 연결 설정이 올바르지 않습니다.',
-      );
-      return;
-    }
+    let endpoints: RoomEndpoints | null = null;
 
     const scheduleTurnRefresh = (expiresAt: number) => {
       if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
@@ -260,8 +252,12 @@ function ActiveRoom({
     };
 
     const refreshTurnConfiguration = async () => {
+      const turnCredentialsUrl = endpoints?.turnCredentialsUrl;
+      if (turnCredentialsUrl === undefined) {
+        return;
+      }
       try {
-        const loaded = await loadRtcConfiguration(endpoints.turnCredentialsUrl);
+        const loaded = await loadRtcConfiguration(turnCredentialsUrl);
         if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
           return;
         }
@@ -286,45 +282,65 @@ function ActiveRoom({
 
     const startSession = async () => {
       try {
-        const loaded = await loadRtcConfiguration(endpoints.turnCredentialsUrl);
-        if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
-          return;
-        }
+        await withPreparedMediaFailureCleanup(
+          async () => {
+            const resolvedEndpoints = resolveRoomEndpoints({
+              roomId,
+              authMode: import.meta.env.VITE_ROUND_AUTH_MODE,
+              location: window.location,
+              signalingUrl: import.meta.env.VITE_SIGNALING_URL,
+              turnCredentialsUrl: import.meta.env.VITE_TURN_CREDENTIALS_URL,
+            });
+            endpoints = resolvedEndpoints;
 
-        let session = sessionRef.current;
-        if (session === null) {
-          session = createRoomSession({
-            roomId,
-            displayName,
-            signalingUrl: endpoints.signalingUrl,
-            rtcConfiguration: loaded.configuration,
-            preparedMediaStream: takePreparedMediaStream(),
-            mediaConstraints: {
-              audio: {
-                autoGainControl: true,
-                echoCancellation: true,
-                noiseSuppression: true,
-              },
-              video: {
-                width: { ideal: 640 },
-                height: { ideal: 360 },
-                frameRate: { ideal: 15, max: 15 },
-                facingMode: 'user',
-              },
-            },
-            maxChatMessages: 200,
-          });
-          sessionRef.current = session;
-        }
+            const loaded = await loadRtcConfiguration(resolvedEndpoints.turnCredentialsUrl);
+            if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
+              return;
+            }
 
-        setActionError('');
-        setSnapshot(session.getSnapshot());
-        unsubscribe = session.subscribe(setSnapshot);
+            let session = sessionRef.current;
+            if (session === null) {
+              session = createWithPreparedMedia(takePreparedMediaStream, (preparedMediaStream) =>
+                createRoomSession({
+                  roomId,
+                  displayName,
+                  signalingUrl: resolvedEndpoints.signalingUrl,
+                  rtcConfiguration: loaded.configuration,
+                  preparedMediaStream,
+                  mediaConstraints: {
+                    audio: {
+                      autoGainControl: true,
+                      echoCancellation: true,
+                      noiseSuppression: true,
+                    },
+                    video: {
+                      width: { ideal: 640 },
+                      height: { ideal: 360 },
+                      frameRate: { ideal: 15, max: 15 },
+                      facingMode: 'user',
+                    },
+                  },
+                  maxChatMessages: 200,
+                }),
+              );
+              sessionRef.current = session;
+            }
 
-        await session.join();
-        if (loaded.turnExpiresAt !== null) {
-          scheduleTurnRefresh(loaded.turnExpiresAt);
-        }
+            setActionError('');
+            setSnapshot(session.getSnapshot());
+            unsubscribe = session.subscribe(setSnapshot);
+
+            await session.join();
+            if (loaded.turnExpiresAt !== null) {
+              scheduleTurnRefresh(loaded.turnExpiresAt);
+            }
+          },
+          {
+            hasSession: () => sessionRef.current !== null,
+            isCurrent: () => isCurrentSession && lifecycleRef.current === lifecycle,
+            release: releasePreparedMediaStream,
+          },
+        );
       } catch (error) {
         if (isCurrentSession) {
           setActionError(error instanceof Error ? error.message : '스터디룸 연결에 실패했습니다.');
@@ -353,7 +369,7 @@ function ActiveRoom({
         void session.leave();
       });
     };
-  }, [displayName, roomId, takePreparedMediaStream]);
+  }, [displayName, releasePreparedMediaStream, roomId, takePreparedMediaStream]);
 
   const participants = useMemo<ParticipantView[]>(() => {
     const session = sessionRef.current;
@@ -461,10 +477,9 @@ export function App() {
   const preparedMediaStreamRef = useRef<MediaStream | null>(null);
 
   const stopUnclaimedPreparedMedia = useCallback(() => {
-    for (const track of preparedMediaStreamRef.current?.getTracks() ?? []) {
-      track.stop();
-    }
+    const stream = preparedMediaStreamRef.current;
     preparedMediaStreamRef.current = null;
+    stopMediaStreamTracks(stream);
   }, []);
 
   const takePreparedMediaStream = useCallback(() => {
@@ -550,6 +565,7 @@ export function App() {
       key={roomKey}
       displayName={displayName}
       roomId={roomId}
+      releasePreparedMediaStream={stopUnclaimedPreparedMedia}
       takePreparedMediaStream={takePreparedMediaStream}
       onReconnect={retryCurrentRoom}
       onLeave={goHome}
