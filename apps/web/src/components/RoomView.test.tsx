@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import { countNewRemoteMessages, RoomView, type ChatMessageView } from './RoomView';
+import {
+  countNewLocalDeliveryIssues,
+  countNewRemoteMessages,
+  RoomView,
+  type ChatMessageView,
+} from './RoomView';
 
 function renderRoom(overrides: Partial<Parameters<typeof RoomView>[0]> = {}) {
   return renderToStaticMarkup(
@@ -84,10 +89,12 @@ describe('RoomView connection state', () => {
       messages: [
         {
           id: 'message-invalid-time',
+          senderId: 'peer-a',
           senderName: 'Ara',
           text: '시간 값이 잘못된 메시지',
           sentAt: 1e300,
           isLocal: false,
+          deliveryState: 'received',
         },
       ],
     });
@@ -96,30 +103,51 @@ describe('RoomView connection state', () => {
     expect(markup).toContain('시간 값이 잘못된 메시지');
   });
 
-  it('shows pending and failed local delivery states instead of false success', () => {
+  it('shows pending, partial, and failed local delivery states instead of false success', () => {
     const markup = renderRoom({
       messages: [
         {
           id: 'message-pending',
+          senderId: 'self',
           senderName: 'Jin',
-          text: '전송 대기 메시지',
+          text: '첫 번째 메시지',
           sentAt: 1_000,
           isLocal: true,
           deliveryState: 'pending',
         },
         {
-          id: 'message-failed',
+          id: 'message-partial',
+          senderId: 'self',
           senderName: 'Jin',
-          text: '전송 실패 메시지',
+          text: '두 번째 메시지',
           sentAt: 2_000,
+          isLocal: true,
+          deliveryState: 'partial',
+        },
+        {
+          id: 'message-failed',
+          senderId: 'self',
+          senderName: 'Jin',
+          text: '세 번째 메시지',
+          sentAt: 3_000,
           isLocal: true,
           deliveryState: 'failed',
         },
       ],
     });
 
-    expect(markup).toContain('전송 중');
-    expect(markup).toContain('전송 실패');
+    expect(markup.match(/ · 전송 확인 중<\/time>/g)).toHaveLength(1);
+    expect(markup.match(/ · 일부 참가자 수신 확인 실패<\/time>/g)).toHaveLength(1);
+    expect(markup.match(/ · 수신 확인 실패<\/time>/g)).toHaveLength(1);
+    expect(markup.match(/data-delivery-state="pending"/g)).toHaveLength(1);
+    expect(markup.match(/data-delivery-state="partial"/g)).toHaveLength(1);
+    expect(markup.match(/data-delivery-state="failed"/g)).toHaveLength(1);
+  });
+
+  it('makes the closed chat panel and its controls inert', () => {
+    const markup = renderRoom();
+
+    expect(markup).toContain('class="chat-panel" aria-hidden="true" inert=""');
   });
 
   it('disables controls for unavailable local media instead of offering a no-op toggle', () => {
@@ -142,22 +170,117 @@ describe('RoomView connection state', () => {
   it('detects unread messages after the bounded chat list reaches 200 items', () => {
     const previous = Array.from({ length: 200 }, (_, index): ChatMessageView => ({
       id: `message-${index}`,
+      senderId: 'peer-a',
       senderName: 'Ara',
       text: `message ${index}`,
       sentAt: index,
       isLocal: false,
+      deliveryState: 'received',
     }));
     const next = [
       ...previous.slice(1),
       {
         id: 'message-200',
+        senderId: 'peer-a',
         senderName: 'Ara',
         text: 'latest message',
         sentAt: 200,
         isLocal: false,
+        deliveryState: 'received' as const,
       },
     ];
 
-    expect(countNewRemoteMessages(next, 'message-199')).toBe(1);
+    expect(
+      countNewRemoteMessages(next, {
+        id: 'message-199',
+        senderId: 'peer-a',
+      }),
+    ).toBe(1);
+  });
+
+  it('uses sender identity when locating the previous unread cursor', () => {
+    const messages: ChatMessageView[] = [
+      {
+        id: 'shared-id',
+        senderId: 'peer-a',
+        senderName: 'Ara',
+        text: 'earlier',
+        sentAt: 1,
+        isLocal: false,
+        deliveryState: 'received',
+      },
+      {
+        id: 'shared-id',
+        senderId: 'peer-b',
+        senderName: 'Bora',
+        text: 'cursor',
+        sentAt: 2,
+        isLocal: false,
+        deliveryState: 'received',
+      },
+      {
+        id: 'latest',
+        senderId: 'peer-a',
+        senderName: 'Ara',
+        text: 'unread',
+        sentAt: 3,
+        isLocal: false,
+        deliveryState: 'received',
+      },
+    ];
+
+    expect(
+      countNewRemoteMessages(messages, {
+        id: 'shared-id',
+        senderId: 'peer-b',
+      }),
+    ).toBe(1);
+  });
+
+  it('detects a local delivery issue only when it first becomes terminal', () => {
+    const previousDeliveryStates = new Map<string, ChatMessageView['deliveryState']>([
+      ['message-partial', 'pending'],
+      ['message-failed', 'failed'],
+    ]);
+    const messages: ChatMessageView[] = [
+      {
+        id: 'message-partial',
+        senderId: 'self',
+        senderName: 'Jin',
+        text: '참가자 일부에게 보내지 못한 메시지',
+        sentAt: 1_000,
+        isLocal: true,
+        deliveryState: 'partial',
+      },
+      {
+        id: 'message-failed',
+        senderId: 'self',
+        senderName: 'Jin',
+        text: '이미 확인한 실패 메시지',
+        sentAt: 2_000,
+        isLocal: true,
+        deliveryState: 'failed',
+      },
+      {
+        id: 'message-new-failure',
+        senderId: 'self',
+        senderName: 'Jin',
+        text: '곧바로 실패한 새 메시지',
+        sentAt: 3_000,
+        isLocal: true,
+        deliveryState: 'failed',
+      },
+      {
+        id: 'message-remote',
+        senderId: 'peer-a',
+        senderName: 'Ara',
+        text: '원격 메시지',
+        sentAt: 4_000,
+        isLocal: false,
+        deliveryState: 'received',
+      },
+    ];
+
+    expect(countNewLocalDeliveryIssues(messages, previousDeliveryStates)).toBe(2);
   });
 });

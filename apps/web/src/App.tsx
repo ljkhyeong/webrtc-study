@@ -544,6 +544,7 @@ function ActiveRoom({
     () =>
       snapshot?.messages.map((message) => ({
         id: message.id,
+        senderId: message.senderId,
         senderName: message.senderName,
         text: message.text,
         sentAt: message.sentAt,

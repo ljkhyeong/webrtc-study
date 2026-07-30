@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import type { ChatDeliveryState, ChatMessage } from '@round/rtc-core';
 import {
   CameraIcon,
   CameraOffIcon,
@@ -15,13 +16,11 @@ import {
 import { type ParticipantView, VideoTile } from './VideoTile';
 import { canonicalRoomUrl } from '../lib/room';
 
-export interface ChatMessageView {
-  id: string;
-  senderName: string;
-  text: string;
-  sentAt: number;
-  isLocal: boolean;
-  deliveryState?: 'pending' | 'sent' | 'failed' | 'received';
+export type ChatMessageView = ChatMessage;
+
+interface ChatMessageIdentity {
+  readonly id: string;
+  readonly senderId: string;
 }
 
 interface RoomViewProps {
@@ -50,6 +49,14 @@ const messageTime = new Intl.DateTimeFormat('ko-KR', {
   hour12: false,
 });
 
+const chatDeliveryLabels: Record<ChatDeliveryState, string> = {
+  pending: ' · 전송 확인 중',
+  sent: '',
+  partial: ' · 일부 참가자 수신 확인 실패',
+  failed: ' · 수신 확인 실패',
+  received: '',
+};
+
 function ChatMessageTime({
   sentAt,
   deliveryState,
@@ -57,8 +64,7 @@ function ChatMessageTime({
   sentAt: number;
   deliveryState: ChatMessageView['deliveryState'];
 }) {
-  const deliveryLabel =
-    deliveryState === 'pending' ? ' · 전송 중' : deliveryState === 'failed' ? ' · 전송 실패' : '';
+  const deliveryLabel = chatDeliveryLabels[deliveryState];
   const date = new Date(sentAt);
   if (!Number.isFinite(sentAt) || Number.isNaN(date.getTime())) {
     return <time>{`시간 미상${deliveryLabel}`}</time>;
@@ -78,17 +84,46 @@ function ChatMessageTime({
 
 export function countNewRemoteMessages(
   messages: ChatMessageView[],
-  previousLastMessageId: string | null,
+  previousLastMessage: ChatMessageIdentity | null,
 ) {
   if (messages.length === 0) {
     return 0;
   }
   const previousIndex =
-    previousLastMessageId === null
+    previousLastMessage === null
       ? -1
-      : messages.findIndex((item) => item.id === previousLastMessageId);
+      : messages.findIndex(
+          (item) =>
+            item.id === previousLastMessage.id && item.senderId === previousLastMessage.senderId,
+        );
   const unseen = previousIndex >= 0 ? messages.slice(previousIndex + 1) : messages;
   return unseen.filter((item) => !item.isLocal).length;
+}
+
+function isLocalDeliveryIssue(deliveryState: ChatDeliveryState | undefined) {
+  return deliveryState === 'partial' || deliveryState === 'failed';
+}
+
+function collectLocalDeliveryStates(messages: ChatMessageView[]) {
+  const deliveryStates = new Map<string, ChatDeliveryState>();
+  for (const item of messages) {
+    if (item.isLocal) {
+      deliveryStates.set(item.id, item.deliveryState);
+    }
+  }
+  return deliveryStates;
+}
+
+export function countNewLocalDeliveryIssues(
+  messages: ChatMessageView[],
+  previousDeliveryStates: ReadonlyMap<string, ChatDeliveryState>,
+) {
+  return messages.filter(
+    (item) =>
+      item.isLocal &&
+      isLocalDeliveryIssue(item.deliveryState) &&
+      !isLocalDeliveryIssue(previousDeliveryStates.get(item.id)),
+  ).length;
 }
 
 async function copyInviteLink(roomId: string) {
@@ -106,6 +141,10 @@ async function copyInviteLink(roomId: string) {
   textArea.select();
   document.execCommand('copy');
   textArea.remove();
+}
+
+function chatMessageIdentity(message: ChatMessageView | undefined): ChatMessageIdentity | null {
+  return message === undefined ? null : { id: message.id, senderId: message.senderId };
 }
 
 export function RoomView({
@@ -130,22 +169,34 @@ export function RoomView({
   const [chatOpen, setChatOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [copied, setCopied] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const previousLastMessageId = useRef<string | null>(messages.at(-1)?.id ?? null);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [unseenDeliveryIssueCount, setUnseenDeliveryIssueCount] = useState(0);
+  const previousLastMessage = useRef<ChatMessageIdentity | null>(
+    chatMessageIdentity(messages.at(-1)),
+  );
+  const previousLocalDeliveryStates = useRef(collectLocalDeliveryStates(messages));
   const hasObservedMessages = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const currentLocalDeliveryStates = collectLocalDeliveryStates(messages);
     if (!hasObservedMessages.current) {
       hasObservedMessages.current = true;
-      previousLastMessageId.current = messages.at(-1)?.id ?? null;
+      previousLastMessage.current = chatMessageIdentity(messages.at(-1));
+      previousLocalDeliveryStates.current = currentLocalDeliveryStates;
       return;
     }
     if (!chatOpen) {
-      const newRemoteMessages = countNewRemoteMessages(messages, previousLastMessageId.current);
-      setUnreadCount((count) => count + newRemoteMessages);
+      const newRemoteMessages = countNewRemoteMessages(messages, previousLastMessage.current);
+      const newDeliveryIssues = countNewLocalDeliveryIssues(
+        messages,
+        previousLocalDeliveryStates.current,
+      );
+      setUnreadMessageCount((count) => count + newRemoteMessages);
+      setUnseenDeliveryIssueCount((count) => count + newDeliveryIssues);
     }
-    previousLastMessageId.current = messages.at(-1)?.id ?? null;
+    previousLastMessage.current = chatMessageIdentity(messages.at(-1));
+    previousLocalDeliveryStates.current = currentLocalDeliveryStates;
   }, [chatOpen, messages]);
 
   useEffect(() => {
@@ -153,7 +204,8 @@ export function RoomView({
       return;
     }
 
-    setUnreadCount(0);
+    setUnreadMessageCount(0);
+    setUnseenDeliveryIssueCount(0);
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [chatOpen, messages]);
 
@@ -187,6 +239,12 @@ export function RoomView({
   const terminalConnectionError = !isActive && Boolean(errorMessage);
   const partialPeerFailure = isActive && Boolean(peerRecoveryMessage);
   const gridSize = Math.min(Math.max(participants.length, 1), 6);
+  const chatNotificationCount = unreadMessageCount + unseenDeliveryIssueCount;
+  const chatButtonLabel = chatOpen
+    ? '채팅 닫기'
+    : `채팅 열기${unreadMessageCount > 0 ? `, 새 메시지 ${unreadMessageCount}개` : ''}${
+        unseenDeliveryIssueCount > 0 ? `, 보낸 메시지 전송 문제 ${unseenDeliveryIssueCount}건` : ''
+      }`;
 
   return (
     <div className={`room-shell${chatOpen ? ' room-shell--chat-open' : ''}`}>
@@ -292,7 +350,7 @@ export function RoomView({
           ) : null}
         </section>
 
-        <aside className="chat-panel" aria-hidden={!chatOpen}>
+        <aside className="chat-panel" aria-hidden={!chatOpen} inert={!chatOpen}>
           <header className="chat-panel__header">
             <div>
               <span>ROOM CHAT</span>
@@ -313,8 +371,9 @@ export function RoomView({
             ) : (
               messages.map((chatMessage) => (
                 <article
-                  key={chatMessage.id}
+                  key={`${chatMessage.senderId}:${chatMessage.id}`}
                   className={`chat-message${chatMessage.isLocal ? ' chat-message--mine' : ''}`}
+                  data-delivery-state={chatMessage.deliveryState}
                 >
                   <header>
                     <strong>{chatMessage.isLocal ? '나' : chatMessage.senderName}</strong>
@@ -355,6 +414,12 @@ export function RoomView({
         </aside>
       </main>
 
+      {!chatOpen && unseenDeliveryIssueCount > 0 ? (
+        <p className="sr-only" role="status" aria-live="polite">
+          보낸 메시지 전송 문제 {unseenDeliveryIssueCount}건. 채팅을 확인하세요.
+        </p>
+      ) : null}
+
       <footer className="control-dock" aria-label="통화 제어">
         <button
           className={`control-button${audioEnabled ? '' : ' control-button--off'}`}
@@ -391,13 +456,13 @@ export function RoomView({
         <button
           className={`control-button${chatOpen ? ' control-button--active' : ''}`}
           type="button"
-          aria-label={chatOpen ? '채팅 닫기' : '채팅 열기'}
+          aria-label={chatButtonLabel}
           aria-expanded={chatOpen}
           onClick={toggleChat}
         >
           <MessageIcon />
           <span>채팅</span>
-          {unreadCount > 0 ? <b>{Math.min(unreadCount, 9)}</b> : null}
+          {chatNotificationCount > 0 ? <b>{Math.min(chatNotificationCount, 9)}</b> : null}
         </button>
         <span className="control-dock__divider" />
         <button className="control-button control-button--leave" type="button" onClick={onLeave}>

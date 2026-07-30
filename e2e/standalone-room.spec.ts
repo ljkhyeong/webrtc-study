@@ -162,6 +162,13 @@ test('두 참가자가 영상·음성·채팅을 사용하고 정상 퇴장한�
       expectRemoteMedia(second.page, '가온'),
     ]);
 
+    expect(
+      await first.page.locator('#chat-message').evaluate((element) => {
+        (element as HTMLElement).focus();
+        return document.activeElement === element;
+      }),
+    ).toBe(false);
+
     await first.page.getByRole('button', { name: '채팅 열기' }).click();
     await first.page
       .getByRole('textbox', { name: '메시지', exact: true })
@@ -170,12 +177,22 @@ test('두 참가자가 영상·음성·채팅을 사용하고 정상 퇴장한�
 
     await second.page.getByRole('button', { name: '채팅 열기' }).click();
     await expect(second.page.getByText('오늘 목표는 3장까지', { exact: true })).toHaveCount(1);
+    const firstOutgoingMessage = first.page.locator('article.chat-message', {
+      hasText: '오늘 목표는 3장까지',
+    });
+    await expect(firstOutgoingMessage).toHaveAttribute('data-delivery-state', 'sent');
+    await expect(firstOutgoingMessage).not.toContainText('수신 확인 실패');
 
     await second.page
       .getByRole('textbox', { name: '메시지', exact: true })
       .fill('좋아요, 시작해요');
     await second.page.getByRole('button', { name: '메시지 보내기' }).click();
     await expect(first.page.getByText('좋아요, 시작해요', { exact: true })).toHaveCount(1);
+    const secondOutgoingMessage = second.page.locator('article.chat-message', {
+      hasText: '좋아요, 시작해요',
+    });
+    await expect(secondOutgoingMessage).toHaveAttribute('data-delivery-state', 'sent');
+    await expect(secondOutgoingMessage).not.toContainText('수신 확인 실패');
 
     const firstTileOnSecondPage = participantTile(second.page, '가온');
     await first.page.getByRole('button', { name: '마이크 끄기' }).click();
