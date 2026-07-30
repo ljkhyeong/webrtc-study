@@ -52,6 +52,24 @@ mode rejects non-empty endpoint overrides instead of silently bypassing the
 room-scoped cookie path. The tracked standalone image remains built for
 `VITE_ROUND_AUTH_MODE=standalone`.
 
+If the BATON deployment reuses this repository's web build, export only the
+static assets with the BATON browser contract:
+
+```bash
+docker build \
+  --target web-assets \
+  --build-arg VITE_ROUND_AUTH_MODE=baton \
+  --output type=local,dest=output/baton-web-assets \
+  .
+```
+
+The Dockerfile leaves both endpoint override build arguments empty by default.
+The tracked standalone Compose and release workflow pin
+`VITE_ROUND_AUTH_MODE=standalone`; do not reuse those standalone edge routes for
+BATON. The `web-assets` target contains no web server or edge policy. BATON must
+serve these files through its own edge and implement the public-to-private
+routes below.
+
 Use the exact issuer and JWK Set URI from the BATON environment. Production
 issuer and JWK URLs must use HTTPS. `ROUND_AUTH_AUDIENCE` must equal the
 participation grant's `aud`; keep `round` unless both services deliberately
@@ -401,7 +419,8 @@ docker compose --env-file ops/production.env config --quiet
 CI runs the same interpolation against temporary dummy credentials and
 certificates, builds the pinned custom Caddy runtime, verifies that its
 rate-limit module is present, validates the Caddyfile with that exact binary,
-checks every Dockerfile runtime target, and builds all three images:
+checks every Dockerfile runtime target, exports the BATON-mode static web
+assets, and builds all three standalone images:
 
 ```bash
 bash ops/ci/validate-deployment.sh
@@ -409,8 +428,9 @@ bash ops/ci/validate-deployment.sh
 
 For a local syntax and target check that does not build the three final Compose
 images, add `--check-only`. That mode still builds the smaller custom Caddy
-validation target because a stock Caddy binary cannot parse or validate the
-rate-limit directive.
+validation target and BATON web-assets export because a stock Caddy binary
+cannot parse the rate-limit directive and a Dockerfile syntax check cannot
+verify Vite build-argument propagation.
 
 Build the three target images and start the stack:
 

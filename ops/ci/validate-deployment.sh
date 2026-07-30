@@ -8,7 +8,8 @@ Usage: ops/ci/validate-deployment.sh [--check-only]
 Validates the production Compose interpolation, shell scripts, Caddyfile, and
 every Dockerfile runtime target. By default it also builds all Compose images.
 Use --check-only to skip the final Compose images. The small custom Caddy
-validation target is always built so module compatibility is actually checked.
+validation target and BATON web-assets export are always built so their
+contracts are actually checked.
 EOF
 }
 
@@ -150,6 +151,17 @@ printf 'Checking Dockerfile runtime targets...\n'
 for target in web-runtime signaling-runtime turn-runtime; do
   docker build --check --target "$target" .
 done
+
+baton_web_assets_dir="$fixture_dir/baton-web-assets"
+printf 'Building the BATON browser asset export...\n'
+docker build \
+  --target web-assets \
+  --build-arg VITE_ROUND_AUTH_MODE=baton \
+  --output "type=local,dest=$baton_web_assets_dir" \
+  .
+test -f "$baton_web_assets_dir/index.html"
+test -d "$baton_web_assets_dir/assets"
+grep -R -Fq 'round/rooms' "$baton_web_assets_dir/assets"
 
 if "$check_only"; then
   printf 'Deployment checks passed; image builds skipped by --check-only.\n'

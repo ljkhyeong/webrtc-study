@@ -27,12 +27,21 @@ COPY apps/web apps/web
 
 ARG VITE_STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
 ARG VITE_ICE_TRANSPORT_POLICY=all
+ARG VITE_ROUND_AUTH_MODE=standalone
+ARG VITE_SIGNALING_URL=
+ARG VITE_TURN_CREDENTIALS_URL=
 RUN VITE_STUN_URLS="${VITE_STUN_URLS}" \
     VITE_ICE_TRANSPORT_POLICY="${VITE_ICE_TRANSPORT_POLICY}" \
     npm run build:packages \
-    && VITE_STUN_URLS="${VITE_STUN_URLS}" \
+    && VITE_ROUND_AUTH_MODE="${VITE_ROUND_AUTH_MODE}" \
+       VITE_SIGNALING_URL="${VITE_SIGNALING_URL}" \
+       VITE_STUN_URLS="${VITE_STUN_URLS}" \
+       VITE_TURN_CREDENTIALS_URL="${VITE_TURN_CREDENTIALS_URL}" \
        VITE_ICE_TRANSPORT_POLICY="${VITE_ICE_TRANSPORT_POLICY}" \
        npm run build -w @round/web
+
+FROM scratch AS web-assets
+COPY --from=web-build /workspace/apps/web/dist /
 
 FROM ${CADDY_BUILDER_IMAGE} AS caddy-build
 ARG CADDY_VERSION

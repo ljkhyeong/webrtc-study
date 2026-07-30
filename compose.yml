@@ -17,6 +17,7 @@ services:
         NODE_IMAGE: ${NODE_IMAGE:-node:22.23.0-alpine3.24}
         CADDY_BUILDER_IMAGE: ${CADDY_BUILDER_IMAGE:-caddy:2.11.4-builder-alpine}
         CADDY_IMAGE: ${CADDY_IMAGE:-caddy:2.11.4-alpine}
+        VITE_ROUND_AUTH_MODE: standalone
         VITE_STUN_URLS: ${VITE_STUN_URLS:?Set VITE_STUN_URLS}
         VITE_ICE_TRANSPORT_POLICY: ${VITE_ICE_TRANSPORT_POLICY:-all}
     environment:

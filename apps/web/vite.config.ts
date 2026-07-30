@@ -6,6 +6,15 @@ import { defineConfig, loadEnv, type ConfigEnv, type UserConfig } from 'vite';
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(currentDirectory, '../..');
 
+export function rewriteBatonRoomEndpoint(requestPath: string): string {
+  return requestPath
+    .replace(/^\/round\/rooms\/([^/?#]+)\/signal(?=$|[?#])/, '/rooms/$1/signal')
+    .replace(
+      /^\/round\/rooms\/([^/?#]+)\/turn-credentials(?=$|[?#])/,
+      '/api/rooms/$1/turn-credentials',
+    );
+}
+
 export function createViteConfig({ mode }: ConfigEnv): UserConfig {
   const environment = loadEnv(mode, repositoryRoot, '');
   const signalingPort = environment.PORT?.trim() || '8787';
@@ -29,6 +38,13 @@ export function createViteConfig({ mode }: ConfigEnv): UserConfig {
           xfwd: true,
         },
         '/healthz': `http://127.0.0.1:${signalingPort}`,
+        '/round/rooms': {
+          target: `http://127.0.0.1:${signalingPort}`,
+          changeOrigin: true,
+          xfwd: true,
+          ws: true,
+          rewrite: rewriteBatonRoomEndpoint,
+        },
         '/signal': {
           target: `ws://127.0.0.1:${signalingPort}`,
           ws: true,
