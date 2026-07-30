@@ -44,8 +44,10 @@ class ConfigurationPropertiesBindingTest {
 					"round.turn.credential-ttl=10m",
 					"round.turn.rate-limit-window=600s",
 					"round.turn.rate-limit-max-requests=12",
+					"round.turn.rate-limit-participant-max-requests=6",
 					"round.turn.rate-limit-global-max-requests=24",
-					"round.turn.rate-limit-max-clients=10000");
+					"round.turn.rate-limit-max-clients=10000",
+					"round.turn.rate-limit-max-participants=10000");
 
 	@Test
 	void bindsIsoAndReadableDurationsAndKeepsDisabledTurnConfigurationImmutable() {
@@ -75,7 +77,9 @@ class ConfigurationPropertiesBindingTest {
 					assertThat(turn.credentialTtl()).isEqualTo(Duration.ofHours(1));
 					assertThat(turn.rateLimitWindow()).isEqualTo(Duration.ofSeconds(45));
 					assertThat(turn.rateLimitMaxRequests()).isEqualTo(12);
+					assertThat(turn.rateLimitParticipantMaxRequests()).isEqualTo(6);
 					assertThat(turn.rateLimitGlobalMaxRequests()).isEqualTo(24);
+					assertThat(turn.rateLimitMaxParticipants()).isEqualTo(10_000);
 					assertThat(turn.enabled()).isFalse();
 					assertThat(turn.urls()).isEmpty();
 					assertThat(turn.sharedSecret()).isEmpty();
@@ -115,8 +119,10 @@ class ConfigurationPropertiesBindingTest {
 				turnDefaults.credentialTtl(),
 				turnDefaults.rateLimitWindow(),
 				turnDefaults.rateLimitMaxRequests(),
+				turnDefaults.rateLimitParticipantMaxRequests(),
 				turnDefaults.rateLimitGlobalMaxRequests(),
-				turnDefaults.rateLimitMaxClients());
+				turnDefaults.rateLimitMaxClients(),
+				turnDefaults.rateLimitMaxParticipants());
 
 		origins.add("https://other.example");
 		urls.add("turns:turn.example.com:5349");

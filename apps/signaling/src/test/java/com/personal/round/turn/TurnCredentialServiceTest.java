@@ -2,9 +2,11 @@ package com.personal.round.turn;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.config.TestProperties;
 import com.personal.round.config.TurnProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
@@ -18,6 +20,12 @@ import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.AfterAll;
@@ -74,12 +82,20 @@ class TurnCredentialServiceTest {
 
 		TurnCredentials credentials = issued(service.issueFor(
 				"192.0.2.10",
-				Instant.ofEpochSecond(1_800_000_120)));
+				grant(
+						"abcd-efgh-jkmp",
+						"member-1",
+						"ticket-1",
+						Instant.ofEpochSecond(1_800_000_120))));
 
 		assertThat(credentials.expiresAt()).isEqualTo(1_800_000_120);
 		assertThat(service.issueFor(
 				"192.0.2.10",
-				Instant.ofEpochSecond(1_800_000_000)))
+				grant(
+						"abcd-efgh-jkmp",
+						"member-1",
+						"ticket-2",
+						Instant.ofEpochSecond(1_800_000_000))))
 				.isSameAs(TurnCredentialService.AuthorizationExpired.INSTANCE);
 		assertThat(registry.get("round.turn.credentials.issued").counter().count())
 				.isOne();
@@ -105,7 +121,7 @@ class TurnCredentialServiceTest {
 		assertThat(thirteenth.retryAfterSeconds()).isEqualTo(120);
 		assertThat(registry.get("round.turn.credentials.issued").counter().count())
 				.isEqualTo(12);
-		assertThat(registry.get("round.turn.credentials.rate_limited").counter().count())
+		assertThat(metricCount(registry, "round.turn.credentials.rate_limited"))
 				.isEqualTo(1);
 	}
 
@@ -171,10 +187,31 @@ class TurnCredentialServiceTest {
 		clock.advanceSeconds(300);
 		TurnCredentials afterReset = issued(service.issueFor("198.51.100.10"));
 		assertThat(afterReset.username()).isNotIn(first.username(), second.username());
-		assertThat(registry.get("round.turn.credentials.rate_limited").counter().count())
+		assertThat(metricCount(registry, "round.turn.credentials.rate_limited"))
 				.isEqualTo(2);
 		assertThat(registry.get("round.turn.credentials.issued").counter().count())
 				.isEqualTo(3);
+	}
+
+	@Test
+	void standaloneIssuanceDoesNotCreateOrApplyParticipantQuotaState() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				TURN_URLS, SHARED_SECRET, 2, 1, 4, 10_000, 10_000);
+		MutableClock clock = new MutableClock(1_800_000_000);
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		TurnCredentialService service =
+				service(properties, clock, registry);
+
+		issued(service.issueFor("198.51.100.10"));
+		issued(service.issueFor("198.51.100.10"));
+
+		assertThat(service.trackedParticipantCount()).isZero();
+		rateLimited(service.issueFor("198.51.100.10"));
+		assertThat(registry.get("round.turn.credentials.rate_limited")
+				.tag("scope", "client")
+				.counter()
+				.count())
+				.isOne();
 	}
 
 	@Test
@@ -231,7 +268,7 @@ class TurnCredentialServiceTest {
 
 		clock.advanceSeconds(300);
 		issued(service.issueFor("198.51.100.12"));
-		assertThat(registry.get("round.turn.credentials.rate_limited").counter().count())
+		assertThat(metricCount(registry, "round.turn.credentials.rate_limited"))
 				.isEqualTo(2);
 		assertThat(registry.get("round.turn.credentials.issued").counter().count())
 				.isEqualTo(3);
@@ -267,8 +304,261 @@ class TurnCredentialServiceTest {
 				.isEqualTo(60);
 		assertThat(registry.get("round.turn.credentials.issued").counter().count())
 				.isEqualTo(3);
-		assertThat(registry.get("round.turn.credentials.rate_limited").counter().count())
+		assertThat(metricCount(registry, "round.turn.credentials.rate_limited"))
 				.isEqualTo(3);
+	}
+
+	@Test
+	void rateLimitsOneParticipantAcrossNewTicketsAndClientAddresses() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				TURN_URLS, SHARED_SECRET, 12, 2, 24, 10_000, 10_000);
+		MutableClock clock = new MutableClock(1_800_000_000);
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		TurnCredentialService service = service(properties, clock, registry);
+
+		issued(service.issueFor(
+				"198.51.100.10",
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
+		issued(service.issueFor(
+				"198.51.100.11",
+				grant("abcd-efgh-jkmp", "member-1", "ticket-2", clock)));
+
+		TurnCredentialService.RateLimited limited = rateLimited(service.issueFor(
+				"198.51.100.12",
+				grant("abcd-efgh-jkmp", "member-1", "ticket-3", clock)));
+		issued(service.issueFor(
+				"198.51.100.12",
+				grant("qrst-uvwx-yz23", "member-1", "ticket-4", clock)));
+		issued(service.issueFor(
+				"198.51.100.13",
+				grant("abcd-efgh-jkmp", "member-2", "ticket-5", clock)));
+
+		assertThat(limited.retryAfterSeconds()).isEqualTo(600);
+		assertThat(service.trackedParticipantCount()).isEqualTo(3);
+		assertThat(registry.get("round.turn.credentials.rate_limited")
+				.tag("scope", "participant")
+				.counter()
+				.count())
+				.isOne();
+		assertThat(metricCount(registry, "round.turn.credentials.rate_limited"))
+				.isOne();
+	}
+
+	@Test
+	void participantRejectionDoesNotConsumeClientOrGlobalQuota() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				TURN_URLS, SHARED_SECRET, 2, 1, 4, 10_000, 10_000);
+		MutableClock clock = new MutableClock(1_800_000_000);
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		TurnCredentialService service =
+				service(properties, clock, registry);
+
+		issued(service.issueFor(
+				"198.51.100.1",
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
+		rateLimited(service.issueFor(
+				"198.51.100.2",
+				grant("abcd-efgh-jkmp", "member-1", "ticket-2", clock)));
+
+		issued(service.issueFor(
+				"198.51.100.2",
+				grant("abcd-efgh-jkmp", "member-2", "ticket-3", clock)));
+		issued(service.issueFor(
+				"198.51.100.2",
+				grant("abcd-efgh-jkmp", "member-3", "ticket-4", clock)));
+		issued(service.issueFor(
+				"198.51.100.3",
+				grant("abcd-efgh-jkmp", "member-4", "ticket-5", clock)));
+
+		rateLimited(service.issueFor(
+				"198.51.100.4",
+				grant("abcd-efgh-jkmp", "member-5", "ticket-6", clock)));
+		assertThat(registry.get("round.turn.credentials.rate_limited")
+				.tag("scope", "participant")
+				.counter()
+				.count())
+				.isOne();
+		assertThat(registry.get("round.turn.credentials.rate_limited")
+				.tag("scope", "global")
+				.counter()
+				.count())
+				.isOne();
+	}
+
+	@Test
+	void refusesUntrackedParticipantsWhenLiveWindowCapacityIsFull() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				TURN_URLS, SHARED_SECRET, 12, 6, 24, 10_000, 2);
+		MutableClock clock = new MutableClock(1_800_000_000);
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		TurnCredentialService service = service(properties, clock, registry);
+
+		issued(service.issueFor(
+				"198.51.100.1",
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
+		clock.advanceSeconds(60);
+		issued(service.issueFor(
+				"198.51.100.2",
+				grant("abcd-efgh-jkmp", "member-2", "ticket-2", clock)));
+
+		TurnCredentialService.RateLimited limited = rateLimited(service.issueFor(
+				"198.51.100.3",
+				grant("abcd-efgh-jkmp", "member-3", "ticket-3", clock)));
+		assertThat(limited.retryAfterSeconds()).isEqualTo(540);
+		assertThat(service.trackedParticipantCount()).isEqualTo(2);
+		assertThat(service.trackedClientCount()).isEqualTo(2);
+
+		issued(service.issueFor(
+				"198.51.100.1",
+				grant("abcd-efgh-jkmp", "member-1", "ticket-4", clock)));
+		clock.advanceSeconds(540);
+		issued(service.issueFor(
+				"198.51.100.3",
+				grant("abcd-efgh-jkmp", "member-3", "ticket-5", clock)));
+
+		assertThat(service.trackedParticipantCount()).isEqualTo(2);
+		assertThat(registry.get("round.turn.credentials.rate_limited")
+				.tag("scope", "participant_state_capacity")
+				.counter()
+				.count())
+				.isOne();
+	}
+
+	@Test
+	void atomicallyLimitsConcurrentParticipantRequestsWithVirtualThreads()
+			throws Exception {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				TURN_URLS, SHARED_SECRET, 12, 6, 24, 10_000, 10_000);
+		MutableClock clock = new MutableClock(1_800_000_000);
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		TurnCredentialService service =
+				service(properties, clock, registry);
+		ParticipationGrant grant =
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock);
+		CountDownLatch ready = new CountDownLatch(40);
+		CountDownLatch start = new CountDownLatch(1);
+		List<Callable<TurnCredentialService.IssueResult>> requests = IntStream
+				.range(0, 40)
+				.mapToObj(ignored -> (Callable<TurnCredentialService.IssueResult>)
+						() -> {
+							ready.countDown();
+							if (!start.await(5, TimeUnit.SECONDS)) {
+								throw new IllegalStateException(
+										"Concurrent TURN issuance start timed out");
+							}
+							return service.issueFor("198.51.100.10", grant);
+						})
+				.toList();
+
+		List<Future<TurnCredentialService.IssueResult>> results;
+		try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+			results = requests.stream().map(executor::submit).toList();
+			try {
+				assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+			}
+			finally {
+				start.countDown();
+			}
+		}
+
+		List<TurnCredentialService.IssueResult> outcomes = results.stream()
+				.map(TurnCredentialServiceTest::completed)
+				.toList();
+		assertThat(outcomes)
+				.filteredOn(TurnCredentialService.Issued.class::isInstance)
+				.hasSize(6);
+		assertThat(outcomes)
+				.filteredOn(TurnCredentialService.RateLimited.class::isInstance)
+				.hasSize(34);
+		assertThat(registry.get("round.turn.credentials.rate_limited")
+				.tag("scope", "participant")
+				.counter()
+				.count())
+				.isEqualTo(34);
+	}
+
+	@Test
+	void reportsTheScopeWithTheLongestExactRetryWindow() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				TURN_URLS, SHARED_SECRET, 2, 1, 4, 10_000, 10_000);
+		MutableClock clock = new MutableClock(1_800_000_000);
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		TurnCredentialService service = service(properties, clock, registry);
+
+		issued(service.issueFor(
+				"198.51.100.1",
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
+		clock.advanceSeconds(60);
+		issued(service.issueFor(
+				"198.51.100.2",
+				grant("abcd-efgh-jkmp", "member-2", "ticket-2", clock)));
+		issued(service.issueFor(
+				"198.51.100.3",
+				grant("abcd-efgh-jkmp", "member-3", "ticket-3", clock)));
+		issued(service.issueFor(
+				"198.51.100.4",
+				grant("abcd-efgh-jkmp", "member-4", "ticket-4", clock)));
+
+		TurnCredentialService.RateLimited limited = rateLimited(service.issueFor(
+				"198.51.100.5",
+				grant("abcd-efgh-jkmp", "member-2", "ticket-5", clock)));
+
+		assertThat(limited.retryAfterSeconds()).isEqualTo(600);
+		assertThat(registry.get("round.turn.credentials.rate_limited")
+				.tag("scope", "participant")
+				.counter()
+				.count())
+				.isOne();
+		assertThat(registry.get("round.turn.credentials.rate_limited")
+				.tag("scope", "global")
+				.counter()
+				.count())
+				.isZero();
+	}
+
+	@Test
+	void reportsGlobalScopeWhenParticipantAndGlobalWindowsExpireTogether() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				TURN_URLS, SHARED_SECRET, 2, 1, 4, 10_000, 10_000);
+		MutableClock clock = new MutableClock(1_800_000_000);
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		TurnCredentialService service = service(properties, clock, registry);
+
+		issued(service.issueFor(
+				"198.51.100.1",
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
+		for (int participant = 2; participant <= 4; participant++) {
+			issued(service.issueFor(
+					"198.51.100." + participant,
+					grant(
+							"abcd-efgh-jkmp",
+							"member-" + participant,
+							"ticket-" + participant,
+							clock)));
+		}
+
+		TurnCredentialService.RateLimited limited = rateLimited(service.issueFor(
+				"198.51.100.5",
+				grant("abcd-efgh-jkmp", "member-1", "ticket-5", clock)));
+
+		assertThat(limited.retryAfterSeconds()).isEqualTo(600);
+		assertThat(registry.get("round.turn.credentials.rate_limited")
+				.tag("scope", "global")
+				.counter()
+				.count())
+				.isOne();
+		assertThat(registry.get("round.turn.credentials.rate_limited")
+				.tag("scope", "participant")
+				.counter()
+				.count())
+				.isZero();
+	}
+
+	@Test
+	void redactsParticipantIdentityFromQuotaKeyDiagnostics() {
+		assertThat(new ParticipantRoomKey("abcd-efgh-jkmp", "sensitive-member").toString())
+				.isEqualTo("ParticipantRoomKey[redacted]")
+				.doesNotContain("abcd-efgh-jkmp", "sensitive-member");
 	}
 
 	@Test
@@ -302,6 +592,18 @@ class TurnCredentialServiceTest {
 	}
 
 	@Test
+	void validatesParticipantRateLimitAndStateCapacity() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				TURN_URLS, SHARED_SECRET, 12, 0, 24, 10_000, 0);
+
+		assertThat(violations(properties))
+				.extracting(violation -> violation.getPropertyPath().toString())
+				.contains(
+						"rateLimitParticipantMaxRequests",
+						"rateLimitMaxParticipants");
+	}
+
+	@Test
 	void requiresGlobalQuotaForTwoMisalignedClientWindows() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
 				TURN_URLS, SHARED_SECRET, 4, 7, 10_000);
@@ -329,6 +631,33 @@ class TurnCredentialServiceTest {
 				mac.doFinal(username.getBytes(StandardCharsets.UTF_8)));
 	}
 
+	private static ParticipationGrant grant(
+			String roomId,
+			String subject,
+			String tokenId,
+			MutableClock clock) {
+		return grant(
+				roomId,
+				subject,
+				tokenId,
+				clock.instant().plusSeconds(300));
+	}
+
+	private static ParticipationGrant grant(
+			String roomId,
+			String subject,
+			String tokenId,
+			Instant expiresAt) {
+		return new ParticipationGrant(
+				subject,
+				"study-1",
+				roomId,
+				ParticipationGrant.Role.PARTICIPANT,
+				tokenId,
+				expiresAt.minusSeconds(300),
+				expiresAt);
+	}
+
 	private static TurnCredentialService service(
 			TurnProperties properties,
 			Clock clock,
@@ -349,6 +678,26 @@ class TurnCredentialServiceTest {
 			TurnCredentialService.IssueResult result) {
 		assertThat(result).isInstanceOf(TurnCredentialService.RateLimited.class);
 		return (TurnCredentialService.RateLimited) result;
+	}
+
+	private static TurnCredentialService.IssueResult completed(
+			Future<TurnCredentialService.IssueResult> future) {
+		try {
+			return future.get();
+		}
+		catch (Exception exception) {
+			throw new AssertionError("Concurrent TURN issuance failed", exception);
+		}
+	}
+
+	private static double metricCount(
+			SimpleMeterRegistry registry,
+			String name) {
+		return registry.find(name)
+				.counters()
+				.stream()
+				.mapToDouble(Counter::count)
+				.sum();
 	}
 
 	private static final class MutableClock extends Clock {

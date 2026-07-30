@@ -8,7 +8,7 @@ import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.auth.ParticipationGrantResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import java.security.Principal;
-import java.time.Instant;
+import java.util.function.Supplier;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -35,7 +35,9 @@ public class TurnCredentialController {
 
 	@PostMapping(STANDALONE_TURN_CREDENTIALS)
 	public ResponseEntity<TurnCredentials> credentials(HttpServletRequest request) {
-		return issueCredentials(request, Instant.MAX);
+		return issueCredentials(
+				request,
+				() -> credentialService.issueFor(request.getRemoteAddr()));
 	}
 
 	@PostMapping(BATON_TURN_CREDENTIALS_TEMPLATE)
@@ -49,18 +51,18 @@ public class TurnCredentialController {
 		if (grant == null) {
 			return forbidden();
 		}
-		return issueCredentials(request, grant.expiresAt());
+		return issueCredentials(
+				request,
+				() -> credentialService.issueFor(request.getRemoteAddr(), grant));
 	}
 
 	private ResponseEntity<TurnCredentials> issueCredentials(
 			HttpServletRequest request,
-			Instant authorizationExpiresAt) {
+			Supplier<TurnCredentialService.IssueResult> issuer) {
 		if (!requestPolicy.allows(request)) {
 			return forbidden();
 		}
-		TurnCredentialService.IssueResult result = credentialService.issueFor(
-				request.getRemoteAddr(),
-				authorizationExpiresAt);
+		TurnCredentialService.IssueResult result = issuer.get();
 		return switch (result) {
 			case TurnCredentialService.Issued issued -> ResponseEntity.ok()
 					.cacheControl(CacheControl.noStore())

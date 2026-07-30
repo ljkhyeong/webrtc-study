@@ -63,5 +63,7 @@ round:
     credential-ttl: ${TURN_CREDENTIAL_TTL_SECONDS:600}s
     rate-limit-window: ${TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS:600}s
     rate-limit-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS:12}
+    rate-limit-participant-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS:6}
     rate-limit-global-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS:24}
     rate-limit-max-clients: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS:10000}
+    rate-limit-max-participants: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS:10000}

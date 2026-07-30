@@ -16,8 +16,10 @@ class TurnPropertiesUrlValidationTest {
 					"round.turn.credential-ttl=10m",
 					"round.turn.rate-limit-window=10m",
 					"round.turn.rate-limit-max-requests=12",
+					"round.turn.rate-limit-participant-max-requests=6",
 					"round.turn.rate-limit-global-max-requests=24",
-					"round.turn.rate-limit-max-clients=10000");
+					"round.turn.rate-limit-max-clients=10000",
+					"round.turn.rate-limit-max-participants=10000");
 
 	@ParameterizedTest
 	@ValueSource(strings = {

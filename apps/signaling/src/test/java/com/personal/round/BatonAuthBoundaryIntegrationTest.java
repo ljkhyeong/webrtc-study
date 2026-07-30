@@ -57,6 +57,7 @@ import tools.jackson.databind.ObjectMapper;
 			"round.turn.credential-ttl=1h",
 			"round.turn.rate-limit-window=60s",
 			"round.turn.rate-limit-max-requests=20",
+			"round.turn.rate-limit-participant-max-requests=2",
 			"round.turn.rate-limit-global-max-requests=40"
 		})
 class BatonAuthBoundaryIntegrationTest {
@@ -162,6 +163,16 @@ class BatonAuthBoundaryIntegrationTest {
 				MATCHING_TOKEN,
 				origin(),
 				"same-origin");
+		HttpResponse<String> refreshed = post(
+				path,
+				RECONNECT_TOKEN,
+				origin(),
+				"same-origin");
+		HttpResponse<String> participantLimited = post(
+				path,
+				EXCESS_TOKEN,
+				origin(),
+				"same-origin");
 
 		assertThat(missingCookie.statusCode()).isEqualTo(401);
 		assertThat(missingCookie.headers().firstValue("cache-control")).contains("no-store");
@@ -181,6 +192,14 @@ class BatonAuthBoundaryIntegrationTest {
 				.doesNotContain("integration-shared-secret");
 		assertThat(credentials.get("expiresAt").asLong())
 				.isLessThanOrEqualTo(Instant.now().plusSeconds(250).getEpochSecond());
+		assertThat(refreshed.statusCode()).isEqualTo(200);
+		assertThat(participantLimited.statusCode()).isEqualTo(429);
+		assertThat(participantLimited.headers().firstValue("cache-control"))
+				.contains("no-store");
+		assertThat(participantLimited.headers().firstValue("retry-after")
+				.map(Long::parseLong))
+				.hasValueSatisfying(seconds -> assertThat(seconds).isBetween(1L, 60L));
+		assertThat(participantLimited.body()).isEmpty();
 	}
 
 	@Test

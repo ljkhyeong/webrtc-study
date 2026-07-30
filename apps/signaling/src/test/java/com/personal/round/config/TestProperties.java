@@ -29,8 +29,10 @@ public final class TestProperties {
 	private static final Duration DEFAULT_TURN_CREDENTIAL_TTL = Duration.ofMinutes(10);
 	private static final Duration DEFAULT_TURN_RATE_LIMIT_WINDOW = Duration.ofMinutes(10);
 	private static final int DEFAULT_TURN_RATE_LIMIT_MAX_REQUESTS = 12;
+	private static final int DEFAULT_TURN_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS = 6;
 	private static final int DEFAULT_TURN_RATE_LIMIT_GLOBAL_MAX_REQUESTS = 24;
 	private static final int DEFAULT_TURN_RATE_LIMIT_MAX_CLIENTS = 10_000;
+	private static final int DEFAULT_TURN_RATE_LIMIT_MAX_PARTICIPANTS = 10_000;
 
 	private TestProperties() {
 	}
@@ -210,13 +212,33 @@ public final class TestProperties {
 			int rateLimitMaxRequests,
 			int rateLimitGlobalMaxRequests,
 			int rateLimitMaxClients) {
+		return turnWithRateLimits(
+				urls,
+				sharedSecret,
+				rateLimitMaxRequests,
+				DEFAULT_TURN_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS,
+				rateLimitGlobalMaxRequests,
+				rateLimitMaxClients,
+				DEFAULT_TURN_RATE_LIMIT_MAX_PARTICIPANTS);
+	}
+
+	public static TurnProperties turnWithRateLimits(
+			List<String> urls,
+			String sharedSecret,
+			int rateLimitMaxRequests,
+			int rateLimitParticipantMaxRequests,
+			int rateLimitGlobalMaxRequests,
+			int rateLimitMaxClients,
+			int rateLimitMaxParticipants) {
 		return new TurnProperties(
 				urls,
 				sharedSecret,
 				DEFAULT_TURN_CREDENTIAL_TTL,
 				DEFAULT_TURN_RATE_LIMIT_WINDOW,
 				rateLimitMaxRequests,
+				rateLimitParticipantMaxRequests,
 				rateLimitGlobalMaxRequests,
-				rateLimitMaxClients);
+				rateLimitMaxClients,
+				rateLimitMaxParticipants);
 	}
 }

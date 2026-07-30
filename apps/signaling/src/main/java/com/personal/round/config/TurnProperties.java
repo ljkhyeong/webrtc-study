@@ -42,6 +42,15 @@ public record TurnProperties(
 		int rateLimitMaxRequests,
 		@Min(
 				value = 1,
+				message =
+						"round.turn.rate-limit-participant-max-requests must be at least 1")
+		@Max(
+				value = 10_000,
+				message =
+						"round.turn.rate-limit-participant-max-requests must be at most 10000")
+		int rateLimitParticipantMaxRequests,
+		@Min(
+				value = 1,
 				message = "round.turn.rate-limit-global-max-requests must be at least 1")
 		@Max(
 				value = 1_000_000,
@@ -51,7 +60,15 @@ public record TurnProperties(
 		@Max(
 				value = 1_000_000,
 				message = "round.turn.rate-limit-max-clients must be at most 1000000")
-		int rateLimitMaxClients) {
+		int rateLimitMaxClients,
+		@Min(
+				value = 1,
+				message = "round.turn.rate-limit-max-participants must be at least 1")
+		@Max(
+				value = 1_000_000,
+				message =
+						"round.turn.rate-limit-max-participants must be at most 1000000")
+		int rateLimitMaxParticipants) {
 
 	private static final Pattern TRANSPORT_QUERY =
 			Pattern.compile("transport=[A-Za-z0-9._~-]+", Pattern.CASE_INSENSITIVE);
@@ -79,10 +96,14 @@ public record TurnProperties(
 				+ rateLimitWindow
 				+ ", rateLimitMaxRequests="
 				+ rateLimitMaxRequests
+				+ ", rateLimitParticipantMaxRequests="
+				+ rateLimitParticipantMaxRequests
 				+ ", rateLimitGlobalMaxRequests="
 				+ rateLimitGlobalMaxRequests
 				+ ", rateLimitMaxClients="
 				+ rateLimitMaxClients
+				+ ", rateLimitMaxParticipants="
+				+ rateLimitMaxParticipants
 				+ "]";
 	}
 

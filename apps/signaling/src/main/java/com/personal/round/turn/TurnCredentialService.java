@@ -1,5 +1,6 @@
 package com.personal.round.turn;
 
+import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.config.TurnProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
 import java.nio.charset.StandardCharsets;
@@ -41,12 +42,23 @@ public class TurnCredentialService {
 	}
 
 	public IssueResult issueFor(String clientAddress) {
-		return issueFor(clientAddress, Instant.MAX);
+		return issueFor(clientAddress, Instant.MAX, null);
 	}
 
 	public IssueResult issueFor(
 			String clientAddress,
-			Instant authorizationExpiresAt) {
+			ParticipationGrant grant) {
+		Objects.requireNonNull(grant, "grant must not be null");
+		return issueFor(
+				clientAddress,
+				grant.expiresAt(),
+				new ParticipantRoomKey(grant.roomId(), grant.subject()));
+	}
+
+	private IssueResult issueFor(
+			String clientAddress,
+			Instant authorizationExpiresAt,
+			ParticipantRoomKey participantKey) {
 		Objects.requireNonNull(
 				authorizationExpiresAt,
 				"authorizationExpiresAt must not be null");
@@ -68,9 +80,9 @@ public class TurnCredentialService {
 		}
 
 		TurnIssuanceLimiter.Acquisition acquisition =
-				issuanceLimiter.tryAcquire(clientKey, nowMillis);
+				issuanceLimiter.tryAcquire(clientKey, participantKey, nowMillis);
 		if (acquisition instanceof TurnIssuanceLimiter.Rejected rejected) {
-			metrics.recordRateLimited();
+			metrics.recordRateLimited(rejected.scope());
 			return new RateLimited(rejected.retryAfterSeconds());
 		}
 
@@ -84,6 +96,10 @@ public class TurnCredentialService {
 
 	int trackedClientCount() {
 		return issuanceLimiter.trackedClientCount();
+	}
+
+	int trackedParticipantCount() {
+		return issuanceLimiter.trackedParticipantCount();
 	}
 
 	private String randomToken() {
