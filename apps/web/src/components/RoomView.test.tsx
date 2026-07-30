@@ -11,7 +11,9 @@ function renderRoom(overrides: Partial<Parameters<typeof RoomView>[0]> = {}) {
       statusLabel="서버에 연결 중"
       participants={[]}
       messages={[]}
+      audioAvailable={false}
       audioEnabled={false}
+      videoAvailable={false}
       videoEnabled={false}
       onToggleAudio={vi.fn()}
       onToggleVideo={vi.fn()}
@@ -118,6 +120,23 @@ describe('RoomView connection state', () => {
 
     expect(markup).toContain('전송 중');
     expect(markup).toContain('전송 실패');
+  });
+
+  it('disables controls for unavailable local media instead of offering a no-op toggle', () => {
+    const markup = renderRoom({
+      status: 'active',
+      statusLabel: '입장 완료 · 대기 중',
+      audioAvailable: false,
+      audioEnabled: false,
+      videoAvailable: false,
+      videoEnabled: false,
+    });
+
+    expect(markup).toContain('aria-label="사용 가능한 마이크 없음"');
+    expect(markup).toContain('aria-label="사용 가능한 카메라 없음"');
+    expect(markup).toContain('마이크 없음');
+    expect(markup).toContain('카메라 없음');
+    expect(markup.match(/disabled=""/g)).toHaveLength(3);
   });
 
   it('detects unread messages after the bounded chat list reaches 200 items', () => {

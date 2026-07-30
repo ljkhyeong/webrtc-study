@@ -30,7 +30,9 @@ interface RoomViewProps {
   statusLabel: string;
   participants: ParticipantView[];
   messages: ChatMessageView[];
+  audioAvailable: boolean;
   audioEnabled: boolean;
+  videoAvailable: boolean;
   videoEnabled: boolean;
   peerRecoveryMessage?: string | undefined;
   mediaWarning?: string | undefined;
@@ -112,7 +114,9 @@ export function RoomView({
   statusLabel,
   participants,
   messages,
+  audioAvailable,
   audioEnabled,
+  videoAvailable,
   videoEnabled,
   peerRecoveryMessage,
   mediaWarning,
@@ -355,20 +359,34 @@ export function RoomView({
         <button
           className={`control-button${audioEnabled ? '' : ' control-button--off'}`}
           type="button"
-          aria-label={audioEnabled ? '마이크 끄기' : '마이크 켜기'}
+          disabled={!audioAvailable}
+          aria-label={
+            !audioAvailable
+              ? '사용 가능한 마이크 없음'
+              : audioEnabled
+                ? '마이크 끄기'
+                : '마이크 켜기'
+          }
           onClick={onToggleAudio}
         >
           {audioEnabled ? <MicIcon /> : <MicOffIcon />}
-          <span>{audioEnabled ? '마이크' : '음소거'}</span>
+          <span>{!audioAvailable ? '마이크 없음' : audioEnabled ? '마이크' : '음소거'}</span>
         </button>
         <button
           className={`control-button${videoEnabled ? '' : ' control-button--off'}`}
           type="button"
-          aria-label={videoEnabled ? '카메라 끄기' : '카메라 켜기'}
+          disabled={!videoAvailable}
+          aria-label={
+            !videoAvailable
+              ? '사용 가능한 카메라 없음'
+              : videoEnabled
+                ? '카메라 끄기'
+                : '카메라 켜기'
+          }
           onClick={onToggleVideo}
         >
           {videoEnabled ? <CameraIcon /> : <CameraOffIcon />}
-          <span>{videoEnabled ? '카메라' : '카메라 꺼짐'}</span>
+          <span>{!videoAvailable ? '카메라 없음' : videoEnabled ? '카메라' : '카메라 꺼짐'}</span>
         </button>
         <button
           className={`control-button${chatOpen ? ' control-button--active' : ''}`}

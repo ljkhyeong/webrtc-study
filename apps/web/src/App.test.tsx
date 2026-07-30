@@ -113,4 +113,16 @@ describe('App pre-join boundary', () => {
     expect(warning).toContain('통화는 유지');
     expect(warning).not.toContain('internal-peer-id');
   });
+
+  it('explains an ended local media track with an explicit recovery action', () => {
+    const warning = roomWarningMessage({
+      code: 'local-media-ended',
+      message: 'Local microphone track ended unexpectedly',
+    });
+
+    expect(warning).toContain('연결이 종료');
+    expect(warning).toContain('통화는 유지');
+    expect(warning).toContain('다시 입장');
+    expect(warning).not.toContain('Local microphone');
+  });
 });

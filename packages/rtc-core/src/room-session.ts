@@ -441,6 +441,7 @@ export class RoomSession {
   readonly #seenMessageIds = new Set<string>();
   readonly #staleSelfIds = new Set<string>();
   readonly #exhaustedPeerIds = new Set<string>();
+  readonly #localTrackEndedListeners = new Map<MediaStreamTrack, EventListener>();
   readonly #messages: ChatMessage[] = [];
 
   #rtcConfiguration: RTCConfiguration | undefined;
@@ -490,6 +491,7 @@ export class RoomSession {
     this.#rtcConfiguration = cloneRtcConfiguration(options.rtcConfiguration);
     if (options.preparedMediaStream !== undefined) {
       this.#localStream = options.preparedMediaStream;
+      this.#attachLocalTrackEndedListeners();
     }
     this.#snapshot = this.#buildSnapshot();
   }
@@ -621,7 +623,7 @@ export class RoomSession {
   }
 
   toggleAudio(): boolean {
-    const tracks = this.#localStream?.getAudioTracks() ?? [];
+    const tracks = this.#liveLocalTracks('audio');
     if (tracks.length === 0) {
       return false;
     }
@@ -637,7 +639,7 @@ export class RoomSession {
   }
 
   toggleVideo(): boolean {
-    const tracks = this.#localStream?.getVideoTracks() ?? [];
+    const tracks = this.#liveLocalTracks('video');
     if (tracks.length === 0) {
       return false;
     }
@@ -758,6 +760,7 @@ export class RoomSession {
         return;
       }
       this.#localStream = stream;
+      this.#attachLocalTrackEndedListeners();
     } catch (error) {
       this.#warning = {
         code: 'media-permission-denied',
@@ -2559,10 +2562,69 @@ export class RoomSession {
   #cleanupAllResources(): void {
     this.#cleanupPeerResources();
 
+    this.#detachLocalTrackEndedListeners();
     for (const track of this.#localStream?.getTracks() ?? []) {
       track.stop();
     }
     this.#localStream = null;
+    if (this.#warning?.code === 'local-media-ended') {
+      this.#warning = null;
+      this.#warningPeerId = null;
+    }
+  }
+
+  #attachLocalTrackEndedListeners(): void {
+    for (const track of [...(this.#localStream?.getTracks() ?? [])]) {
+      if (this.#localTrackEndedListeners.has(track)) {
+        continue;
+      }
+      const listener: EventListener = () => {
+        this.#handleLocalTrackEnded(track);
+      };
+      this.#localTrackEndedListeners.set(track, listener);
+      track.addEventListener('ended', listener);
+      if (track.readyState === 'ended') {
+        this.#handleLocalTrackEnded(track);
+      }
+    }
+  }
+
+  #handleLocalTrackEnded(track: MediaStreamTrack): void {
+    const stream = this.#localStream;
+    if (this.#disposed || stream === null || !this.#localTrackEndedListeners.has(track)) {
+      this.#detachLocalTrackEndedListener(track);
+      return;
+    }
+
+    this.#detachLocalTrackEndedListener(track);
+    if (stream.getTracks().includes(track)) {
+      stream.removeTrack(track);
+    }
+    this.#syncLocalParticipantMedia();
+    this.#broadcastMediaState();
+    if (this.#warning === null || this.#warning.code === 'local-media-ended') {
+      this.#setWarning(
+        'local-media-ended',
+        `Local ${track.kind === 'audio' ? 'microphone' : 'camera'} track ended unexpectedly`,
+      );
+    } else {
+      this.#emit();
+    }
+  }
+
+  #detachLocalTrackEndedListener(track: MediaStreamTrack): void {
+    const listener = this.#localTrackEndedListeners.get(track);
+    if (listener === undefined) {
+      return;
+    }
+    track.removeEventListener('ended', listener);
+    this.#localTrackEndedListeners.delete(track);
+  }
+
+  #detachLocalTrackEndedListeners(): void {
+    for (const track of [...this.#localTrackEndedListeners.keys()]) {
+      this.#detachLocalTrackEndedListener(track);
+    }
   }
 
   #closeSocket(code = 1000, reason = 'client leave'): void {
@@ -2656,14 +2718,22 @@ export class RoomSession {
   }
 
   #getLocalMediaSnapshot(): LocalMediaSnapshot {
-    const audioTracks = this.#localStream?.getAudioTracks() ?? [];
-    const videoTracks = this.#localStream?.getVideoTracks() ?? [];
+    const audioTracks = this.#liveLocalTracks('audio');
+    const videoTracks = this.#liveLocalTracks('video');
     return {
       audioAvailable: audioTracks.length > 0,
       audioEnabled: audioTracks.length > 0 && audioTracks.some((track) => track.enabled),
       videoAvailable: videoTracks.length > 0,
       videoEnabled: videoTracks.length > 0 && videoTracks.some((track) => track.enabled),
     };
+  }
+
+  #liveLocalTracks(kind: 'audio' | 'video'): MediaStreamTrack[] {
+    const tracks =
+      kind === 'audio'
+        ? (this.#localStream?.getAudioTracks() ?? [])
+        : (this.#localStream?.getVideoTracks() ?? []);
+    return tracks.filter((track) => track.readyState === 'live');
   }
 
   #buildSnapshot(): RoomSessionSnapshot {

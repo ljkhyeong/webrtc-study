@@ -66,6 +66,8 @@ export function roomWarningMessage(issue: RoomIssue | null | undefined): string 
       return '일부 참가자의 TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.';
     case 'data-channel-rate-limit':
       return '한 참가자의 채팅 연결에서 너무 많은 데이터가 전송되어 일부 업데이트를 잠시 무시했습니다. 통화는 유지됩니다.';
+    case 'local-media-ended':
+      return '마이크 또는 카메라 연결이 종료되었습니다. 현재 통화는 유지됩니다. 다시 사용하려면 방에 다시 입장해 장치를 확인해 주세요.';
     case 'peer-connection-timeout':
     case 'peer-negotiation-failed':
       return PEER_CONNECTION_FAILURE_MESSAGE;
@@ -428,7 +430,9 @@ function ActiveRoom({
       statusLabel={roomStatusLabel(status, participants)}
       participants={participants}
       messages={messages}
+      audioAvailable={localMedia.audioAvailable}
       audioEnabled={localMedia.audioEnabled}
+      videoAvailable={localMedia.videoAvailable}
       videoEnabled={localMedia.videoEnabled}
       peerRecoveryMessage={hasFailedRemotePeer ? PEER_CONNECTION_FAILURE_MESSAGE : undefined}
       mediaWarning={

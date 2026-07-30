@@ -89,11 +89,40 @@ class FakeWebSocket {
 class FakeTrack {
   enabled = true;
   stopped = false;
+  readyState: MediaStreamTrackState = 'live';
+  readonly #endedListeners = new Set<EventListener>();
 
   constructor(readonly kind: 'audio' | 'video') {}
 
+  addEventListener(type: string, listener: EventListener): void {
+    if (type === 'ended') {
+      this.#endedListeners.add(listener);
+    }
+  }
+
+  removeEventListener(type: string, listener: EventListener): void {
+    if (type === 'ended') {
+      this.#endedListeners.delete(listener);
+    }
+  }
+
   stop(): void {
     this.stopped = true;
+    this.readyState = 'ended';
+  }
+
+  end(): void {
+    if (this.readyState === 'ended') {
+      return;
+    }
+    this.readyState = 'ended';
+    for (const listener of [...this.#endedListeners]) {
+      listener({ type: 'ended' } as Event);
+    }
+  }
+
+  endedListenerCount(): number {
+    return this.#endedListeners.size;
   }
 }
 
@@ -118,6 +147,13 @@ class FakeMediaStream {
 
   addTrack(track: MediaStreamTrack): void {
     this.#tracks.push(track as unknown as FakeTrack);
+  }
+
+  removeTrack(track: MediaStreamTrack): void {
+    const index = this.#tracks.indexOf(track as unknown as FakeTrack);
+    if (index >= 0) {
+      this.#tracks.splice(index, 1);
+    }
   }
 }
 
@@ -530,6 +566,35 @@ describe('RoomSession', () => {
 
     expect(preparedAudio.stopped).toBe(true);
     expect(preparedVideo.stopped).toBe(true);
+  });
+
+  it('drops an already-ended prepared track and still observes the remaining live track', async () => {
+    const endedAudio = new FakeTrack('audio');
+    endedAudio.stop();
+    const liveVideo = new FakeTrack('video');
+    const preparedStream = new FakeMediaStream([endedAudio, liveVideo]);
+    const harness = createHarness({
+      preparedMediaStream: preparedStream as unknown as MediaStream,
+    });
+
+    expect(harness.session.getSnapshot()).toMatchObject({
+      localMedia: {
+        audioAvailable: false,
+        audioEnabled: false,
+        videoAvailable: true,
+        videoEnabled: true,
+      },
+      warning: { code: 'local-media-ended' },
+    });
+    expect(preparedStream.getAudioTracks()).toEqual([]);
+    expect(endedAudio.endedListenerCount()).toBe(0);
+    expect(liveVideo.endedListenerCount()).toBe(1);
+
+    await joinSession(harness);
+    await harness.session.leave();
+
+    expect(liveVideo.stopped).toBe(true);
+    expect(liveVideo.endedListenerCount()).toBe(0);
   });
 
   it('treats an explicit null pre-join stream as a media-less join', async () => {
@@ -1958,6 +2023,118 @@ describe('RoomSession', () => {
     ]);
   });
 
+  it('publishes ended local tracks as unavailable and detaches their listeners', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    if (channel === undefined) {
+      throw new Error('Expected an initial DataChannel');
+    }
+    expect(harness.audioTrack.endedListenerCount()).toBe(1);
+    expect(harness.videoTrack.endedListenerCount()).toBe(1);
+
+    harness.audioTrack.end();
+
+    expect(harness.session.getLocalStream()?.getAudioTracks()).toEqual([]);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      localMedia: {
+        audioAvailable: false,
+        audioEnabled: false,
+        videoAvailable: true,
+        videoEnabled: true,
+      },
+      participants: expect.arrayContaining([
+        expect.objectContaining({
+          peerId: 'self',
+          audioEnabled: false,
+          videoEnabled: true,
+        }),
+      ]),
+      warning: { code: 'local-media-ended' },
+    });
+    expect(harness.session.toggleAudio()).toBe(false);
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string; audioEnabled?: boolean })
+        .filter(({ type }) => type === 'participant.media')
+        .at(-1),
+    ).toEqual({
+      type: 'participant.media',
+      audioEnabled: false,
+      videoEnabled: true,
+    });
+
+    harness.videoTrack.end();
+
+    expect(harness.session.getLocalStream()?.getVideoTracks()).toEqual([]);
+    expect(harness.session.getSnapshot().localMedia).toEqual({
+      audioAvailable: false,
+      audioEnabled: false,
+      videoAvailable: false,
+      videoEnabled: false,
+    });
+    expect(harness.session.toggleVideo()).toBe(false);
+    expect(
+      channel.sent
+        .map(
+          (raw) =>
+            JSON.parse(raw) as {
+              type: string;
+              audioEnabled?: boolean;
+              videoEnabled?: boolean;
+            },
+        )
+        .filter(({ type }) => type === 'participant.media')
+        .at(-1),
+    ).toEqual({
+      type: 'participant.media',
+      audioEnabled: false,
+      videoEnabled: false,
+    });
+    expect(harness.audioTrack.endedListenerCount()).toBe(0);
+    expect(harness.videoTrack.endedListenerCount()).toBe(0);
+
+    await harness.session.leave();
+
+    expect(harness.session.getSnapshot()).toMatchObject({
+      status: 'ended',
+      warning: null,
+    });
+    expect(harness.audioTrack.endedListenerCount()).toBe(0);
+    expect(harness.videoTrack.endedListenerCount()).toBe(0);
+  });
+
+  it('keeps an existing operational warning when a local media track ends', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const peer = harness.peerConnections[0];
+    if (peer === undefined) {
+      throw new Error('Expected an initial peer connection');
+    }
+    peer.setConfigurationError = new DOMException(
+      'configuration rejected',
+      'InvalidModificationError',
+    );
+    harness.session.updateRtcConfiguration({
+      iceServers: [{ urls: 'turn:refreshed.example.test' }],
+    });
+
+    harness.audioTrack.end();
+
+    expect(harness.session.getSnapshot()).toMatchObject({
+      localMedia: {
+        audioAvailable: false,
+        audioEnabled: false,
+        videoAvailable: true,
+        videoEnabled: true,
+      },
+      warning: {
+        code: 'rtc-configuration-update-failed',
+      },
+    });
+    await harness.session.leave();
+  });
+
   it('fans chat out, echoes locally, and ignores duplicate message ids', async () => {
     const harness = createHarness({
       createId: () => 'message-local',
@@ -3042,6 +3219,8 @@ describe('RoomSession', () => {
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const peer = harness.peerConnections[0];
     const channel = peer?.channels[0];
+    expect(harness.audioTrack.endedListenerCount()).toBe(1);
+    expect(harness.videoTrack.endedListenerCount()).toBe(1);
 
     await harness.session.leave();
 
@@ -3051,6 +3230,8 @@ describe('RoomSession', () => {
     expect(channel?.readyState).toBe('closed');
     expect(harness.audioTrack.stopped).toBe(true);
     expect(harness.videoTrack.stopped).toBe(true);
+    expect(harness.audioTrack.endedListenerCount()).toBe(0);
+    expect(harness.videoTrack.endedListenerCount()).toBe(0);
     expect(harness.session.getLocalStream()).toBeNull();
     expect(harness.session.getSnapshot()).toMatchObject({
       status: 'ended',

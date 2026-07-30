@@ -5,6 +5,8 @@ import { createPrejoinMedia } from '../src/index.js';
 class FakeTrack {
   enabled = true;
   stopped = false;
+  readyState: MediaStreamTrackState = 'live';
+  readonly #endedListeners = new Set<EventListener>();
 
   constructor(
     readonly kind: 'audio' | 'video',
@@ -15,8 +17,35 @@ class FakeTrack {
     return { deviceId: this.deviceId };
   }
 
+  addEventListener(type: string, listener: EventListener): void {
+    if (type === 'ended') {
+      this.#endedListeners.add(listener);
+    }
+  }
+
+  removeEventListener(type: string, listener: EventListener): void {
+    if (type === 'ended') {
+      this.#endedListeners.delete(listener);
+    }
+  }
+
   stop(): void {
     this.stopped = true;
+    this.readyState = 'ended';
+  }
+
+  end(): void {
+    if (this.readyState === 'ended') {
+      return;
+    }
+    this.readyState = 'ended';
+    for (const listener of [...this.#endedListeners]) {
+      listener({ type: 'ended' } as Event);
+    }
+  }
+
+  endedListenerCount(): number {
+    return this.#endedListeners.size;
   }
 }
 
@@ -182,5 +211,88 @@ describe('PrejoinMedia', () => {
     expect(transferred?.getTracks().every((track) => track.readyState !== 'ended')).toBe(true);
     expect(controller.takeStream()).toBeNull();
     expect((transferred?.getAudioTracks()[0] as unknown as FakeTrack).stopped).toBe(false);
+  });
+
+  it('marks an ended preview track unavailable and reacquires only that device', async () => {
+    const firstAudio = new FakeTrack('audio', 'mic-default');
+    const replacementAudio = new FakeTrack('audio', 'mic-default');
+    const video = new FakeTrack('video', 'camera-default');
+    let audioRequests = 0;
+    const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints) => {
+      if (constraints.audio !== false) {
+        audioRequests += 1;
+        return new FakeMediaStream([
+          audioRequests === 1 ? firstAudio : replacementAudio,
+        ]) as unknown as MediaStream;
+      }
+      return new FakeMediaStream([video]) as unknown as MediaStream;
+    });
+    const controller = createPrejoinMedia({
+      mediaDevices: {
+        getUserMedia,
+        enumerateDevices: vi.fn(async () => [
+          device('audioinput', 'mic-default', '내장 마이크'),
+          device('videoinput', 'camera-default', '내장 카메라'),
+        ]),
+      },
+      mediaStreamFactory: () => new FakeMediaStream() as unknown as MediaStream,
+    });
+
+    await controller.checkDevices();
+    expect(controller.toggleAudio()).toBe(false);
+    firstAudio.end();
+
+    expect(controller.getSnapshot()).toMatchObject({
+      localMedia: {
+        audioAvailable: false,
+        audioEnabled: false,
+        videoAvailable: true,
+        videoEnabled: true,
+      },
+      audioIssue: {
+        code: 'media-unavailable',
+        message: '마이크 연결이 종료되었습니다. 장치 연결 상태를 확인한 뒤 다시 시도해 주세요.',
+      },
+    });
+    expect(controller.getStream()?.getAudioTracks()).toEqual([]);
+
+    const retried = await controller.retryUnavailable();
+
+    expect(getUserMedia).toHaveBeenCalledTimes(3);
+    expect(retried.localMedia).toEqual({
+      audioAvailable: true,
+      audioEnabled: false,
+      videoAvailable: true,
+      videoEnabled: true,
+    });
+    expect(retried.audioIssue).toBeNull();
+    expect(controller.getStream()?.getAudioTracks()).toEqual([replacementAudio]);
+    expect(replacementAudio.enabled).toBe(false);
+  });
+
+  it('releases preview ended listeners when stream ownership transfers', async () => {
+    const audioTrack = new FakeTrack('audio', 'mic-default');
+    const controller = createPrejoinMedia({
+      mediaDevices: {
+        getUserMedia: vi.fn(async (constraints: MediaStreamConstraints) => {
+          if (constraints.audio !== false) {
+            return new FakeMediaStream([audioTrack]) as unknown as MediaStream;
+          }
+          throw namedError('NotFoundError');
+        }),
+        enumerateDevices: vi.fn(async () => [device('audioinput', 'mic-default', '내장 마이크')]),
+      },
+      mediaStreamFactory: () => new FakeMediaStream() as unknown as MediaStream,
+    });
+
+    await controller.checkDevices();
+    expect(audioTrack.endedListenerCount()).toBe(1);
+
+    const transferred = controller.takeStream();
+
+    expect(transferred?.getAudioTracks()).toEqual([audioTrack]);
+    expect(audioTrack.endedListenerCount()).toBe(0);
+    audioTrack.end();
+    expect(controller.getSnapshot().localMedia.audioAvailable).toBe(true);
   });
 });
