@@ -341,6 +341,7 @@ function createHarness(
     displayName?: string;
     recovery?: RoomSessionRecoveryOptions;
     rtcConfiguration?: RTCConfiguration;
+    beforeSignalingConnect?: () => void | Promise<void>;
     onSocketCreated?: (socket: FakeWebSocket, index: number) => void;
     onPeerConnectionCreated?: (peer: FakePeerConnection, index: number) => void;
   } = {},
@@ -381,6 +382,9 @@ function createHarness(
     ...(overrides.createId === undefined ? {} : { createId: overrides.createId }),
     ...(overrides.now === undefined ? {} : { now: overrides.now }),
     ...(overrides.recovery === undefined ? {} : { recovery: overrides.recovery }),
+    ...(overrides.beforeSignalingConnect === undefined
+      ? {}
+      : { beforeSignalingConnect: overrides.beforeSignalingConnect }),
   });
 
   return {
@@ -403,6 +407,17 @@ async function flushMicrotasks(): Promise<void> {
   for (let index = 0; index < 12; index += 1) {
     await Promise.resolve();
   }
+}
+
+function createPromiseGate(): {
+  readonly promise: Promise<void>;
+  readonly resolve: () => void;
+} {
+  let resolve!: () => void;
+  const promise = new Promise<void>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
 async function joinSession(
@@ -483,6 +498,78 @@ describe('RoomSession', () => {
     unsubscribe();
     harness.session.toggleAudio();
     expect(statuses).toHaveLength(notificationCount);
+  });
+
+  it('waits for the pre-connect hook before creating the initial socket', async () => {
+    const gate = createPromiseGate();
+    const beforeSignalingConnect = vi.fn(() => gate.promise);
+    const harness = createHarness({ beforeSignalingConnect });
+    const joining = harness.session.join();
+
+    await flushMicrotasks();
+
+    expect(beforeSignalingConnect).toHaveBeenCalledTimes(1);
+    expect(harness.sockets).toHaveLength(0);
+    expect(harness.session.getSnapshot().status).toBe('connecting-signal');
+
+    gate.resolve();
+    await flushMicrotasks();
+
+    expect(harness.sockets).toHaveLength(1);
+    harness.socket.open();
+    await flushMicrotasks();
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'room.joined',
+      roomId: ROOM_ID,
+      payload: { peerId: 'self', participants: [] },
+    });
+    await joining;
+
+    expect(harness.session.getSnapshot().status).toBe('active');
+  });
+
+  it('uses the normal fatal join flow when the pre-connect hook fails initially', async () => {
+    const beforeSignalingConnect = vi.fn(async () => {
+      throw new Error('participation grant refresh failed');
+    });
+    const harness = createHarness({ beforeSignalingConnect });
+
+    await expect(harness.session.join()).rejects.toThrow('participation grant refresh failed');
+
+    expect(beforeSignalingConnect).toHaveBeenCalledTimes(1);
+    expect(harness.sockets).toHaveLength(0);
+    expect(harness.audioTrack.stopped).toBe(true);
+    expect(harness.videoTrack.stopped).toBe(true);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      status: 'error',
+      error: {
+        code: 'join-failed',
+        message: 'participation grant refresh failed',
+      },
+    });
+  });
+
+  it('does not create a late socket when leave happens while the pre-connect hook waits', async () => {
+    const gate = createPromiseGate();
+    const harness = createHarness({
+      beforeSignalingConnect: () => gate.promise,
+    });
+    const joining = harness.session.join();
+    const rejectedJoin = expect(joining).rejects.toThrow('Room session ended while connecting');
+
+    await flushMicrotasks();
+    expect(harness.sockets).toHaveLength(0);
+
+    await harness.session.leave();
+    gate.resolve();
+    await rejectedJoin;
+    await flushMicrotasks();
+
+    expect(harness.sockets).toHaveLength(0);
+    expect(harness.audioTrack.stopped).toBe(true);
+    expect(harness.videoTrack.stopped).toBe(true);
+    expect(harness.session.getSnapshot().status).toBe('ended');
   });
 
   it('joins without media when permission is denied', async () => {
@@ -3268,9 +3355,15 @@ describe('RoomSession', () => {
   });
 
   it('re-enters on a fresh socket while retaining local media and chat history', async () => {
+    const reconnectGate = createPromiseGate();
+    let hookCallCount = 0;
     const harness = createHarness({
       createId: () => 'message-before-reconnect',
       now: () => 4_567,
+      beforeSignalingConnect: () => {
+        hookCallCount += 1;
+        return hookCallCount === 2 ? reconnectGate.promise : undefined;
+      },
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const oldSocket = harness.socket;
@@ -3283,10 +3376,11 @@ describe('RoomSession', () => {
     } as unknown as RTCTrackEvent);
     const chat = harness.session.sendChat('keep this');
 
-    oldSocket.serverClose(1006, 'network lost');
+    oldSocket.serverClose(4001, 'Participation grant expired');
     await flushMicrotasks();
 
-    expect(harness.sockets).toHaveLength(2);
+    expect(hookCallCount).toBe(2);
+    expect(harness.sockets).toHaveLength(1);
     expect(oldPeer?.closed).toBe(true);
     expect(remoteAudio.stopped).toBe(true);
     expect(harness.audioTrack.stopped).toBe(false);
@@ -3299,6 +3393,10 @@ describe('RoomSession', () => {
       error: null,
     });
 
+    reconnectGate.resolve();
+    await flushMicrotasks();
+
+    expect(harness.sockets).toHaveLength(2);
     const reconnectSocket = harness.socket;
     reconnectSocket.open();
     await flushMicrotasks();
@@ -3327,6 +3425,68 @@ describe('RoomSession', () => {
     expect(new Set(participantIds).size).toBe(participantIds.length);
     expect(harness.peerConnections).toHaveLength(2);
     expect(harness.session.getRemoteStream('peer-a')).toBeNull();
+  });
+
+  it('counts a failed reconnect hook as an attempt and applies backoff before retrying', async () => {
+    vi.useFakeTimers();
+    try {
+      let hookCallCount = 0;
+      const beforeSignalingConnect = vi.fn(async () => {
+        hookCallCount += 1;
+        if (hookCallCount === 2) {
+          throw new Error('participation grant refresh failed');
+        }
+      });
+      const harness = createHarness({
+        beforeSignalingConnect,
+        recovery: {
+          maxReconnectAttempts: 3,
+          reconnectInitialDelayMs: 25,
+          reconnectMaxDelayMs: 25,
+        },
+      });
+      await joinSession(harness);
+
+      harness.socket.serverClose(1006, 'network lost');
+      await flushMicrotasks();
+
+      expect(beforeSignalingConnect).toHaveBeenCalledTimes(2);
+      expect(harness.sockets).toHaveLength(1);
+      expect(harness.session.getSnapshot().status).toBe('reconnecting');
+
+      await vi.advanceTimersByTimeAsync(24);
+      await flushMicrotasks();
+      expect(beforeSignalingConnect).toHaveBeenCalledTimes(2);
+      expect(harness.sockets).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await flushMicrotasks();
+      expect(beforeSignalingConnect).toHaveBeenCalledTimes(3);
+      expect(harness.sockets).toHaveLength(2);
+
+      const reconnectSocket = harness.socket;
+      reconnectSocket.open();
+      await flushMicrotasks();
+      reconnectSocket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'room.joined',
+        roomId: ROOM_ID,
+        payload: {
+          peerId: 'self-after-hook-retry',
+          participants: [],
+        },
+      });
+      await flushMicrotasks();
+
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        selfId: 'self-after-hook-retry',
+        warning: null,
+        error: null,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('performs bounded reconnect attempts and stops local media when they are exhausted', async () => {

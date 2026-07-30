@@ -20,6 +20,7 @@ describe('room transport endpoint resolution', () => {
       ).toEqual({
         signalingUrl: 'wss://round.example.com/signal',
         turnCredentialsUrl: '/api/turn-credentials',
+        participationGrantRefreshUrl: null,
       });
     },
   );
@@ -39,6 +40,7 @@ describe('room transport endpoint resolution', () => {
     ).toEqual({
       signalingUrl: 'wss://signal.example.net/custom-signal',
       turnCredentialsUrl: 'https://turn.example.net/credentials',
+      participationGrantRefreshUrl: null,
     });
   });
 
@@ -69,9 +71,11 @@ describe('room transport endpoint resolution', () => {
       expect(endpoints).toEqual({
         signalingUrl: expectedSignalingUrl,
         turnCredentialsUrl: `/round/rooms/${ROOM_ID}/turn-credentials`,
+        participationGrantRefreshUrl: `/round/rooms/${ROOM_ID}/participation-grant/refresh`,
       });
       expect(endpoints.signalingUrl).toContain(`/rooms/${ROOM_ID}/`);
       expect(endpoints.turnCredentialsUrl).toContain(`/rooms/${ROOM_ID}/`);
+      expect(endpoints.participationGrantRefreshUrl).toContain(`/rooms/${ROOM_ID}/`);
     },
   );
 
@@ -123,6 +127,7 @@ describe('room transport endpoint resolution', () => {
     ).toEqual({
       signalingUrl: `wss://round.example.com/round/rooms/${ROOM_ID}/signal`,
       turnCredentialsUrl: `/round/rooms/${ROOM_ID}/turn-credentials`,
+      participationGrantRefreshUrl: `/round/rooms/${ROOM_ID}/participation-grant/refresh`,
     });
   });
 

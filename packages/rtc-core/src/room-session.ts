@@ -98,6 +98,11 @@ export interface RoomSessionOptions {
    * Production callers normally rely on the bounded defaults.
    */
   readonly recovery?: RoomSessionRecoveryOptions;
+  /**
+   * Runs immediately before each signaling WebSocket is created, including
+   * bounded reconnect attempts.
+   */
+  readonly beforeSignalingConnect?: () => void | Promise<void>;
   readonly webSocketFactory?: (url: string) => WebSocket;
   readonly peerConnectionFactory?: (
     configuration: RTCConfiguration | undefined,
@@ -992,7 +997,12 @@ export class RoomSession {
     this.#setFatalError(issue.code, issue.message);
   }
 
-  #connectSocket(): Promise<void> {
+  async #connectSocket(): Promise<void> {
+    await this.#options.beforeSignalingConnect?.();
+    if (this.#leaving || this.#disposed) {
+      return;
+    }
+
     return new Promise((resolve, reject) => {
       let settled = false;
       const factory = this.#options.webSocketFactory ?? ((url: string) => new WebSocket(url));

@@ -15,6 +15,7 @@ import {
   stopMediaStreamTracks,
   withPreparedMediaFailureCleanup,
 } from './lib/prepared-media';
+import { ParticipationGrantLeaseManager } from './lib/participation-grant';
 import { pathForRoom, roomIdFromPath, sanitizeDisplayName } from './lib/room';
 import { resolveRoomEndpoints, type RoomEndpoints } from './lib/room-endpoints';
 import { loadTurnCredentials, turnCredentialRefreshDelayMs } from './lib/turn';
@@ -218,34 +219,106 @@ function ActiveRoom({
   const lifecycleRef = useRef(0);
   const [snapshot, setSnapshot] = useState<RoomSessionSnapshot | null>(null);
   const [actionError, setActionError] = useState('');
+  const [participationGrantRefreshWarning, setParticipationGrantRefreshWarning] = useState('');
   const [turnRefreshWarning, setTurnRefreshWarning] = useState('');
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
     let isCurrentSession = true;
     let unsubscribe = () => {};
+    let participationGrantRefreshTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
     let turnRefreshTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
     let endpoints: RoomEndpoints | null = null;
+    let participationGrantLeaseManager: ParticipationGrantLeaseManager | null = null;
 
-    const scheduleTurnRefresh = (expiresAt: number) => {
-      if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
-        return;
+    const isCurrentLifecycle = () => isCurrentSession && lifecycleRef.current === lifecycle;
+
+    const clearParticipationGrantRefreshTimer = () => {
+      if (participationGrantRefreshTimer !== null) {
+        globalThis.clearTimeout(participationGrantRefreshTimer);
+        participationGrantRefreshTimer = null;
       }
+    };
+
+    const clearTurnRefreshTimer = () => {
       if (turnRefreshTimer !== null) {
         globalThis.clearTimeout(turnRefreshTimer);
+        turnRefreshTimer = null;
       }
+    };
+
+    const scheduleParticipationGrantRefresh = () => {
+      if (!isCurrentLifecycle()) {
+        return;
+      }
+      const delayMs = participationGrantLeaseManager?.refreshDelayMs();
+      if (delayMs === undefined || delayMs === null) {
+        return;
+      }
+      clearParticipationGrantRefreshTimer();
+      participationGrantRefreshTimer = globalThis.setTimeout(() => {
+        void refreshParticipationGrant();
+      }, delayMs);
+    };
+
+    const scheduleParticipationGrantRefreshRetry = () => {
+      if (!isCurrentLifecycle()) {
+        return;
+      }
+      clearParticipationGrantRefreshTimer();
+      participationGrantRefreshTimer = globalThis.setTimeout(() => {
+        void refreshParticipationGrant();
+      }, 30_000);
+    };
+
+    const ensureFreshParticipationGrant = async () => {
+      const manager = participationGrantLeaseManager;
+      if (manager === null) {
+        return;
+      }
+
+      try {
+        await manager.ensureFresh();
+      } catch (error) {
+        if (isCurrentLifecycle()) {
+          setParticipationGrantRefreshWarning(
+            '스터디 참여 권한을 갱신하지 못했습니다. 현재 통화는 유지하며 곧 다시 시도합니다.',
+          );
+          scheduleParticipationGrantRefreshRetry();
+        }
+        throw error;
+      }
+
+      if (!isCurrentLifecycle()) {
+        return;
+      }
+      setParticipationGrantRefreshWarning('');
+      scheduleParticipationGrantRefresh();
+    };
+
+    const refreshParticipationGrant = async () => {
+      try {
+        await ensureFreshParticipationGrant();
+      } catch {
+        // The shared helper exposes a bounded user warning and schedules a retry.
+      }
+    };
+
+    const scheduleTurnRefresh = (expiresAt: number) => {
+      if (!isCurrentLifecycle()) {
+        return;
+      }
+      clearTurnRefreshTimer();
       turnRefreshTimer = globalThis.setTimeout(() => {
         void refreshTurnConfiguration();
       }, turnCredentialRefreshDelayMs(expiresAt));
     };
 
     const scheduleTurnRefreshRetry = () => {
-      if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
+      if (!isCurrentLifecycle()) {
         return;
       }
-      if (turnRefreshTimer !== null) {
-        globalThis.clearTimeout(turnRefreshTimer);
-      }
+      clearTurnRefreshTimer();
       turnRefreshTimer = globalThis.setTimeout(() => {
         void refreshTurnConfiguration();
       }, 30_000);
@@ -256,9 +329,17 @@ function ActiveRoom({
       if (turnCredentialsUrl === undefined) {
         return;
       }
+
+      try {
+        await ensureFreshParticipationGrant();
+      } catch {
+        scheduleTurnRefreshRetry();
+        return;
+      }
+
       try {
         const loaded = await loadRtcConfiguration(turnCredentialsUrl);
-        if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
+        if (!isCurrentLifecycle()) {
           return;
         }
 
@@ -270,7 +351,7 @@ function ActiveRoom({
           scheduleTurnRefresh(loaded.turnExpiresAt);
         }
       } catch {
-        if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
+        if (!isCurrentLifecycle()) {
           return;
         }
         setTurnRefreshWarning(
@@ -293,8 +374,22 @@ function ActiveRoom({
             });
             endpoints = resolvedEndpoints;
 
+            if (resolvedEndpoints.participationGrantRefreshUrl !== null) {
+              try {
+                participationGrantLeaseManager = new ParticipationGrantLeaseManager({
+                  endpoint: resolvedEndpoints.participationGrantRefreshUrl,
+                });
+                await ensureFreshParticipationGrant();
+              } catch (error) {
+                throw new Error(
+                  '스터디 참여 권한을 확인하지 못했습니다. 잠시 후 다시 시도하거나 BATON에서 다시 입장해 주세요.',
+                  { cause: error },
+                );
+              }
+            }
+
             const loaded = await loadRtcConfiguration(resolvedEndpoints.turnCredentialsUrl);
-            if (!isCurrentSession || lifecycleRef.current !== lifecycle) {
+            if (!isCurrentLifecycle()) {
               return;
             }
 
@@ -307,6 +402,9 @@ function ActiveRoom({
                   signalingUrl: resolvedEndpoints.signalingUrl,
                   rtcConfiguration: loaded.configuration,
                   preparedMediaStream,
+                  ...(participationGrantLeaseManager === null
+                    ? {}
+                    : { beforeSignalingConnect: ensureFreshParticipationGrant }),
                   mediaConstraints: {
                     audio: {
                       autoGainControl: true,
@@ -342,6 +440,8 @@ function ActiveRoom({
           },
         );
       } catch (error) {
+        clearParticipationGrantRefreshTimer();
+        clearTurnRefreshTimer();
         if (isCurrentSession) {
           setActionError(error instanceof Error ? error.message : '스터디룸 연결에 실패했습니다.');
         }
@@ -349,14 +449,15 @@ function ActiveRoom({
     };
 
     setActionError('');
+    setParticipationGrantRefreshWarning('');
+    setTurnRefreshWarning('');
     void startSession();
 
     return () => {
       isCurrentSession = false;
       unsubscribe();
-      if (turnRefreshTimer !== null) {
-        globalThis.clearTimeout(turnRefreshTimer);
-      }
+      clearParticipationGrantRefreshTimer();
+      clearTurnRefreshTimer();
       // React StrictMode immediately re-runs effects in development. Deferring
       // disposal lets the second setup reuse the single-use session and the
       // transferred pre-join tracks instead of stopping them between setups.
@@ -453,7 +554,11 @@ function ActiveRoom({
         isTerminalPeerWarning(snapshot?.warning) ? undefined : roomWarningMessage(snapshot?.warning)
       }
       errorMessage={
-        roomErrorMessage(snapshot?.error) || actionError || turnRefreshWarning || undefined
+        roomErrorMessage(snapshot?.error) ||
+        actionError ||
+        participationGrantRefreshWarning ||
+        turnRefreshWarning ||
+        undefined
       }
       onToggleAudio={() => {
         sessionRef.current?.toggleAudio();

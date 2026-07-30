@@ -16,6 +16,7 @@ export interface ResolveRoomEndpointsOptions {
 export interface RoomEndpoints {
   readonly signalingUrl: string;
   readonly turnCredentialsUrl: string;
+  readonly participationGrantRefreshUrl: string | null;
 }
 
 type RoundAuthMode = 'standalone' | 'baton';
@@ -43,6 +44,7 @@ export function resolveRoomEndpoints(options: ResolveRoomEndpointsOptions): Room
     return {
       signalingUrl: `${webSocketOrigin(options.location)}${roomPath}/signal`,
       turnCredentialsUrl: `${roomPath}/turn-credentials`,
+      participationGrantRefreshUrl: `${roomPath}/participation-grant/refresh`,
     };
   }
 
@@ -52,6 +54,7 @@ export function resolveRoomEndpoints(options: ResolveRoomEndpointsOptions): Room
         ? `${webSocketOrigin(options.location)}${DEFAULT_SIGNALING_PATH}`
         : normalizeSignalingOverride(signalingOverride),
     turnCredentialsUrl: turnCredentialsOverride ?? DEFAULT_TURN_CREDENTIALS_PATH,
+    participationGrantRefreshUrl: null,
   };
 }
 
