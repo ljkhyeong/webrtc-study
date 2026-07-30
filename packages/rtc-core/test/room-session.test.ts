@@ -2285,11 +2285,23 @@ describe('RoomSession', () => {
         deliveryState: 'pending',
       }),
     );
+    expect(harness.session.getSnapshot().warning).toEqual(
+      expect.objectContaining({ code: 'data-channel-send-failed' }),
+    );
 
-    await answerPeer(harness, 'z-peer');
     const recoveredChannel = peer?.channels[1];
+    if (recoveredChannel === undefined) {
+      throw new Error('Expected a recovered DataChannel');
+    }
+    recoveredChannel.readyState = 'connecting';
+    await answerPeer(harness, 'z-peer');
+    expect(harness.session.getSnapshot().warning).toEqual(
+      expect.objectContaining({ code: 'data-channel-send-failed' }),
+    );
+    recoveredChannel.open();
+
     expect(
-      recoveredChannel?.sent
+      recoveredChannel.sent
         .map((raw) => JSON.parse(raw) as { type: string; id?: string })
         .filter(({ type }) => type === 'chat.message'),
     ).toEqual([
@@ -2304,6 +2316,7 @@ describe('RoomSession', () => {
         deliveryState: 'sent',
       }),
     );
+    expect(harness.session.getSnapshot().warning).toBeNull();
     await harness.session.leave();
   });
 
@@ -2334,10 +2347,23 @@ describe('RoomSession', () => {
         deliveryState: 'pending',
       }),
     );
+    expect(harness.session.getSnapshot().warning).toEqual(
+      expect.objectContaining({ code: 'data-channel-closed' }),
+    );
 
+    const recoveredChannel = peer.channels[1];
+    if (recoveredChannel === undefined) {
+      throw new Error('Expected a recovered DataChannel');
+    }
+    recoveredChannel.readyState = 'connecting';
     await answerPeer(harness, 'z-peer');
+    expect(harness.session.getSnapshot().warning).toEqual(
+      expect.objectContaining({ code: 'data-channel-closed' }),
+    );
+    recoveredChannel.open();
+
     expect(
-      peer.channels[1]?.sent
+      recoveredChannel.sent
         .map((raw) => JSON.parse(raw) as { type: string; id?: string })
         .filter(({ type }) => type === 'chat.message'),
     ).toEqual([
@@ -2352,7 +2378,146 @@ describe('RoomSession', () => {
         deliveryState: 'sent',
       }),
     );
+    expect(harness.session.getSnapshot().warning).toBeNull();
     await harness.session.leave();
+  });
+
+  it('keeps the recovery deadline active when an answered channel never opens', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        createId: () => 'message-stuck-channel',
+        now: () => 3_625,
+        recovery: { peerRecoveryTimeoutMs: 30 },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      await answerPeer(harness, 'z-peer');
+      const initialPeer = harness.peerConnections[0];
+      const initialChannel = initialPeer?.channels[0];
+      initialPeer?.setConnectionState('connected');
+      if (initialPeer === undefined || initialChannel === undefined) {
+        throw new Error('Expected an initial peer and DataChannel');
+      }
+
+      initialChannel.remoteClose();
+      await flushMicrotasks();
+      const stuckChannel = initialPeer.channels[1];
+      if (stuckChannel === undefined) {
+        throw new Error('Expected a recovered DataChannel');
+      }
+      stuckChannel.readyState = 'connecting';
+      harness.session.sendChat('survive a stuck recovery');
+
+      await answerPeer(harness, 'z-peer');
+      expect(harness.session.getSnapshot().warning).toEqual(
+        expect.objectContaining({ code: 'data-channel-closed' }),
+      );
+
+      await vi.advanceTimersByTimeAsync(30);
+      await flushMicrotasks();
+
+      const replacement = harness.peerConnections[1];
+      expect(initialPeer.closed).toBe(true);
+      expect(replacement).toBeDefined();
+      expect(harness.session.getSnapshot()).toMatchObject({
+        warning: { code: 'peer-connection-recreated' },
+        messages: [
+          expect.objectContaining({
+            id: 'message-stuck-channel',
+            deliveryState: 'pending',
+          }),
+        ],
+      });
+
+      await answerPeer(harness, 'z-peer');
+      replacement?.setConnectionState('connected');
+
+      expect(
+        replacement?.channels[0]?.sent
+          .map((raw) => JSON.parse(raw) as { type: string; id?: string })
+          .filter(({ type }) => type === 'chat.message'),
+      ).toEqual([
+        expect.objectContaining({
+          type: 'chat.message',
+          id: 'message-stuck-channel',
+        }),
+      ]);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        warning: null,
+        messages: [
+          expect.objectContaining({
+            id: 'message-stuck-channel',
+            deliveryState: 'sent',
+          }),
+        ],
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails a replacement whose peer connection connects without an open channel', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        createId: () => 'message-second-stuck-channel',
+        now: () => 3_630,
+        recovery: {
+          peerConnectionTimeoutMs: 20,
+          peerRecoveryTimeoutMs: 30,
+        },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      await answerPeer(harness, 'z-peer');
+      const initialPeer = harness.peerConnections[0];
+      const initialChannel = initialPeer?.channels[0];
+      initialPeer?.setConnectionState('connected');
+      if (initialPeer === undefined || initialChannel === undefined) {
+        throw new Error('Expected an initial peer and DataChannel');
+      }
+
+      initialChannel.remoteClose();
+      await flushMicrotasks();
+      const firstRecoveredChannel = initialPeer.channels[1];
+      if (firstRecoveredChannel === undefined) {
+        throw new Error('Expected a recovered DataChannel');
+      }
+      firstRecoveredChannel.readyState = 'connecting';
+      harness.session.sendChat('fail after the bounded replacement');
+      await answerPeer(harness, 'z-peer');
+
+      await vi.advanceTimersByTimeAsync(30);
+      await flushMicrotasks();
+      const replacement = harness.peerConnections[1];
+      const replacementChannel = replacement?.channels[0];
+      if (replacement === undefined || replacementChannel === undefined) {
+        throw new Error('Expected a replacement peer and DataChannel');
+      }
+      replacementChannel.readyState = 'connecting';
+
+      await answerPeer(harness, 'z-peer');
+      replacement.setConnectionState('connected');
+      await vi.advanceTimersByTimeAsync(20);
+      await flushMicrotasks();
+
+      expect(replacement.closed).toBe(true);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        warning: { code: 'peer-connection-timeout' },
+        participants: expect.arrayContaining([
+          expect.objectContaining({ peerId: 'z-peer', connectionState: 'failed' }),
+        ]),
+        messages: [
+          expect.objectContaining({
+            id: 'message-second-stuck-channel',
+            deliveryState: 'failed',
+          }),
+        ],
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('waits for the designated remote initiator after a responder channel closes', async () => {
@@ -2452,19 +2617,70 @@ describe('RoomSession', () => {
     vi.useFakeTimers();
     try {
       const harness = createHarness();
-      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
-      const channel = harness.peerConnections[0]?.channels[0];
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      await answerPeer(harness, 'z-peer');
+      const peer = harness.peerConnections[0];
+      const channel = peer?.channels[0];
+      peer?.setConnectionState('connected');
 
       channel?.fail();
       await vi.advanceTimersByTimeAsync(251);
 
       expect(harness.session.getSnapshot().warning).toEqual({
         code: 'data-channel-error',
-        message: 'Chat channel to peer-a encountered an error and is being recovered',
+        message: 'Chat channel to z-peer encountered an error and is being recovered',
       });
+
+      const recoveredChannel = peer?.channels[1];
+      if (recoveredChannel === undefined) {
+        throw new Error('Expected a recovered DataChannel');
+      }
+      recoveredChannel.readyState = 'connecting';
+      await answerPeer(harness, 'z-peer');
+      expect(harness.session.getSnapshot().warning).toEqual(
+        expect.objectContaining({ code: 'data-channel-error' }),
+      );
+
+      recoveredChannel.open();
+
+      expect(harness.session.getSnapshot().warning).toBeNull();
+      await harness.session.leave();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('clears a closed channel warning when the owning peer leaves', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+    await answerPeer(harness, 'z-peer');
+    const peer = harness.peerConnections[0];
+    const channel = peer?.channels[0];
+    peer?.setConnectionState('connected');
+    if (channel === undefined) {
+      throw new Error('Expected an initial DataChannel');
+    }
+
+    channel.remoteClose();
+    await flushMicrotasks();
+
+    expect(harness.session.getSnapshot().warning).toEqual(
+      expect.objectContaining({ code: 'data-channel-closed' }),
+    );
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'peer.left',
+      roomId: ROOM_ID,
+      payload: { peerId: 'z-peer' },
+    });
+    await flushMicrotasks();
+
+    expect(harness.session.getSnapshot().warning).toBeNull();
+    expect(harness.session.getSnapshot().participants).not.toContainEqual(
+      expect.objectContaining({ peerId: 'z-peer' }),
+    );
+    await harness.session.leave();
   });
 
   it('suppresses a data channel error that races a normal peer departure', async () => {

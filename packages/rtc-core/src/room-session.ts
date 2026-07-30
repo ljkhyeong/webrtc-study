@@ -197,6 +197,11 @@ const DATA_CHANNEL_RATE_WINDOW_MS = 10_000;
 const MAX_DATA_CHANNEL_MESSAGES_PER_WINDOW = 120;
 const MAX_PENDING_CHAT_MESSAGES_PER_PEER = 50;
 const DATA_CHANNEL_ERROR_GRACE_MS = 250;
+const DATA_CHANNEL_RECOVERY_WARNING_CODES = [
+  'data-channel-closed',
+  'data-channel-error',
+  'data-channel-send-failed',
+] as const;
 const DEFAULT_SIGNALING_CONNECT_TIMEOUT_MS = 8_000;
 const DEFAULT_ROOM_JOIN_TIMEOUT_MS = 8_000;
 // Longer than the default bounded initial-offer retry backoff (15.5 seconds)
@@ -1834,7 +1839,10 @@ export class RoomSession {
       if (!this.#isCurrentPeer(peer) || this.#status !== 'active') {
         return;
       }
-      if (peer.connection.connectionState === 'connected') {
+      if (
+        peer.connection.connectionState === 'connected' &&
+        (!peer.recovering || peer.channel?.readyState === 'open')
+      ) {
         this.#finishPeerRecovery(peer);
         return;
       }
@@ -1939,6 +1947,9 @@ export class RoomSession {
   }
 
   #finishPeerRecovery(peer: PeerContext): void {
+    if (peer.recovering && peer.channel?.readyState !== 'open') {
+      return;
+    }
     const shouldFlush =
       peer.recovering ||
       peer.connectionTimeout !== null ||
@@ -1968,15 +1979,16 @@ export class RoomSession {
     peer.offerRetryAttempts = 0;
     peer.connectionAttempt = 0;
     peer.recovering = false;
-    const warningCleared = this.#clearPeerWarning(peer.peerId, [
-      'peer-connection-recovering',
-      'peer-connection-recreated',
-      'peer-ice-restart-failed',
-      'peer-restart-deferred',
-      'peer-negotiation-retrying',
-      'ice-candidate-queue-overflow',
-      'ice-candidate-rejected',
-    ]);
+    const warningCleared =
+      this.#clearPeerWarning(peer.peerId, [
+        'peer-connection-recovering',
+        'peer-connection-recreated',
+        'peer-ice-restart-failed',
+        'peer-restart-deferred',
+        'peer-negotiation-retrying',
+        'ice-candidate-queue-overflow',
+        'ice-candidate-rejected',
+      ]) || this.#clearRecoveredDataChannelWarning(peer);
     if (shouldFlush && peer.channel?.readyState === 'open') {
       this.#flushPendingData(peer, peer.channel, true);
     }
@@ -2044,13 +2056,7 @@ export class RoomSession {
     }
 
     peer.channel = channel;
-    channel.onopen = () => {
-      if (peer.recovering && peer.connection.connectionState === 'connected') {
-        this.#finishPeerRecovery(peer);
-        return;
-      }
-      this.#flushPendingData(peer, channel, true);
-    };
+    channel.onopen = () => this.#handleDataChannelOpen(peer, channel);
     channel.onmessage = (event) => {
       this.#handleDataMessage(peer.peerId, event.data);
     };
@@ -2081,8 +2087,23 @@ export class RoomSession {
     };
 
     if (channel.readyState === 'open' && !peer.recovering) {
-      this.#flushPendingData(peer, channel, true);
+      this.#handleDataChannelOpen(peer, channel);
     }
+  }
+
+  #handleDataChannelOpen(peer: PeerContext, channel: RTCDataChannel): void {
+    if (!this.#isCurrentPeer(peer) || peer.channel !== channel || channel.readyState !== 'open') {
+      return;
+    }
+    if (peer.recovering && peer.connection.connectionState === 'connected') {
+      this.#finishPeerRecovery(peer);
+      return;
+    }
+    const warningCleared = this.#clearRecoveredDataChannelWarning(peer);
+    if (warningCleared) {
+      this.#emit();
+    }
+    this.#flushPendingData(peer, channel, true);
   }
 
   #recoverDataChannel(
@@ -2101,8 +2122,15 @@ export class RoomSession {
 
     peer.channel = null;
     this.#detachAndCloseChannel(channel);
-    this.#setWarning(code, message);
+    this.#setPeerWarning(peer.peerId, code, message);
     this.#beginPeerRecovery(peer);
+  }
+
+  #clearRecoveredDataChannelWarning(peer: PeerContext): boolean {
+    if (peer.channel?.readyState !== 'open') {
+      return false;
+    }
+    return this.#clearPeerWarning(peer.peerId, DATA_CHANNEL_RECOVERY_WARNING_CODES);
   }
 
   #handleDataMessage(peerId: string, raw: unknown): void {
