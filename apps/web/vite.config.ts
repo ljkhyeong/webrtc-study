@@ -18,6 +18,7 @@ export function rewriteBatonRoomEndpoint(requestPath: string): string {
 export function createViteConfig({ mode }: ConfigEnv): UserConfig {
   const environment = loadEnv(mode, repositoryRoot, '');
   const signalingPort = environment.PORT?.trim() || '8787';
+  const isE2e = process.env.ROUND_E2E_MODE === 'true';
 
   return {
     plugins: [react()],
@@ -29,6 +30,7 @@ export function createViteConfig({ mode }: ConfigEnv): UserConfig {
     },
     server: {
       host: '0.0.0.0',
+      ...(isE2e ? { hmr: false } : {}),
       port: 5173,
       strictPort: true,
       proxy: {

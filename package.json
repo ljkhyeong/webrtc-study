@@ -21,11 +21,13 @@
     "typecheck": "npm run typecheck -w @round/protocol && npm run typecheck -w @round/rtc-core && npm run typecheck -w @round/web && ./gradlew --no-daemon :apps:signaling:compileJava :apps:signaling:compileTestJava",
     "pretest": "npm run build -w @round/protocol",
     "test": "npm run test -w @round/protocol && npm run test -w @round/rtc-core && npm run test -w @round/web && ./gradlew --no-daemon :apps:signaling:test",
+    "test:e2e": "playwright test",
     "check": "npm run typecheck && npm run test && npm run build",
     "format": "prettier --write --ignore-unknown .",
     "format:check": "prettier --check --ignore-unknown ."
   },
   "devDependencies": {
+    "@playwright/test": "1.62.0",
     "concurrently": "10.0.4",
     "prettier": "3.9.6",
     "typescript": "7.0.2"

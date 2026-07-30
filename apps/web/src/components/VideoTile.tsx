@@ -56,6 +56,7 @@ export function VideoTile({ participant }: VideoTileProps) {
     <article
       className={`video-tile${isConnected ? ' video-tile--connected' : ''}`}
       data-peer-id={participant.peerId}
+      aria-label={`${participant.displayName}${participant.isLocal ? ' (나)' : ''} 참가자`}
     >
       {hasStream ? (
         <video

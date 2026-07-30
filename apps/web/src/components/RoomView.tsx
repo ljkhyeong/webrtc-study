@@ -213,7 +213,7 @@ export function RoomView({
             <i />
             {statusLabel}
           </span>
-          <span className="participant-count">
+          <span className="participant-count" aria-label={`참가자 ${participants.length}명`}>
             <UsersIcon />
             {participants.length}
           </span>

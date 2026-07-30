@@ -48,6 +48,18 @@ Gradle은 저장소의 Wrapper를 사용하므로 별도로 설치하지 않아�
 npm run check
 ```
 
+실제 Chromium 두 개로 standalone 영상·음성·채팅 흐름을 검증:
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+브라우저 테스트는 fake 카메라·마이크를 사용해 직접 초대 입장, 원격 미디어 연결,
+DataChannel 채팅, 음소거·카메라 상태 전파, 퇴장을 확인합니다. BATON 참여권, 실제 TURN
+relay, 실장치, Safari·모바일 검증은 이 테스트 범위에 포함되지 않으며 파일럿 체크리스트를
+별도로 통과해야 합니다. 실패 진단 자료는 `output/playwright/`에 저장됩니다.
+
 ## 환경 변수
 
 | 변수                                                  | 기본값                  | 설명                            |
