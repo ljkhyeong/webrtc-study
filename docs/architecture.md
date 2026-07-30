@@ -88,17 +88,22 @@ The BATON-owned Vite build uses `VITE_ROUND_AUTH_MODE=baton`; the browser derive
 the same canonical room ID and rejects endpoint overrides so it cannot accidentally fall back to
 the standalone transport boundary.
 
-Room state and participation connection reservations are in memory, so running multiple signaling
-replicas would split one logical room and enforce each participant limit independently until a
-shared room registry, distributed admission registry, room routing, and cross-node relay are
-introduced. A participation ticket is checked at the WebSocket upgrade and room join, but its later
-expiry does not currently terminate an already authenticated socket. Short ticket lifetimes limit
-reuse for new handshakes but do not bound the lifetime of an existing socket; immediate membership
-revocation or long-running meetings will require explicit reauthentication or session termination.
+Room state, participation connection reservations, and TURN issuance windows are in memory, so
+running multiple signaling replicas would split one logical room and enforce each participant
+limit independently until shared room, admission, and quota registries, room routing, and
+cross-node relay are introduced. A participation ticket is checked at the WebSocket upgrade and
+room join, but its later expiry does not currently terminate an already authenticated socket.
+Short ticket lifetimes limit reuse for new handshakes but do not bound the lifetime of an existing
+socket; immediate membership revocation or long-running meetings will require explicit
+reauthentication or session termination.
 
 The coturn shared secret exists only in the signaling and TURN runtimes. The browser requests a
 time-limited HMAC credential from `/api/turn-credentials` in standalone mode or the room-scoped
 endpoint in BATON mode; no long-lived TURN password is compiled into the Vite bundle.
+BATON issuance atomically applies fixed-window quotas for the effective client address,
+`(room_id, sub)`, and the whole server. A newly issued `jti` or changed client address does not
+reset the participant window. Standalone issuance retains only the client and global dimensions.
+Quota metrics expose bounded scope labels rather than participant, room, token, or address values.
 
 The accepted service-boundary decision and complete claim contract are recorded in
 [ADR 0001](adr/0001-round-independent-service.md).

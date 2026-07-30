@@ -50,43 +50,45 @@ npm run check
 
 ## 환경 변수
 
-| 변수                                             | 기본값                  | 설명                            |
-| ------------------------------------------------ | ----------------------- | ------------------------------- |
-| `PORT`                                           | `8787`                  | signaling HTTP/WebSocket 포트   |
-| `HOST`                                           | `0.0.0.0`               | signaling bind 주소             |
-| `ALLOWED_ORIGINS`                                | `http://localhost:5173` | 쉼표로 구분한 허용 Origin       |
-| `ROUND_AUTH_MODE`                                | `standalone`            | `standalone` 또는 `baton`       |
-| `ROUND_AUTH_COOKIE_NAME`                         | `__Secure-round_access` | BATON 참여권 cookie 이름        |
-| `ROUND_AUTH_ISSUER`                              | 없음                    | 신뢰할 BATON JWT issuer         |
-| `ROUND_AUTH_AUDIENCE`                            | `round`                 | 참여권의 필수 audience          |
-| `ROUND_AUTH_JWK_SET_URI`                         | 없음                    | BATON 공개 JWK Set HTTPS URI    |
-| `ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS`          | `300`                   | 참여권 최대 허용 수명(초)       |
-| `MAX_ROOM_SIZE`                                  | `6`                     | 방 최대 참가자 수               |
-| `MAX_SIGNALING_CONNECTIONS`                      | `1000`                  | 서버 전체 signaling 연결 제한   |
-| `MAX_SIGNALING_CONNECTIONS_PER_CLIENT`           | `12`                    | IP별 동시 signaling 연결 제한   |
-| `HEARTBEAT_INTERVAL_MS`                          | `30000`                 | 연결 상태 확인 주기(ms)         |
-| `SIGNALING_SHUTDOWN_CLOSE_TIMEOUT_MS`            | `5000`                  | 종료 시 전체 close 제한(ms)     |
-| `SIGNALING_ABUSE_WINDOW_MS`                      | `10000`                 | 수신 프레임 고정 윈도우(ms)     |
-| `SIGNALING_MAX_FRAMES_PER_SESSION`               | `600`                   | 윈도우당 세션 프레임 제한       |
-| `SIGNALING_MAX_FRAMES_PER_CLIENT`                | `1200`                  | 윈도우당 IP 합산 프레임 제한    |
-| `SIGNALING_MAX_FRAMES_GLOBAL`                    | `3600`                  | 윈도우당 서버 프레임 제한       |
-| `SIGNALING_MAX_BYTES_PER_SESSION`                | `4194304`               | 윈도우당 세션 수신 바이트 제한  |
-| `SIGNALING_MAX_BYTES_PER_CLIENT`                 | `8388608`               | 윈도우당 IP 합산 바이트 제한    |
-| `SIGNALING_MAX_BYTES_GLOBAL`                     | `25165824`              | 윈도우당 서버 수신 바이트 제한  |
-| `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES`             | `2097152`               | peer별 송신 대기 바이트 제한    |
-| `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL`      | `67108864`              | 서버 전체 송신 대기 바이트 제한 |
-| `VITE_ROUND_AUTH_MODE`                           | `standalone`            | 브라우저 endpoint 인증 모드     |
-| `VITE_SIGNALING_URL`                             | 현재 호스트의 `/signal` | standalone WSS/WS 주소 override |
-| `VITE_STUN_URLS`                                 | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소         |
-| `VITE_TURN_CREDENTIALS_URL`                      | `/api/turn-credentials` | standalone TURN API override    |
-| `VITE_ICE_TRANSPORT_POLICY`                      | `all`                   | `relay`이면 TURN만 강제         |
-| `TURN_URLS`                                      | 없음                    | 서버가 브라우저에 전달할 TURN   |
-| `TURN_SHARED_SECRET`                             | 없음                    | signaling과 coturn 공유 비밀    |
-| `TURN_CREDENTIAL_TTL_SECONDS`                    | `600`                   | TURN credential 수명(초)        |
-| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`      | `600`                   | IP별 발급 제한 구간(초)         |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`        | `12`                    | 구간당 IP별 최대 발급 수        |
-| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS` | `24`                    | 구간당 서버 전체 최대 발급 수   |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`         | `10000`                 | rate-limit 상태 최대 IP 수      |
+| 변수                                                  | 기본값                  | 설명                            |
+| ----------------------------------------------------- | ----------------------- | ------------------------------- |
+| `PORT`                                                | `8787`                  | signaling HTTP/WebSocket 포트   |
+| `HOST`                                                | `0.0.0.0`               | signaling bind 주소             |
+| `ALLOWED_ORIGINS`                                     | `http://localhost:5173` | 쉼표로 구분한 허용 Origin       |
+| `ROUND_AUTH_MODE`                                     | `standalone`            | `standalone` 또는 `baton`       |
+| `ROUND_AUTH_COOKIE_NAME`                              | `__Secure-round_access` | BATON 참여권 cookie 이름        |
+| `ROUND_AUTH_ISSUER`                                   | 없음                    | 신뢰할 BATON JWT issuer         |
+| `ROUND_AUTH_AUDIENCE`                                 | `round`                 | 참여권의 필수 audience          |
+| `ROUND_AUTH_JWK_SET_URI`                              | 없음                    | BATON 공개 JWK Set HTTPS URI    |
+| `ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS`               | `300`                   | 참여권 최대 허용 수명(초)       |
+| `MAX_ROOM_SIZE`                                       | `6`                     | 방 최대 참가자 수               |
+| `MAX_SIGNALING_CONNECTIONS`                           | `1000`                  | 서버 전체 signaling 연결 제한   |
+| `MAX_SIGNALING_CONNECTIONS_PER_CLIENT`                | `12`                    | IP별 동시 signaling 연결 제한   |
+| `HEARTBEAT_INTERVAL_MS`                               | `30000`                 | 연결 상태 확인 주기(ms)         |
+| `SIGNALING_SHUTDOWN_CLOSE_TIMEOUT_MS`                 | `5000`                  | 종료 시 전체 close 제한(ms)     |
+| `SIGNALING_ABUSE_WINDOW_MS`                           | `10000`                 | 수신 프레임 고정 윈도우(ms)     |
+| `SIGNALING_MAX_FRAMES_PER_SESSION`                    | `600`                   | 윈도우당 세션 프레임 제한       |
+| `SIGNALING_MAX_FRAMES_PER_CLIENT`                     | `1200`                  | 윈도우당 IP 합산 프레임 제한    |
+| `SIGNALING_MAX_FRAMES_GLOBAL`                         | `3600`                  | 윈도우당 서버 프레임 제한       |
+| `SIGNALING_MAX_BYTES_PER_SESSION`                     | `4194304`               | 윈도우당 세션 수신 바이트 제한  |
+| `SIGNALING_MAX_BYTES_PER_CLIENT`                      | `8388608`               | 윈도우당 IP 합산 바이트 제한    |
+| `SIGNALING_MAX_BYTES_GLOBAL`                          | `25165824`              | 윈도우당 서버 수신 바이트 제한  |
+| `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES`                  | `2097152`               | peer별 송신 대기 바이트 제한    |
+| `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL`           | `67108864`              | 서버 전체 송신 대기 바이트 제한 |
+| `VITE_ROUND_AUTH_MODE`                                | `standalone`            | 브라우저 endpoint 인증 모드     |
+| `VITE_SIGNALING_URL`                                  | 현재 호스트의 `/signal` | standalone WSS/WS 주소 override |
+| `VITE_STUN_URLS`                                      | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소         |
+| `VITE_TURN_CREDENTIALS_URL`                           | `/api/turn-credentials` | standalone TURN API override    |
+| `VITE_ICE_TRANSPORT_POLICY`                           | `all`                   | `relay`이면 TURN만 강제         |
+| `TURN_URLS`                                           | 없음                    | 서버가 브라우저에 전달할 TURN   |
+| `TURN_SHARED_SECRET`                                  | 없음                    | signaling과 coturn 공유 비밀    |
+| `TURN_CREDENTIAL_TTL_SECONDS`                         | `600`                   | TURN credential 수명(초)        |
+| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`           | `600`                   | IP별 발급 제한 구간(초)         |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`             | `12`                    | 구간당 IP별 최대 발급 수        |
+| `TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS` | `6`                     | BATON 참가자·방별 최대 발급 수  |
+| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS`      | `24`                    | 구간당 서버 전체 최대 발급 수   |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`              | `10000`                 | rate-limit 상태 최대 IP 수      |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS`         | `10000`                 | BATON 참가자 상태 최대 수       |
 
 프레임 수와 수신 바이트 제한은 세션, IP 합산, 서버 전체 순서로 함께 적용됩니다. 세션
 초과 연결은 닫고 IP 또는 서버 전체 제한을 넘은 프레임은 다른 클라이언트에 영향을 주지
@@ -106,10 +108,12 @@ BATON 모드에서는 진행 중인 handshake와 활성 WebSocket을 합쳐 동�
 TURN 기본 발급 구간은 credential TTL과 같은 600초입니다. IP당 12회는 같은 NAT 뒤의
 6명 참가자가 최초 발급 후 8분경 한 번씩 자동 갱신할 수 있게 하고 서버 전체는 24회로
 제한합니다. TTL이나 브라우저 갱신 시점을 변경하면 발급 구간과 한도도 함께 검토해야
-합니다. 운영 Compose의 Caddy는 공유 접근 자격을 요구해 익명 요청을 차단하지만, 이를
-알고 있는 사용자를 서로 구분하거나 스터디 멤버십까지 확인하지는 않습니다. 따라서
-전역 발급 quota와 coturn quota는 계속 유지하며, BATON 통합 시 사용자별 인증과
-스터디 권한 검사로 교체해야 합니다.
+합니다. BATON 모드는 같은 구간에 `(room_id, sub)`당 6회의 참가자 quota도 함께 적용하며,
+새 `jti` 발급이나 접속 IP 변경으로 초기화되지 않습니다. 참가자·IP·전역 제한은 모두
+통과할 때만 한 번에 차감됩니다. standalone 모드는 참가자 quota를 적용하지 않습니다.
+운영 Compose의 Caddy는 공유 접근 자격을 요구해 익명 요청을 차단하지만, 이를 알고 있는
+사용자를 서로 구분하거나 스터디 멤버십까지 확인하지는 않습니다. BATON에서도 IP·전역
+발급 quota와 coturn quota는 계정 탈취와 relay 자원 남용을 제한하기 위해 계속 유지합니다.
 
 ## 저장소 구조
 

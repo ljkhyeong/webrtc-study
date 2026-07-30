@@ -151,9 +151,22 @@ connection. Closing the owning socket releases the slot; merely sending
 the current single-replica deployment. Scale-out requires a shared admission
 registry together with shared room state and routing.
 
-The socket policy does not add a per-`sub` or per-`jti` TURN issuance quota.
-One authorized member can still spend the client-IP or global TURN allowance
-through repeated refreshes, so keep alerting on TURN rate-limit metrics.
+BATON TURN issuance adds a process-local fixed-window quota for each
+`(room_id, sub)` alongside the existing effective-client and server-wide
+limits. A newly issued `jti`, role or study claim change, or client-address
+change does not reset that participant window. The default is six issues per
+ten minutes while tracking at most 10,000 participant-room identities. Set
+`TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS` and
+`TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS` in the BATON signaling manifest;
+the bundled standalone manifest intentionally omits them because its endpoint
+does not have a verified participant.
+
+`round.turn.credentials.rate_limited` has a bounded `scope` label:
+`client`, `participant`, `global`, `client_state_capacity`, or
+`participant_state_capacity`. Alert on the total and investigate scope ratios,
+but never add `sub`, room ID, `jti`, or client address as monitoring labels.
+The participant quota complements rather than replaces coturn's user and total
+allocation limits.
 
 This repository's `ops/turn/probe.sh` authenticates with the standalone shared
 Basic credential and therefore is not a BATON authentication probe. A BATON
@@ -316,6 +329,15 @@ Set these values carefully:
   gate blocks anonymous internet callers, while the standalone quotas limit but
   do not eliminate abuse by a credential holder until BATON identity and study
   membership are connected.
+- BATON deployments also set
+  `TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS` and
+  `TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS`. The defaults allow six
+  credential issues per `(room_id, sub)` in the same window and keep at most
+  10,000 live participant windows. Size the client and server-wide quotas
+  together so the intended number of legitimate participants can each use
+  their participant budget. These maps are process-local and fail closed at
+  capacity without evicting an active quota window; scale-out requires a shared
+  quota registry.
 - `MAX_SIGNALING_CONNECTIONS=1000` and
   `MAX_SIGNALING_CONNECTIONS_PER_CLIENT=12` bound concurrent WebSocket
   handshakes. `SIGNALING_ABUSE_WINDOW_MS=10000` applies frame limits of 600 per

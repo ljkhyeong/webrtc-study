@@ -148,10 +148,13 @@ BATON 장애 중에도 이미 연결된 WebSocket의 signaling은 BATON 동기 �
   `SameSite=Strict`, 방별 cookie path와 짧은 만료 시간을 함께 적용한다. 동일 `jti`의
   동시 연결 제한은 두 번째 연결을 막지만, 공격자가 먼저 슬롯을 차지하거나 정상 연결이
   종료된 뒤 만료 전에 순차 재사용하는 위험까지 제거하지는 않는다.
-- 참여자 연결 제한은 현재 단일 ROUND 프로세스의 메모리에만 존재한다. 다중 인스턴스
-  전환 시에는 shared room state와 함께 분산 admission registry를 도입해야 한다.
-- TURN credential 발급은 여전히 IP와 서버 전체 quota만 적용하며 `sub` 또는 `jti`별
-  quota는 없다. 한 참여자가 반복 갱신으로 공유 quota를 소비하는 위험은 별도로 남는다.
+- 참여자 연결 제한과 `(room_id, sub)`별 TURN credential 발급 quota는 현재 단일 ROUND
+  프로세스의 메모리에만 존재한다. 다중 인스턴스 전환 시에는 shared room state와 함께
+  분산 admission·quota registry를 도입해야 한다.
+- TURN의 참가자 quota는 한 참여자가 새 `jti` 또는 IP로 공유 발급량을 독점하는 위험을
+  줄이지만, 이미 발급받은 credential 공유나 하나의 credential을 이용한 여러 relay
+  allocation까지 막지는 않는다. IP·서버 전체 발급 quota와 coturn의 사용자·전체
+  allocation quota를 함께 유지해야 한다.
 
 ## 검토했지만 채택하지 않은 대안
 

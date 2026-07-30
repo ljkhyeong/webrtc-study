@@ -230,9 +230,18 @@ instance. Do not change the bundled standalone Compose to perform them.
       freshly issued `jti` values, even if their `study_id` values differ. A
       third receives HTTP 429, and closing either accepted socket immediately
       makes one slot available.
-- [ ] The BATON socket checks above do not change standalone behavior. TURN
-      issuance remains limited by client IP and server-wide quota rather than
-      by `sub` or `jti`, and its rate-limit metrics remain monitored.
+- [ ] TURN issuance for the same `(room_id, sub)` reaches the configured quota
+      even when BATON issues fresh `jti` values or the client address changes.
+      The rejected response is an empty HTTP 429 with `Cache-Control: no-store`
+      and a positive `Retry-After`; another room or participant remains
+      independent.
+- [ ] `round.turn.credentials.rate_limited` is collected with only the bounded
+      `scope` label. No participant, room, token, or address value appears in
+      metrics or logs, and the monitoring runbook distinguishes participant,
+      client, global, and state-capacity pressure.
+- [ ] The BATON socket and TURN checks above do not change standalone behavior.
+      Standalone TURN issuance remains limited by client IP and server-wide
+      quota without creating participant quota state.
 - [ ] The BATON integration probe obtains a real short-lived participation
       grant without printing it and validates UDP, TCP, and TLS relay paths;
       the standalone Basic Auth probe is not used as proof of this boundary.

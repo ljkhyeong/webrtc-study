@@ -69,6 +69,7 @@ Micrometer publishes these signaling meters:
 - `round.signaling.heartbeat.closes`
 - `round.turn.credentials.issued`
 - `round.turn.credentials.rate_limited`
+  (`scope=client|participant|global|client_state_capacity|participant_state_capacity`)
 
 Meter tags are deliberately bounded. Room IDs, display names, session/peer IDs,
 SDP, ICE candidates, Origin/header values, TURN shared secrets, and issued TURN
@@ -83,12 +84,14 @@ optional `TURN_CREDENTIAL_TTL_SECONDS` defaults to 600 seconds (ten minutes).
 
 Credential issuance uses these additional bounded rate-limit settings:
 
-| Environment variable                             | Default | Purpose                                                   |
-| ------------------------------------------------ | ------: | --------------------------------------------------------- |
-| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`      |   `600` | Fixed issuance window                                     |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`        |    `12` | Successful issues per effective client address and window |
-| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS` |    `24` | Successful issues across this server and window           |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`         | `10000` | Maximum client windows retained in the in-memory LRU      |
+| Environment variable                                  | Default | Purpose                                                   |
+| ----------------------------------------------------- | ------: | --------------------------------------------------------- |
+| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`           |   `600` | Fixed issuance window                                     |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`             |    `12` | Successful issues per effective client address and window |
+| `TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS` |     `6` | BATON issues per `(room_id, sub)` and window              |
+| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS`      |    `24` | Successful issues across this server and window           |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`              | `10000` | Maximum effective-client windows retained in memory       |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS`         | `10000` | Maximum BATON participant-room windows retained in memory |
 
 The default ten-minute issuance window matches the ten-minute credential TTL.
 Twelve issues per address cover the initial issue and the scheduled refresh for
@@ -98,7 +101,10 @@ quota so one client cannot consume it across misaligned fixed-window
 boundaries. If operators change the credential TTL or browser refresh timing,
 they should review and normally align the issuance window and quotas as well.
 In BATON mode the issued credential is additionally capped at the participation
-grant's `exp`, so a longer TURN TTL cannot extend the grant's authority.
+grant's `exp`, so a longer TURN TTL cannot extend the grant's authority. BATON
+also applies a six-issue default window to the verified `(room_id, sub)` in the
+same atomic decision as the client and global limits. Fresh `jti` values or
+client addresses do not reset it. Standalone never creates participant state.
 
 The credential endpoint returns a no-store response:
 
@@ -114,10 +120,14 @@ The credential endpoint returns a no-store response:
 `expiresAt` is Unix epoch seconds. Every successful request receives a new
 username and credential, including separate browsers behind the same NAT. The
 endpoint accepts only POST requests with an exact same-origin `Origin`; when
-Fetch Metadata is present, `Sec-Fetch-Site` must also be `same-origin`. Once an
-effective client or the server reaches its issuance limit, the endpoint returns
-an empty no-store HTTP 429 response with `Retry-After` set to the remaining whole
-seconds in the current window.
+Fetch Metadata is present, `Sec-Fetch-Site` must also be `same-origin`. Once a
+BATON participant, effective client, or the server reaches its issuance limit,
+the endpoint returns an empty no-store HTTP 429 response with `Retry-After` set
+to the longest remaining whole seconds among the blocking windows.
+The metric `scope` identifies the exact window with the latest expiry. Exact
+ties prefer participant-state capacity, client-state capacity, global,
+participant, then client pressure so the most operationally significant cause
+remains visible.
 
 Origin and Fetch Metadata checks prevent another website from spending a
 visitor's quota through a browser. In standalone mode they do not authenticate
@@ -130,12 +140,15 @@ When TURN is intentionally disabled, the endpoint returns an empty no-store
 HTTP 204 response so local STUN-only development does not create a false
 browser console error.
 
-Only issuance counters are stored per client address; credentials are never
-cached. The client-window map is bounded and neither addresses nor credentials
-are logged or attached to metrics. With `server.forward-headers-strategy=native`,
-Tomcat accepts `X-Forwarded-For` only from its configured internal proxy CIDRs.
-The production signaling port therefore remains private behind Caddy, while a
-direct untrusted peer cannot choose its rate-limit key with a spoofed header.
+Only issuance counters are stored per effective client and BATON
+participant-room identity; credentials are never cached. Both fixed-window maps
+are bounded and reject new identities at capacity without evicting an active
+quota. Client addresses, participant subjects, room IDs, and credentials are
+not logged or attached to metrics. With
+`server.forward-headers-strategy=native`, Tomcat accepts `X-Forwarded-For` only
+from its configured internal proxy CIDRs. The production signaling port
+therefore remains private behind Caddy, while a direct untrusted peer cannot
+choose its rate-limit key with a spoofed header.
 
 Room IDs accepted by the Java boundary are exactly three four-character
 segments separated by hyphens, using
