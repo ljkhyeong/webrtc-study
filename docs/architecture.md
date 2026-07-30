@@ -84,6 +84,9 @@ credential for the static browser build, `/signal`, and `/api/turn-credentials`,
 Authorization header before proxying, and leaves only `/healthz` public for availability checks.
 In BATON mode the same-origin edge maps the room-scoped public paths above to ROUND and Spring
 Security validates the participation cookie before either protected operation.
+The BATON-owned Vite build uses `VITE_ROUND_AUTH_MODE=baton`; the browser derives both paths from
+the same canonical room ID and rejects endpoint overrides so it cannot accidentally fall back to
+the standalone transport boundary.
 
 Room state and participation connection reservations are in memory, so running multiple signaling
 replicas would split one logical room and enforce each participant limit independently until a

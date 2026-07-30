@@ -75,9 +75,10 @@ npm run check
 | `SIGNALING_MAX_BYTES_GLOBAL`                     | `25165824`              | 윈도우당 서버 수신 바이트 제한  |
 | `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES`             | `2097152`               | peer별 송신 대기 바이트 제한    |
 | `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL`      | `67108864`              | 서버 전체 송신 대기 바이트 제한 |
-| `VITE_SIGNALING_URL`                             | 현재 호스트의 `/signal` | 브라우저가 연결할 WSS/WS 주소   |
+| `VITE_ROUND_AUTH_MODE`                           | `standalone`            | 브라우저 endpoint 인증 모드     |
+| `VITE_SIGNALING_URL`                             | 현재 호스트의 `/signal` | standalone WSS/WS 주소 override |
 | `VITE_STUN_URLS`                                 | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소         |
-| `VITE_TURN_CREDENTIALS_URL`                      | `/api/turn-credentials` | 만료형 TURN credential API      |
+| `VITE_TURN_CREDENTIALS_URL`                      | `/api/turn-credentials` | standalone TURN API override    |
 | `VITE_ICE_TRANSPORT_POLICY`                      | `all`                   | `relay`이면 TURN만 강제         |
 | `TURN_URLS`                                      | 없음                    | 서버가 브라우저에 전달할 TURN   |
 | `TURN_SHARED_SECRET`                             | 없음                    | signaling과 coturn 공유 비밀    |
@@ -157,6 +158,12 @@ BATON 연동 시 브라우저가 사용하는 공개 경로는 다음과 같습�
 
 - WebSocket: `/round/rooms/{roomId}/signal`
 - TURN credential: `/round/rooms/{roomId}/turn-credentials`
+
+BATON이 제공하는 웹 번들은 빌드 시 `VITE_ROUND_AUTH_MODE=baton`을 주입하고
+`VITE_SIGNALING_URL`, `VITE_TURN_CREDENTIALS_URL`은 비워 둡니다. 브라우저는 두 endpoint를
+같은 canonical `roomId`의 동일 출처 경로로 계산하며, BATON 모드에서 외부 endpoint
+override가 있거나 모드 값이 올바르지 않으면 standalone으로 강등하지 않고 연결을
+거부합니다. 이 Vite 값은 공개 설정일 뿐 참여권이나 다른 비밀을 포함하지 않습니다.
 
 edge proxy는 이를 ROUND 내부의 `/rooms/{roomId}/signal`과
 `/api/rooms/{roomId}/turn-credentials`로 전달합니다. standalone 모드의 기존 `/signal`,

@@ -191,6 +191,10 @@ instance. Do not change the bundled standalone Compose to perform them.
       `/round/rooms/{roomId}/turn-credentials` to
       `/api/rooms/{roomId}/turn-credentials`, preserving the room ID,
       WebSocket upgrade, original `Origin`, and cookie.
+- [ ] The BATON-owned web bundle is built with `VITE_ROUND_AUTH_MODE=baton`
+      and no signaling or TURN endpoint override. A direct invite remains at
+      prejoin without a protected request; explicit entry uses only the two
+      room-scoped public paths and never the standalone endpoints.
 - [ ] The edge discards client-supplied forwarding headers, sets the canonical
       HTTPS host and client address itself, and applies a bounded pre-auth rate
       limit to both room-scoped public paths.

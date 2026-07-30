@@ -38,6 +38,20 @@ ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS=300
 ALLOWED_ORIGINS=https://baton.example.com
 ```
 
+The BATON-owned web bundle must separately be built with:
+
+```dotenv
+VITE_ROUND_AUTH_MODE=baton
+VITE_SIGNALING_URL=
+VITE_TURN_CREDENTIALS_URL=
+```
+
+Vite embeds these non-secret values at build time. The browser then derives
+both public endpoints from the current origin and the canonical room ID. BATON
+mode rejects non-empty endpoint overrides instead of silently bypassing the
+room-scoped cookie path. The tracked standalone image remains built for
+`VITE_ROUND_AUTH_MODE=standalone`.
+
 Use the exact issuer and JWK Set URI from the BATON environment. Production
 issuer and JWK URLs must use HTTPS. `ROUND_AUTH_AUDIENCE` must equal the
 participation grant's `aud`; keep `round` unless both services deliberately
