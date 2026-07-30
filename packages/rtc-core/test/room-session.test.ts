@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { PROTOCOL_VERSION, SIGNALING_ERROR_CODES, type SignalingErrorCode } from '@round/protocol';
+import {
+  PROTOCOL_VERSION,
+  SIGNALING_ERROR_CODES,
+  utf8ByteLength,
+  type SignalingErrorCode,
+} from '@round/protocol';
 import {
   createRoomSession,
   type RoomSession,
@@ -160,12 +165,15 @@ class FakeMediaStream {
 
 class FakeDataChannel {
   readyState: RTCDataChannelState = 'open';
+  bufferedAmount = 0;
+  bufferedAmountLowThreshold = 0;
   readonly sent: string[] = [];
   readonly sendErrors: Error[] = [];
   onopen: ((event: Event) => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onclose: ((event: Event) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
+  onbufferedamountlow: ((event: Event) => void) | null = null;
 
   send(data: string): void {
     const error = this.sendErrors.shift();
@@ -173,6 +181,7 @@ class FakeDataChannel {
       throw error;
     }
     this.sent.push(data);
+    this.bufferedAmount += utf8ByteLength(data);
   }
 
   close(): void {
@@ -182,6 +191,17 @@ class FakeDataChannel {
   open(): void {
     this.readyState = 'open';
     this.onopen?.({} as Event);
+  }
+
+  drainBufferedAmount(bufferedAmount = 0): void {
+    const previousBufferedAmount = this.bufferedAmount;
+    this.bufferedAmount = bufferedAmount;
+    if (
+      previousBufferedAmount > this.bufferedAmountLowThreshold &&
+      bufferedAmount <= this.bufferedAmountLowThreshold
+    ) {
+      this.onbufferedamountlow?.({} as Event);
+    }
   }
 
   receive(message: unknown): void {
@@ -216,6 +236,7 @@ class FakePeerConnection {
   readonly channels: FakeDataChannel[] = [];
   readonly offerOptions: (RTCOfferOptions | undefined)[] = [];
   readonly configurationCalls: RTCConfiguration[] = [];
+  readonly addTrackErrors: Error[] = [];
   readonly createOfferErrors: Error[] = [];
   createOfferDelayMs = 0;
   setRemoteDescriptionDelayMs = 0;
@@ -226,6 +247,10 @@ class FakePeerConnection {
   constructor(readonly initialConfiguration: RTCConfiguration | undefined) {}
 
   addTrack(track: MediaStreamTrack): RTCRtpSender {
+    const error = this.addTrackErrors.shift();
+    if (error !== undefined) {
+      throw error;
+    }
     this.addedTracks.push(track);
     return {} as RTCRtpSender;
   }
@@ -340,6 +365,7 @@ function createHarness(
     createId?: () => string;
     now?: () => number;
     displayName?: string;
+    maxChatMessages?: number;
     recovery?: RoomSessionRecoveryOptions;
     rtcConfiguration?: RTCConfiguration;
     beforeSignalingConnect?: () => void | Promise<void>;
@@ -382,6 +408,9 @@ function createHarness(
       : {}),
     ...(overrides.createId === undefined ? {} : { createId: overrides.createId }),
     ...(overrides.now === undefined ? {} : { now: overrides.now }),
+    ...(overrides.maxChatMessages === undefined
+      ? {}
+      : { maxChatMessages: overrides.maxChatMessages }),
     ...(overrides.recovery === undefined ? {} : { recovery: overrides.recovery }),
     ...(overrides.beforeSignalingConnect === undefined
       ? {}
@@ -490,6 +519,10 @@ function exceedInboundDataBudget(channel: FakeDataChannel): void {
   for (let index = 0; index <= 120; index += 1) {
     channel.receiveRaw('not-json');
   }
+}
+
+function acknowledgeChat(channel: FakeDataChannel, id: string): void {
+  channel.receive({ type: 'chat.ack', messageId: id });
 }
 
 describe('RoomSession', () => {
@@ -1208,9 +1241,13 @@ describe('RoomSession', () => {
         ],
       });
       const partialChat = harness.session.sendChat('healthy peers stay connected');
-      expect(partialChat.deliveryState).toBe('sent');
+      expect(partialChat.deliveryState).toBe('pending');
+      const healthyChannel = healthyPeer?.channels[0];
+      if (healthyChannel === undefined) {
+        throw new Error('Expected a healthy peer DataChannel');
+      }
       expect(
-        healthyPeer?.channels[0]?.sent
+        healthyChannel.sent
           .map((raw) => JSON.parse(raw) as { type: string; text?: string })
           .filter(({ type }) => type === 'chat.message'),
       ).toEqual([
@@ -1219,6 +1256,13 @@ describe('RoomSession', () => {
           text: 'healthy peers stay connected',
         }),
       ]);
+      acknowledgeChat(healthyChannel, partialChat.id);
+      expect(harness.session.getSnapshot().messages).toContainEqual(
+        expect.objectContaining({
+          id: partialChat.id,
+          deliveryState: 'partial',
+        }),
+      );
 
       harness.socket.serverMessage({
         v: PROTOCOL_VERSION,
@@ -1863,6 +1907,52 @@ describe('RoomSession', () => {
           peerId: 'peer-a',
           connectionState: 'negotiating',
         }),
+      );
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails cleanly when an initial-offer replacement cannot attach local tracks', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          maxReconnectAttempts: 1,
+          reconnectInitialDelayMs: 10,
+        },
+        onPeerConnectionCreated: (peer, index) => {
+          if (index === 0) {
+            peer.createOfferErrors.push(new Error('initial offer failure'));
+          } else {
+            peer.addTrackErrors.push(new Error('replacement addTrack failure'));
+          }
+        },
+      });
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+      const initialPeer = harness.peerConnections[0];
+      if (initialPeer === undefined) {
+        throw new Error('Expected an initial peer connection');
+      }
+      initialPeer.connectionState = 'failed';
+
+      await vi.advanceTimersByTimeAsync(10);
+      await flushMicrotasks();
+
+      const replacement = harness.peerConnections[1];
+      expect(initialPeer.closed).toBe(true);
+      expect(replacement?.closed).toBe(true);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: { code: 'peer-negotiation-failed' },
+        participants: [
+          expect.objectContaining({ peerId: 'self' }),
+          expect.objectContaining({ peerId: 'peer-a', connectionState: 'failed' }),
+        ],
+      });
+      expect(() => harness.session.sendChat('must fail closed')).toThrow(
+        'Chat delivery to peer-a is unavailable',
       );
       await harness.session.leave();
     } finally {
@@ -2576,7 +2666,7 @@ describe('RoomSession', () => {
     await harness.session.leave();
   });
 
-  it('fans chat out, echoes locally, and ignores duplicate message ids', async () => {
+  it('fans chat out and scopes duplicate message ids to each peer', async () => {
     const harness = createHarness({
       createId: () => 'message-local',
       now: () => 1_234,
@@ -2593,7 +2683,7 @@ describe('RoomSession', () => {
       text: 'hello',
       sentAt: 1_234,
       isLocal: true,
-      deliveryState: 'sent',
+      deliveryState: 'pending',
     });
     expect(JSON.parse(channel?.sent.at(-1) ?? '')).toEqual({
       type: 'chat.message',
@@ -2601,6 +2691,11 @@ describe('RoomSession', () => {
       senderId: 'self',
       text: 'hello',
       sentAt: 1_234,
+    });
+    acknowledgeChat(channel as FakeDataChannel, local.id);
+    expect(harness.session.getSnapshot().messages).toContainEqual({
+      ...local,
+      deliveryState: 'sent',
     });
 
     channel?.receive({
@@ -2626,7 +2721,19 @@ describe('RoomSession', () => {
     });
 
     expect(harness.session.getSnapshot().messages).toEqual([
-      local,
+      {
+        ...local,
+        deliveryState: 'sent',
+      },
+      {
+        id: 'message-local',
+        senderId: 'peer-a',
+        senderName: 'Ara',
+        text: 'hello',
+        sentAt: 1_234,
+        isLocal: false,
+        deliveryState: 'received',
+      },
       {
         id: 'message-remote',
         senderId: 'peer-a',
@@ -2637,6 +2744,267 @@ describe('RoomSession', () => {
         deliveryState: 'received',
       },
     ]);
+    expect(
+      channel?.sent
+        .map((raw) => JSON.parse(raw) as { type: string; messageId?: string })
+        .filter((message) => message.type === 'chat.ack' && message.messageId === 'message-remote'),
+    ).toHaveLength(2);
+  });
+
+  it('reports partial delivery without resending to a peer that already received the message', async () => {
+    const harness = createHarness({
+      createId: () => 'message-partial',
+      now: () => 1_300,
+    });
+    await joinSession(harness, [
+      { peerId: 'peer-a', displayName: 'Ara' },
+      { peerId: 'peer-b', displayName: 'Bora' },
+    ]);
+    const deliveredChannel = harness.peerConnections[0]?.channels[0];
+    const pendingChannel = harness.peerConnections[1]?.channels[0];
+    if (deliveredChannel === undefined || pendingChannel === undefined) {
+      throw new Error('Expected both participant DataChannels');
+    }
+    pendingChannel.readyState = 'connecting';
+
+    const local = harness.session.sendChat('한 명에게만 먼저 도착');
+
+    expect(local.deliveryState).toBe('pending');
+    acknowledgeChat(deliveredChannel, local.id);
+    expect(
+      deliveredChannel.sent
+        .map((raw) => JSON.parse(raw) as { type: string; id?: string })
+        .filter((message) => message.type === 'chat.message' && message.id === local.id),
+    ).toHaveLength(1);
+    expect(
+      pendingChannel.sent
+        .map((raw) => JSON.parse(raw) as { type: string; id?: string })
+        .filter((message) => message.type === 'chat.message' && message.id === local.id),
+    ).toEqual([]);
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'peer.left',
+      roomId: ROOM_ID,
+      payload: { peerId: 'peer-b' },
+    });
+    await flushMicrotasks();
+
+    expect(harness.session.getSnapshot().messages).toContainEqual(
+      expect.objectContaining({
+        id: local.id,
+        deliveryState: 'partial',
+      }),
+    );
+    expect(
+      deliveredChannel.sent
+        .map((raw) => JSON.parse(raw) as { type: string; id?: string })
+        .filter((message) => message.type === 'chat.message' && message.id === local.id),
+    ).toHaveLength(1);
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'peer.joined',
+      roomId: ROOM_ID,
+      payload: {
+        participant: { peerId: 'peer-b', displayName: 'Bora' },
+      },
+    });
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'rtc.offer',
+      roomId: ROOM_ID,
+      from: 'peer-b',
+      payload: {
+        description: { type: 'offer', sdp: 'rejoin-offer' },
+      },
+    });
+    await flushMicrotasks();
+    const rejoinedPeer = harness.peerConnections[2];
+    const rejoinedChannel = new FakeDataChannel();
+    rejoinedPeer?.ondatachannel?.({
+      channel: rejoinedChannel,
+    } as unknown as RTCDataChannelEvent);
+    rejoinedChannel.open();
+
+    expect(
+      rejoinedChannel.sent
+        .map((raw) => JSON.parse(raw) as { type: string; id?: string })
+        .filter((message) => message.type === 'chat.message' && message.id === local.id),
+    ).toEqual([]);
+  });
+
+  it('waits for every recipient acknowledgement and ignores early or unknown acknowledgements', async () => {
+    const harness = createHarness({
+      createId: () => 'message-acknowledged',
+      now: () => 1_400,
+    });
+    await joinSession(harness, [
+      { peerId: 'peer-a', displayName: 'Ara' },
+      { peerId: 'peer-b', displayName: 'Bora' },
+    ]);
+    const firstChannel = harness.peerConnections[0]?.channels[0];
+    const secondChannel = harness.peerConnections[1]?.channels[0];
+    if (firstChannel === undefined || secondChannel === undefined) {
+      throw new Error('Expected both participant DataChannels');
+    }
+    firstChannel.readyState = 'connecting';
+
+    const local = harness.session.sendChat('모두 확인해야 완료');
+    acknowledgeChat(firstChannel, local.id);
+    acknowledgeChat(secondChannel, 'unknown-message');
+    acknowledgeChat(secondChannel, local.id);
+
+    expect(harness.session.getSnapshot().messages).toContainEqual(
+      expect.objectContaining({ id: local.id, deliveryState: 'pending' }),
+    );
+
+    firstChannel.open();
+    acknowledgeChat(firstChannel, local.id);
+    acknowledgeChat(firstChannel, local.id);
+
+    expect(harness.session.getSnapshot().messages).toContainEqual(
+      expect.objectContaining({ id: local.id, deliveryState: 'sent' }),
+    );
+    await harness.session.leave();
+  });
+
+  it('rejects a reused local message id before mutating history or peer queues', async () => {
+    const harness = createHarness({
+      createId: () => 'message-collision',
+      now: () => 1_500,
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    if (channel === undefined) {
+      throw new Error('Expected a participant DataChannel');
+    }
+
+    harness.session.sendChat('first');
+
+    expect(() => harness.session.sendChat('must be rejected')).toThrow(
+      'Chat message id message-collision is already in use',
+    );
+    expect(harness.session.getSnapshot().messages).toHaveLength(1);
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toHaveLength(1);
+    await harness.session.leave();
+  });
+
+  it('keeps a completed local message id reserved after visible history eviction', async () => {
+    const harness = createHarness({
+      createId: () => 'message-completed-collision',
+      maxChatMessages: 1,
+      now: () => 1_550,
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    if (channel === undefined) {
+      throw new Error('Expected a participant DataChannel');
+    }
+
+    const local = harness.session.sendChat('completed before eviction');
+    acknowledgeChat(channel, local.id);
+    channel.receive({
+      type: 'chat.message',
+      id: 'message-remote',
+      senderId: 'peer-a',
+      sentAt: 1_551,
+      text: 'evicts the local message',
+    });
+
+    expect(harness.session.getSnapshot().messages).toEqual([
+      expect.objectContaining({ id: 'message-remote' }),
+    ]);
+    expect(() => harness.session.sendChat('must still be rejected')).toThrow(
+      'Chat message id message-completed-collision is already in use',
+    );
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toHaveLength(1);
+    await harness.session.leave();
+  });
+
+  it('keeps received chat tombstones across visible history eviction and channel replacement', async () => {
+    const harness = createHarness({ maxChatMessages: 1 });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const peer = harness.peerConnections[0];
+    const originalChannel = peer?.channels[0];
+    if (peer === undefined || originalChannel === undefined) {
+      throw new Error('Expected a participant DataChannel');
+    }
+    const firstMessage = {
+      type: 'chat.message',
+      id: 'message-first',
+      senderId: 'peer-a',
+      sentAt: 1_600,
+      text: 'first',
+    };
+    originalChannel.receive(firstMessage);
+    originalChannel.receive({
+      type: 'chat.message',
+      id: 'message-second',
+      senderId: 'peer-a',
+      sentAt: 1_601,
+      text: 'second',
+    });
+
+    const replacementChannel = new FakeDataChannel();
+    peer.ondatachannel?.({
+      channel: replacementChannel,
+    } as unknown as RTCDataChannelEvent);
+    replacementChannel.receive(firstMessage);
+
+    expect(harness.session.getSnapshot().messages).toEqual([
+      expect.objectContaining({ id: 'message-second', text: 'second' }),
+    ]);
+    expect(
+      replacementChannel.sent
+        .map((raw) => JSON.parse(raw) as { type: string; messageId?: string })
+        .filter((message) => message.type === 'chat.ack' && message.messageId === 'message-first'),
+    ).toHaveLength(1);
+    await harness.session.leave();
+  });
+
+  it('fails an unacknowledged chat at its absolute delivery deadline and ignores a late ack', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        createId: () => 'message-timeout',
+        now: () => 1_700,
+      });
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+      await answerPeer(harness, 'peer-a');
+      const peer = harness.peerConnections[0];
+      const channel = peer?.channels[0];
+      if (peer === undefined || channel === undefined) {
+        throw new Error('Expected a connected participant DataChannel');
+      }
+      peer.setConnectionState('connected');
+
+      const local = harness.session.sendChat('확인 제한 시간');
+      await vi.advanceTimersByTimeAsync(44_999);
+      expect(harness.session.getSnapshot().messages).toContainEqual(
+        expect.objectContaining({ id: local.id, deliveryState: 'pending' }),
+      );
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(harness.session.getSnapshot().messages).toContainEqual(
+        expect.objectContaining({ id: local.id, deliveryState: 'failed' }),
+      );
+      acknowledgeChat(channel, local.id);
+      expect(harness.session.getSnapshot().messages).toContainEqual(
+        expect.objectContaining({ id: local.id, deliveryState: 'failed' }),
+      );
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects oversized and structurally invalid DataChannel messages', async () => {
@@ -3256,6 +3624,7 @@ describe('RoomSession', () => {
         id: 'message-send-retry',
       }),
     ]);
+    acknowledgeChat(recoveredChannel, 'message-send-retry');
     expect(harness.session.getSnapshot().messages).toContainEqual(
       expect.objectContaining({
         id: 'message-send-retry',
@@ -3264,6 +3633,53 @@ describe('RoomSession', () => {
     );
     expect(harness.session.getSnapshot().warning).toBeNull();
     await harness.session.leave();
+  });
+
+  it('accepts an acknowledgement after a prior send and before replacement-channel retransmission', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        createId: () => 'message-ack-before-retransmit',
+        now: () => 3_550,
+        recovery: { peerRecoveryTimeoutMs: 30 },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      await answerPeer(harness, 'z-peer');
+      const initialPeer = harness.peerConnections[0];
+      const originalChannel = initialPeer?.channels[0];
+      if (initialPeer === undefined || originalChannel === undefined) {
+        throw new Error('Expected an initial peer and DataChannel');
+      }
+      initialPeer.setConnectionState('connected');
+
+      const local = harness.session.sendChat('already accepted remotely');
+      initialPeer.setConnectionState('failed');
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(30);
+      await flushMicrotasks();
+
+      const replacementChannel = harness.peerConnections[1]?.channels[0];
+      if (replacementChannel === undefined) {
+        throw new Error('Expected a replacement DataChannel');
+      }
+      expect(
+        replacementChannel.sent
+          .map((raw) => JSON.parse(raw) as { type: string })
+          .filter((message) => message.type === 'chat.message'),
+      ).toEqual([]);
+
+      acknowledgeChat(replacementChannel, local.id);
+
+      expect(harness.session.getSnapshot().messages).toContainEqual(
+        expect.objectContaining({
+          id: local.id,
+          deliveryState: 'sent',
+        }),
+      );
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('recreates a closed channel and flushes chat that was waiting for it', async () => {
@@ -3318,6 +3734,7 @@ describe('RoomSession', () => {
         id: 'message-channel-close',
       }),
     ]);
+    acknowledgeChat(recoveredChannel, 'message-channel-close');
     expect(harness.session.getSnapshot().messages).toContainEqual(
       expect.objectContaining({
         id: 'message-channel-close',
@@ -3377,9 +3794,13 @@ describe('RoomSession', () => {
 
       await answerPeer(harness, 'z-peer');
       replacement?.setConnectionState('connected');
+      const replacementChannel = replacement?.channels[0];
+      if (replacementChannel === undefined) {
+        throw new Error('Expected a replacement DataChannel');
+      }
 
       expect(
-        replacement?.channels[0]?.sent
+        replacementChannel.sent
           .map((raw) => JSON.parse(raw) as { type: string; id?: string })
           .filter(({ type }) => type === 'chat.message'),
       ).toEqual([
@@ -3388,6 +3809,7 @@ describe('RoomSession', () => {
           id: 'message-stuck-channel',
         }),
       ]);
+      acknowledgeChat(replacementChannel, 'message-stuck-channel');
       expect(harness.session.getSnapshot()).toMatchObject({
         warning: null,
         messages: [
@@ -3503,16 +3925,23 @@ describe('RoomSession', () => {
       createId: () => `message-${sequence++}`,
       now: () => 3_700,
     });
-    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
-    const channel = harness.peerConnections[0]?.channels[0];
-    if (channel === undefined) {
-      throw new Error('Expected an initial DataChannel');
+    await joinSession(harness, [
+      { peerId: 'peer-a', displayName: 'Ara' },
+      { peerId: 'peer-b', displayName: 'Bora' },
+    ]);
+    const saturatedChannel = harness.peerConnections[0]?.channels[0];
+    const healthyChannel = harness.peerConnections[1]?.channels[0];
+    if (saturatedChannel === undefined || healthyChannel === undefined) {
+      throw new Error('Expected both initial DataChannels');
     }
-    channel.readyState = 'connecting';
+    saturatedChannel.readyState = 'connecting';
 
     for (let index = 0; index < 50; index += 1) {
       harness.session.sendChat(`queued ${index}`);
     }
+    const healthyChatCount = healthyChannel.sent
+      .map((raw) => JSON.parse(raw) as { type: string })
+      .filter((message) => message.type === 'chat.message').length;
 
     expect(() => harness.session.sendChat('must not appear locally')).toThrow(
       'Chat delivery queue for peer-a is full',
@@ -3526,7 +3955,215 @@ describe('RoomSession', () => {
         .getSnapshot()
         .messages.every((message) => message.deliveryState === 'pending'),
     ).toBe(true);
+    expect(
+      healthyChannel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toHaveLength(healthyChatCount);
     await harness.session.leave();
+  });
+
+  it('bounds unacknowledged chat on an open channel and frees one slot per ack', async () => {
+    let sequence = 0;
+    const harness = createHarness({
+      createId: () => `message-open-${sequence++}`,
+      now: () => 3_725,
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    if (channel === undefined) {
+      throw new Error('Expected an open participant DataChannel');
+    }
+
+    for (let index = 0; index < 50; index += 1) {
+      harness.session.sendChat(`unacknowledged ${index}`);
+    }
+
+    expect(() => harness.session.sendChat('queue full')).toThrow(
+      'Chat delivery queue for peer-a is full',
+    );
+    acknowledgeChat(channel, 'message-open-0');
+    expect(() => harness.session.sendChat('slot recovered')).not.toThrow();
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toHaveLength(51);
+    await harness.session.leave();
+  });
+
+  it('pauses chat at the DataChannel high-water mark and resumes at low-water', async () => {
+    const harness = createHarness({
+      createId: () => 'message-backpressured',
+      now: () => 3_740,
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    if (channel === undefined) {
+      throw new Error('Expected an open participant DataChannel');
+    }
+    channel.bufferedAmount = 256 * 1024;
+
+    const local = harness.session.sendChat('wait for bufferedamountlow');
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toEqual([]);
+    expect(local.deliveryState).toBe('pending');
+
+    channel.drainBufferedAmount(64 * 1024);
+
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string; id?: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toEqual([
+      expect.objectContaining({
+        type: 'chat.message',
+        id: local.id,
+      }),
+    ]);
+    acknowledgeChat(channel, local.id);
+    expect(harness.session.getSnapshot().messages).toContainEqual(
+      expect.objectContaining({ id: local.id, deliveryState: 'sent' }),
+    );
+    await harness.session.leave();
+  });
+
+  it('accounts for consecutive UTF-8 frames when pausing and resuming chat', async () => {
+    let sequence = 0;
+    const harness = createHarness({
+      createId: () => `message-buffered-${sequence++}`,
+      now: () => 3_745,
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    if (channel === undefined) {
+      throw new Error('Expected an open participant DataChannel');
+    }
+    channel.drainBufferedAmount();
+
+    for (let index = 0; index < 25; index += 1) {
+      harness.session.sendChat('가'.repeat(4_000));
+    }
+
+    const sentBeforeDrain = channel.sent
+      .map((raw) => JSON.parse(raw) as { type: string })
+      .filter((message) => message.type === 'chat.message').length;
+    expect(sentBeforeDrain).toBeGreaterThan(0);
+    expect(sentBeforeDrain).toBeLessThan(25);
+    expect(channel.bufferedAmount).toBeLessThanOrEqual(256 * 1024);
+
+    channel.drainBufferedAmount(64 * 1024);
+
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toHaveLength(25);
+    expect(channel.bufferedAmount).toBeLessThanOrEqual(256 * 1024);
+    await harness.session.leave();
+  });
+
+  it('prioritizes acknowledgements within the bounded control-frame reserve', async () => {
+    const harness = createHarness({
+      createId: () => 'message-waiting-behind-acks',
+      now: () => 3_746,
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    if (channel === undefined) {
+      throw new Error('Expected an open participant DataChannel');
+    }
+    channel.bufferedAmount = 256 * 1024;
+    const local = harness.session.sendChat('wait behind acknowledgement controls');
+
+    for (let index = 0; index < 120; index += 1) {
+      channel.receive({
+        type: 'chat.message',
+        id: `message-${index.toString().padStart(3, '0')}-${'가'.repeat(112)}`,
+        senderId: 'peer-a',
+        sentAt: 3_747 + index,
+        text: `remote ${index}`,
+      });
+    }
+
+    const acknowledgementsBeforeDrain = channel.sent
+      .map((raw) => JSON.parse(raw) as { type: string })
+      .filter((message) => message.type === 'chat.ack');
+    expect(acknowledgementsBeforeDrain.length).toBeGreaterThan(0);
+    expect(acknowledgementsBeforeDrain.length).toBeLessThan(120);
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toEqual([]);
+    expect(channel.bufferedAmount).toBeGreaterThan(256 * 1024);
+    expect(channel.bufferedAmount).toBeLessThanOrEqual(288 * 1024);
+
+    const sentFrameCountBeforeDrain = channel.sent.length;
+    channel.drainBufferedAmount(64 * 1024);
+    const framesAfterDrain = channel.sent
+      .slice(sentFrameCountBeforeDrain)
+      .map((raw) => JSON.parse(raw) as { type: string; id?: string });
+
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter((message) => message.type === 'chat.ack'),
+    ).toHaveLength(120);
+    expect(framesAfterDrain.at(-1)).toMatchObject({
+      type: 'chat.message',
+      id: local.id,
+    });
+    expect(channel.bufferedAmount).toBeLessThanOrEqual(256 * 1024);
+    await harness.session.leave();
+  });
+
+  it('finishes evicted pending chat without restoring it to visible history', async () => {
+    let sequence = 0;
+    const harness = createHarness({
+      createId: () => `message-evicted-${sequence++}`,
+      maxChatMessages: 1,
+      now: () => 3_750,
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    if (channel === undefined) {
+      throw new Error('Expected an initial DataChannel');
+    }
+    channel.readyState = 'connecting';
+
+    harness.session.sendChat('first pending');
+    harness.session.sendChat('second pending');
+
+    expect(harness.session.getSnapshot().messages).toEqual([
+      expect.objectContaining({
+        id: 'message-evicted-1',
+        deliveryState: 'pending',
+      }),
+    ]);
+
+    channel.open();
+    channel.open();
+
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string; id?: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toEqual([
+      expect.objectContaining({ id: 'message-evicted-0' }),
+      expect.objectContaining({ id: 'message-evicted-1' }),
+    ]);
+    acknowledgeChat(channel, 'message-evicted-0');
+    acknowledgeChat(channel, 'message-evicted-1');
+    expect(harness.session.getSnapshot().messages).toEqual([
+      expect.objectContaining({
+        id: 'message-evicted-1',
+        deliveryState: 'sent',
+      }),
+    ]);
   });
 
   it('marks queued local chat as failed when its peer leaves before delivery', async () => {
@@ -3743,7 +4380,7 @@ describe('RoomSession', () => {
       status: 'reconnecting',
       selfId: null,
       participants: [],
-      messages: [chat],
+      messages: [{ ...chat, deliveryState: 'failed' }],
       error: null,
     });
 
@@ -3772,7 +4409,7 @@ describe('RoomSession', () => {
     expect(harness.session.getSnapshot()).toMatchObject({
       status: 'active',
       selfId: 'self-after-reconnect',
-      messages: [chat],
+      messages: [{ ...chat, deliveryState: 'failed' }],
       error: null,
     });
     expect(participantIds).toEqual(['self-after-reconnect', 'peer-a']);
@@ -4084,6 +4721,51 @@ describe('RoomSession', () => {
         payload: {
           description: { type: 'offer', sdp: 'offer-sdp' },
         },
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails cleanly when a recovery replacement cannot attach local tracks', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        createId: () => 'message-replacement-init-failure',
+        recovery: { peerRecoveryTimeoutMs: 30 },
+        onPeerConnectionCreated: (peer, index) => {
+          if (index === 1) {
+            peer.addTrackErrors.push(new Error('recovery addTrack failure'));
+          }
+        },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      await answerPeer(harness, 'z-peer');
+      const initialPeer = harness.peerConnections[0];
+      initialPeer?.setConnectionState('connected');
+      const local = harness.session.sendChat('fail with the replacement');
+
+      initialPeer?.setConnectionState('failed');
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(30);
+      await flushMicrotasks();
+
+      const replacement = harness.peerConnections[1];
+      expect(initialPeer?.closed).toBe(true);
+      expect(replacement?.closed).toBe(true);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: { code: 'peer-negotiation-failed' },
+        participants: expect.arrayContaining([
+          expect.objectContaining({ peerId: 'z-peer', connectionState: 'failed' }),
+        ]),
+        messages: [
+          expect.objectContaining({
+            id: local.id,
+            deliveryState: 'failed',
+          }),
+        ],
       });
       await harness.session.leave();
     } finally {
