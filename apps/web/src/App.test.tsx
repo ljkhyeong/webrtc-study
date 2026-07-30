@@ -102,4 +102,15 @@ describe('App pre-join boundary', () => {
     expect(warning).toContain('TURN');
     expect(warning).not.toContain('later warning');
   });
+
+  it('describes DataChannel rate limiting without exposing an internal peer id', () => {
+    const warning = roomWarningMessage({
+      code: 'data-channel-rate-limit',
+      message: 'Ignored excessive DataChannel messages from internal-peer-id',
+    });
+
+    expect(warning).toContain('너무 많은 데이터');
+    expect(warning).toContain('통화는 유지');
+    expect(warning).not.toContain('internal-peer-id');
+  });
 });

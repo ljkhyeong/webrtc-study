@@ -64,6 +64,8 @@ export function roomWarningMessage(issue: RoomIssue | null | undefined): string 
       return '스터디 서버에 다시 연결하는 중입니다. 카메라와 마이크는 유지되지만 참가자 연결은 다시 설정됩니다.';
     case 'rtc-configuration-update-failed':
       return '일부 참가자의 TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.';
+    case 'data-channel-rate-limit':
+      return '한 참가자의 채팅 연결에서 너무 많은 데이터가 전송되어 일부 업데이트를 잠시 무시했습니다. 통화는 유지됩니다.';
     case 'peer-connection-timeout':
     case 'peer-negotiation-failed':
       return PEER_CONNECTION_FAILURE_MESSAGE;

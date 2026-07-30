@@ -127,7 +127,8 @@ interface PeerContext {
   pendingCandidateOverflowWarned: boolean;
   inboundDataWindowStartedAt: number | null;
   inboundDataMessagesInWindow: number;
-  inboundDataRateLimitWarned: boolean;
+  inboundDataRateLimitExceeded: boolean;
+  inboundDataWindowExpiryTimer: TimerHandle | null;
   offerRetryAttempts: number;
   connectionAttempt: number;
   negotiationId: string | null;
@@ -1586,7 +1587,8 @@ export class RoomSession {
       pendingCandidateOverflowWarned: false,
       inboundDataWindowStartedAt: null,
       inboundDataMessagesInWindow: 0,
-      inboundDataRateLimitWarned: false,
+      inboundDataRateLimitExceeded: false,
+      inboundDataWindowExpiryTimer: null,
       offerRetryAttempts: 0,
       connectionAttempt,
       negotiationId: null,
@@ -2013,7 +2015,7 @@ export class RoomSession {
       existing?.pendingChatMessages.splice(0, existing.pendingChatMessages.length) ?? [];
     const inboundDataWindowStartedAt = existing?.inboundDataWindowStartedAt ?? null;
     const inboundDataMessagesInWindow = existing?.inboundDataMessagesInWindow ?? 0;
-    const inboundDataRateLimitWarned = existing?.inboundDataRateLimitWarned ?? false;
+    const inboundDataRateLimitExceeded = existing?.inboundDataRateLimitExceeded ?? false;
     const offerRetryAttempts = existing?.offerRetryAttempts ?? 0;
     if (existing !== undefined) {
       this.#rememberRetiredNegotiation(existing, existing.negotiationId);
@@ -2040,7 +2042,8 @@ export class RoomSession {
     replacement.pendingChatMessages.push(...pendingChatMessages);
     replacement.inboundDataWindowStartedAt = inboundDataWindowStartedAt;
     replacement.inboundDataMessagesInWindow = inboundDataMessagesInWindow;
-    replacement.inboundDataRateLimitWarned = inboundDataRateLimitWarned;
+    replacement.inboundDataRateLimitExceeded = inboundDataRateLimitExceeded;
+    this.#scheduleInboundDataWindowExpiry(replacement);
     replacement.offerRetryAttempts = offerRetryAttempts;
     this.#emit();
     return replacement;
@@ -2186,19 +2189,22 @@ export class RoomSession {
   #consumeInboundDataBudget(peer: PeerContext): boolean {
     const now = this.#now();
     const windowStartedAt = peer.inboundDataWindowStartedAt;
+    let warningCleared = false;
     if (
       windowStartedAt === null ||
       (now >= windowStartedAt && now - windowStartedAt >= DATA_CHANNEL_RATE_WINDOW_MS)
     ) {
-      peer.inboundDataWindowStartedAt = now;
-      peer.inboundDataMessagesInWindow = 0;
-      peer.inboundDataRateLimitWarned = false;
+      warningCleared = this.#resetInboundDataWindow(peer, now);
     }
 
     if (peer.inboundDataMessagesInWindow >= MAX_DATA_CHANNEL_MESSAGES_PER_WINDOW) {
-      if (!peer.inboundDataRateLimitWarned) {
-        peer.inboundDataRateLimitWarned = true;
-        this.#setWarning(
+      if (!peer.inboundDataRateLimitExceeded) {
+        peer.inboundDataRateLimitExceeded = true;
+        this.#scheduleInboundDataWindowExpiry(peer);
+      }
+      if (this.#warning === null) {
+        this.#setPeerWarning(
+          peer.peerId,
           'data-channel-rate-limit',
           `Ignored excessive DataChannel messages from ${peer.peerId}`,
         );
@@ -2207,7 +2213,59 @@ export class RoomSession {
     }
 
     peer.inboundDataMessagesInWindow += 1;
+    if (warningCleared) {
+      this.#emit();
+    }
     return true;
+  }
+
+  #resetInboundDataWindow(peer: PeerContext, nextWindowStartedAt: number | null): boolean {
+    if (peer.inboundDataWindowExpiryTimer !== null) {
+      globalThis.clearTimeout(peer.inboundDataWindowExpiryTimer);
+      peer.inboundDataWindowExpiryTimer = null;
+    }
+    peer.inboundDataWindowStartedAt = nextWindowStartedAt;
+    peer.inboundDataMessagesInWindow = 0;
+    peer.inboundDataRateLimitExceeded = false;
+    return this.#clearPeerWarning(peer.peerId, ['data-channel-rate-limit']);
+  }
+
+  #scheduleInboundDataWindowExpiry(peer: PeerContext): void {
+    const windowStartedAt = peer.inboundDataWindowStartedAt;
+    if (
+      !this.#isCurrentPeer(peer) ||
+      !peer.inboundDataRateLimitExceeded ||
+      windowStartedAt === null ||
+      peer.inboundDataWindowExpiryTimer !== null
+    ) {
+      return;
+    }
+
+    const now = this.#now();
+    const elapsed = now >= windowStartedAt ? now - windowStartedAt : 0;
+    const delay = Math.max(0, DATA_CHANNEL_RATE_WINDOW_MS - elapsed);
+    peer.inboundDataWindowExpiryTimer = globalThis.setTimeout(() => {
+      peer.inboundDataWindowExpiryTimer = null;
+      if (
+        !this.#isCurrentPeer(peer) ||
+        !peer.inboundDataRateLimitExceeded ||
+        peer.inboundDataWindowStartedAt !== windowStartedAt
+      ) {
+        return;
+      }
+
+      const currentNow = this.#now();
+      if (
+        currentNow < windowStartedAt ||
+        currentNow - windowStartedAt < DATA_CHANNEL_RATE_WINDOW_MS
+      ) {
+        this.#scheduleInboundDataWindowExpiry(peer);
+        return;
+      }
+      if (this.#resetInboundDataWindow(peer, null)) {
+        this.#emit();
+      }
+    }, delay);
   }
 
   #currentMediaDataMessage(): MediaDataMessage {
@@ -2452,6 +2510,10 @@ export class RoomSession {
       globalThis.clearTimeout(peer.dataChannelErrorTimer);
       peer.dataChannelErrorTimer = null;
     }
+    if (peer.inboundDataWindowExpiryTimer !== null) {
+      globalThis.clearTimeout(peer.inboundDataWindowExpiryTimer);
+      peer.inboundDataWindowExpiryTimer = null;
+    }
     peer.connection.onicecandidate = null;
     peer.connection.ontrack = null;
     peer.connection.ondatachannel = null;
@@ -2489,6 +2551,7 @@ export class RoomSession {
   #cleanupPeerResources(): void {
     for (const peerId of [...this.#peers.keys()]) {
       this.#cleanupPeer(peerId, false);
+      this.#clearPeerWarning(peerId);
     }
     this.#remoteStreams.clear();
   }
