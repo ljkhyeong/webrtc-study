@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { SignalingErrorCode } from '@round/protocol';
 import {
   createRoomSession,
   type RoomIssue,
@@ -24,6 +25,48 @@ const DISPLAY_NAME_STORAGE_KEY = 'round:display-name';
 const PEER_CONNECTION_FAILURE_MESSAGE =
   '일부 참가자와 직접 연결하지 못했습니다. 현재 연결은 유지됩니다. 모두 다시 연결하려면 방에 다시 입장해 주세요.';
 
+const SIGNALING_ISSUE_MESSAGES = {
+  INVALID_MESSAGE: {
+    error: '스터디 서버와 메시지 형식이 맞지 않습니다. 페이지를 새로고침한 뒤 다시 입장해 주세요.',
+    warning: '스터디 서버와 메시지 형식이 맞지 않습니다. 페이지를 새로고침해 주세요.',
+  },
+  ALREADY_JOINED: {
+    error: '서버의 방 입장 상태가 일치하지 않습니다. 방에 다시 입장해 주세요.',
+    warning: '서버의 방 입장 상태가 일치하지 않습니다. 방에 다시 입장해 주세요.',
+  },
+  ROOM_FULL: {
+    error: '이 스터디룸은 최대 6명까지 입장할 수 있습니다.',
+    warning: '이 스터디룸은 최대 6명까지 입장할 수 있습니다.',
+  },
+  NOT_IN_ROOM: {
+    error: '서버가 이 브라우저의 방 입장 상태를 확인하지 못했습니다. 다시 연결해 주세요.',
+    warning: '서버의 방 연결 상태가 어긋나 연결을 다시 설정합니다.',
+  },
+  ROOM_MISMATCH: {
+    error: '초대받은 방과 서버의 방 정보가 일치하지 않습니다. 새 초대 링크를 받아 주세요.',
+    warning: '방 연결 정보가 일치하지 않아 연결을 다시 설정합니다.',
+  },
+  TARGET_NOT_FOUND: {
+    error: '연결하려던 참가자가 이미 퇴장했습니다. 방에 다시 입장해 주세요.',
+    warning: '연결하려던 참가자가 이미 퇴장했습니다. 현재 통화는 유지됩니다.',
+  },
+  TARGET_SELF: {
+    error: '참가자 연결 정보가 올바르지 않습니다. 방에 다시 입장해 주세요.',
+    warning: '올바르지 않은 참가자 연결 요청을 감지했습니다. 방에 다시 입장해 주세요.',
+  },
+  INTERNAL_ERROR: {
+    error: '스터디 서버가 요청을 처리하지 못했습니다. 잠시 후 다시 연결해 주세요.',
+    warning: '스터디 서버가 요청 하나를 처리하지 못했습니다. 현재 통화는 유지됩니다.',
+  },
+} satisfies Record<SignalingErrorCode, Readonly<Record<'error' | 'warning', string>>>;
+
+function signalingIssueMessage(code: string, severity: 'error' | 'warning'): string | undefined {
+  if (!Object.hasOwn(SIGNALING_ISSUE_MESSAGES, code)) {
+    return undefined;
+  }
+  return SIGNALING_ISSUE_MESSAGES[code as SignalingErrorCode][severity];
+}
+
 function isTerminalPeerWarning(issue: RoomIssue | null | undefined): boolean {
   return issue?.code === 'peer-connection-timeout' || issue?.code === 'peer-negotiation-failed';
 }
@@ -39,16 +82,17 @@ const statusLabels: Record<RoomSessionStatus, string> = {
   error: '연결 오류',
 };
 
-function roomErrorMessage(issue: RoomIssue | null | undefined): string | undefined {
+export function roomErrorMessage(issue: RoomIssue | null | undefined): string | undefined {
   if (!issue) {
     return undefined;
   }
 
+  const signalingMessage = signalingIssueMessage(issue.code, 'error');
+  if (signalingMessage !== undefined) {
+    return signalingMessage;
+  }
+
   switch (issue.code) {
-    case 'ROOM_FULL':
-      return '이 스터디룸은 최대 6명까지 입장할 수 있습니다.';
-    case 'INVALID_MESSAGE':
-      return '초대 정보가 올바르지 않습니다. 새 초대 링크를 받아 주세요.';
     case 'room-join-timeout':
       return '서버가 입장 요청에 응답하지 않았습니다. 네트워크를 확인해 주세요.';
     case 'signaling-connect-timeout':
@@ -66,6 +110,12 @@ export function roomWarningMessage(issue: RoomIssue | null | undefined): string 
   if (!issue) {
     return undefined;
   }
+
+  const signalingMessage = signalingIssueMessage(issue.code, 'warning');
+  if (signalingMessage !== undefined) {
+    return signalingMessage;
+  }
+
   switch (issue.code) {
     case 'signaling-reconnecting':
       return '스터디 서버에 다시 연결하는 중입니다. 카메라와 마이크는 유지되지만 참가자 연결은 다시 설정됩니다.';

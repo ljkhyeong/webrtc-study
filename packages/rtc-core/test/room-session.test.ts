@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { PROTOCOL_VERSION } from '@round/protocol';
+import { PROTOCOL_VERSION, SIGNALING_ERROR_CODES, type SignalingErrorCode } from '@round/protocol';
 import {
   createRoomSession,
   type RoomSession,
@@ -8,6 +8,7 @@ import {
 } from '../src/index.js';
 
 const ROOM_ID = 'abcd-efgh-jkmp';
+const OTHER_ROOM_ID = 'bcde-fghj-kmnp';
 
 type Listener = {
   callback: (event: unknown) => void;
@@ -455,6 +456,21 @@ function latestOutgoingNegotiationId(harness: Harness, peerId: string): string |
   return undefined;
 }
 
+function latestOutgoingRequestId(
+  socket: FakeWebSocket,
+  type: 'rtc.offer' | 'rtc.answer' | 'rtc.ice',
+  peerId: string,
+): string {
+  const messages = socket.messagesOfType(type);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.to === peerId && typeof message.requestId === 'string') {
+      return message.requestId;
+    }
+  }
+  throw new Error(`Expected ${type} requestId for ${peerId}`);
+}
+
 async function answerPeer(harness: Harness, peerId: string): Promise<void> {
   const negotiationId = latestOutgoingNegotiationId(harness, peerId);
   harness.socket.serverMessage({
@@ -761,6 +777,37 @@ describe('RoomSession', () => {
     }
   });
 
+  it.each(SIGNALING_ERROR_CODES)(
+    'fails an initial room join with a safe %s description',
+    async (code) => {
+      const harness = createHarness();
+      const joining = harness.session.join();
+      const rejected = expect(joining).rejects.toThrow();
+      await flushMicrotasks();
+      harness.socket.open();
+      await flushMicrotasks();
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'error',
+        roomId: ROOM_ID,
+        payload: {
+          code,
+          message: 'raw server detail with internal-peer-id',
+        },
+      });
+      await rejected;
+
+      expect(harness.audioTrack.stopped).toBe(true);
+      expect(harness.videoTrack.stopped).toBe(true);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'error',
+        error: { code },
+      });
+      expect(harness.session.getSnapshot().error?.message).not.toContain('internal-peer-id');
+    },
+  );
+
   it('rejects a non-positive peer connection timeout', () => {
     expect(() =>
       createHarness({
@@ -782,6 +829,7 @@ describe('RoomSession', () => {
         v: PROTOCOL_VERSION,
         type: 'rtc.offer',
         roomId: 'abcd-efgh-jkmp',
+        requestId: expect.any(String),
         to: 'peer-a',
         payload: {
           negotiationId: expect.any(String),
@@ -793,6 +841,311 @@ describe('RoomSession', () => {
       'self',
       'peer-a',
     ]);
+  });
+
+  it('removes only the peer targeted by a correlated TARGET_NOT_FOUND error', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [
+      { peerId: 'peer-a', displayName: 'Ara' },
+      { peerId: 'peer-b', displayName: 'Bora' },
+    ]);
+    const peerA = harness.peerConnections[0];
+    const peerB = harness.peerConnections[1];
+    const requestId = latestOutgoingRequestId(harness.socket, 'rtc.offer', 'peer-a');
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'error',
+      roomId: ROOM_ID,
+      requestId,
+      payload: {
+        code: 'TARGET_NOT_FOUND',
+        message: 'raw target detail with internal-peer-id',
+      },
+    });
+    await flushMicrotasks();
+
+    expect(peerA?.closed).toBe(true);
+    expect(peerB?.closed).toBe(false);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      status: 'active',
+      participants: [{ peerId: 'self' }, { peerId: 'peer-b' }],
+      warning: null,
+      error: null,
+    });
+  });
+
+  it.each([
+    { code: 'NOT_IN_ROOM', correlation: 'none', roomId: ROOM_ID },
+    {
+      code: 'ROOM_MISMATCH',
+      correlation: 'unknown',
+      roomId: OTHER_ROOM_ID,
+    },
+    { code: 'TARGET_SELF', correlation: 'known', roomId: ROOM_ID },
+  ] satisfies readonly {
+    code: Extract<SignalingErrorCode, 'NOT_IN_ROOM' | 'ROOM_MISMATCH' | 'TARGET_SELF'>;
+    correlation: 'none' | 'unknown' | 'known';
+    roomId: string;
+  }[])(
+    'reconnects safely on a valid $code error without orphaning the current socket',
+    async ({ code, correlation, roomId }) => {
+      const harness = createHarness();
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+      const oldSocket = harness.socket;
+      const oldPeer = harness.peerConnections[0];
+      const requestId =
+        correlation === 'known'
+          ? latestOutgoingRequestId(oldSocket, 'rtc.offer', 'peer-a')
+          : correlation === 'unknown'
+            ? 'unknown-membership-request'
+            : undefined;
+
+      oldSocket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'error',
+        roomId,
+        ...(requestId === undefined ? {} : { requestId }),
+        payload: {
+          code,
+          message: 'raw room state detail',
+        },
+      });
+      await flushMicrotasks();
+
+      expect(oldSocket.closeCalls).toEqual([
+        {
+          code: 1000,
+          reason:
+            code === 'TARGET_SELF' ? 'signaling identity mismatch' : 'signaling state mismatch',
+        },
+      ]);
+      expect(oldPeer?.closed).toBe(true);
+      expect(harness.sockets).toHaveLength(2);
+      expect(harness.audioTrack.stopped).toBe(false);
+      expect(harness.videoTrack.stopped).toBe(false);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'reconnecting',
+        selfId: null,
+        participants: [],
+        warning: { code: 'signaling-reconnecting' },
+        error: null,
+      });
+
+      oldSocket.serverClose(1011, 'late close from detached socket');
+      await flushMicrotasks();
+      expect(harness.sockets).toHaveLength(2);
+
+      const reconnectSocket = harness.socket;
+      reconnectSocket.open();
+      await flushMicrotasks();
+      reconnectSocket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'room.joined',
+        roomId: ROOM_ID,
+        payload: {
+          peerId: 'self-after-resync',
+          participants: [],
+        },
+      });
+      await flushMicrotasks();
+
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        selfId: 'self-after-resync',
+        warning: null,
+        error: null,
+      });
+    },
+  );
+
+  it('terminates an active session safely on INVALID_MESSAGE', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'error',
+      roomId: ROOM_ID,
+      payload: {
+        code: 'INVALID_MESSAGE',
+        message: 'raw fatal detail with internal-peer-id',
+      },
+    });
+    await flushMicrotasks();
+
+    expect(harness.socket.closeCalls).toEqual([{ code: 1000, reason: 'fatal signaling error' }]);
+    expect(harness.audioTrack.stopped).toBe(true);
+    expect(harness.videoTrack.stopped).toBe(true);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      status: 'error',
+      selfId: null,
+      participants: [],
+      warning: null,
+      error: { code: 'INVALID_MESSAGE' },
+    });
+    expect(harness.session.getSnapshot().error?.message).not.toContain('internal-peer-id');
+  });
+
+  it('keeps the room active with a safe INTERNAL_ERROR warning', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'error',
+      roomId: ROOM_ID,
+      payload: {
+        code: 'INTERNAL_ERROR',
+        message: 'raw warning detail with internal-peer-id',
+      },
+    });
+    await flushMicrotasks();
+
+    expect(harness.session.getSnapshot()).toMatchObject({
+      status: 'active',
+      participants: [{ peerId: 'self' }, { peerId: 'peer-a' }],
+      warning: { code: 'INTERNAL_ERROR' },
+      error: null,
+    });
+    expect(harness.session.getSnapshot().warning?.message).not.toContain('internal-peer-id');
+  });
+
+  it('does not replace a more actionable warning with INTERNAL_ERROR', async () => {
+    const harness = createHarness();
+    await joinSession(harness);
+    harness.socket.serverMessage({ invalid: 'server message' });
+    await flushMicrotasks();
+    expect(harness.session.getSnapshot().warning?.code).toBe('invalid-signal-message');
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'error',
+      roomId: ROOM_ID,
+      payload: {
+        code: 'INTERNAL_ERROR',
+        message: 'raw internal detail',
+      },
+    });
+    await flushMicrotasks();
+
+    expect(harness.session.getSnapshot().warning?.code).toBe('invalid-signal-message');
+  });
+
+  it.each(['ALREADY_JOINED', 'ROOM_FULL'] satisfies readonly SignalingErrorCode[])(
+    'ignores late join-only $code errors while the room is active',
+    async (code) => {
+      const harness = createHarness();
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+      const requestId = latestOutgoingRequestId(harness.socket, 'rtc.offer', 'peer-a');
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'error',
+        roomId: ROOM_ID,
+        requestId,
+        payload: {
+          code,
+          message: 'late join response',
+        },
+      });
+      await flushMicrotasks();
+
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        participants: [{ peerId: 'self' }, { peerId: 'peer-a' }],
+        warning: null,
+        error: null,
+      });
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'error',
+        roomId: ROOM_ID,
+        requestId,
+        payload: {
+          code: 'TARGET_NOT_FOUND',
+          message: 'replayed request id',
+        },
+      });
+      await flushMicrotasks();
+      expect(harness.session.getSnapshot().participants).toContainEqual(
+        expect.objectContaining({ peerId: 'peer-a' }),
+      );
+    },
+  );
+
+  it.each(['TARGET_NOT_FOUND', 'TARGET_SELF'] satisfies readonly SignalingErrorCode[])(
+    'ignores $code with an unknown requestId without changing active room state',
+    async (code) => {
+      const harness = createHarness();
+      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'error',
+        roomId: ROOM_ID,
+        requestId: `unknown-${code}`,
+        payload: {
+          code,
+          message: 'stale error detail',
+        },
+      });
+      await flushMicrotasks();
+
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        participants: [{ peerId: 'self' }, { peerId: 'peer-a' }],
+        warning: null,
+        error: null,
+      });
+    },
+  );
+
+  it('bounds relay request correlation and accepts only a retained requestId', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const peer = harness.peerConnections[0];
+    const evictedRequestId = latestOutgoingRequestId(harness.socket, 'rtc.offer', 'peer-a');
+
+    for (let index = 0; index < 256; index += 1) {
+      peer?.emitIceCandidate(`candidate-${index}`);
+    }
+    const retainedRequestId = latestOutgoingRequestId(harness.socket, 'rtc.ice', 'peer-a');
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'error',
+      roomId: ROOM_ID,
+      requestId: evictedRequestId,
+      payload: {
+        code: 'TARGET_NOT_FOUND',
+        message: 'stale target detail',
+      },
+    });
+    await flushMicrotasks();
+    expect(harness.session.getSnapshot().participants).toContainEqual(
+      expect.objectContaining({ peerId: 'peer-a' }),
+    );
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'error',
+      roomId: ROOM_ID,
+      requestId: retainedRequestId,
+      payload: {
+        code: 'TARGET_NOT_FOUND',
+        message: 'current target detail',
+      },
+    });
+    await flushMicrotasks();
+
+    expect(harness.session.getSnapshot()).toMatchObject({
+      status: 'active',
+      participants: [{ peerId: 'self' }],
+      warning: null,
+      error: null,
+    });
   });
 
   it('recovers a peer stuck before first connection, recreates it once, then fails only that peer', async () => {
@@ -2000,6 +2353,7 @@ describe('RoomSession', () => {
         v: PROTOCOL_VERSION,
         type: 'rtc.answer',
         roomId: 'abcd-efgh-jkmp',
+        requestId: expect.any(String),
         to: 'peer-a',
         payload: {
           description: { type: 'answer', sdp: 'answer-sdp' },

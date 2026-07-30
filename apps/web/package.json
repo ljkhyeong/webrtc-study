@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@round/protocol": "0.1.0",
     "@round/rtc-core": "0.1.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"

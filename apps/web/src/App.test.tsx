@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
+import { SIGNALING_ERROR_CODES } from '@round/protocol';
 import { describe, expect, it, vi } from 'vitest';
-import { App, roomStatusLabel, roomWarningMessage } from './App';
+import { App, roomErrorMessage, roomStatusLabel, roomWarningMessage } from './App';
 
 describe('App pre-join boundary', () => {
   it('opens a direct invite link without requesting media or creating a WebSocket', () => {
@@ -124,5 +125,24 @@ describe('App pre-join boundary', () => {
     expect(warning).toContain('통화는 유지');
     expect(warning).toContain('다시 입장');
     expect(warning).not.toContain('Local microphone');
+  });
+
+  it.each(SIGNALING_ERROR_CODES)('localizes %s without exposing raw signaling details', (code) => {
+    const issue = {
+      code,
+      message: 'raw server detail with internal-peer-id',
+    };
+
+    for (const message of [roomErrorMessage(issue), roomWarningMessage(issue)]) {
+      expect(message).toMatch(/[가-힣]/);
+      expect(message).not.toContain('raw server detail');
+      expect(message).not.toContain('internal-peer-id');
+    }
+  });
+
+  it('explains that a non-terminal INTERNAL_ERROR warning preserves the call', () => {
+    expect(roomWarningMessage({ code: 'INTERNAL_ERROR', message: 'raw detail' })).toContain(
+      '현재 통화는 유지',
+    );
   });
 });
