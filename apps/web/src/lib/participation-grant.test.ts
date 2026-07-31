@@ -83,7 +83,7 @@ describe('BATON participation grant lease manager', () => {
     expect(fetcher.mock.calls[1]?.[0]).not.toMatch(/[?#]/);
   });
 
-  it('binds the browser fetch receiver before both BATON requests', async () => {
+  it('binds default and explicitly injected browser fetch receivers', async () => {
     const receiverSensitiveFetcher = vi.fn(function (this: unknown, input: RequestInfo | URL) {
       if (this !== undefined && this !== globalThis) {
         throw new TypeError('Illegal invocation');
@@ -101,18 +101,31 @@ describe('BATON participation grant lease manager', () => {
     vi.stubGlobal('fetch', receiverSensitiveFetcher);
 
     try {
-      const manager = new ParticipationGrantLeaseManager({
+      const defaultManager = new ParticipationGrantLeaseManager({
         endpoint: ENDPOINT,
         roomId: ROOM_ID,
         storage: null,
       });
-
-      await expect(manager.ensureFresh()).resolves.toEqual({
-        expiresAt: 1_780_000_000,
-        refreshAfterSeconds: 240,
+      const injectedManager = new ParticipationGrantLeaseManager({
+        endpoint: ENDPOINT,
+        roomId: ROOM_ID,
+        storage: null,
+        fetcher: globalThis.fetch,
       });
-      expect(receiverSensitiveFetcher).toHaveBeenCalledTimes(2);
-      expect(receiverSensitiveFetcher.mock.contexts).toEqual([globalThis, globalThis]);
+
+      for (const manager of [defaultManager, injectedManager]) {
+        await expect(manager.ensureFresh()).resolves.toEqual({
+          expiresAt: 1_780_000_000,
+          refreshAfterSeconds: 240,
+        });
+      }
+      expect(receiverSensitiveFetcher).toHaveBeenCalledTimes(4);
+      expect(receiverSensitiveFetcher.mock.contexts).toEqual([
+        globalThis,
+        globalThis,
+        globalThis,
+        globalThis,
+      ]);
     } finally {
       vi.unstubAllGlobals();
     }
