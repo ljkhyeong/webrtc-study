@@ -58,23 +58,21 @@ mode rejects non-empty endpoint overrides instead of silently bypassing the
 room-scoped cookie path. The tracked standalone image remains built for
 `VITE_ROUND_AUTH_MODE=standalone`.
 
-If the BATON deployment reuses this repository's web build, export only the
-static assets with the BATON browser contract:
+Build the dedicated BATON runtime image with the browser contract and isolated
+`/round-ui/` asset base:
 
 ```bash
 docker build \
-  --target web-assets \
-  --build-arg VITE_ROUND_AUTH_MODE=baton \
-  --output type=local,dest=output/baton-web-assets \
+  --target baton-web-runtime \
+  --tag round-baton-web:local \
   .
 ```
 
-The Dockerfile leaves both endpoint override build arguments empty by default.
-The tracked standalone Compose and release workflow pin
-`VITE_ROUND_AUTH_MODE=standalone`; do not reuse those standalone edge routes for
-BATON. The `web-assets` target contains no web server or edge policy. BATON must
-serve these files through its own edge and implement the public-to-private
-routes below.
+The target hard-codes BATON mode, serves `/room/*` and `/round-ui/*` on port
+8080, and carries both `io.round.auth-mode=baton` image metadata and an internal
+mode marker. The release workflow publishes it separately as
+`round-baton-web`; do not substitute the standalone `round-edge` image. BATON's
+outer edge remains responsible for the public-to-private routes below.
 
 Use the exact issuer and JWK Set URI from the BATON environment. Production
 issuer and JWK URLs must use HTTPS. `ROUND_AUTH_AUDIENCE` must equal the
@@ -158,9 +156,9 @@ Health and metrics have a narrower trust boundary than room traffic:
 
 The BATON web flow is participation-grant refresh, TURN issuance, then
 WebSocket creation. It uses the server's relative `refreshAfterSeconds` on a
-monotonic browser clock, and refreshes before TURN renewal and every initial or
-reconnect WebSocket creation. Refresh rotates only the cookie and does not
-force an early socket reconnect.
+monotonic browser clock, rejects values outside `1..300` seconds, and refreshes
+before TURN renewal and every initial or reconnect WebSocket creation. Refresh
+rotates only the cookie and does not force an early socket reconnect.
 
 ROUND binds each socket to the grant used at its handshake. It checks expiry
 before inbound quota use and outbound enqueue, during heartbeat, and in a
@@ -494,8 +492,8 @@ docker compose --env-file ops/production.env config --quiet
 CI runs the same interpolation against temporary dummy credentials and
 certificates, builds the pinned custom Caddy runtime, verifies that its
 rate-limit module is present, validates the Caddyfile with that exact binary,
-checks every Dockerfile runtime target, exports the BATON-mode static web
-assets, and builds all three standalone images:
+checks every Dockerfile runtime target, builds and inspects the BATON-mode web
+runtime, and builds all three standalone images:
 
 ```bash
 bash ops/ci/validate-deployment.sh
@@ -503,9 +501,9 @@ bash ops/ci/validate-deployment.sh
 
 For a local syntax and target check that does not build the three final Compose
 images, add `--check-only`. That mode still builds the smaller custom Caddy
-validation target and BATON web-assets export because a stock Caddy binary
-cannot parse the rate-limit directive and a Dockerfile syntax check cannot
-verify Vite build-argument propagation.
+validation target and BATON web runtime because a stock Caddy binary cannot
+parse the rate-limit directive and a Dockerfile syntax check cannot verify the
+embedded auth flavor or `/round-ui/` asset base.
 
 Build the three target images and start the stack:
 

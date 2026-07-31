@@ -77,9 +77,9 @@ BATON은 `POST /round/rooms/{roomId}/participation-grant/refresh`에서 인증�
 
 JWT는 응답 본문이나 JavaScript에 반환하지 않는다. BATON은 정확한 동일 출처 `Origin`과
 `Sec-Fetch-Site: same-origin`을 요구하고 CORS를 허용하지 않는다. 브라우저는
-`refreshAfterSeconds`를 monotonic clock 기반 상대 시간으로 사용하며, 로컬 wall clock과
-`expiresAt`의 차이로 갱신 시점을 다시 계산하지 않는다. 중복 타이머와 TURN·WebSocket의
-동시 선행 확인은 single-flight 갱신 하나로 합친다.
+`1..300` 범위의 `refreshAfterSeconds`만 받아 monotonic clock 기반 상대 시간으로
+사용하며, 로컬 wall clock과 `expiresAt`의 차이로 갱신 시점을 다시 계산하지 않는다.
+중복 타이머와 TURN·WebSocket의 동시 선행 확인은 single-flight 갱신 하나로 합친다.
 
 ### 참여권 계약
 

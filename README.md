@@ -181,7 +181,10 @@ BATON이 제공하는 웹 번들은 빌드 시 `VITE_ROUND_AUTH_MODE=baton`을 �
 `VITE_SIGNALING_URL`, `VITE_TURN_CREDENTIALS_URL`은 비워 둡니다. 브라우저는 세 경로를
 같은 canonical `roomId`의 동일 출처 경로로 계산하며, BATON 모드에서 외부 endpoint
 override가 있거나 모드 값이 올바르지 않으면 standalone으로 강등하지 않고 연결을
-거부합니다. 이 Vite 값은 공개 설정일 뿐 참여권이나 다른 비밀을 포함하지 않습니다.
+거부합니다. 릴리스는 이 번들을 `/round-ui/` asset base의
+`round-baton-web` 이미지로 별도 발행하며 `round-edge`와 교체해서 사용할 수 없습니다.
+이 Vite 값과 이미지 flavor 표식은 공개 설정일 뿐 참여권이나 다른 비밀을 포함하지
+않습니다.
 
 BATON은 참여권 갱신 경로에서 인증된 사용자와 현재 스터디 멤버십을 다시 확인하고, 새
 `jti`의 방별 쿠키를 회전합니다. 응답은 JWT 없이 `expiresAt`과
