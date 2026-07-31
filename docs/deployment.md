@@ -25,11 +25,12 @@ WebSocket signaling, and TURN credential issuance. The services do not share a
 database, and ROUND verifies each participation grant locally rather than
 calling BATON for every signaling frame.
 
-This is a target integration contract, not evidence of a completed BATON E2E
-deployment. The current BATON application does not yet provide an authenticated
-user identity and study-membership boundary suitable for grant issuance. Do
-not derive `sub` from the shared access key, a client-supplied display name, or
-another self-asserted value.
+The BATON integration branches now implement the authenticated identity,
+active study-membership, refresh, edge, and JWK boundaries described here and
+have passed the local production-like rehearsal below. That rehearsal is not a
+public production deployment approval. Continue deriving `sub` only from the
+verified BATON account; never derive it from a shared access key, client-supplied
+display name, or another self-asserted value.
 
 The BATON-owned ROUND signaling manifest must configure all of these values:
 
@@ -228,6 +229,45 @@ refresh route and identity boundary.
 
 The complete claims and ownership decision are recorded in
 [ADR 0001](adr/0001-round-independent-service.md).
+
+### Local production-like BATON rehearsal
+
+On 2026-07-31 the integration branches completed an isolated BATON-owned-edge
+rehearsal with production images, Caddy local-CA HTTPS, mock Google OIDC, real
+MySQL sessions and memberships, RS256/JWK verification, BATON-mode ROUND web
+and Java signaling, and a loopback-published coturn instance. Run its managed
+lifecycle from the BATON repository:
+
+```bash
+ROUND_REPOSITORY_ROOT=/absolute/path/to/round \
+  ./ops/tests/round-local-tls-stack.sh up
+./ops/tests/round-local-tls-stack.sh status
+./ops/tests/round-local-tls-stack.sh down
+```
+
+Two isolated Chromium profiles used different OIDC accounts with active OWNER
+and MEMBER memberships. Both completed refresh, TURN credential issuance, and
+WSS entry. With `iceTransportPolicy=relay`, both selected nominated, succeeded
+UDP pairs whose local and remote candidate types were `relay`; candidate bytes,
+inbound audio packets/bytes, and inbound video frames/bytes all increased in
+both directions. Bidirectional DataChannel chat reached `sent`, remote
+microphone/camera-off state propagated, and normal member then owner leave
+updated the room state.
+
+The hardened lifecycle was then repeated with the TURN shared secret mounted
+from one mode-`0600` file into Spring `configtree` and a coturn tmpfs config.
+All seven long-running services were healthy, the BATON JWK Set returned 200,
+an anonymous canonical refresh returned JSON 401 with `no-store` and a request
+ID, a query-bearing refresh returned 404, Caddy validated its live config, and
+the random TURN secret was absent from signaling/coturn argv, environment, and
+logs. The managed cleanup removed its containers, networks, volumes, keys, and
+fixture data only after verifying the Compose project was empty.
+
+This rehearsal does **not** prove real Google OIDC, public DNS or ACME, physical
+camera/microphone devices, a public TURN address through NAT/firewalls,
+UDP-blocked TCP/TLS fallback, an external network, dual-key rotation, two full
+grant lifetimes, long-session stability, or six-person load. Keep the production
+gate open until those checks pass in the deployment environment.
 
 ## Production prerequisites
 

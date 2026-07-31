@@ -181,6 +181,29 @@ standalone gate above and has its own required checks below.
 Run these checks against the BATON-owned edge and a separately deployed ROUND
 instance. Do not change the bundled standalone Compose to perform them.
 
+### 2026-07-31 local rehearsal evidence (not production approval)
+
+- [x] Production images, Caddy local-CA HTTPS, mock OIDC, real MySQL session and
+      active OWNER/MEMBER memberships, BATON RS256/JWK, BATON-mode web/signaling,
+      and local coturn were composed behind the BATON-owned edge.
+- [x] Two isolated Chromium identities completed refresh 200, TURN credential
+      200, WSS entry, relay-only nominated UDP candidate pairs, bidirectional
+      audio/video traffic, acknowledged chat, remote media-state propagation,
+      and normal leave.
+- [x] The hardened lifecycle re-ran with a file-mounted TURN secret shared by
+      Spring `configtree` and coturn's tmpfs config; the secret was absent from
+      container argv, environment, and logs, and cleanup proved zero remaining
+      project containers, volumes, and networks.
+- [x] The local safety suite rejects unsafe/symlinked/forged state, Compose
+      2.24.3, stale volumes/networks, ambient Compose overrides, and failed
+      cleanup; SIGINT/SIGTERM return 130/143.
+- [ ] This local evidence does not cover real Google OIDC, public DNS/ACME,
+      physical media devices, public TURN/NAT/firewall behavior, TCP/TLS relay
+      fallback, external networks, key rotation, two full grant lifetimes,
+      long-session stability, or six-person load.
+
+The unchecked production gate below remains authoritative.
+
 - [ ] BATON has a real authenticated user identity and current study-membership
       authorization. A shared access key, display name, or other client claim is
       not used as `sub`; without this boundary the BATON gate cannot pass.
