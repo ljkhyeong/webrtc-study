@@ -62,11 +62,13 @@ only ephemeral room and peer state, raw WebSocket signaling, and TURN credential
 does not share BATON's database or entities and does not synchronously call BATON on every
 signaling frame.
 
-After checking membership, BATON issues a short-lived, asymmetrically signed JWT participation
-grant in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie. The cookie path is scoped to
-`/round/rooms/{roomId}` so grants for multiple rooms do not collide. The required claims are
-`iss`, `aud=round`, `sub`, `exp`, `iat`, `jti`, `room_id`, `study_id`, and
-`role=host|participant`.
+After checking membership, BATON issues a short-lived JWT participation grant signed with
+`RS256`; its JOSE header carries the public-key `kid`. BATON adds a new public key to its JWK Set
+before switching issuance and retains the previous key until the old grant lifetime and clock skew
+have elapsed. The grant is delivered in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie. The
+cookie path is scoped to `/round/rooms/{roomId}` so grants for multiple rooms do not collide. The
+required claims are `iss`, `aud=round`, `sub`, `exp`, `iat`, `jti`, `room_id`, `study_id`,
+and `role=host|participant`.
 
 The browser and internal routing contracts are:
 
@@ -76,14 +78,14 @@ The browser and internal routing contracts are:
 | WebSocket signaling         | `/round/rooms/{roomId}/signal`                      | `/rooms/{roomId}/signal`               |
 | TURN credential             | `/round/rooms/{roomId}/turn-credentials`            | `/api/rooms/{roomId}/turn-credentials` |
 
-ROUND verifies the signature, issuer, audience, expiry, and every required claim locally. The
-default maximum grant lifetime is five minutes, with only 60 seconds of clock skew allowed for a
-future `iat`; longer grants are rejected even when their signature and `exp` are otherwise valid.
-The path `roomId` must match `room_id` for the WebSocket upgrade and TURN request. The verified
-grant is carried into the WebSocket session, and `room.join` must match both the path and claim
-before room admission. BATON mode fails closed when the ticket or verifier configuration is
-missing or invalid. Standalone mode retains the existing coarse shared edge credential for the
-small pilot.
+ROUND accepts only `RS256` and verifies the signature from BATON's JWK Set, issuer, audience,
+expiry, and every required claim locally. The default maximum grant lifetime is five minutes, with
+only 60 seconds of clock skew allowed for a future `iat`; longer grants are rejected even when
+their signature and `exp` are otherwise valid. The path `roomId` must match `room_id` for the
+WebSocket upgrade and TURN request. The verified grant is carried into the WebSocket session, and
+`room.join` must match both the path and claim before room admission. BATON mode fails closed when
+the ticket or verifier configuration is missing or invalid. Standalone mode retains the existing
+coarse shared edge credential for the small pilot.
 
 The established socket retains an immutable lease from the grant used at its handshake. ROUND
 checks that lease on connection, before inbound quota and outbound enqueue, during heartbeat, and

@@ -188,9 +188,11 @@ instance. Do not change the bundled standalone Compose to perform them.
       issuer, `aud=round`, the production HTTPS JWK Set URI, a maximum grant
       lifetime of at most five minutes, and BATON's exact HTTPS origin. Removing
       any required verifier setting makes startup fail.
-- [ ] BATON signs grants with an asymmetric private key that is absent from
-      ROUND. ROUND receives only the public JWK Set, and a rehearsed key
-      rotation keeps both public keys available for the required overlap.
+- [ ] BATON signs grants with `RS256`, includes the signing key's `kid` in the
+      JOSE header, and keeps the private key absent from ROUND. ROUND receives
+      only the public JWK Set. A rehearsed rotation publishes the new key before
+      issuance switches and keeps both public keys available until the previous
+      grant lifetime and clock skew have elapsed.
 - [ ] BATON issues the grant only as an `HttpOnly`, `Secure`,
       `SameSite=Strict` cookie scoped to
       `/round/rooms/{roomId}` with no `Domain` attribute. Tokens are absent from

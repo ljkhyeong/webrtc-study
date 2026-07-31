@@ -165,9 +165,10 @@ BATON은 사용자·스터디·참여 권한을 소유하고, ROUND는 휘발성
 TURN credential 발급을 소유합니다. 두 서비스는 데이터베이스나 엔티티를 공유하지 않으며,
 ROUND는 signaling 프레임마다 BATON API를 호출하지 않습니다.
 
-BATON은 권한 확인 후 비대칭키로 서명한 짧은 수명의 JWT 참여권을 발급합니다. 참여권은
-`HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/round/rooms/{roomId}` 쿠키로 전달하고,
-ROUND는 공개키로 서명·issuer·audience와 필수 claim을 검증합니다. `room_id`는 URL 경로 및
+BATON은 권한 확인 후 `kid`를 포함한 `RS256`으로 짧은 수명의 JWT 참여권을 서명합니다.
+참여권은 `HttpOnly`, `Secure`, `SameSite=Strict`,
+`Path=/round/rooms/{roomId}` 쿠키로 전달하고, ROUND는 BATON JWK Set의 공개키로
+서명·issuer·audience와 필수 claim을 검증합니다. `room_id`는 URL 경로 및
 `room.join`의 방 식별자와 일치해야 합니다.
 
 BATON 연동 시 브라우저가 사용하는 공개 경로는 다음과 같습니다.
@@ -198,6 +199,8 @@ BATON 모드는 유효한 참여권이 없으면 fail-closed로 요청을 거부
 BATON의 Caddy 설정에서는 카메라·마이크 `Permissions-Policy`, WebSocket `connect-src`,
 두 ROUND proxy 경로, BATON 갱신 경로와 cookie path를 함께 구성해야 합니다. 현재 BATON
 본체에는 인증된 사용자 신원·스터디 멤버십 경계가 아직 없으므로, 실제 참여권 발급·갱신
-E2E는 완료된 것으로 보지 않습니다. 공유 접근 키나 브라우저 display name으로 `sub`를
-만들어서는 안 됩니다. 전체 결정과 JWT claim 계약은
+E2E는 완료된 것으로 보지 않습니다. ROUND의 Java 통합 테스트는 로컬 JWK endpoint와 실제
+`RS256` 참여권으로 TURN·WebSocket·방 경계를 검증하지만, 이는 BATON의 실사용 발급기와
+edge를 통과했다는 증거를 대신하지 않습니다. 공유 접근 키나 브라우저 display name으로
+`sub`를 만들어서는 안 됩니다. 전체 결정과 JWT claim 계약은
 [ADR 0001](docs/adr/0001-round-independent-service.md)을 참고하세요.

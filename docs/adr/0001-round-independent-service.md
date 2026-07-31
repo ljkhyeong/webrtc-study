@@ -2,7 +2,7 @@
 
 - 상태: 승인
 - 결정일: 2026-07-29
-- 개정일: 2026-07-30 (참여권 갱신과 active WebSocket lease)
+- 개정일: 2026-07-31 (RS256/JWK 참여권 계약과 인증 경계 검증)
 
 ## 맥락
 
@@ -83,8 +83,15 @@ JWT는 응답 본문이나 JavaScript에 반환하지 않는다. BATON은 정확
 
 ### 참여권 계약
 
-BATON은 개인키로 짧은 수명의 JWT 참여권을 서명하고, ROUND는 대응하는 공개키로 오프라인
-검증한다. 공유 대칭키로 BATON과 ROUND 모두가 토큰을 발급할 수 있게 만들지 않는다.
+BATON은 개인키로 짧은 수명의 JWT 참여권을 `RS256`으로 서명하고 JOSE header에 공개키를
+식별하는 `kid`를 포함한다. ROUND는 BATON JWK Set의 대응 공개키로 오프라인 검증하며
+`RS256` 외의 알고리즘을 허용하지 않는다. 공유 대칭키로 BATON과 ROUND 모두가 토큰을
+발급할 수 있게 만들지 않는다.
+
+키를 교체할 때 BATON은 새 공개키를 JWK Set에 먼저 추가한 뒤 새 `kid`로 발급을 전환한다.
+기존 공개키는 이전 키로 발급한 참여권의 최대 수명과 clock skew가 모두 지난 뒤 제거한다.
+ROUND에는 개인키를 배포하지 않으며, JWK Set cache가 갱신될 수 있도록 두 공개키의
+중첩 기간을 실제 배포에서 리허설한다.
 
 참여권에는 다음 claim이 반드시 있어야 한다.
 
@@ -100,12 +107,12 @@ BATON은 개인키로 짧은 수명의 JWT 참여권을 서명하고, ROUND는 �
 | `study_id` | 권한을 판정한 BATON 스터디 식별자 |
 | `role`     | `host` 또는 `participant`         |
 
-ROUND는 서명 알고리즘과 공개키, `iss`, `aud`, 만료 시각, 필수 claim의 존재와 형식을 모두
-검증한다. 기본 5분인 최대 참여권 수명과 60초 clock skew를 적용해 미래 `iat` 또는 설정된
-최대 수명보다 긴 `exp - iat`도 거부한다. URL 경로의 `roomId`와 `room_id`가 다르면
-WebSocket upgrade 및 TURN credential 요청을 거부한다. WebSocket 연결 후에는 검증된
-참여권 정보를 세션에 보존하고 `room.join`의 방 식별자도 경로 및 `room_id`와 일치할 때만
-입장을 허용한다.
+ROUND는 `RS256` 서명과 JWK 공개키, `iss`, `aud`, 만료 시각, 필수 claim의 존재와 형식을
+모두 검증한다. 기본 5분인 최대 참여권 수명과 60초 clock skew를 적용해 미래 `iat` 또는
+설정된 최대 수명보다 긴 `exp - iat`도 거부한다. URL 경로의 `roomId`와 `room_id`가
+다르면 WebSocket upgrade 및 TURN credential 요청을 거부한다. WebSocket 연결 후에는
+검증된 참여권 정보를 세션에 보존하고 `room.join`의 방 식별자도 경로 및 `room_id`와
+일치할 때만 입장을 허용한다.
 
 검증된 참여권은 WebSocket 연결 당시의 immutable active lease가 된다. ROUND는 연결 직후,
 inbound quota 차감 전, outbound enqueue 전, heartbeat와 1초 주기 sweep에서 이를 확인한다.
