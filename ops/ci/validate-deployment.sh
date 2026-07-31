@@ -8,7 +8,7 @@ Usage: ops/ci/validate-deployment.sh [--check-only]
 Validates the production Compose interpolation, shell scripts, Caddyfile, and
 every Dockerfile runtime target. By default it also builds all Compose images.
 Use --check-only to skip the final Compose images. The small custom Caddy
-validation target and BATON web-assets export are always built so their
+validation target and BATON web runtime image are always built so their
 contracts are actually checked.
 EOF
 }
@@ -51,7 +51,11 @@ require_command openssl
 docker compose version >/dev/null
 
 fixture_dir=$(mktemp -d)
+baton_web_container=
 cleanup() {
+  if [[ -n "$baton_web_container" ]]; then
+    docker rm -f "$baton_web_container" >/dev/null 2>&1 || true
+  fi
   rm -rf -- "$fixture_dir"
 }
 trap cleanup EXIT
@@ -148,20 +152,27 @@ docker run --rm \
     ' >/dev/null
 
 printf 'Checking Dockerfile runtime targets...\n'
-for target in web-runtime signaling-runtime turn-runtime; do
+for target in web-runtime baton-web-runtime signaling-runtime turn-runtime; do
   docker build --check --target "$target" .
 done
 
-baton_web_assets_dir="$fixture_dir/baton-web-assets"
-printf 'Building the BATON browser asset export...\n'
+baton_web_image=round-baton-web-validation:local
+printf 'Building the BATON browser runtime image...\n'
 docker build \
-  --target web-assets \
-  --build-arg VITE_ROUND_AUTH_MODE=baton \
-  --output "type=local,dest=$baton_web_assets_dir" \
+  --target baton-web-runtime \
+  --tag "$baton_web_image" \
   .
-test -f "$baton_web_assets_dir/index.html"
-test -d "$baton_web_assets_dir/assets"
-grep -R -Fq 'round/rooms' "$baton_web_assets_dir/assets"
+test "$(docker image inspect --format '{{ index .Config.Labels "io.round.auth-mode" }}' "$baton_web_image")" = baton
+baton_web_container=$(docker create "$baton_web_image")
+docker cp "$baton_web_container:/srv" "$fixture_dir/baton-web"
+docker rm "$baton_web_container" >/dev/null
+baton_web_container=
+test "$(cat "$fixture_dir/baton-web/.round-auth-mode")" = baton
+test -f "$fixture_dir/baton-web/index.html"
+test -d "$fixture_dir/baton-web/assets"
+grep -Fq '/round-ui/assets/' "$fixture_dir/baton-web/index.html"
+grep -R -Fq '/api/v1/auth/session' "$fixture_dir/baton-web/assets"
+grep -R -Fq 'round/rooms' "$fixture_dir/baton-web/assets"
 
 if "$check_only"; then
   printf 'Deployment checks passed; image builds skipped by --check-only.\n'

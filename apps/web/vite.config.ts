@@ -21,6 +21,7 @@ export function createViteConfig({ mode }: ConfigEnv): UserConfig {
   const isE2e = process.env.ROUND_E2E_MODE === 'true';
 
   return {
+    base: viteBaseForAuthMode(environment.VITE_ROUND_AUTH_MODE),
     plugins: [react()],
     envDir: repositoryRoot,
     resolve: {
@@ -54,6 +55,17 @@ export function createViteConfig({ mode }: ConfigEnv): UserConfig {
       },
     },
   };
+}
+
+export function viteBaseForAuthMode(authMode: string | undefined): '/' | '/round-ui/' {
+  const normalized = authMode?.trim() ?? '';
+  if (normalized === '' || normalized === 'standalone') {
+    return '/';
+  }
+  if (normalized === 'baton') {
+    return '/round-ui/';
+  }
+  throw new Error('VITE_ROUND_AUTH_MODE must be standalone or baton');
 }
 
 export default defineConfig(createViteConfig);

@@ -9,7 +9,7 @@ ARG JAVA_BUILD_IMAGE=eclipse-temurin:21.0.11_10-jdk-alpine-3.23
 ARG JAVA_RUNTIME_IMAGE=eclipse-temurin:21.0.11_10-jre-alpine-3.23
 ARG COTURN_IMAGE=coturn/coturn:4.14.0-r0-alpine
 
-FROM ${NODE_IMAGE} AS web-build
+FROM ${NODE_IMAGE} AS web-source
 WORKDIR /workspace
 
 COPY package.json package-lock.json ./
@@ -27,18 +27,31 @@ COPY apps/web apps/web
 
 ARG VITE_STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
 ARG VITE_ICE_TRANSPORT_POLICY=all
+RUN VITE_STUN_URLS="${VITE_STUN_URLS}" \
+    VITE_ICE_TRANSPORT_POLICY="${VITE_ICE_TRANSPORT_POLICY}" \
+    npm run build:packages
+
+FROM web-source AS web-build
+ARG VITE_STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
+ARG VITE_ICE_TRANSPORT_POLICY=all
 ARG VITE_ROUND_AUTH_MODE=standalone
 ARG VITE_SIGNALING_URL=
 ARG VITE_TURN_CREDENTIALS_URL=
-RUN VITE_STUN_URLS="${VITE_STUN_URLS}" \
+RUN test "${VITE_ROUND_AUTH_MODE}" = standalone \
+    && VITE_ROUND_AUTH_MODE=standalone \
+    VITE_SIGNALING_URL="${VITE_SIGNALING_URL}" \
+    VITE_STUN_URLS="${VITE_STUN_URLS}" \
+    VITE_TURN_CREDENTIALS_URL="${VITE_TURN_CREDENTIALS_URL}" \
     VITE_ICE_TRANSPORT_POLICY="${VITE_ICE_TRANSPORT_POLICY}" \
-    npm run build:packages \
-    && VITE_ROUND_AUTH_MODE="${VITE_ROUND_AUTH_MODE}" \
-       VITE_SIGNALING_URL="${VITE_SIGNALING_URL}" \
-       VITE_STUN_URLS="${VITE_STUN_URLS}" \
-       VITE_TURN_CREDENTIALS_URL="${VITE_TURN_CREDENTIALS_URL}" \
-       VITE_ICE_TRANSPORT_POLICY="${VITE_ICE_TRANSPORT_POLICY}" \
-       npm run build -w @round/web
+    npm run build -w @round/web
+
+FROM web-source AS baton-web-build
+ARG VITE_STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
+ARG VITE_ICE_TRANSPORT_POLICY=all
+RUN VITE_ROUND_AUTH_MODE=baton \
+    VITE_STUN_URLS="${VITE_STUN_URLS}" \
+    VITE_ICE_TRANSPORT_POLICY="${VITE_ICE_TRANSPORT_POLICY}" \
+    npm run build -w @round/web
 
 FROM scratch AS web-assets
 COPY --from=web-build /workspace/apps/web/dist /
@@ -59,6 +72,17 @@ FROM caddy-runtime AS web-runtime
 COPY --from=web-build /workspace/apps/web/dist /srv
 
 EXPOSE 80 443 443/udp
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=5 \
+    CMD wget -q -T 2 -O /dev/null http://127.0.0.1:8080/healthz || exit 1
+
+FROM ${CADDY_IMAGE} AS baton-web-runtime
+LABEL io.round.auth-mode="baton"
+COPY ops/caddy/BatonWebCaddyfile /etc/caddy/Caddyfile
+COPY --from=baton-web-build /workspace/apps/web/dist /srv
+RUN printf 'baton\n' > /srv/.round-auth-mode \
+    && caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=5 \
     CMD wget -q -T 2 -O /dev/null http://127.0.0.1:8080/healthz || exit 1
 

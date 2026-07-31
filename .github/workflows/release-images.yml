@@ -159,6 +159,8 @@ jobs:
             "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}"
             "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}-relay"
             "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}-relay"
+            "${IMAGE_NAMESPACE}/round-baton-web:${RELEASE_TAG}"
+            "${IMAGE_NAMESPACE}/round-baton-web:sha-${RELEASE_SHA}"
             "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}"
             "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}"
             "${IMAGE_NAMESPACE}/round-turn:${RELEASE_TAG}"
@@ -215,6 +217,7 @@ jobs:
     outputs:
       edge_digest: ${{ steps.edge.outputs.digest }}
       relay_digest: ${{ steps.edge-relay.outputs.digest }}
+      baton_web_digest: ${{ steps.baton-web.outputs.digest }}
 
     steps:
       - name: Check out repository
@@ -278,6 +281,29 @@ jobs:
             io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
           cache-from: type=gha,scope=round-edge-relay
           cache-to: type=gha,mode=max,scope=round-edge-relay
+          provenance: mode=max
+          sbom: true
+
+      - name: Build and push BATON web digest
+        id: baton-web
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          target: baton-web-runtime
+          platforms: linux/amd64,linux/arm64
+          pull: true
+          build-args: |
+            VITE_STUN_URLS=${{ needs.preflight.outputs.stun_urls }}
+            VITE_ICE_TRANSPORT_POLICY=all
+          outputs: type=image,name=${{ env.IMAGE_NAMESPACE }}/round-baton-web,push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+            io.round.auth-mode=baton
+            io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
+          cache-from: type=gha,scope=round-baton-web
+          cache-to: type=gha,mode=max,scope=round-baton-web
           provenance: mode=max
           sbom: true
 
@@ -436,6 +462,7 @@ jobs:
       - name: Recheck tags and validate source digests
         shell: bash
         env:
+          BATON_WEB_DIGEST: ${{ needs.build-edge.outputs.baton_web_digest }}
           EDGE_DIGEST: ${{ needs.build-edge.outputs.edge_digest }}
           RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
           SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
@@ -467,6 +494,8 @@ jobs:
             "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}"
             "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}-relay"
             "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}-relay"
+            "${IMAGE_NAMESPACE}/round-baton-web:${RELEASE_TAG}"
+            "${IMAGE_NAMESPACE}/round-baton-web:sha-${RELEASE_SHA}"
             "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}"
             "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}"
             "${IMAGE_NAMESPACE}/round-turn:${RELEASE_TAG}"
@@ -479,6 +508,7 @@ jobs:
           digest_sources=(
             "${IMAGE_NAMESPACE}/round-edge@${EDGE_DIGEST}"
             "${IMAGE_NAMESPACE}/round-edge@${RELAY_DIGEST}"
+            "${IMAGE_NAMESPACE}/round-baton-web@${BATON_WEB_DIGEST}"
             "${IMAGE_NAMESPACE}/round-signaling@${SIGNALING_DIGEST}"
             "${IMAGE_NAMESPACE}/round-turn@${TURN_DIGEST}"
           )
@@ -494,6 +524,7 @@ jobs:
       - name: Promote all image digests to final tags
         shell: bash
         env:
+          BATON_WEB_DIGEST: ${{ needs.build-edge.outputs.baton_web_digest }}
           EDGE_DIGEST: ${{ needs.build-edge.outputs.edge_digest }}
           RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
           SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
@@ -503,6 +534,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          docker buildx imagetools create \
+            --tag "${IMAGE_NAMESPACE}/round-baton-web:${RELEASE_TAG}" \
+            --tag "${IMAGE_NAMESPACE}/round-baton-web:sha-${RELEASE_SHA}" \
+            "${IMAGE_NAMESPACE}/round-baton-web@${BATON_WEB_DIGEST}"
           docker buildx imagetools create \
             --tag "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}" \
             --tag "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}" \
@@ -523,6 +558,7 @@ jobs:
       - name: Verify every promoted tag digest
         shell: bash
         env:
+          BATON_WEB_DIGEST: ${{ needs.build-edge.outputs.baton_web_digest }}
           EDGE_DIGEST: ${{ needs.build-edge.outputs.edge_digest }}
           RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
           SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
@@ -554,6 +590,8 @@ jobs:
           verify_tag_digest "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}" "$EDGE_DIGEST"
           verify_tag_digest "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}-relay" "$RELAY_DIGEST"
           verify_tag_digest "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}-relay" "$RELAY_DIGEST"
+          verify_tag_digest "${IMAGE_NAMESPACE}/round-baton-web:${RELEASE_TAG}" "$BATON_WEB_DIGEST"
+          verify_tag_digest "${IMAGE_NAMESPACE}/round-baton-web:sha-${RELEASE_SHA}" "$BATON_WEB_DIGEST"
           verify_tag_digest "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}" "$SIGNALING_DIGEST"
           verify_tag_digest "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}" "$SIGNALING_DIGEST"
           verify_tag_digest "${IMAGE_NAMESPACE}/round-turn:${RELEASE_TAG}" "$TURN_DIGEST"
@@ -562,6 +600,7 @@ jobs:
       - name: Record promoted image digests
         shell: bash
         env:
+          BATON_WEB_DIGEST: ${{ needs.build-edge.outputs.baton_web_digest }}
           EDGE_DIGEST: ${{ needs.build-edge.outputs.edge_digest }}
           RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
           SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
@@ -571,6 +610,7 @@ jobs:
             printf '### Promoted ROUND images\n\n'
             printf -- '- Production edge: `%s/round-edge@%s`\n' "$IMAGE_NAMESPACE" "$EDGE_DIGEST"
             printf -- '- Relay-only edge: `%s/round-edge@%s`\n' "$IMAGE_NAMESPACE" "$RELAY_DIGEST"
+            printf -- '- BATON web: `%s/round-baton-web@%s`\n' "$IMAGE_NAMESPACE" "$BATON_WEB_DIGEST"
             printf -- '- Signaling: `%s/round-signaling@%s`\n' "$IMAGE_NAMESPACE" "$SIGNALING_DIGEST"
             printf -- '- TURN: `%s/round-turn@%s`\n' "$IMAGE_NAMESPACE" "$TURN_DIGEST"
           } >> "$GITHUB_STEP_SUMMARY"
