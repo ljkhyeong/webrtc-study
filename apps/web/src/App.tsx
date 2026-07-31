@@ -428,6 +428,7 @@ function ActiveRoom({
               try {
                 participationGrantLeaseManager = new ParticipationGrantLeaseManager({
                   endpoint: resolvedEndpoints.participationGrantRefreshUrl,
+                  roomId,
                 });
                 await ensureFreshParticipationGrant();
               } catch (error) {
