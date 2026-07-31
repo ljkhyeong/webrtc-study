@@ -70,7 +70,10 @@ export class ParticipationGrantLeaseManager {
   constructor(options: ParticipationGrantLeaseManagerOptions) {
     this.#endpoint = requireSameOriginPath(options.endpoint);
     this.#roomId = requireRoomId(options.roomId);
-    this.#fetcher = options.fetcher ?? globalThis.fetch;
+    const browserFetcher = globalThis.fetch;
+    this.#fetcher =
+      options.fetcher ??
+      (typeof browserFetcher === 'function' ? browserFetcher.bind(globalThis) : browserFetcher);
     this.#now = options.now ?? (() => globalThis.performance.now());
     this.#storage = options.storage;
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
