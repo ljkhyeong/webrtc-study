@@ -5,32 +5,46 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
+import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import com.personal.round.signaling.SignalingWebSocketHandler;
 import com.personal.round.signaling.SignalingService;
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
+import java.util.Date;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import org.junit.jupiter.api.BeforeEach;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
-import org.springframework.security.oauth2.jwt.BadJwtException;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.WebSocketSession;
@@ -46,9 +60,7 @@ import tools.jackson.databind.ObjectMapper;
 			"server.address=127.0.0.1",
 			"round.auth.mode=baton",
 			"round.auth.cookie-name=__Secure-round_access",
-			"round.auth.issuer=https://baton.example/oauth2",
 			"round.auth.audience=round",
-			"round.auth.jwk-set-uri=https://baton.example/oauth2/jwks",
 			"round.auth.max-grant-lifetime=5m",
 			"round.signaling.allowed-origins=http://localhost:5173",
 			"round.signaling.heartbeat-interval=60s",
@@ -60,17 +72,23 @@ import tools.jackson.databind.ObjectMapper;
 			"round.turn.rate-limit-participant-max-requests=2",
 			"round.turn.rate-limit-global-max-requests=40"
 		})
+@Execution(ExecutionMode.SAME_THREAD)
 class BatonAuthBoundaryIntegrationTest {
 
+	private static final TestBatonIssuer BATON_ISSUER = TestBatonIssuer.start();
 	private static final String COOKIE_NAME = "__Secure-round_access";
 	private static final String ALLOWED_ORIGIN = "http://localhost:5173";
 	private static final String ROOM_ID = "abcd-efgh-jkmp";
 	private static final String OTHER_ROOM_ID = "qrst-uvwx-yz23";
-	private static final String MATCHING_TOKEN = "matching-room-ticket";
-	private static final String RECONNECT_TOKEN = "reconnect-room-ticket";
-	private static final String EXCESS_TOKEN = "excess-room-ticket";
-	private static final String OTHER_ROOM_TOKEN = "other-room-ticket";
-	private static final String INVALID_TOKEN = "invalid-ticket";
+	private static final String MATCHING_TOKEN =
+			BATON_ISSUER.issueParticipationGrant(ROOM_ID, "ticket-1");
+	private static final String RECONNECT_TOKEN =
+			BATON_ISSUER.issueParticipationGrant(ROOM_ID, "ticket-2");
+	private static final String EXCESS_TOKEN =
+			BATON_ISSUER.issueParticipationGrant(ROOM_ID, "ticket-3");
+	private static final String OTHER_ROOM_TOKEN =
+			BATON_ISSUER.issueParticipationGrant(OTHER_ROOM_ID, "ticket-other-room");
+	private static final String INVALID_TOKEN = "not-a-jwt";
 
 	private final HttpClient httpClient = HttpClient.newHttpClient();
 	private final ObjectMapper objectMapper = new ObjectMapper();
@@ -78,39 +96,21 @@ class BatonAuthBoundaryIntegrationTest {
 	@LocalServerPort
 	private int port;
 
-	@MockitoBean
-	private JwtDecoder jwtDecoder;
-
 	@MockitoSpyBean
 	private SignalingWebSocketHandler signalingWebSocketHandler;
 
 	@Autowired
 	private SignalingService signalingService;
 
-	@BeforeEach
-	void setUpDecoder() {
-		when(jwtDecoder.decode(MATCHING_TOKEN))
-				.thenReturn(participationJwt(
-						MATCHING_TOKEN,
-						ROOM_ID,
-						"ticket-1"));
-		when(jwtDecoder.decode(RECONNECT_TOKEN))
-				.thenReturn(participationJwt(
-						RECONNECT_TOKEN,
-						ROOM_ID,
-						"ticket-2"));
-		when(jwtDecoder.decode(EXCESS_TOKEN))
-				.thenReturn(participationJwt(
-						EXCESS_TOKEN,
-						ROOM_ID,
-						"ticket-3"));
-		when(jwtDecoder.decode(OTHER_ROOM_TOKEN))
-				.thenReturn(participationJwt(
-						OTHER_ROOM_TOKEN,
-						OTHER_ROOM_ID,
-						"ticket-other-room"));
-		when(jwtDecoder.decode(INVALID_TOKEN))
-				.thenThrow(new BadJwtException("invalid test participation ticket"));
+	@DynamicPropertySource
+	static void batonIssuerProperties(DynamicPropertyRegistry registry) {
+		registry.add("round.auth.issuer", BATON_ISSUER::issuer);
+		registry.add("round.auth.jwk-set-uri", BATON_ISSUER::jwkSetUri);
+	}
+
+	@AfterAll
+	static void stopBatonIssuer() {
+		BATON_ISSUER.close();
 	}
 
 	@Test
@@ -182,6 +182,7 @@ class BatonAuthBoundaryIntegrationTest {
 		assertThat(crossOrigin.headers().firstValue("cache-control")).contains("no-store");
 
 		assertThat(issued.statusCode()).isEqualTo(200);
+		assertThat(BATON_ISSUER.jwkRequestCount()).isPositive();
 		assertThat(issued.headers().firstValue("cache-control")).contains("no-store");
 		JsonNode credentials = objectMapper.readTree(issued.body());
 		assertThat(credentials.at("/urls/0").asString())
@@ -252,6 +253,7 @@ class BatonAuthBoundaryIntegrationTest {
 		finally {
 			session.close();
 		}
+		awaitConnectedPeers(0);
 
 		String matchingPath = "/rooms/" + ROOM_ID + "/signal";
 		assertWebSocketRejected(matchingPath, null, ALLOWED_ORIGIN, "401");
@@ -267,6 +269,43 @@ class BatonAuthBoundaryIntegrationTest {
 				MATCHING_TOKEN,
 				ALLOWED_ORIGIN,
 				"403");
+	}
+
+	@Test
+	void rejectsRoomJoinOutsideTheSignedGrantWithoutCreatingRoomState() throws Exception {
+		CompletableFuture<String> responseMessage = new CompletableFuture<>();
+		TextWebSocketHandler handler = new TextWebSocketHandler() {
+			@Override
+			protected void handleTextMessage(
+					WebSocketSession session,
+					TextMessage message) {
+				responseMessage.complete(message.getPayload());
+			}
+		};
+
+		WebSocketSession session = connect(
+				handler,
+				"/rooms/" + ROOM_ID + "/signal",
+				MATCHING_TOKEN);
+		try {
+			session.sendMessage(new TextMessage("""
+					{"v":2,"type":"room.join","roomId":"%s","requestId":"join-wrong-room","payload":{"displayName":"스터디원"}}
+					""".formatted(OTHER_ROOM_ID).trim()));
+
+			JsonNode rejected = objectMapper.readTree(
+					responseMessage.get(2, TimeUnit.SECONDS));
+			assertThat(rejected.get("type").asString()).isEqualTo("error");
+			assertThat(rejected.get("roomId").asString()).isEqualTo(OTHER_ROOM_ID);
+			assertThat(rejected.get("requestId").asString())
+					.isEqualTo("join-wrong-room");
+			assertThat(rejected.at("/payload/code").asString())
+					.isEqualTo("ROOM_MISMATCH");
+			assertThat(signalingService.roomCount()).isZero();
+		}
+		finally {
+			session.close();
+		}
+		awaitConnectedPeers(0);
 	}
 
 	@Test
@@ -390,25 +429,6 @@ class BatonAuthBoundaryIntegrationTest {
 		}
 	}
 
-	private static Jwt participationJwt(
-			String tokenValue,
-			String roomId,
-			String tokenId) {
-		Instant now = Instant.now();
-		return Jwt.withTokenValue(tokenValue)
-				.header("alg", "RS256")
-				.issuer("https://baton.example/oauth2")
-				.subject("member-42")
-				.audience(List.of("round"))
-				.issuedAt(now.minusSeconds(30))
-				.expiresAt(now.plusSeconds(240))
-				.claim("jti", tokenId)
-				.claim("study_id", "study-7")
-				.claim("room_id", roomId)
-				.claim("role", "participant")
-				.build();
-	}
-
 	private void awaitConnectedPeers(int expected) {
 		await().atMost(Duration.ofSeconds(2))
 				.untilAsserted(() -> assertThat(signalingService.connectedPeerCount())
@@ -421,5 +441,116 @@ class BatonAuthBoundaryIntegrationTest {
 
 	private String webSocketOrigin() {
 		return "ws://127.0.0.1:" + port;
+	}
+
+	private static final class TestBatonIssuer implements AutoCloseable {
+
+		private static final String KEY_ID = "baton-integration-key";
+
+		private final HttpServer server;
+		private final KeyPair signingKey;
+		private final String issuer;
+		private final AtomicInteger jwkRequestCount = new AtomicInteger();
+
+		private TestBatonIssuer(
+				HttpServer server,
+				KeyPair signingKey,
+				String issuer) {
+			this.server = server;
+			this.signingKey = signingKey;
+			this.issuer = issuer;
+		}
+
+		static TestBatonIssuer start() {
+			try {
+				KeyPair signingKey = rsaKeyPair();
+				RSAKey publicJwk = new RSAKey.Builder(
+						(RSAPublicKey) signingKey.getPublic())
+						.keyID(KEY_ID)
+						.algorithm(JWSAlgorithm.RS256)
+						.build();
+				byte[] jwkSet = new JWKSet(publicJwk)
+						.toString()
+						.getBytes(StandardCharsets.UTF_8);
+				HttpServer server = HttpServer.create(
+						new InetSocketAddress("127.0.0.1", 0),
+						0);
+				String issuer = "http://127.0.0.1:"
+						+ server.getAddress().getPort()
+						+ "/oauth2";
+				TestBatonIssuer testIssuer =
+						new TestBatonIssuer(server, signingKey, issuer);
+				server.createContext("/oauth2/jwks", exchange -> {
+					testIssuer.jwkRequestCount.incrementAndGet();
+					exchange.getResponseHeaders().set(
+							HttpHeaders.CONTENT_TYPE,
+							"application/json");
+					exchange.sendResponseHeaders(200, jwkSet.length);
+					try (var responseBody = exchange.getResponseBody()) {
+						responseBody.write(jwkSet);
+					}
+				});
+				server.start();
+				return testIssuer;
+			}
+			catch (Exception exception) {
+				throw new IllegalStateException(
+						"Could not start the BATON test issuer",
+						exception);
+			}
+		}
+
+		String issuer() {
+			return issuer;
+		}
+
+		String jwkSetUri() {
+			return issuer + "/jwks";
+		}
+
+		int jwkRequestCount() {
+			return jwkRequestCount.get();
+		}
+
+		String issueParticipationGrant(String roomId, String tokenId) {
+			try {
+				Instant now = Instant.now();
+				JWTClaimsSet claims = new JWTClaimsSet.Builder()
+						.issuer(issuer)
+						.subject("member-42")
+						.audience("round")
+						.issueTime(Date.from(now.minusSeconds(30)))
+						.expirationTime(Date.from(now.plusSeconds(240)))
+						.jwtID(tokenId)
+						.claim("study_id", "study-7")
+						.claim("room_id", roomId)
+						.claim("role", "participant")
+						.build();
+				SignedJWT token = new SignedJWT(
+						new JWSHeader.Builder(JWSAlgorithm.RS256)
+								.type(JOSEObjectType.JWT)
+								.keyID(KEY_ID)
+								.build(),
+						claims);
+				token.sign(new RSASSASigner(signingKey.getPrivate()));
+				return token.serialize();
+			}
+			catch (Exception exception) {
+				throw new IllegalStateException(
+						"Could not sign a BATON participation grant",
+						exception);
+			}
+		}
+
+		private static KeyPair rsaKeyPair() throws Exception {
+			KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+			generator.initialize(2_048);
+			return generator.generateKeyPair();
+		}
+
+		@Override
+		public void close() {
+			server.stop(0);
+		}
 	}
 }
