@@ -190,8 +190,9 @@ instance. Do not change the bundled standalone Compose to perform them.
       200, WSS entry, relay-only nominated UDP candidate pairs, bidirectional
       audio/video traffic, acknowledged chat, remote media-state propagation,
       and normal leave.
-- [x] The hardened lifecycle re-ran with a file-mounted TURN secret shared by
-      Spring `configtree` and coturn's tmpfs config; the secret was absent from
+- [x] The hardened lifecycle re-ran with one read-only TURN secret mount for
+      Spring `configtree`; coturn copied the same secret into its tmpfs runtime
+      config. The secret was absent from
       container argv, environment, and logs, and cleanup proved zero remaining
       project containers, volumes, and networks.
 - [x] The local safety suite rejects unsafe/symlinked/forged state, Compose

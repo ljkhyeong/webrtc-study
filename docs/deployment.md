@@ -254,8 +254,9 @@ both directions. Bidirectional DataChannel chat reached `sent`, remote
 microphone/camera-off state propagated, and normal member then owner leave
 updated the room state.
 
-The hardened lifecycle was then repeated with the TURN shared secret mounted
-from one mode-`0600` file into Spring `configtree` and a coturn tmpfs config.
+The hardened lifecycle was then repeated with one mode-`0600` TURN shared-secret
+file mounted read-only for Spring `configtree`; the coturn wrapper read the same
+mount and wrote its runtime configuration into tmpfs.
 All seven long-running services were healthy, the BATON JWK Set returned 200,
 an anonymous canonical refresh returned JSON 401 with `no-store` and a request
 ID, a query-bearing refresh returned 404, Caddy validated its live config, and
