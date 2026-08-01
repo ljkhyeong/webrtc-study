@@ -149,11 +149,31 @@ toggle, leave, rejoin, invite-copy behavior, and zero unexpected console errors.
 - [ ] The external authenticated TURN probe passes UDP, TCP, and TLS from a
       network outside the TURN host and its NAT using monitor credentials from
       a secret store.
+- [ ] Default-branch rules require pull-request and code-owner review for the
+      external TURN workflow, target properties, probe, TLS verification and
+      resolver scripts, and workflow contract validator/tests; self-review and
+      administrator bypass are disabled where the repository plan supports
+      those controls.
+- [ ] `external-pilot-target.properties` contains the reviewed public ROUND
+      origin, TURN host, and `coturn/coturn@sha256` digest rather than the
+      committed example hosts.
+- [ ] The `round-pilot` GitHub environment allows only the default branch,
+      stores only the shared-access and optional private-CA values as secrets,
+      and requires a reviewer with self-review disabled where supported.
+- [ ] The manual `External TURN pilot probe` workflow passes for the
+      operator-declared annotated release tag. Its run summary records the tag
+      object, release and workflow commits, exact targets, probe image digest,
+      and authenticated UDP, TCP, and TLS results.
+- [ ] The recorded release and tag object are independently matched to the
+      deployed revision or immutable image publication evidence; a `v*` tag
+      ruleset prevents release tag update and deletion.
 - [ ] The TLS probe verifies both the certificate chain and
       `TURN_PROBE_HOST`; an untrusted certificate or hostname mismatch makes the
-      deployment gate fail before relay traffic is attempted.
-- [ ] A nonzero external TURN probe result triggers the pilot deployment gate
-      or the configured production alert.
+      deployment gate fail before relay traffic is attempted. A private CA is
+      snapshotted and used by both the host verifier and coturn utility
+      container rather than disabling verification.
+- [ ] A nonzero external TURN probe result is enforced as a manual pilot stop
+      condition until an automated promotion gate or production alert exists.
 - [ ] Edge `/healthz` and the local STUN listener are not accepted as proof of
       public TURN authentication or relay-media health.
 - [ ] Active rooms, peers, rejected connections and joins, invalid or

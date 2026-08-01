@@ -624,7 +624,7 @@ printf '\n'
 export ROUND_ACCESS_USER ROUND_ACCESS_PASSWORD
 ROUND_URL=https://round.example.com \
 TURN_PROBE_HOST=turn.example.com \
-TURN_PROBE_IMAGE=coturn/coturn:4.14.0-r0-alpine \
+TURN_PROBE_IMAGE=coturn/coturn@sha256:d3a11e8f6d9e1b0454531e307684a072bdd36c36b28daafb4f082aa1e5ebd2e4 \
 ops/turn/probe.sh
 unset ROUND_ACCESS_PASSWORD
 ```
@@ -636,11 +636,65 @@ a fresh short-lived TURN credential without printing it, verifies the
 advertised URLs and expiry, verifies the TLS certificate chain and DNS hostname
 with the monitor host's OpenSSL trust store, and only then creates authenticated
 client-to-client relay traffic over UDP, TCP, and TLS. For an intentionally
-private TURN CA, set `TURN_PROBE_CA_FILE` to its readable PEM CA bundle; do not
+private TURN CA, set `TURN_PROBE_CA_FILE` to its readable regular PEM CA bundle;
+the probe snapshots it into a mode-`0600` temporary file and uses the same bytes
+for the host TLS check and the read-only coturn utility container mount. Do not
 disable verification. Store the monitor's plaintext password in its secret
 manager, not in the deployment env file or command arguments. Treat a nonzero
-exit as a deployment failure. Run it every one to five minutes from the
-external network and alert after an appropriate number of consecutive failures.
+exit as a deployment failure.
+
+### Protected external TURN workflow
+
+The manual `External TURN pilot probe` GitHub Actions workflow runs the same
+probe from a GitHub-hosted Linux runner outside the TURN host and its NAT. Before
+the first run:
+
+1. Protect the default branch with required pull-request review. Require code
+   owner review for `.github/workflows/external-turn-probe.yml`,
+   `ops/turn/probe.sh`, `ops/turn/verify-tls.sh`, both
+   `ops/turn/resolve-external-*.sh` scripts,
+   `ops/turn/external-pilot-target.properties`, and
+   `ops/ci/*external-turn-workflow*.mjs`. Where the repository plan supports
+   them, prevent self-review and administrator bypass.
+2. Edit `ops/turn/external-pilot-target.properties` through that protected pull
+   request. The committed example hosts are intentionally rejected at runtime.
+   The file must contain the exact public ROUND origin, public TURN hostname,
+   and reviewed `coturn/coturn@sha256` image. Updating any destination or digest
+   therefore leaves a reviewable Git history entry.
+3. Create a `round-pilot` environment restricted to the default branch. Add a
+   required reviewer and prevent self-review where the repository plan supports
+   those controls. Store only these environment secrets:
+
+| Secret                  | Value                                              |
+| ----------------------- | -------------------------------------------------- |
+| `ROUND_ACCESS_USER`     | Standalone shared-access username                  |
+| `ROUND_ACCESS_PASSWORD` | Standalone shared-access plaintext password        |
+| `TURN_PROBE_CA_PEM`     | Optional private TURN CA PEM; omit for a public CA |
+
+Dispatch the workflow from the default branch and provide the annotated release
+tag that the operator believes is deployed to the pilot. A secret-free first
+job rejects other branches, malformed or lightweight tags, releases not
+reachable from the current default branch, example destinations, and images
+outside the reviewed `coturn/coturn` repository. Only then does the
+`round-pilot` job read credentials and exercise UDP, TCP, and TLS.
+
+The run summary records the operator-declared tag, tag object SHA, release
+commit, workflow commit, public targets, and probe image digest. It does **not**
+query the running service revision, so it does not prove that the declared
+release is deployed. Before accepting the run as pilot evidence, compare those
+identifiers with the deployment platform or immutable image publication record,
+and protect release tags against update and deletion with a `v*` tag ruleset.
+Record the workflow run URL and that independent deployment-identity evidence.
+Until promotion is automated, operators must treat a nonzero probe result as a
+manual stop condition rather than claiming that GitHub blocked promotion.
+
+Keep this workflow manual until its first public-host run succeeds and the
+responsible maintainer confirms that GitHub Actions failure notifications are
+received. A later scheduled monitor can reuse the environment, but should alert
+only after an explicitly chosen number of consecutive failures. This standalone
+Basic Auth workflow is not evidence for the BATON participation-grant boundary,
+and the coturn utility probe does not replace a browser UDP-blocked fallback
+test.
 
 The credential response contains `urls`, `username`, `credential`, and
 `expiresAt` (epoch seconds), but never the shared secret. Confirm separately in
