@@ -40,6 +40,8 @@ export default defineConfig({
     env: {
       PORT: '8787',
       ROUND_AUTH_MODE: 'standalone',
+      ROUND_STANDALONE_HOST_TOKEN_SHA256:
+        'de7ca4487720742a8acf93c4bd14b590f2753d370b5c2f13cc0cc09590e183ef',
       ROUND_E2E_MODE: 'true',
       TURN_SHARED_SECRET: '',
       TURN_URLS: '',

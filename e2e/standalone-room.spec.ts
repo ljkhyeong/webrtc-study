@@ -2,6 +2,7 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 
 const ROOM_ID = 'abcd-efgh-jkmp';
 const ROOM_PATH = `/room/${ROOM_ID}`;
+const HOST_CAPABILITY = 'round-test-only-host-capability-not-a-secret';
 
 interface BrowserFailure {
   readonly participant: string;
@@ -20,6 +21,32 @@ async function createParticipant(
     permissions: ['camera', 'microphone'],
   });
   try {
+    await context.addInitScript(() => {
+      const canvases = [] as HTMLCanvasElement[];
+      Object.defineProperty(window, '__roundE2eDisplayCanvases', {
+        configurable: true,
+        value: canvases,
+      });
+      Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', {
+        configurable: true,
+        value: async () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 640;
+          canvas.height = 360;
+          const drawingContext = canvas.getContext('2d');
+          if (drawingContext === null) {
+            throw new Error('E2E display canvas is unavailable');
+          }
+          drawingContext.fillStyle = '#6d5dfc';
+          drawingContext.fillRect(0, 0, canvas.width, canvas.height);
+          drawingContext.fillStyle = '#ffffff';
+          drawingContext.font = 'bold 48px sans-serif';
+          drawingContext.fillText('ROUND SCREEN', 120, 195);
+          canvases.push(canvas);
+          return canvas.captureStream(5);
+        },
+      });
+    });
     const page = await context.newPage();
 
     page.on('console', (message) => {
@@ -46,13 +73,17 @@ async function createParticipant(
   }
 }
 
-async function enterRoom(page: Page, displayName: string): Promise<void> {
+async function enterRoom(page: Page, displayName: string, hostCapability?: string): Promise<void> {
   await page.goto(ROOM_PATH);
   await page.getByLabel('내 이름').fill(displayName);
   await page.getByRole('button', { name: '입장 준비' }).click();
   await expect(
     page.getByRole('heading', { name: '입장 전에 장치를 확인해 주세요.' }),
   ).toBeVisible();
+
+  if (hostCapability !== undefined) {
+    await page.getByLabel('방장 키 (선택)').fill(hostCapability);
+  }
 
   await page.getByRole('button', { name: '장치 확인' }).click();
   const joinButton = page.getByRole('button', { name: '이 설정으로 입장' });
@@ -137,7 +168,10 @@ async function expectRemoteMedia(page: Page, displayName: string): Promise<void>
   await expect.poll(() => remoteVideoHasVisibleContent(page, displayName)).toBe(true);
 }
 
-test('두 참가자가 영상·음성·채팅을 사용하고 정상 퇴장한다', async ({ baseURL, browser }) => {
+test('방장과 참가자가 미디어·화면 공유·채팅을 사용하고 정상 퇴장한다', async ({
+  baseURL,
+  browser,
+}) => {
   if (baseURL === undefined) {
     throw new Error('Playwright baseURL is required');
   }
@@ -151,7 +185,10 @@ test('두 참가자가 영상·음성·채팅을 사용하고 정상 퇴장한�
     const second = await createParticipant(browser, baseURL, '나래', failures);
     contexts.push(second.context);
 
-    await Promise.all([enterRoom(first.page, '가온'), enterRoom(second.page, '나래')]);
+    await Promise.all([
+      enterRoom(first.page, '가온', HOST_CAPABILITY),
+      enterRoom(second.page, '나래'),
+    ]);
 
     await Promise.all([
       expect(first.page.getByText('통화 연결됨', { exact: true })).toBeVisible(),
@@ -161,6 +198,21 @@ test('두 참가자가 영상·음성·채팅을 사용하고 정상 퇴장한�
       expectRemoteMedia(first.page, '나래'),
       expectRemoteMedia(second.page, '가온'),
     ]);
+
+    await expect(
+      participantTile(second.page, '가온').getByText('방장', { exact: true }),
+    ).toBeVisible();
+    await expect(second.page.getByRole('button', { name: '가온 마이크 끄기' })).toHaveCount(0);
+
+    await first.page.getByRole('button', { name: '화면 공유 시작' }).click();
+    await expect(participantTile(second.page, '가온').getByText('화면 공유 중')).toBeVisible();
+    await expect(
+      first.page.getByRole('button', { name: '화면 공유 중에는 카메라를 변경할 수 없음' }),
+    ).toBeDisabled();
+    await expect.poll(() => remoteVideoHasVisibleContent(second.page, '가온')).toBe(true);
+    await first.page.getByRole('button', { name: '화면 공유 중지' }).click();
+    await expect(participantTile(second.page, '가온').getByText('화면 공유 중')).toHaveCount(0);
+    await expectRemoteMedia(second.page, '가온');
 
     expect(
       await first.page.locator('#chat-message').evaluate((element) => {
@@ -194,18 +246,45 @@ test('두 참가자가 영상·음성·채팅을 사용하고 정상 퇴장한�
     await expect(secondOutgoingMessage).toHaveAttribute('data-delivery-state', 'sent');
     await expect(secondOutgoingMessage).not.toContainText('수신 확인 실패');
 
+    const secondTileOnFirstPage = participantTile(first.page, '나래');
+    await first.page.getByRole('button', { name: '나래 마이크 끄기' }).click();
+    await expect(
+      second.page.getByRole('button', { name: '마이크 켜기', exact: true }),
+    ).toBeVisible();
+    await expect(secondTileOnFirstPage.getByLabel('마이크 꺼짐')).toBeVisible();
+    await expect(
+      second.page.getByText('방장이 마이크를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.'),
+    ).toBeVisible();
+    await second.page.getByRole('button', { name: '마이크 켜기', exact: true }).click();
+    await expect(secondTileOnFirstPage.getByLabel('마이크 켜짐')).toBeVisible();
+
+    await second.page.getByRole('button', { name: '화면 공유 시작' }).click();
+    await expect(secondTileOnFirstPage.getByText('화면 공유 중')).toBeVisible();
+    await first.page.getByRole('button', { name: '나래 비디오 끄기' }).click();
+    await expect(
+      second.page.getByRole('button', { name: '카메라 켜기', exact: true }),
+    ).toBeVisible();
+    await expect(second.page.getByRole('button', { name: '화면 공유 시작' })).toBeVisible();
+    await expect(secondTileOnFirstPage.getByText('화면 공유 중')).toHaveCount(0);
+    await expect(secondTileOnFirstPage.getByLabel('나래의 카메라 꺼짐')).toBeVisible();
+    await expect(
+      second.page.getByText('방장이 비디오를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.'),
+    ).toBeVisible();
+    await second.page.getByRole('button', { name: '카메라 켜기', exact: true }).click();
+    await expectRemoteMedia(first.page, '나래');
+
     const firstTileOnSecondPage = participantTile(second.page, '가온');
-    await first.page.getByRole('button', { name: '마이크 끄기' }).click();
+    await first.page.getByRole('button', { name: '마이크 끄기', exact: true }).click();
     await expect(firstTileOnSecondPage.getByLabel('마이크 꺼짐')).toBeVisible();
 
-    await first.page.getByRole('button', { name: '카메라 끄기' }).click();
+    await first.page.getByRole('button', { name: '카메라 끄기', exact: true }).click();
     await expect(firstTileOnSecondPage.getByLabel('가온의 카메라 꺼짐')).toBeVisible();
     await expect.poll(() => remoteVideoHasVisibleContent(second.page, '가온')).toBe(false);
 
-    await first.page.getByRole('button', { name: '마이크 켜기' }).click();
+    await first.page.getByRole('button', { name: '마이크 켜기', exact: true }).click();
     await expect(firstTileOnSecondPage.getByLabel('마이크 켜짐')).toBeVisible();
 
-    await first.page.getByRole('button', { name: '카메라 켜기' }).click();
+    await first.page.getByRole('button', { name: '카메라 켜기', exact: true }).click();
     await expect(firstTileOnSecondPage.getByLabel('가온의 카메라 꺼짐')).toHaveCount(0);
     await expect.poll(() => remoteVideoHasVisibleContent(second.page, '가온')).toBe(true);
     await expectRemoteMedia(second.page, '가온');
