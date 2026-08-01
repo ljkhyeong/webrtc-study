@@ -25,7 +25,7 @@ limited to six participants because upload bandwidth and CPU use grow with every
 
 - `@round/rtc-core` never imports React, a router, or a CSS framework.
 - `@round/protocol` owns browser-side wire-message types and runtime validation.
-- `apps/signaling` mirrors protocol v2 validation at its WebSocket boundary and keeps room state
+- `apps/signaling` mirrors protocol v3 validation at its WebSocket boundary and keeps room state
   in memory under `com.personal.round.signaling`.
 - `apps/web` adapts room snapshots to React and owns all presentation.
 - Room identity is an opaque string. BATON authorizes that room before issuing a participation
@@ -54,6 +54,28 @@ version. ROUND currently deploys the web client atomically rather than negotiati
 all pilot participants must reload after a web release. A stale client that does not implement ACK
 may display the chat, but the new sender fails closed with a receive-confirmation failure after the
 45-second deadline instead of reporting false success.
+
+## Media source and moderation boundary
+
+`RoomSession` owns one outbound video source at a time. Starting screen sharing obtains a display
+track and replaces the camera track on every existing `RTCRtpSender`; stopping it, or the browser's
+native **Stop sharing** action, restores the retained camera track. Audio remains on the microphone
+track, and camera toggling is disabled while display capture is active so one control cannot mutate
+the hidden source accidentally. New peers receive the currently selected source, and the
+peer-to-peer `participant.media` frame carries whether that source is `camera` or `screen`.
+
+Media moderation is intentionally disable-only. Signaling protocol v3 assigns each admitted peer a
+server-resolved `host|participant` role. A host may ask the server to disable audio or video for a
+different participant in the same room; the server validates actor, target, room, and role before it
+emits a server-owned command. A participant may explicitly turn the device on again, but no remote
+party can turn on a microphone, camera, or screen capture. In standalone mode the optional host key
+is verified against `ROUND_STANDALONE_HOST_TOKEN_SHA256` and only the resolved role is retained. In
+BATON mode the verified participation-grant `role` is authoritative and a standalone key is rejected.
+
+This control is appropriate for the trusted small-study mesh pilot, not hostile-client enforcement:
+a modified browser can ignore a disable command because media packets travel directly between
+peers. Forced removal or a persistent server-side media lock requires a kick/ban policy or an SFU
+that owns media forwarding.
 
 ## Identity and authorization boundary
 
@@ -110,8 +132,9 @@ WebSocket frames after the HTTP upgrade.
 
 ## Production boundary
 
-`localhost` is allowed to use camera and microphone without TLS. Any deployed environment must
-use HTTPS/WSS. A production deployment also needs a TURN service for users behind restrictive
+`localhost` is allowed to use camera, microphone, and screen capture without TLS. Any deployed
+environment must use HTTPS/WSS and permit `display-capture` as well as camera and microphone in its
+`Permissions-Policy`. A production deployment also needs a TURN service for users behind restrictive
 NAT or corporate networks; STUN alone cannot guarantee connectivity.
 
 Caddy is the only public HTTP entrypoint. In standalone mode it requires the shared access

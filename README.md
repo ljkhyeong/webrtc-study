@@ -13,13 +13,15 @@ ROUND의 첫 버전은 최대 6명이 브라우저끼리 직접 연결되는 mes
 - 카메라·마이크 기반 다자간 WebRTC 통화
 - 입장 전 미리보기와 카메라·마이크 선택
 - 마이크 음소거와 카메라 켜기/끄기
+- 카메라 송신을 안전하게 교체하는 화면 공유 시작·중지
+- 방장의 다른 참가자 마이크·카메라 끄기 요청
 - WebRTC DataChannel 기반 휘발성 텍스트 채팅과 참가자별 수신 확인
 - 참가자 입장·퇴장과 연결 상태 표시
 - 한쪽 미디어 권한만 허용해도 음성 전용 또는 영상 전용으로 입장
 - 일시적인 signaling·ICE 연결 장애 자동 복구
 - 데스크톱과 모바일 반응형 화면
 
-계정, 녹화, 화면 공유, 채팅 저장, 관리자 기능은 아직 포함하지 않습니다.
+계정, 녹화, 채팅 저장, 강제 퇴장과 영구적인 미디어 잠금은 아직 포함하지 않습니다.
 
 ## 로컬 실행
 
@@ -48,17 +50,18 @@ Gradle은 저장소의 Wrapper를 사용하므로 별도로 설치하지 않아�
 npm run check
 ```
 
-실제 Chromium 두 개로 standalone 영상·음성·채팅 흐름을 검증:
+실제 Chromium 두 개로 standalone 영상·음성·화면 공유·방장 제어·채팅 흐름을 검증:
 
 ```bash
 npx playwright install chromium
 npm run test:e2e
 ```
 
-브라우저 테스트는 fake 카메라·마이크를 사용해 직접 초대 입장, 원격 미디어 연결,
-DataChannel 채팅과 수신 ACK, 음소거·카메라 상태 전파, 퇴장을 확인합니다. BATON 참여권, 실제 TURN
-relay, 실장치, Safari·모바일 검증은 이 테스트 범위에 포함되지 않으며 파일럿 체크리스트를
-별도로 통과해야 합니다. 실패 진단 자료는 `output/playwright/`에 저장됩니다.
+브라우저 테스트는 fake 카메라·마이크·화면 스트림을 사용해 직접 초대 입장, 원격 미디어
+연결, 화면 공유 전환, 방장의 원격 미디어 끄기, DataChannel 채팅과 수신 ACK, 퇴장을
+확인합니다. BATON 참여권, 실제 TURN relay, 실장치의 화면 선택 UI, Safari·모바일 검증은
+이 테스트 범위에 포함되지 않으며 파일럿 체크리스트를 별도로 통과해야 합니다. 실패 진단
+자료는 `output/playwright/`에 저장됩니다.
 
 ## 환경 변수
 
@@ -68,6 +71,7 @@ relay, 실장치, Safari·모바일 검증은 이 테스트 범위에 포함되�
 | `HOST`                                                | `0.0.0.0`               | signaling bind 주소             |
 | `ALLOWED_ORIGINS`                                     | `http://localhost:5173` | 쉼표로 구분한 허용 Origin       |
 | `ROUND_AUTH_MODE`                                     | `standalone`            | `standalone` 또는 `baton`       |
+| `ROUND_STANDALONE_HOST_TOKEN_SHA256`                  | 없음                    | standalone 방장 키 SHA-256      |
 | `ROUND_AUTH_COOKIE_NAME`                              | `__Secure-round_access` | BATON 참여권 cookie 이름        |
 | `ROUND_AUTH_ISSUER`                                   | 없음                    | 신뢰할 BATON JWT issuer         |
 | `ROUND_AUTH_AUDIENCE`                                 | `round`                 | 참여권의 필수 audience          |
@@ -111,6 +115,11 @@ relay, 실장치, Safari·모바일 검증은 이 테스트 범위에 포함되�
 마지막 연결이 끊겨도 IP별 프레임 상태는 현재 abuse window가 끝날 때까지 유지되므로 같은
 IP의 재연결로 quota를 초기화할 수 없습니다. 만료된 비활성 상태는 연결 시점과 주기적
 sweep에서 정리되며, 상태 맵이 가득 차면 활성 상태를 보존하고 비활성 상태만 제거합니다.
+
+standalone 방장 기능을 켤 때는 Basic Auth 비밀번호와 다른 최소 32자의 무작위 키를 만들고
+서버에는 그 SHA-256만 저장합니다. 하나의 digest는 해당 standalone 서버의 모든 방에
+적용되므로 원문 키는 방장에게만 전달하고 유출 시 즉시 회전해야 합니다. 참가자 화면에는
+원문이 저장되거나 다시 표시되지 않으며, 빈 값은 일반 참가자 입장입니다.
 
 BATON 모드에서는 진행 중인 handshake와 활성 WebSocket을 합쳐 동일 참여권 `jti`당 1개,
 동일 `(room_id, sub)`당 2개까지만 허용합니다. 두 번째 사용자 슬롯은 BATON이 새 `jti`로
@@ -199,7 +208,7 @@ BATON 모드는 유효한 참여권이 없으면 fail-closed로 요청을 거부
 종료되고, 제한된 자동 재연결이 미리 회전된 쿠키를 사용합니다. standalone 연결에는 이
 시간 제한과 갱신 흐름을 적용하지 않습니다.
 
-BATON의 Caddy 설정에서는 카메라·마이크 `Permissions-Policy`, WebSocket `connect-src`,
+BATON의 Caddy 설정에서는 카메라·마이크·화면 캡처 `Permissions-Policy`, WebSocket `connect-src`,
 두 ROUND proxy 경로, BATON 갱신 경로와 cookie path를 함께 구성해야 합니다. 현재 BATON
 본체에는 인증된 사용자 신원·스터디 멤버십 경계가 아직 없으므로, 실제 참여권 발급·갱신
 E2E는 완료된 것으로 보지 않습니다. ROUND의 Java 통합 테스트는 로컬 JWK endpoint와 실제

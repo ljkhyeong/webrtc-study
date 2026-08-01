@@ -95,11 +95,34 @@ should use home Wi-Fi and the other cellular tethering or another ISP.
       WebSocket before an explicit user action.
 - [ ] The prejoin screen previews the selected camera.
 - [ ] The selected camera and microphone are used after joining.
+- [ ] Screen sharing prompts only after the user presses **화면 공유**, replaces the outbound camera
+      for the remote participant, and restores the camera after both the ROUND stop button and the
+      browser's native stop-sharing action.
+- [ ] Denying or cancelling the display picker leaves the existing camera call usable and shows a
+      Korean next action without ending the room.
 - [ ] Camera denial or absence still permits an audio-only join.
 - [ ] Microphone denial or absence still permits a video-only join.
 - [ ] The user can retry device setup or intentionally join without media.
 - [ ] Permission, missing-device, and busy-device errors give a Korean next
       action instead of a raw browser exception.
+
+## Host moderation behavior
+
+- [ ] The configured standalone host key is different from the shared Basic Auth password, contains
+      at least 32 random bytes, and exists in the runtime env only as its SHA-256 digest. The
+      plaintext is absent from Git, images, URLs, browser storage, logs, and shell history.
+- [ ] Operators accept that one standalone digest covers every room on this signaling instance and
+      have rehearsed rotating it, restarting signaling, and reconnecting admitted hosts after a leak.
+- [ ] A valid host can turn off a different participant's microphone or camera, and both browsers
+      show the resulting state and a clear moderation notice.
+- [ ] A participant, an invalid host key, a self-target, a host target, a departed target, and a
+      different-room target are rejected without changing any media state.
+- [ ] No UI or protocol path can remotely turn on another person's microphone, camera, or screen.
+      The affected participant can deliberately turn the disabled device back on.
+- [ ] Disabling video while the target shares a screen stops display capture and leaves the restored
+      camera disabled.
+- [ ] The team accepts that a modified mesh client can ignore a disable request; stronger hostile
+      participant enforcement is deferred until kick/ban or SFU-owned media forwarding exists.
 
 ## Recovery behavior
 
@@ -124,8 +147,9 @@ Record the exact browser and OS versions used.
 | iPhone/iPad          | Safari      | [ ]      | [ ]      | [ ]      | [ ]                   |
 | Android phone/tablet | Chrome      | [ ]      | [ ]      | [ ]      | [ ]                   |
 
-For every checked cell, verify join, remote audio/video, chat, mute, camera
-toggle, leave, rejoin, invite-copy behavior, and zero unexpected console errors.
+For every checked cell, verify join, remote audio/video, screen share start/stop, chat, mute, camera
+toggle, host disable-only controls, leave, rejoin, invite-copy behavior, and zero unexpected console
+errors.
 
 ## Capacity and soak
 
@@ -192,7 +216,7 @@ toggle, leave, rejoin, invite-copy behavior, and zero unexpected console errors.
 4. Promote only if the full session completes without a manual page refresh or
    an unexplained media loss.
 
-Screen sharing, recording, persistent chat, accounts, and rooms larger than six
+Recording, persistent chat, accounts, hostile-client media enforcement, and rooms larger than six
 are explicitly outside this pilot gate. BATON integration is outside the
 standalone gate above and has its own required checks below.
 
@@ -278,8 +302,8 @@ The unchecked production gate below remains authoritative.
       monitoring plane. `/actuator/prometheus` and
       `/actuator/metrics/**` are private, and any public health rule exposes
       only transport-only `GET /healthz`.
-- [ ] The BATON page's `Permissions-Policy` permits its own camera and
-      microphone use, and `connect-src` permits the room-scoped WSS endpoint
+- [ ] The BATON page's `Permissions-Policy` permits its own camera, microphone,
+      and display-capture use, and `connect-src` permits the room-scoped WSS endpoint
       without widening either policy to unrelated origins.
 - [ ] A valid participant can complete signaling, obtain and refresh TURN
       credentials, refresh the grant before expiry, and remain in one room for

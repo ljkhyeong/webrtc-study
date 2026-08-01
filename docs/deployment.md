@@ -104,7 +104,7 @@ endpoint. Both rewrites must preserve the same `roomId`. The edge must preserve
 the WebSocket upgrade and the browser's `Origin` header; it must not synthesize
 a trusted Origin. Configure `ALLOWED_ORIGINS` to BATON's exact HTTPS origin and
 keep the existing Origin and Fetch Metadata checks in addition to JWT
-verification. The edge must also allow camera and microphone for the BATON page
+verification. The edge must also allow camera, microphone, and `display-capture` for the BATON page
 through `Permissions-Policy` and include the room-scoped WSS path in its
 `connect-src` policy.
 
@@ -354,6 +354,16 @@ choose a random 24–32 character ASCII password (bcrypt considers at most 72
 input bytes), and deliver the username and plaintext password to the intended
 study members over a separate trusted channel.
 
+For a standalone host, generate a second, unrelated secret with at least 32 random bytes; a
+64-character hexadecimal value from `openssl rand -hex 32` is the recommended shape. Give its
+plaintext only to people who should receive disable-only media controls, and put only its lowercase
+SHA-256 digest in `ROUND_STANDALONE_HOST_TOKEN_SHA256`. The sample env shows a hidden-input command
+that computes the digest without writing the plaintext to a file. One digest grants host powers in
+every standalone room on that signaling instance. Rotating it therefore means changing the digest,
+restarting signaling, and having existing hosts reconnect; already admitted hosts retain their
+resolved role until disconnect. Leave the value blank when no host controls are needed. BATON
+deployments do not accept this key because their signed participation-grant `role` is authoritative.
+
 Set these values carefully:
 
 - `ROUND_DOMAIN` must be served through HTTPS. HTTP Basic Auth only encodes
@@ -393,6 +403,10 @@ Set these values carefully:
   standalone-pilot boundary: it cannot identify participants, enforce study
   membership, or revoke one member. BATON authentication and meeting membership
   authorization must replace it before broader access.
+- `ROUND_STANDALONE_HOST_TOKEN_SHA256` grants only same-room, disable-only microphone and camera
+  controls after a successful join. It is not a substitute for site access, participant identity,
+  or membership authorization. Store only the digest in the runtime env and distribute the
+  plaintext separately from the Basic Auth password.
 - `ROUND_DOMAIN` and `ALLOWED_ORIGINS` must describe the same exact HTTPS
   origin. Do not use a wildcard origin.
 - `TURN_URLS` should advertise UDP, TCP, and TLS routes for the TURN hostname.
