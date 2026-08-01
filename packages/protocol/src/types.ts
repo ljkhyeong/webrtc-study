@@ -1,10 +1,11 @@
-export const PROTOCOL_VERSION = 2 as const;
+export const PROTOCOL_VERSION = 3 as const;
 
 export const CLIENT_MESSAGE_TYPES = [
   'room.join',
   'rtc.offer',
   'rtc.answer',
   'rtc.ice',
+  'moderation.media.disable',
   'room.leave',
 ] as const;
 
@@ -14,6 +15,7 @@ export const SERVER_MESSAGE_TYPES = [
   'rtc.offer',
   'rtc.answer',
   'rtc.ice',
+  'moderation.media.disabled',
   'peer.left',
   'error',
 ] as const;
@@ -26,6 +28,7 @@ export const SIGNALING_ERROR_CODES = [
   'ROOM_MISMATCH',
   'TARGET_NOT_FOUND',
   'TARGET_SELF',
+  'FORBIDDEN',
   'INTERNAL_ERROR',
 ] as const;
 
@@ -33,10 +36,13 @@ export type ProtocolVersion = typeof PROTOCOL_VERSION;
 export type ClientMessageType = (typeof CLIENT_MESSAGE_TYPES)[number];
 export type ServerMessageType = (typeof SERVER_MESSAGE_TYPES)[number];
 export type SignalingErrorCode = (typeof SIGNALING_ERROR_CODES)[number];
+export type ParticipantRole = 'host' | 'participant';
+export type ModeratedMediaKind = 'audio' | 'video';
 
 export interface Participant {
   peerId: string;
   displayName: string;
+  role: ParticipantRole;
 }
 
 export interface OfferDescription {
@@ -72,6 +78,7 @@ export interface RoomJoinClientMessage extends ClientMessageBase {
   type: 'room.join';
   payload: {
     displayName: string;
+    hostCapability?: string;
   };
 }
 
@@ -102,6 +109,14 @@ export interface RtcIceClientMessage extends ClientMessageBase {
   };
 }
 
+export interface ModerationMediaDisableClientMessage extends ClientMessageBase {
+  type: 'moderation.media.disable';
+  to: string;
+  payload: {
+    kind: ModeratedMediaKind;
+  };
+}
+
 export interface RoomLeaveClientMessage extends ClientMessageBase {
   type: 'room.leave';
 }
@@ -111,6 +126,7 @@ export type ClientMessage =
   | RtcOfferClientMessage
   | RtcAnswerClientMessage
   | RtcIceClientMessage
+  | ModerationMediaDisableClientMessage
   | RoomLeaveClientMessage;
 
 interface ServerMessageBase {
@@ -123,6 +139,10 @@ export interface RoomJoinedServerMessage extends ServerMessageBase {
   requestId?: string;
   payload: {
     peerId: string;
+    selfRole: ParticipantRole;
+    capabilities: {
+      canModerateMedia: boolean;
+    };
     participants: Participant[];
   };
 }
@@ -161,6 +181,16 @@ export interface RtcIceServerMessage extends ServerMessageBase {
   };
 }
 
+export interface ModerationMediaDisabledServerMessage extends ServerMessageBase {
+  type: 'moderation.media.disabled';
+  from: string;
+  requestId?: string;
+  payload: {
+    targetPeerId: string;
+    kind: ModeratedMediaKind;
+  };
+}
+
 export interface PeerLeftServerMessage extends ServerMessageBase {
   type: 'peer.left';
   payload: {
@@ -185,5 +215,6 @@ export type ServerMessage =
   | RtcOfferServerMessage
   | RtcAnswerServerMessage
   | RtcIceServerMessage
+  | ModerationMediaDisabledServerMessage
   | PeerLeftServerMessage
   | ErrorServerMessage;

@@ -14,6 +14,9 @@ import {
 } from '../src/index.js';
 
 const MAX_NEGOTIATION_ID_LENGTH = 128;
+const MAX_PEER_ID_LENGTH = 128;
+const MAX_HOST_CAPABILITY_LENGTH = 256;
+const MIN_HOST_CAPABILITY_LENGTH = 32;
 const RELAY_PAYLOAD_CASES = [
   {
     type: 'rtc.offer',
@@ -36,6 +39,16 @@ describe('client message validation', () => {
       type: 'room.join',
       roomId: 'abcd-efgh-jkmp',
       payload: { displayName: 'Ada' },
+    },
+    {
+      v: PROTOCOL_VERSION,
+      type: 'room.join',
+      roomId: 'abcd-efgh-jkmp',
+      requestId: 'join-as-host',
+      payload: {
+        displayName: 'Grace',
+        hostCapability: 'c'.repeat(MAX_HOST_CAPABILITY_LENGTH),
+      },
     },
     {
       v: PROTOCOL_VERSION,
@@ -71,6 +84,21 @@ describe('client message validation', () => {
       roomId: 'abcd-efgh-jkmp',
       to: 'peer-a',
       payload: { candidate: null },
+    },
+    {
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disable',
+      roomId: 'abcd-efgh-jkmp',
+      requestId: 'moderate-audio-1',
+      to: 'peer-a',
+      payload: { kind: 'audio' },
+    },
+    {
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disable',
+      roomId: 'abcd-efgh-jkmp',
+      to: 'p'.repeat(MAX_PEER_ID_LENGTH),
+      payload: { kind: 'video' },
     },
     {
       v: PROTOCOL_VERSION,
@@ -151,7 +179,7 @@ describe('client message validation', () => {
   );
 
   it.each([
-    [{ v: 1, type: 'room.leave', roomId: 'abcd-efgh-jkmp' }],
+    [{ v: 2, type: 'room.leave', roomId: 'abcd-efgh-jkmp' }],
     [
       {
         v: PROTOCOL_VERSION,
@@ -179,6 +207,112 @@ describe('client message validation', () => {
       },
     ],
   ])('rejects malformed messages', (message) => {
+    expect(isClientMessage(message)).toBe(false);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', ' \t '],
+    ['too-short', 'c'.repeat(MIN_HOST_CAPABILITY_LENGTH - 1)],
+    ['overlong', 'c'.repeat(MAX_HOST_CAPABILITY_LENGTH + 1)],
+    ['non-string', 42],
+  ])('rejects an %s host capability', (_case, hostCapability) => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type: 'room.join',
+      roomId: 'abcd-efgh-jkmp',
+      payload: { displayName: 'Ada', hostCapability },
+    };
+
+    expect(() => parseClientMessage(message)).toThrow('$.payload.hostCapability');
+    expect(isClientMessage(message)).toBe(false);
+  });
+
+  it('rejects unsupported room.join fields', () => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type: 'room.join',
+      roomId: 'abcd-efgh-jkmp',
+      payload: { displayName: 'Ada', hostCapability: 'proof', role: 'host' },
+    };
+
+    expect(() => parseClientMessage(message)).toThrow('$.payload.role');
+    expect(isClientMessage(message)).toBe(false);
+  });
+
+  it.each([
+    ['unknown', 'screen'],
+    ['empty', ''],
+    ['non-string', true],
+    ['missing', undefined],
+  ])('rejects an %s moderation media kind', (_case, kind) => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disable',
+      roomId: 'abcd-efgh-jkmp',
+      to: 'peer-b',
+      payload: { kind },
+    };
+
+    expect(() => parseClientMessage(message)).toThrow('$.payload.kind');
+    expect(isClientMessage(message)).toBe(false);
+  });
+
+  it.each([
+    ['blank', ' '],
+    ['overlong', 'p'.repeat(MAX_PEER_ID_LENGTH + 1)],
+  ])('rejects a %s moderation target peer id', (_case, to) => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disable',
+      roomId: 'abcd-efgh-jkmp',
+      to,
+      payload: { kind: 'audio' },
+    };
+
+    expect(() => parseClientMessage(message)).toThrow('$.to');
+    expect(isClientMessage(message)).toBe(false);
+  });
+
+  it.each([
+    [
+      'envelope',
+      {
+        v: PROTOCOL_VERSION,
+        type: 'moderation.media.disable',
+        roomId: 'abcd-efgh-jkmp',
+        from: 'spoofed-host',
+        to: 'peer-b',
+        payload: { kind: 'audio' },
+      },
+      '$.from',
+    ],
+    [
+      'payload',
+      {
+        v: PROTOCOL_VERSION,
+        type: 'moderation.media.disable',
+        roomId: 'abcd-efgh-jkmp',
+        to: 'peer-b',
+        payload: { kind: 'video', enabled: false },
+      },
+      '$.payload.enabled',
+    ],
+  ])('rejects an unsupported moderation %s field', (_case, message, path) => {
+    expect(() => parseClientMessage(message)).toThrow(path);
+    expect(isClientMessage(message)).toBe(false);
+  });
+
+  it('rejects an unsupported media-enable request', () => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.enable',
+      roomId: 'abcd-efgh-jkmp',
+      to: 'peer-b',
+      payload: { kind: 'audio' },
+    };
+
+    expect(() => parseClientMessage(message)).toThrow('$.type');
     expect(isClientMessage(message)).toBe(false);
   });
 
@@ -250,14 +384,36 @@ describe('server message validation', () => {
       roomId: 'abcd-efgh-jkmp',
       payload: {
         peerId: 'peer-a',
-        participants: [{ peerId: 'peer-b', displayName: 'Grace' }],
+        selfRole: 'host',
+        capabilities: { canModerateMedia: true },
+        participants: [{ peerId: 'peer-b', displayName: 'Grace', role: 'participant' }],
+      },
+    },
+    {
+      v: PROTOCOL_VERSION,
+      type: 'room.joined',
+      roomId: 'abcd-efgh-jkmp',
+      requestId: 'join-as-participant',
+      payload: {
+        peerId: 'p'.repeat(MAX_PEER_ID_LENGTH),
+        selfRole: 'participant',
+        capabilities: { canModerateMedia: false },
+        participants: [
+          {
+            peerId: 'h'.repeat(MAX_PEER_ID_LENGTH),
+            displayName: 'Host',
+            role: 'host',
+          },
+        ],
       },
     },
     {
       v: PROTOCOL_VERSION,
       type: 'peer.joined',
       roomId: 'abcd-efgh-jkmp',
-      payload: { participant: { peerId: 'peer-c', displayName: 'Linus' } },
+      payload: {
+        participant: { peerId: 'peer-c', displayName: 'Linus', role: 'participant' },
+      },
     },
     {
       v: PROTOCOL_VERSION,
@@ -265,6 +421,21 @@ describe('server message validation', () => {
       roomId: 'abcd-efgh-jkmp',
       from: 'peer-b',
       payload: { description: { type: 'answer', sdp: 'v=0' } },
+    },
+    {
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: 'abcd-efgh-jkmp',
+      from: 'peer-host',
+      requestId: 'moderate-video-1',
+      payload: { targetPeerId: 'peer-b', kind: 'video' },
+    },
+    {
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: 'abcd-efgh-jkmp',
+      from: 'p'.repeat(MAX_PEER_ID_LENGTH),
+      payload: { targetPeerId: 't'.repeat(MAX_PEER_ID_LENGTH), kind: 'audio' },
     },
     {
       v: PROTOCOL_VERSION,
@@ -277,6 +448,12 @@ describe('server message validation', () => {
       type: 'error',
       roomId: 'abcd-efgh-jkmp',
       payload: { code: 'ROOM_FULL', message: 'The room is full.' },
+    },
+    {
+      v: PROTOCOL_VERSION,
+      type: 'error',
+      requestId: 'moderate-video-1',
+      payload: { code: 'FORBIDDEN', message: 'Only the host can moderate media.' },
     },
   ])('accepts $type', (message) => {
     expect(parseServerMessage(message)).toEqual(message);
@@ -323,6 +500,223 @@ describe('server message validation', () => {
     expect(isServerMessage(message)).toBe(false);
   });
 
+  it.each([
+    ['invalid', 'owner'],
+    ['missing', undefined],
+  ])('rejects an %s participant role', (_case, role) => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type: 'peer.joined',
+      roomId: 'abcd-efgh-jkmp',
+      payload: {
+        participant: { peerId: 'peer-b', displayName: 'Grace', role },
+      },
+    };
+
+    expect(() => parseServerMessage(message)).toThrow('$.payload.participant.role');
+    expect(isServerMessage(message)).toBe(false);
+  });
+
+  it.each([
+    [
+      'self',
+      {
+        v: PROTOCOL_VERSION,
+        type: 'room.joined',
+        roomId: 'abcd-efgh-jkmp',
+        payload: {
+          peerId: 'p'.repeat(MAX_PEER_ID_LENGTH + 1),
+          selfRole: 'participant',
+          capabilities: { canModerateMedia: false },
+          participants: [],
+        },
+      },
+      '$.payload.peerId',
+    ],
+    [
+      'participant',
+      {
+        v: PROTOCOL_VERSION,
+        type: 'peer.joined',
+        roomId: 'abcd-efgh-jkmp',
+        payload: {
+          participant: {
+            peerId: 'p'.repeat(MAX_PEER_ID_LENGTH + 1),
+            displayName: 'Grace',
+            role: 'participant',
+          },
+        },
+      },
+      '$.payload.participant.peerId',
+    ],
+  ])('rejects an overlong %s peer id', (_case, message, path) => {
+    expect(() => parseServerMessage(message)).toThrow(path);
+    expect(isServerMessage(message)).toBe(false);
+  });
+
+  it.each([
+    ['invalid', 'owner'],
+    ['missing', undefined],
+  ])('rejects an %s self role', (_case, selfRole) => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type: 'room.joined',
+      roomId: 'abcd-efgh-jkmp',
+      payload: {
+        peerId: 'peer-a',
+        selfRole,
+        capabilities: { canModerateMedia: false },
+        participants: [],
+      },
+    };
+
+    expect(() => parseServerMessage(message)).toThrow('$.payload.selfRole');
+    expect(isServerMessage(message)).toBe(false);
+  });
+
+  it.each([
+    ['missing object', undefined, '$.payload.capabilities'],
+    ['missing flag', {}, '$.payload.capabilities.canModerateMedia'],
+    ['non-boolean flag', { canModerateMedia: 'yes' }, '$.payload.capabilities.canModerateMedia'],
+    [
+      'extra flag',
+      { canModerateMedia: true, canEnableMedia: true },
+      '$.payload.capabilities.canEnableMedia',
+    ],
+  ])('rejects room.joined capabilities with a %s', (_case, capabilities, path) => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type: 'room.joined',
+      roomId: 'abcd-efgh-jkmp',
+      payload: {
+        peerId: 'peer-a',
+        selfRole: 'participant',
+        capabilities,
+        participants: [],
+      },
+    };
+
+    expect(() => parseServerMessage(message)).toThrow(path);
+    expect(isServerMessage(message)).toBe(false);
+  });
+
+  it.each([
+    [
+      'room.joined payload',
+      {
+        v: PROTOCOL_VERSION,
+        type: 'room.joined',
+        roomId: 'abcd-efgh-jkmp',
+        payload: {
+          peerId: 'peer-a',
+          selfRole: 'host',
+          capabilities: { canModerateMedia: true },
+          participants: [],
+          hostCapability: 'leaked-proof',
+        },
+      },
+      '$.payload.hostCapability',
+    ],
+    [
+      'participant',
+      {
+        v: PROTOCOL_VERSION,
+        type: 'peer.joined',
+        roomId: 'abcd-efgh-jkmp',
+        payload: {
+          participant: {
+            peerId: 'peer-b',
+            displayName: 'Grace',
+            role: 'participant',
+            canModerateMedia: false,
+          },
+        },
+      },
+      '$.payload.participant.canModerateMedia',
+    ],
+  ])('rejects an unsupported %s field', (_case, message, path) => {
+    expect(() => parseServerMessage(message)).toThrow(path);
+    expect(isServerMessage(message)).toBe(false);
+  });
+
+  it.each([
+    ['unknown', 'screen'],
+    ['empty', ''],
+    ['non-string', false],
+    ['missing', undefined],
+  ])('rejects an %s disabled-media kind', (_case, kind) => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: 'abcd-efgh-jkmp',
+      from: 'peer-host',
+      payload: { targetPeerId: 'peer-b', kind },
+    };
+
+    expect(() => parseServerMessage(message)).toThrow('$.payload.kind');
+    expect(isServerMessage(message)).toBe(false);
+  });
+
+  it.each([
+    ['blank sender', ' ', 'peer-b', '$.from'],
+    ['overlong sender', 'p'.repeat(MAX_PEER_ID_LENGTH + 1), 'peer-b', '$.from'],
+    ['blank target', 'peer-host', ' ', '$.payload.targetPeerId'],
+    ['overlong target', 'peer-host', 'p'.repeat(MAX_PEER_ID_LENGTH + 1), '$.payload.targetPeerId'],
+  ])('rejects a disabled-media message with a %s', (_case, from, targetPeerId, path) => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: 'abcd-efgh-jkmp',
+      from,
+      payload: { targetPeerId, kind: 'audio' },
+    };
+
+    expect(() => parseServerMessage(message)).toThrow(path);
+    expect(isServerMessage(message)).toBe(false);
+  });
+
+  it.each([
+    [
+      'envelope',
+      {
+        v: PROTOCOL_VERSION,
+        type: 'moderation.media.disabled',
+        roomId: 'abcd-efgh-jkmp',
+        from: 'peer-host',
+        to: 'peer-b',
+        payload: { targetPeerId: 'peer-b', kind: 'video' },
+      },
+      '$.to',
+    ],
+    [
+      'payload',
+      {
+        v: PROTOCOL_VERSION,
+        type: 'moderation.media.disabled',
+        roomId: 'abcd-efgh-jkmp',
+        from: 'peer-host',
+        payload: { targetPeerId: 'peer-b', kind: 'video', enabled: false },
+      },
+      '$.payload.enabled',
+    ],
+  ])('rejects an unsupported disabled-media %s field', (_case, message, path) => {
+    expect(() => parseServerMessage(message)).toThrow(path);
+    expect(isServerMessage(message)).toBe(false);
+  });
+
+  it('rejects an unsupported media-enabled event', () => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.enabled',
+      roomId: 'abcd-efgh-jkmp',
+      from: 'peer-host',
+      payload: { targetPeerId: 'peer-b', kind: 'audio' },
+    };
+
+    expect(() => parseServerMessage(message)).toThrow('$.type');
+    expect(isServerMessage(message)).toBe(false);
+  });
+
   it('rejects an unknown signaling error code', () => {
     expect(
       isServerMessage({
@@ -340,9 +734,12 @@ describe('server message validation', () => {
       roomId: 'abcd-efgh-jkmp',
       payload: {
         peerId: 'peer-a',
+        selfRole: 'participant',
+        capabilities: { canModerateMedia: false },
         participants: Array.from({ length: 400 }, (_, index) => ({
           peerId: `peer-${index}`,
           displayName: '가'.repeat(64),
+          role: 'participant',
         })),
       },
     };

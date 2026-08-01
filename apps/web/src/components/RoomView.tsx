@@ -10,6 +10,7 @@ import {
   MicIcon,
   MicOffIcon,
   PhoneOffIcon,
+  ScreenShareIcon,
   SendIcon,
   UsersIcon,
 } from './Icons';
@@ -33,11 +34,18 @@ interface RoomViewProps {
   audioEnabled: boolean;
   videoAvailable: boolean;
   videoEnabled: boolean;
+  screenShareAvailable: boolean;
+  screenSharing: boolean;
+  canModerateMedia: boolean;
+  moderationNotice?: string | undefined;
   peerRecoveryMessage?: string | undefined;
   mediaWarning?: string | undefined;
   errorMessage?: string | undefined;
   onToggleAudio: () => void;
   onToggleVideo: () => void;
+  onToggleScreenShare: () => void;
+  onDisableParticipantAudio: (peerId: string) => void;
+  onDisableParticipantVideo: (peerId: string) => void;
   onSendMessage: (text: string) => boolean;
   onReconnect: () => void;
   onLeave: () => void;
@@ -157,11 +165,18 @@ export function RoomView({
   audioEnabled,
   videoAvailable,
   videoEnabled,
+  screenShareAvailable,
+  screenSharing,
+  canModerateMedia,
+  moderationNotice,
   peerRecoveryMessage,
   mediaWarning,
   errorMessage,
   onToggleAudio,
   onToggleVideo,
+  onToggleScreenShare,
+  onDisableParticipantAudio,
+  onDisableParticipantVideo,
   onSendMessage,
   onReconnect,
   onLeave,
@@ -281,7 +296,13 @@ export function RoomView({
       <main className="room-workspace">
         <section className={`video-stage video-stage--${gridSize}`} aria-label="스터디 참가자 영상">
           {participants.map((participant) => (
-            <VideoTile key={participant.peerId} participant={participant} />
+            <VideoTile
+              key={participant.peerId}
+              participant={participant}
+              canModerateMedia={canModerateMedia}
+              onDisableAudio={onDisableParticipantAudio}
+              onDisableVideo={onDisableParticipantVideo}
+            />
           ))}
 
           {participants.length === 1 && isActive ? (
@@ -321,7 +342,10 @@ export function RoomView({
             </div>
           ) : null}
 
-          {peerRecoveryMessage || mediaWarning || (errorMessage && !terminalConnectionError) ? (
+          {peerRecoveryMessage ||
+          moderationNotice ||
+          mediaWarning ||
+          (errorMessage && !terminalConnectionError) ? (
             <div className="room-notice-stack">
               {peerRecoveryMessage ? (
                 <div className="room-notice room-notice--warning" role="alert">
@@ -339,6 +363,11 @@ export function RoomView({
               {mediaWarning ? (
                 <p className="room-notice room-notice--warning" role="status">
                   {mediaWarning}
+                </p>
+              ) : null}
+              {moderationNotice ? (
+                <p className="room-notice room-notice--moderation" role="status">
+                  {moderationNotice}
                 </p>
               ) : null}
               {errorMessage && !terminalConnectionError ? (
@@ -440,18 +469,37 @@ export function RoomView({
         <button
           className={`control-button${videoEnabled ? '' : ' control-button--off'}`}
           type="button"
-          disabled={!videoAvailable}
+          disabled={!videoAvailable || screenSharing}
           aria-label={
-            !videoAvailable
-              ? '사용 가능한 카메라 없음'
-              : videoEnabled
-                ? '카메라 끄기'
-                : '카메라 켜기'
+            screenSharing
+              ? '화면 공유 중에는 카메라를 변경할 수 없음'
+              : !videoAvailable
+                ? '사용 가능한 카메라 없음'
+                : videoEnabled
+                  ? '카메라 끄기'
+                  : '카메라 켜기'
           }
           onClick={onToggleVideo}
         >
           {videoEnabled ? <CameraIcon /> : <CameraOffIcon />}
           <span>{!videoAvailable ? '카메라 없음' : videoEnabled ? '카메라' : '카메라 꺼짐'}</span>
+        </button>
+        <button
+          className={`control-button${screenSharing ? ' control-button--active' : ''}`}
+          type="button"
+          disabled={!screenShareAvailable || !isActive}
+          aria-label={
+            !screenShareAvailable
+              ? '이 브라우저는 화면 공유를 지원하지 않음'
+              : screenSharing
+                ? '화면 공유 중지'
+                : '화면 공유 시작'
+          }
+          aria-pressed={screenSharing}
+          onClick={onToggleScreenShare}
+        >
+          <ScreenShareIcon />
+          <span>{screenSharing ? '공유 중지' : '화면 공유'}</span>
         </button>
         <button
           className={`control-button${chatOpen ? ' control-button--active' : ''}`}

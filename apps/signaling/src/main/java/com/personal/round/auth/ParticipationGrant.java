@@ -2,6 +2,7 @@ package com.personal.round.auth;
 
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 
 public record ParticipationGrant(
 		String subject,
@@ -29,6 +30,11 @@ public record ParticipationGrant(
 	@Override
 	public boolean allows(String candidateRoomId) {
 		return roomId.equals(candidateRoomId);
+	}
+
+	@Override
+	public Optional<Role> roleFor(String hostCapability) {
+		return hostCapability == null ? Optional.of(role) : Optional.empty();
 	}
 
 	@Override

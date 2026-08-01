@@ -9,14 +9,17 @@ import org.springframework.web.socket.WebSocketSession;
 public final class RoomAccessPolicy {
 
 	private final RoundAuthProperties properties;
+	private final StandaloneRoomAccess standaloneRoomAccess;
 
 	public RoomAccessPolicy(RoundAuthProperties properties) {
 		this.properties = properties;
+		this.standaloneRoomAccess = new StandaloneRoomAccess(
+				properties.standaloneHostTokenSha256());
 	}
 
 	public Optional<RoomAccess> resolve(WebSocketSession session) {
 		if (!properties.batonMode()) {
-			return Optional.of(StandaloneRoomAccess.INSTANCE);
+			return Optional.of(standaloneRoomAccess);
 		}
 		Map<String, Object> attributes = session.getAttributes();
 		if (attributes == null) {

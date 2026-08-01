@@ -1,10 +1,13 @@
 package com.personal.round.auth;
 
 import java.util.concurrent.TimeUnit;
+import java.util.Optional;
 
 public sealed interface RoomAccess permits ParticipationGrant, StandaloneRoomAccess {
 
 	boolean allows(String roomId);
+
+	Optional<ParticipationGrant.Role> roleFor(String hostCapability);
 
 	Lease openLease(long currentEpochMillis, long currentMonotonicNanos);
 

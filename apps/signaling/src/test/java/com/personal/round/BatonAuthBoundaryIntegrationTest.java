@@ -242,7 +242,7 @@ class BatonAuthBoundaryIntegrationTest {
 					.doesNotContain(MATCHING_TOKEN, "member-42");
 
 			session.sendMessage(new TextMessage("""
-					{"v":2,"type":"room.join","roomId":"%s","requestId":"join-1","payload":{"displayName":"스터디원"}}
+					{"v":3,"type":"room.join","roomId":"%s","requestId":"join-1","payload":{"displayName":"스터디원"}}
 					""".formatted(ROOM_ID).trim()));
 
 			JsonNode joined = objectMapper.readTree(responseMessage.get(2, TimeUnit.SECONDS));
@@ -289,7 +289,7 @@ class BatonAuthBoundaryIntegrationTest {
 				MATCHING_TOKEN);
 		try {
 			session.sendMessage(new TextMessage("""
-					{"v":2,"type":"room.join","roomId":"%s","requestId":"join-wrong-room","payload":{"displayName":"스터디원"}}
+					{"v":3,"type":"room.join","roomId":"%s","requestId":"join-wrong-room","payload":{"displayName":"스터디원"}}
 					""".formatted(OTHER_ROOM_ID).trim()));
 
 			JsonNode rejected = objectMapper.readTree(

@@ -69,17 +69,21 @@ describe('App pre-join boundary', () => {
       {
         peerId: 'self',
         displayName: 'Jin',
+        role: 'host',
         isLocal: true,
         audioEnabled: true,
         videoEnabled: true,
+        videoSource: 'camera',
         connectionState: 'connected',
       },
       {
         peerId: 'peer-a',
         displayName: 'Ara',
+        role: 'participant',
         isLocal: false,
         audioEnabled: false,
         videoEnabled: false,
+        videoSource: 'camera',
         connectionState: 'failed',
       },
     ]);
@@ -113,6 +117,17 @@ describe('App pre-join boundary', () => {
     expect(warning).toContain('너무 많은 데이터');
     expect(warning).toContain('통화는 유지');
     expect(warning).not.toContain('internal-peer-id');
+  });
+
+  it('describes screen-share sender recovery without exposing internal details', () => {
+    const warning = roomWarningMessage({
+      code: 'screen-share-sender-recovery',
+      message: 'internal recovery detail',
+    });
+
+    expect(warning).toContain('자동으로 복구');
+    expect(warning).toContain('통화는 유지');
+    expect(warning).not.toContain('internal recovery detail');
   });
 
   it('explains an ended local media track with an explicit recovery action', () => {

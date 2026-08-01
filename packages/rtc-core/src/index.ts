@@ -17,6 +17,7 @@ export {
   type ChatDeliveryState,
   type ChatMessage,
   type LocalMediaSnapshot,
+  type ModerationNotice,
   type ParticipantSnapshot,
   type PeerConnectionStatus,
   type RoomIssue,
@@ -25,4 +26,5 @@ export {
   type RoomSessionRecoveryOptions,
   type RoomSessionSnapshot,
   type RoomSessionStatus,
+  type VideoSource,
 } from './room-session.js';

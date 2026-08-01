@@ -54,6 +54,10 @@ class SignalingServiceTest {
 
 	private static final String ROOM_ID = "abcd-efgh-jkmp";
 	private static final String OTHER_ROOM_ID = "qrst-uvwx-yz23";
+	private static final String HOST_TOKEN =
+			"round-test-only-host-capability-not-a-secret";
+	private static final String HOST_TOKEN_SHA256 =
+			"de7ca4487720742a8acf93c4bd14b590f2753d370b5c2f13cc0cc09590e183ef";
 
 	private ObjectMapper objectMapper;
 	private ServerMessageEncoder serverMessageEncoder;
@@ -199,6 +203,242 @@ class SignalingServiceTest {
 		}
 		finally {
 			batonService.stop();
+		}
+	}
+
+	@Test
+	void standaloneHostDisablesOnlyARemoteParticipantsMedia() throws Exception {
+		service.stop();
+		service = newService(properties(6), meterRegistry, standaloneAuth(HOST_TOKEN_SHA256));
+		service.start();
+		TestPeer host = peer("host-session");
+		TestPeer participant = peer("participant-session");
+		connect(host, participant);
+
+		service.handle(
+				host.session(),
+				new ClientMessage.Join(ROOM_ID, "join-host", "Host", HOST_TOKEN));
+		JsonNode hostJoined = host.nextJson();
+		String hostPeerId = hostJoined.at("/payload/peerId").asString();
+		assertThat(hostJoined.at("/payload/selfRole").asString()).isEqualTo("host");
+		assertThat(hostJoined.at("/payload/capabilities/canModerateMedia").asBoolean()).isTrue();
+
+		service.handle(participant.session(), join("Participant"));
+		JsonNode participantJoined = participant.nextJson();
+		String participantPeerId = participantJoined.at("/payload/peerId").asString();
+		assertThat(participantJoined.at("/payload/selfRole").asString()).isEqualTo("participant");
+		assertThat(participantJoined.at("/payload/participants/0/role").asString())
+				.isEqualTo("host");
+		assertThat(host.nextJson().at("/payload/participant/role").asString())
+				.isEqualTo("participant");
+
+		service.handle(
+				host.session(),
+				new ClientMessage.Moderation(
+						ROOM_ID,
+						"moderate-audio",
+						participantPeerId,
+						ClientMessage.MediaKind.AUDIO));
+
+		JsonNode command = participant.nextJson();
+		assertThat(command.get("type").asString()).isEqualTo("moderation.media.disabled");
+		assertThat(command.get("from").asString()).isEqualTo(hostPeerId);
+		assertThat(command.get("requestId").asString()).isEqualTo("moderate-audio");
+		assertThat(command.at("/payload/targetPeerId").asString())
+				.isEqualTo(participantPeerId);
+		assertThat(command.at("/payload/kind").asString()).isEqualTo("audio");
+		assertThat(host.hasNoTextMessageFor(100)).isTrue();
+
+		service.handle(
+				participant.session(),
+				new ClientMessage.Moderation(
+						ROOM_ID,
+						"participant-attempt",
+						hostPeerId,
+						ClientMessage.MediaKind.VIDEO));
+		assertError(participant.nextJson(), "FORBIDDEN");
+	}
+
+	@Test
+	void rejectsAnInvalidStandaloneHostCapabilityWithoutJoiningTheRoom() throws Exception {
+		service.stop();
+		service = newService(properties(6), meterRegistry, standaloneAuth(HOST_TOKEN_SHA256));
+		service.start();
+		TestPeer impostor = peer("impostor-session");
+		connect(impostor);
+
+		service.handle(
+				impostor.session(),
+				new ClientMessage.Join(ROOM_ID, "join-impostor", "Impostor", "wrong-token"));
+
+		assertError(impostor.nextJson(), "FORBIDDEN");
+		assertThat(service.participantCount(ROOM_ID)).isZero();
+		assertThat(service.roomCount()).isZero();
+		assertThat(meterRegistry.get("round.signaling.joins.rejected")
+				.tag("reason", "invalid_host_capability")
+				.counter()
+				.count())
+				.isOne();
+	}
+
+	@Test
+	void rejectsModerationOutsideTheAuthorizedTargetBoundary() throws Exception {
+		service.stop();
+		service = newService(properties(6), meterRegistry, standaloneAuth(HOST_TOKEN_SHA256));
+		service.start();
+		TestPeer host = peer("boundary-host");
+		TestPeer secondHost = peer("boundary-second-host");
+		TestPeer participant = peer("boundary-participant");
+		TestPeer otherRoom = peer("boundary-other-room");
+		TestPeer unjoined = peer("boundary-unjoined");
+		connect(host, secondHost, participant, otherRoom, unjoined);
+
+		service.handle(
+				host.session(),
+				new ClientMessage.Join(ROOM_ID, "join-host", "Host", HOST_TOKEN));
+		String hostPeerId = host.nextJson().at("/payload/peerId").asString();
+
+		service.handle(
+				secondHost.session(),
+				new ClientMessage.Join(ROOM_ID, "join-second-host", "Second host", HOST_TOKEN));
+		String secondHostPeerId = secondHost.nextJson().at("/payload/peerId").asString();
+		host.nextJson();
+
+		service.handle(participant.session(), join("Participant"));
+		String participantPeerId = participant.nextJson().at("/payload/peerId").asString();
+		host.nextJson();
+		secondHost.nextJson();
+
+		service.handle(
+				otherRoom.session(),
+				new ClientMessage.Join(OTHER_ROOM_ID, "join-other-room", "Other room"));
+		String otherRoomPeerId = otherRoom.nextJson().at("/payload/peerId").asString();
+
+		service.handle(
+				unjoined.session(),
+				new ClientMessage.Moderation(
+						ROOM_ID,
+						"before-join",
+						participantPeerId,
+						ClientMessage.MediaKind.AUDIO));
+		assertError(unjoined.nextJson(), "NOT_IN_ROOM");
+
+		service.handle(
+				host.session(),
+				new ClientMessage.Moderation(
+						OTHER_ROOM_ID,
+						"wrong-room",
+						participantPeerId,
+						ClientMessage.MediaKind.AUDIO));
+		assertError(host.nextJson(), "ROOM_MISMATCH");
+
+		service.handle(
+				host.session(),
+				new ClientMessage.Moderation(
+						ROOM_ID,
+						"self-target",
+						hostPeerId,
+						ClientMessage.MediaKind.VIDEO));
+		assertError(host.nextJson(), "TARGET_SELF");
+
+		for (String target : List.of("missing-peer", otherRoomPeerId)) {
+			service.handle(
+					host.session(),
+					new ClientMessage.Moderation(
+							ROOM_ID,
+							"missing-target",
+							target,
+							ClientMessage.MediaKind.AUDIO));
+			assertError(host.nextJson(), "TARGET_NOT_FOUND");
+		}
+
+		service.handle(
+				host.session(),
+				new ClientMessage.Moderation(
+						ROOM_ID,
+						"host-target",
+						secondHostPeerId,
+						ClientMessage.MediaKind.VIDEO));
+		assertError(host.nextJson(), "FORBIDDEN");
+	}
+
+	@Test
+	void clearsStandaloneHostRoleBeforeRejoiningWithoutTheCapability() throws Exception {
+		service.stop();
+		service = newService(properties(6), meterRegistry, standaloneAuth(HOST_TOKEN_SHA256));
+		service.start();
+		TestPeer peer = peer("rejoining-host");
+		connect(peer);
+
+		service.handle(
+				peer.session(),
+				new ClientMessage.Join(ROOM_ID, "join-host", "Host", HOST_TOKEN));
+		assertThat(peer.nextJson().at("/payload/selfRole").asString()).isEqualTo("host");
+
+		service.handle(peer.session(), new ClientMessage.Leave(ROOM_ID, "leave-host"));
+		service.handle(peer.session(), new ClientMessage.Join(ROOM_ID, "join-participant", "Host"));
+		JsonNode rejoined = peer.nextJson();
+		assertThat(rejoined.at("/payload/selfRole").asString()).isEqualTo("participant");
+		assertThat(rejoined.at("/payload/capabilities/canModerateMedia").asBoolean()).isFalse();
+	}
+
+	@Test
+	void acceptsModerationOnlyFromTheRoleInAVerifiedBatonGrant() throws Exception {
+		SimpleMeterRegistry batonRegistry = new SimpleMeterRegistry();
+		SignalingService batonService = newBatonService(batonRegistry);
+		ConnectionAdmissionPolicy batonAdmissionPolicy = admissionPolicy(properties(6));
+		ParticipationGrant hostGrant = grantFor(
+				ROOM_ID,
+				"baton-host",
+				"baton-host-token",
+				clock.instant().plusSeconds(120),
+				ParticipationGrant.Role.HOST);
+		ParticipationGrant participantGrant = grantFor(
+				ROOM_ID,
+				"baton-participant",
+				"baton-participant-token",
+				clock.instant().plusSeconds(120));
+		batonService.start();
+		try {
+			TestPeer host = peer("baton-host-session");
+			TestPeer participant = peer("baton-participant-session");
+			attachGrantReservation(
+					host,
+					batonAdmissionPolicy,
+					new InetSocketAddress("192.0.2.90", 41_020),
+					hostGrant);
+			attachGrantReservation(
+					participant,
+					batonAdmissionPolicy,
+					new InetSocketAddress("192.0.2.91", 41_021),
+					participantGrant);
+			assertThat(batonService.connect(host.session())).isTrue();
+			assertThat(batonService.connect(participant.session())).isTrue();
+
+			batonService.handle(host.session(), join("BATON host"));
+			JsonNode hostJoined = host.nextJson();
+			String hostPeerId = hostJoined.at("/payload/peerId").asString();
+			assertThat(hostJoined.at("/payload/selfRole").asString()).isEqualTo("host");
+
+			batonService.handle(participant.session(), join("BATON participant"));
+			String participantPeerId = participant.nextJson().at("/payload/peerId").asString();
+			host.nextJson();
+
+			batonService.handle(
+					host.session(),
+					new ClientMessage.Moderation(
+							ROOM_ID,
+							"baton-moderation",
+							participantPeerId,
+							ClientMessage.MediaKind.VIDEO));
+			JsonNode command = participant.nextJson();
+			assertThat(command.get("type").asString()).isEqualTo("moderation.media.disabled");
+			assertThat(command.get("from").asString()).isEqualTo(hostPeerId);
+			assertThat(host.hasNoTextMessageFor(100)).isTrue();
+		}
+		finally {
+			batonService.stop();
+			assertThat(batonAdmissionPolicy.activeReservationCount()).isZero();
 		}
 	}
 
@@ -1998,11 +2238,18 @@ class SignalingServiceTest {
 	private SignalingService newService(
 			SignalingProperties properties,
 			SimpleMeterRegistry registry) {
+		return newService(properties, registry, standaloneAuth());
+	}
+
+	private SignalingService newService(
+			SignalingProperties properties,
+			SimpleMeterRegistry registry,
+			RoundAuthProperties authProperties) {
 		return new SignalingService(
 				serverMessageEncoder,
 				properties,
 				new SignalingMetrics(registry),
-				new RoomAccessPolicy(standaloneAuth()),
+				new RoomAccessPolicy(authProperties),
 				outboundExecutor,
 				clock,
 				monotonicTicker);
@@ -2020,12 +2267,17 @@ class SignalingServiceTest {
 	}
 
 	private static RoundAuthProperties standaloneAuth() {
+		return standaloneAuth(null);
+	}
+
+	private static RoundAuthProperties standaloneAuth(String hostTokenSha256) {
 		return new RoundAuthProperties(
 				RoundAuthProperties.Mode.STANDALONE,
 				"__Secure-round_access",
 				null,
 				"round",
 				null,
+				hostTokenSha256,
 				Duration.ofMinutes(5));
 	}
 
@@ -2036,6 +2288,7 @@ class SignalingServiceTest {
 				"https://baton.example/oauth2",
 				"round",
 				"https://baton.example/oauth2/jwks",
+				null,
 				Duration.ofMinutes(5));
 	}
 
@@ -2052,11 +2305,25 @@ class SignalingServiceTest {
 			String subject,
 			String tokenId,
 			Instant expiresAt) {
+		return grantFor(
+				roomId,
+				subject,
+				tokenId,
+				expiresAt,
+				ParticipationGrant.Role.PARTICIPANT);
+	}
+
+	private ParticipationGrant grantFor(
+			String roomId,
+			String subject,
+			String tokenId,
+			Instant expiresAt,
+			ParticipationGrant.Role role) {
 		return new ParticipationGrant(
 				subject,
 				"study-1",
 				roomId,
-				ParticipationGrant.Role.PARTICIPANT,
+				role,
 				tokenId,
 				clock.instant().minusSeconds(1),
 				expiresAt);

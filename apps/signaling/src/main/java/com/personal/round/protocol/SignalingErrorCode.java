@@ -8,5 +8,6 @@ public enum SignalingErrorCode {
 	ROOM_MISMATCH,
 	TARGET_NOT_FOUND,
 	TARGET_SELF,
+	FORBIDDEN,
 	INTERNAL_ERROR
 }

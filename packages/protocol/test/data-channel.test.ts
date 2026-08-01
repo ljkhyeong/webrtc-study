@@ -25,6 +25,13 @@ describe('DataChannel message validation', () => {
       type: 'participant.media',
       audioEnabled: true,
       videoEnabled: false,
+      videoSource: 'camera',
+    },
+    {
+      type: 'participant.media',
+      audioEnabled: true,
+      videoEnabled: true,
+      videoSource: 'screen',
     },
   ])('round-trips $type', (message) => {
     expect(parsePeerDataMessage(serializePeerDataMessage(message))).toEqual(message);
@@ -42,6 +49,29 @@ describe('DataChannel message validation', () => {
   it('rejects malformed JSON and unsupported message types', () => {
     expect(() => parsePeerDataMessage('{')).toThrow(ProtocolValidationError);
     expect(() => parsePeerDataMessage('{"type":"chat.unknown"}')).toThrow(ProtocolValidationError);
+  });
+
+  it.each([
+    {
+      type: 'participant.media',
+      audioEnabled: true,
+      videoEnabled: false,
+    },
+    {
+      type: 'participant.media',
+      audioEnabled: true,
+      videoEnabled: false,
+      videoSource: 'window',
+    },
+    {
+      type: 'participant.media',
+      audioEnabled: true,
+      videoEnabled: false,
+      videoSource: 'screen',
+      extra: true,
+    },
+  ])('rejects an invalid participant media source', (message) => {
+    expect(() => parsePeerDataMessage(JSON.stringify(message))).toThrow(ProtocolValidationError);
   });
 
   it('rejects a raw frame before parsing when it exceeds the UTF-8 budget', () => {

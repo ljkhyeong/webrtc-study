@@ -134,6 +134,7 @@ class WebSocketConfigTest {
 				null,
 				"round",
 				null,
+				null,
 				Duration.ofMinutes(5));
 	}
 
@@ -144,6 +145,7 @@ class WebSocketConfigTest {
 				"https://baton.example/oauth2",
 				"round",
 				"https://baton.example/oauth2/jwks",
+				null,
 				Duration.ofMinutes(5));
 	}
 }

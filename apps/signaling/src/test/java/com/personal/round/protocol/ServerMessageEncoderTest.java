@@ -2,6 +2,7 @@ package com.personal.round.protocol;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.protocol.ServerMessageEncoder.Participant;
 import java.util.Arrays;
 import java.util.List;
@@ -29,27 +30,29 @@ class ServerMessageEncoderTest {
 				ROOM_ID,
 				"join-42",
 				"peer-self",
+				ParticipationGrant.Role.HOST,
 				List.of(
-						new Participant("peer-ada", "Ada"),
-						new Participant("peer-grace", "Grace")))
+						new Participant("peer-ada", "Ada", ParticipationGrant.Role.HOST),
+						new Participant("peer-grace", "Grace", ParticipationGrant.Role.PARTICIPANT)))
 				.getPayload())
 				.isEqualTo(
-						"{\"v\":2,\"type\":\"room.joined\",\"roomId\":\"abcd-efgh-jkmp\","
+						"{\"v\":3,\"type\":\"room.joined\",\"roomId\":\"abcd-efgh-jkmp\","
 								+ "\"requestId\":\"join-42\",\"payload\":{\"peerId\":\"peer-self\","
-								+ "\"participants\":[{\"peerId\":\"peer-ada\",\"displayName\":\"Ada\"},"
-								+ "{\"peerId\":\"peer-grace\",\"displayName\":\"Grace\"}]}}");
+								+ "\"selfRole\":\"host\",\"capabilities\":{\"canModerateMedia\":true},"
+								+ "\"participants\":[{\"peerId\":\"peer-ada\",\"displayName\":\"Ada\",\"role\":\"host\"},"
+								+ "{\"peerId\":\"peer-grace\",\"displayName\":\"Grace\",\"role\":\"participant\"}]}}");
 	}
 
 	@Test
 	void encodesPeerJoined() {
 		assertThat(encoder.peerJoined(
 				ROOM_ID,
-				new Participant("peer-grace", "Grace"))
+				new Participant("peer-grace", "Grace", ParticipationGrant.Role.PARTICIPANT))
 				.getPayload())
 				.isEqualTo(
-						"{\"v\":2,\"type\":\"peer.joined\",\"roomId\":\"abcd-efgh-jkmp\","
+						"{\"v\":3,\"type\":\"peer.joined\",\"roomId\":\"abcd-efgh-jkmp\","
 								+ "\"payload\":{\"participant\":{\"peerId\":\"peer-grace\","
-								+ "\"displayName\":\"Grace\"}}}");
+								+ "\"displayName\":\"Grace\",\"role\":\"participant\"}}}");
 	}
 
 	@Test
@@ -60,7 +63,7 @@ class ServerMessageEncoderTest {
 
 		assertThat(encoder.relay("rtc.offer", ROOM_ID, "peer-grace", payload).getPayload())
 				.isEqualTo(
-						"{\"v\":2,\"type\":\"rtc.offer\",\"roomId\":\"abcd-efgh-jkmp\","
+						"{\"v\":3,\"type\":\"rtc.offer\",\"roomId\":\"abcd-efgh-jkmp\","
 								+ "\"from\":\"peer-grace\",\"payload\":{\"negotiationId\":\"negotiation-42\","
 								+ "\"description\":{\"type\":\"offer\",\"sdp\":\"v=0\"}}}");
 	}
@@ -69,7 +72,7 @@ class ServerMessageEncoderTest {
 	void encodesPeerLeft() {
 		assertThat(encoder.peerLeft(ROOM_ID, "peer-grace").getPayload())
 				.isEqualTo(
-						"{\"v\":2,\"type\":\"peer.left\",\"roomId\":\"abcd-efgh-jkmp\","
+						"{\"v\":3,\"type\":\"peer.left\",\"roomId\":\"abcd-efgh-jkmp\","
 								+ "\"payload\":{\"peerId\":\"peer-grace\"}}");
 	}
 
@@ -82,7 +85,7 @@ class ServerMessageEncoderTest {
 				"relay-42")
 				.getPayload())
 				.isEqualTo(
-						"{\"v\":2,\"type\":\"error\",\"roomId\":\"abcd-efgh-jkmp\","
+						"{\"v\":3,\"type\":\"error\",\"roomId\":\"abcd-efgh-jkmp\","
 								+ "\"requestId\":\"relay-42\",\"payload\":{\"code\":\"TARGET_NOT_FOUND\","
 								+ "\"message\":\"The target peer is not in this room.\"}}");
 
@@ -93,8 +96,23 @@ class ServerMessageEncoderTest {
 				null)
 				.getPayload())
 				.isEqualTo(
-						"{\"v\":2,\"type\":\"error\",\"payload\":{\"code\":\"INVALID_MESSAGE\","
+						"{\"v\":3,\"type\":\"error\",\"payload\":{\"code\":\"INVALID_MESSAGE\","
 								+ "\"message\":\"Malformed JSON.\"}}");
+	}
+
+	@Test
+	void encodesServerOwnedModerationCommandForActorAndTarget() {
+		assertThat(encoder.moderationMediaDisabled(
+				ROOM_ID,
+				"moderate-1",
+				"peer-host",
+				"peer-member",
+				ClientMessage.MediaKind.VIDEO).getPayload())
+				.isEqualTo(
+						"{\"v\":3,\"type\":\"moderation.media.disabled\","
+								+ "\"roomId\":\"abcd-efgh-jkmp\",\"from\":\"peer-host\","
+								+ "\"requestId\":\"moderate-1\",\"payload\":{"
+								+ "\"targetPeerId\":\"peer-member\",\"kind\":\"video\"}}");
 	}
 
 	@Test
@@ -108,6 +126,7 @@ class ServerMessageEncoderTest {
 						"ROOM_MISMATCH",
 						"TARGET_NOT_FOUND",
 						"TARGET_SELF",
+						"FORBIDDEN",
 						"INTERNAL_ERROR");
 	}
 }

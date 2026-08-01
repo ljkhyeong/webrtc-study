@@ -11,9 +11,11 @@ import {
   type ChatAckDataMessage,
   type ChatDataMessage,
   type ClientMessage,
+  type ModeratedMediaKind,
   type OfferDescription,
   type Participant,
   type ParticipantMediaDataMessage,
+  type ParticipantRole,
   type PeerDataMessage,
   type SerializedIceCandidate,
   type ServerMessage,
@@ -43,15 +45,27 @@ export interface LocalMediaSnapshot {
   readonly audioEnabled: boolean;
   readonly videoAvailable: boolean;
   readonly videoEnabled: boolean;
+  readonly videoSource: VideoSource;
 }
+
+export type VideoSource = ParticipantMediaDataMessage['videoSource'];
 
 export interface ParticipantSnapshot {
   readonly peerId: string;
   readonly displayName: string;
+  readonly role: ParticipantRole;
   readonly isLocal: boolean;
   readonly connectionState: PeerConnectionStatus;
   readonly audioEnabled: boolean;
   readonly videoEnabled: boolean;
+  readonly videoSource: VideoSource;
+}
+
+export interface ModerationNotice {
+  readonly id: string;
+  readonly sequence: number;
+  readonly fromPeerId: string;
+  readonly kind: ModeratedMediaKind;
 }
 
 export type ChatDeliveryState = 'pending' | 'sent' | 'partial' | 'failed' | 'received';
@@ -70,9 +84,14 @@ export interface RoomSessionSnapshot {
   readonly roomId: string;
   readonly status: RoomSessionStatus;
   readonly selfId: string | null;
+  readonly selfRole: ParticipantRole | null;
+  readonly canModerateMedia: boolean;
+  readonly screenShareAvailable: boolean;
+  readonly screenSharing: boolean;
   readonly participants: readonly ParticipantSnapshot[];
   readonly localMedia: LocalMediaSnapshot;
   readonly messages: readonly ChatMessage[];
+  readonly lastModerationNotice: ModerationNotice | null;
   readonly warning: RoomIssue | null;
   readonly error: RoomIssue | null;
 }
@@ -94,6 +113,8 @@ export interface RoomSessionOptions {
   readonly roomId: string;
   readonly displayName: string;
   readonly signalingUrl: string;
+  /** Optional standalone proof forwarded only in `room.join`. */
+  readonly hostCapability?: string;
   /**
    * A stream transferred from pre-join. Passing `null` explicitly joins
    * without requesting browser media; omitting the option keeps legacy
@@ -117,7 +138,8 @@ export interface RoomSessionOptions {
   readonly peerConnectionFactory?: (
     configuration: RTCConfiguration | undefined,
   ) => RTCPeerConnection;
-  readonly mediaDevices?: Pick<MediaDevices, 'getUserMedia'>;
+  readonly mediaDevices?: Pick<MediaDevices, 'getUserMedia'> &
+    Partial<Pick<MediaDevices, 'getDisplayMedia'>>;
   readonly mediaStreamFactory?: () => MediaStream;
   readonly now?: () => number;
   readonly createId?: () => string;
@@ -126,15 +148,18 @@ export interface RoomSessionOptions {
 interface MutableParticipant {
   peerId: string;
   displayName: string;
+  role: ParticipantRole;
   isLocal: boolean;
   connectionState: PeerConnectionStatus;
   audioEnabled: boolean;
   videoEnabled: boolean;
+  videoSource: VideoSource;
 }
 
 interface PeerContext {
   readonly peerId: string;
   readonly connection: RTCPeerConnection;
+  videoSender: RTCRtpSender | null;
   readonly pendingCandidates: (SerializedIceCandidate | null)[];
   readonly pendingLocalCandidates: (SerializedIceCandidate | null)[];
   readonly localIceUsernameFragments: Set<string>;
@@ -151,6 +176,7 @@ interface PeerContext {
   inboundDataWindowExpiryTimer: TimerHandle | null;
   offerRetryAttempts: number;
   connectionAttempt: number;
+  pendingLocalRenegotiation: boolean;
   negotiationId: string | null;
   readonly retiredNegotiationIds: Set<string>;
   channel: RTCDataChannel | null;
@@ -206,6 +232,13 @@ interface PendingChatMessage {
   readonly timeout: TimerHandle;
   sentOnCurrentChannel: boolean;
   everSent: boolean;
+}
+
+interface ScreenSenderUpdate {
+  readonly peer: PeerContext;
+  readonly sender: RTCRtpSender;
+  readonly previousTrack: MediaStreamTrack | null;
+  readonly added: boolean;
 }
 
 type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
@@ -370,6 +403,8 @@ function safeSignalingErrorMessage(code: SignalingErrorCode): string {
       return 'The signaling target is no longer in the room.';
     case 'TARGET_SELF':
       return 'The signaling target was invalid.';
+    case 'FORBIDDEN':
+      return 'The signaling server rejected an unauthorized request.';
     case 'INTERNAL_ERROR':
       return 'The signaling server could not process a request.';
   }
@@ -445,6 +480,7 @@ export class RoomSession {
   readonly #participants = new Map<string, MutableParticipant>();
   readonly #peers = new Map<string, PeerContext>();
   readonly #remoteStreams = new Map<string, MediaStream>();
+  readonly #remoteMediaStates = new Map<string, ParticipantMediaDataMessage>();
   readonly #issuedLocalMessageIds = new Set<string>();
   readonly #staleSelfIds = new Set<string>();
   readonly #exhaustedPeerIds = new Set<string>();
@@ -459,8 +495,23 @@ export class RoomSession {
   #socketGeneration = 0;
   #signalRequestSequence = 0;
   #localStream: MediaStream | null = null;
+  #cameraVideoTracks: MediaStreamTrack[] = [];
+  #pendingScreenTrack: MediaStreamTrack | null = null;
+  #screenTrack: MediaStreamTrack | null = null;
+  #screenTrackEndedListener: EventListener | null = null;
+  #screenShareCreatedLocalStream = false;
+  #screenShareStartPromise: Promise<boolean> | null = null;
+  #screenShareStopPromise: Promise<boolean> | null = null;
+  #screenShareStopTrack: MediaStreamTrack | null = null;
+  #screenShareStopGeneration = 0;
+  #screenShareStopDisableCamera = false;
+  #screenShareOperation = 0;
   #status: RoomSessionStatus = 'idle';
   #selfId: string | null = null;
+  #selfRole: ParticipantRole | null = null;
+  #canModerateMedia = false;
+  #lastModerationNotice: ModerationNotice | null = null;
+  #moderationNoticeSequence = 0;
   #warning: RoomIssue | null = null;
   #warningPeerId: string | null = null;
   #error: RoomIssue | null = null;
@@ -501,6 +552,9 @@ export class RoomSession {
     this.#rtcConfiguration = cloneRtcConfiguration(options.rtcConfiguration);
     if (options.preparedMediaStream !== undefined) {
       this.#localStream = options.preparedMediaStream;
+      if (this.#localStream !== null) {
+        this.#normalizeLocalVideoTracks(this.#localStream);
+      }
       this.#attachLocalTrackEndedListeners();
     }
     this.#snapshot = this.#buildSnapshot();
@@ -627,6 +681,8 @@ export class RoomSession {
     this.#cleanupAllResources();
     this.#exhaustedPeerIds.clear();
     this.#selfId = null;
+    this.#selfRole = null;
+    this.#canModerateMedia = false;
     this.#participants.clear();
     this.#status = 'ended';
     this.#emit();
@@ -649,6 +705,9 @@ export class RoomSession {
   }
 
   toggleVideo(): boolean {
+    if (this.#screenTrack !== null) {
+      return false;
+    }
     const tracks = this.#liveLocalTracks('video');
     if (tracks.length === 0) {
       return false;
@@ -662,6 +721,428 @@ export class RoomSession {
     this.#broadcastMediaState();
     this.#emit();
     return enabled;
+  }
+
+  startScreenShare(): Promise<boolean> {
+    if (this.#disposed || this.#status !== 'active' || this.#screenShareStopPromise !== null) {
+      return Promise.resolve(false);
+    }
+    if (this.#screenShareStartPromise !== null) {
+      return this.#screenShareStartPromise;
+    }
+    if (
+      this.#pendingScreenTrack !== null ||
+      this.#screenTrack !== null ||
+      this.#getMediaDevices()?.getDisplayMedia === undefined
+    ) {
+      return Promise.resolve(false);
+    }
+
+    const operation = ++this.#screenShareOperation;
+    const startPromise = this.#performStartScreenShare(operation).finally(() => {
+      if (this.#screenShareStartPromise === startPromise) {
+        this.#screenShareStartPromise = null;
+      }
+    });
+    this.#screenShareStartPromise = startPromise;
+    return startPromise;
+  }
+
+  stopScreenShare(): Promise<boolean> {
+    return this.#requestScreenShareStop(false);
+  }
+
+  disableParticipantMedia(peerId: string, kind: ModeratedMediaKind): boolean {
+    if (
+      this.#disposed ||
+      this.#status !== 'active' ||
+      this.#selfId === null ||
+      !this.#canModerateMedia ||
+      (kind !== 'audio' && kind !== 'video')
+    ) {
+      return false;
+    }
+
+    const participant = this.#participants.get(peerId);
+    if (participant === undefined || participant.isLocal || participant.role !== 'participant') {
+      return false;
+    }
+
+    try {
+      this.#sendRelay({
+        v: PROTOCOL_VERSION,
+        type: 'moderation.media.disable',
+        roomId: this.#options.roomId,
+        to: peerId,
+        payload: { kind },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async #performStartScreenShare(operation: number): Promise<boolean> {
+    const mediaDevices = this.#getMediaDevices();
+    if (mediaDevices?.getDisplayMedia === undefined) {
+      return false;
+    }
+
+    let displayStream: MediaStream;
+    try {
+      displayStream = await mediaDevices.getDisplayMedia({ video: true, audio: false });
+    } catch {
+      return false;
+    }
+
+    const screenTrack = displayStream.getVideoTracks().find((track) => track.readyState === 'live');
+    for (const track of displayStream.getTracks()) {
+      if (track !== screenTrack) {
+        track.stop();
+      }
+    }
+    if (screenTrack !== undefined) {
+      this.#pendingScreenTrack = screenTrack;
+    }
+    if (screenTrack === undefined || !this.#ownsScreenShareStart(operation, screenTrack)) {
+      screenTrack?.stop();
+      if (this.#pendingScreenTrack === screenTrack) {
+        this.#pendingScreenTrack = null;
+      }
+      return false;
+    }
+
+    let localStream = this.#localStream;
+    const createdLocalStream = localStream === null;
+    if (localStream === null) {
+      try {
+        const factory = this.#options.mediaStreamFactory ?? (() => new MediaStream());
+        localStream = factory();
+      } catch {
+        screenTrack.stop();
+        if (this.#pendingScreenTrack === screenTrack) {
+          this.#pendingScreenTrack = null;
+        }
+        return false;
+      }
+    }
+
+    const cameraTracks = [...localStream.getVideoTracks()];
+    const primaryCameraTrack = cameraTracks.find((track) => track.readyState === 'live') ?? null;
+    const senderUpdates: ScreenSenderUpdate[] = [];
+    const senderFailures = new Map<PeerContext, unknown>();
+
+    for (const peer of this.#peers.values()) {
+      if (!this.#isCurrentPeer(peer)) {
+        continue;
+      }
+      try {
+        if (peer.videoSender === null) {
+          const sender = peer.connection.addTrack(screenTrack, localStream);
+          peer.videoSender = sender;
+          senderUpdates.push({
+            peer,
+            sender,
+            previousTrack: null,
+            added: true,
+          });
+          continue;
+        }
+
+        const sender = peer.videoSender;
+        const previousTrack = sender.track ?? primaryCameraTrack;
+        await sender.replaceTrack(screenTrack);
+        senderUpdates.push({ peer, sender, previousTrack, added: false });
+        if (!this.#ownsScreenShareStart(operation, screenTrack)) {
+          break;
+        }
+      } catch (error) {
+        senderFailures.set(peer, error);
+        if (!this.#ownsScreenShareStart(operation, screenTrack)) {
+          break;
+        }
+      }
+    }
+
+    if (!this.#ownsScreenShareStart(operation, screenTrack)) {
+      screenTrack.stop();
+      const rollbackFailures = await this.#rollbackScreenSenderUpdates(senderUpdates);
+      for (const [peer, error] of rollbackFailures) {
+        senderFailures.set(peer, error);
+      }
+      if (this.#pendingScreenTrack === screenTrack) {
+        this.#pendingScreenTrack = null;
+      }
+      this.#recoverPeersAfterScreenSenderFailure(senderFailures, 'starting screen share');
+      return false;
+    }
+
+    for (const cameraTrack of cameraTracks) {
+      localStream.removeTrack(cameraTrack);
+    }
+    localStream.addTrack(screenTrack);
+    this.#localStream = localStream;
+    this.#cameraVideoTracks = cameraTracks;
+    this.#pendingScreenTrack = null;
+    this.#screenTrack = screenTrack;
+    this.#screenShareCreatedLocalStream = createdLocalStream;
+    const endedListener: EventListener = () => {
+      void this.#requestScreenShareStop(false);
+    };
+    this.#screenTrackEndedListener = endedListener;
+    screenTrack.addEventListener('ended', endedListener);
+
+    this.#syncLocalParticipantMedia();
+    this.#broadcastMediaState();
+    this.#emit();
+
+    for (const update of senderUpdates) {
+      if (!update.added || !this.#isCurrentPeer(update.peer)) {
+        continue;
+      }
+      this.#requestLocalRenegotiation(update.peer);
+    }
+    this.#recoverPeersAfterScreenSenderFailure(senderFailures, 'starting screen share');
+
+    if (screenTrack.readyState === 'ended') {
+      await this.#requestScreenShareStop(false);
+      return false;
+    }
+    return senderFailures.size === 0;
+  }
+
+  async #rollbackScreenSenderUpdates(
+    senderUpdates: readonly ScreenSenderUpdate[],
+  ): Promise<Map<PeerContext, unknown>> {
+    const failures = new Map<PeerContext, unknown>();
+    for (const update of [...senderUpdates].reverse()) {
+      if (!this.#isCurrentPeer(update.peer)) {
+        continue;
+      }
+      try {
+        if (update.added) {
+          update.peer.connection.removeTrack(update.sender);
+          update.peer.pendingLocalRenegotiation = false;
+          if (update.peer.videoSender === update.sender) {
+            update.peer.videoSender = null;
+          }
+        } else {
+          await update.sender.replaceTrack(update.previousTrack);
+        }
+      } catch (error) {
+        failures.set(update.peer, error);
+      }
+    }
+    return failures;
+  }
+
+  #requestScreenShareStop(disableCamera: boolean): Promise<boolean> {
+    if (this.#disposed) {
+      return Promise.resolve(false);
+    }
+    if (this.#screenShareStopPromise !== null) {
+      if (disableCamera && !this.#screenShareStopDisableCamera) {
+        this.#screenShareStopDisableCamera = true;
+        this.#disableCameraTracks();
+      }
+      return this.#screenShareStopPromise;
+    }
+
+    const screenTrack = this.#screenTrack;
+    if (screenTrack === null) {
+      this.#invalidatePendingScreenShareStart(disableCamera);
+      return Promise.resolve(false);
+    }
+
+    const generation = ++this.#screenShareOperation;
+    this.#screenShareStopTrack = screenTrack;
+    this.#screenShareStopGeneration = generation;
+    this.#screenShareStopDisableCamera = disableCamera;
+    if (disableCamera) {
+      this.#disableCameraTracks();
+    }
+    this.#detachScreenTrackEndedListener();
+    screenTrack.stop();
+
+    let resolveStop!: (result: boolean) => void;
+    let rejectStop!: (reason: unknown) => void;
+    const stopPromise = new Promise<boolean>((resolve, reject) => {
+      resolveStop = resolve;
+      rejectStop = reject;
+    });
+    const finishStop = () => {
+      if (this.#screenShareStopPromise === stopPromise) {
+        this.#screenShareStopPromise = null;
+        this.#screenShareStopTrack = null;
+        this.#screenShareStopGeneration = 0;
+        this.#screenShareStopDisableCamera = false;
+      }
+    };
+    this.#screenShareStopPromise = stopPromise;
+    void this.#performStopScreenShare(screenTrack, generation).then(
+      (result) => {
+        finishStop();
+        resolveStop(result);
+      },
+      (error: unknown) => {
+        finishStop();
+        rejectStop(error);
+      },
+    );
+    return stopPromise;
+  }
+
+  async #performStopScreenShare(
+    screenTrack: MediaStreamTrack,
+    generation: number,
+  ): Promise<boolean> {
+    const cameraTracks = [...this.#cameraVideoTracks];
+    const primaryCameraTrack = cameraTracks.find((track) => track.readyState === 'live') ?? null;
+    const senderFailures = new Map<PeerContext, unknown>();
+
+    const localStream = this.#localStream;
+    if (localStream?.getTracks().includes(screenTrack)) {
+      localStream.removeTrack(screenTrack);
+    }
+    for (const cameraTrack of cameraTracks) {
+      if (
+        cameraTrack.readyState === 'live' &&
+        localStream !== null &&
+        !localStream.getTracks().includes(cameraTrack)
+      ) {
+        localStream.addTrack(cameraTrack);
+      }
+    }
+    if (
+      this.#screenShareCreatedLocalStream &&
+      localStream !== null &&
+      localStream.getTracks().length === 0
+    ) {
+      this.#localStream = null;
+    }
+    if (this.#screenShareStopDisableCamera) {
+      this.#disableCameraTracks();
+    }
+    this.#syncLocalParticipantMedia();
+    this.#broadcastMediaState();
+    this.#emit();
+
+    for (const peer of [...this.#peers.values()]) {
+      if (!this.#ownsScreenShareStop(screenTrack, generation)) {
+        return false;
+      }
+      if (!this.#isCurrentPeer(peer) || peer.videoSender === null) {
+        continue;
+      }
+      try {
+        await peer.videoSender.replaceTrack(primaryCameraTrack);
+      } catch (error) {
+        senderFailures.set(peer, error);
+      }
+      if (!this.#ownsScreenShareStop(screenTrack, generation)) {
+        return false;
+      }
+    }
+
+    if (!this.#ownsScreenShareStop(screenTrack, generation)) {
+      return false;
+    }
+    if (this.#screenShareStopDisableCamera) {
+      this.#disableCameraTracks();
+    }
+    this.#screenTrack = null;
+    this.#cameraVideoTracks = [];
+    this.#screenShareCreatedLocalStream = false;
+
+    this.#recoverPeersAfterScreenSenderFailure(
+      senderFailures,
+      'restoring camera after screen share',
+    );
+    return senderFailures.size === 0;
+  }
+
+  #ownsScreenShareStart(operation: number, screenTrack: MediaStreamTrack): boolean {
+    return (
+      !this.#disposed &&
+      this.#status === 'active' &&
+      this.#screenShareOperation === operation &&
+      this.#pendingScreenTrack === screenTrack &&
+      screenTrack.readyState === 'live' &&
+      this.#screenTrack === null &&
+      this.#screenShareStopPromise === null
+    );
+  }
+
+  #ownsScreenShareStop(screenTrack: MediaStreamTrack, generation: number): boolean {
+    return (
+      !this.#disposed &&
+      this.#screenShareOperation === generation &&
+      this.#screenShareStopGeneration === generation &&
+      this.#screenShareStopTrack === screenTrack &&
+      this.#screenTrack === screenTrack
+    );
+  }
+
+  #invalidatePendingScreenShareStart(disableCamera: boolean): boolean {
+    if (this.#screenShareStartPromise === null || this.#screenTrack !== null) {
+      return false;
+    }
+    ++this.#screenShareOperation;
+    if (disableCamera) {
+      this.#disableCameraTracks();
+    }
+    this.#pendingScreenTrack?.stop();
+    return true;
+  }
+
+  #disableCameraTracks(): void {
+    const cameraTracks = new Set([
+      ...this.#cameraVideoTracks,
+      ...(this.#localStream?.getVideoTracks() ?? []),
+    ]);
+    for (const track of cameraTracks) {
+      if (track !== this.#screenTrack && track !== this.#pendingScreenTrack) {
+        track.enabled = false;
+      }
+    }
+  }
+
+  #recoverPeersAfterScreenSenderFailure(
+    failures: ReadonlyMap<PeerContext, unknown>,
+    phase: string,
+  ): void {
+    if (this.#disposed || failures.size === 0) {
+      return;
+    }
+    for (const [failedPeer, error] of failures) {
+      if (!this.#isCurrentPeer(failedPeer)) {
+        continue;
+      }
+      const shouldOffer = this.#isPeerRecoveryInitiator(failedPeer.peerId);
+      let replacement: PeerContext;
+      try {
+        replacement = this.#replacePeer(
+          failedPeer.peerId,
+          false,
+          Math.max(1, failedPeer.connectionAttempt + 1),
+        );
+      } catch (replacementError) {
+        this.#failPeer(failedPeer.peerId, replacementError);
+        continue;
+      }
+      this.#setPeerWarning(
+        failedPeer.peerId,
+        'screen-share-sender-recovery',
+        `Recreated the connection to ${failedPeer.peerId} after ${phase} failed: ${getErrorMessage(error)}`,
+      );
+      if (shouldOffer) {
+        void this.#createOffer(replacement.peerId).catch((offerError: unknown) => {
+          if (this.#isCurrentPeer(replacement)) {
+            this.#failPeer(replacement.peerId, offerError);
+          }
+        });
+      }
+    }
   }
 
   sendChat(text: string): ChatMessage {
@@ -753,15 +1234,35 @@ export class RoomSession {
     }
   }
 
+  #getMediaDevices():
+    | (Pick<MediaDevices, 'getUserMedia'> & Partial<Pick<MediaDevices, 'getDisplayMedia'>>)
+    | undefined {
+    return (
+      this.#options.mediaDevices ??
+      (typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined)
+    );
+  }
+
+  #normalizeLocalVideoTracks(stream: MediaStream): void {
+    const videoTracks = stream.getVideoTracks();
+    const selectedTrack =
+      videoTracks.find((track) => track.readyState === 'live') ?? videoTracks[0] ?? null;
+    for (const track of videoTracks) {
+      if (track === selectedTrack) {
+        continue;
+      }
+      stream.removeTrack(track);
+      track.stop();
+    }
+  }
+
   async #prepareMedia(): Promise<void> {
     if (this.#options.preparedMediaStream !== undefined) {
       this.#emit();
       return;
     }
 
-    const mediaDevices =
-      this.#options.mediaDevices ??
-      (typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined);
+    const mediaDevices = this.#getMediaDevices();
 
     if (mediaDevices === undefined) {
       this.#warning = {
@@ -783,6 +1284,7 @@ export class RoomSession {
         }
         return;
       }
+      this.#normalizeLocalVideoTracks(stream);
       this.#localStream = stream;
       this.#attachLocalTrackEndedListeners();
     } catch (error) {
@@ -831,7 +1333,12 @@ export class RoomSession {
           v: PROTOCOL_VERSION,
           type: 'room.join',
           roomId: this.#options.roomId,
-          payload: { displayName: this.#options.displayName },
+          payload: {
+            displayName: this.#options.displayName,
+            ...(this.#options.hostCapability === undefined
+              ? {}
+              : { hostCapability: this.#options.hostCapability }),
+          },
         });
       } catch (error) {
         settleError(error);
@@ -871,7 +1378,10 @@ export class RoomSession {
     this.#exhaustedPeerIds.clear();
     this.#cleanupPeerResources();
     this.#participants.clear();
+    this.#remoteMediaStates.clear();
     this.#selfId = null;
+    this.#selfRole = null;
+    this.#canModerateMedia = false;
     this.#error = null;
     this.#warning = {
       code: 'signaling-reconnecting',
@@ -947,7 +1457,10 @@ export class RoomSession {
         this.#closeSocket(1000, 'reconnect retry');
         this.#cleanupPeerResources();
         this.#participants.clear();
+        this.#remoteMediaStates.clear();
         this.#selfId = null;
+        this.#selfRole = null;
+        this.#canModerateMedia = false;
         this.#warning = {
           code: 'signaling-reconnecting',
           message: lastIssue.message,
@@ -1009,6 +1522,8 @@ export class RoomSession {
     this.#cleanupAllResources();
     this.#participants.clear();
     this.#selfId = null;
+    this.#selfRole = null;
+    this.#canModerateMedia = false;
     if (this.#warning?.code === 'signaling-reconnecting') {
       this.#warning = null;
       this.#warningPeerId = null;
@@ -1189,7 +1704,12 @@ export class RoomSession {
     try {
       switch (message.type) {
         case 'room.joined':
-          await this.#handleRoomJoined(message.payload.peerId, message.payload.participants);
+          await this.#handleRoomJoined(
+            message.payload.peerId,
+            message.payload.selfRole,
+            message.payload.capabilities.canModerateMedia,
+            message.payload.participants,
+          );
           return;
         case 'peer.joined':
           if (this.#staleSelfIds.has(message.payload.participant.peerId)) {
@@ -1231,6 +1751,13 @@ export class RoomSession {
             message.payload.negotiationId,
           );
           return;
+        case 'moderation.media.disabled':
+          await this.#handleModerationMediaDisabled(
+            message.from,
+            message.payload.targetPeerId,
+            message.payload.kind,
+          );
+          return;
         case 'peer.left':
           this.#removePeer(message.payload.peerId);
           this.#staleSelfIds.delete(message.payload.peerId);
@@ -1252,14 +1779,24 @@ export class RoomSession {
     }
   }
 
-  async #handleRoomJoined(peerId: string, participants: readonly Participant[]): Promise<void> {
+  async #handleRoomJoined(
+    peerId: string,
+    selfRole: ParticipantRole,
+    canModerateMedia: boolean,
+    participants: readonly Participant[],
+  ): Promise<void> {
     if ((this.#status !== 'joining' && this.#status !== 'reconnecting') || this.#selfId !== null) {
       return;
     }
 
     this.#staleSelfIds.delete(peerId);
     this.#selfId = peerId;
-    this.#upsertParticipant({ peerId, displayName: this.#options.displayName }, true);
+    this.#selfRole = selfRole;
+    this.#canModerateMedia = canModerateMedia;
+    this.#upsertParticipant(
+      { peerId, displayName: this.#options.displayName, role: selfRole },
+      true,
+    );
     this.#syncLocalParticipantMedia();
 
     for (const participant of participants) {
@@ -1293,6 +1830,49 @@ export class RoomSession {
     await Promise.all(offerPromises);
   }
 
+  async #handleModerationMediaDisabled(
+    fromPeerId: string,
+    targetPeerId: string,
+    kind: ModeratedMediaKind,
+  ): Promise<void> {
+    if (this.#selfId === null || targetPeerId !== this.#selfId) {
+      return;
+    }
+
+    this.#moderationNoticeSequence += 1;
+    this.#lastModerationNotice = {
+      id: `moderation-${this.#moderationNoticeSequence.toString(36)}`,
+      sequence: this.#moderationNoticeSequence,
+      fromPeerId,
+      kind,
+    };
+
+    if (kind === 'video') {
+      if (this.#invalidatePendingScreenShareStart(true)) {
+        this.#syncLocalParticipantMedia();
+        this.#broadcastMediaState();
+        this.#emit();
+        return;
+      }
+      if (this.#screenTrack !== null || this.#screenShareStopPromise !== null) {
+        const stopPromise = this.#requestScreenShareStop(true);
+        this.#syncLocalParticipantMedia();
+        this.#broadcastMediaState();
+        this.#emit();
+        await stopPromise;
+        return;
+      }
+      this.#disableCameraTracks();
+    } else {
+      for (const track of this.#liveLocalTracks('audio')) {
+        track.enabled = false;
+      }
+    }
+    this.#syncLocalParticipantMedia();
+    this.#broadcastMediaState();
+    this.#emit();
+  }
+
   async #createOffer(
     peerId: string,
     options: { readonly iceRestart?: boolean } = {},
@@ -1301,12 +1881,14 @@ export class RoomSession {
     if (peer.makingOffer || peer.remoteOffersInProgress.size > 0) {
       return false;
     }
-    if (options.iceRestart === true && peer.connection.signalingState !== 'stable') {
-      this.#setPeerWarning(
-        peerId,
-        'peer-restart-deferred',
-        `ICE restart for ${peerId} is waiting for stable signaling`,
-      );
+    if (peer.connection.signalingState !== 'stable') {
+      if (options.iceRestart === true) {
+        this.#setPeerWarning(
+          peerId,
+          'peer-restart-deferred',
+          `ICE restart for ${peerId} is waiting for stable signaling`,
+        );
+      }
       return false;
     }
 
@@ -1364,6 +1946,7 @@ export class RoomSession {
       throw error;
     } finally {
       peer.makingOffer = false;
+      this.#drainPendingLocalRenegotiation(peer);
     }
   }
 
@@ -1435,6 +2018,7 @@ export class RoomSession {
       throw error;
     } finally {
       peer.remoteOffersInProgress.delete(acceptedNegotiationId);
+      this.#drainPendingLocalRenegotiation(peer);
     }
   }
 
@@ -1466,6 +2050,7 @@ export class RoomSession {
       if (peer.connection.connectionState === 'connected') {
         this.#finishPeerRecovery(peer);
       }
+      this.#drainPendingLocalRenegotiation(peer);
     } catch (error) {
       if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
         return;
@@ -1597,7 +2182,14 @@ export class RoomSession {
     }
 
     if (!this.#participants.has(peerId)) {
-      this.#upsertParticipant({ peerId, displayName: `Participant ${peerId.slice(0, 6)}` }, false);
+      this.#upsertParticipant(
+        {
+          peerId,
+          displayName: `Participant ${peerId.slice(0, 6)}`,
+          role: 'participant',
+        },
+        false,
+      );
     }
 
     const factory =
@@ -1607,6 +2199,7 @@ export class RoomSession {
     const peer: PeerContext = {
       peerId,
       connection,
+      videoSender: null,
       pendingCandidates: [],
       pendingLocalCandidates: [],
       localIceUsernameFragments: new Set(),
@@ -1623,6 +2216,7 @@ export class RoomSession {
       inboundDataWindowExpiryTimer: null,
       offerRetryAttempts: 0,
       connectionAttempt,
+      pendingLocalRenegotiation: false,
       negotiationId: null,
       retiredNegotiationIds: new Set(retiredNegotiationIds),
       channel: null,
@@ -1641,7 +2235,10 @@ export class RoomSession {
     this.#peers.set(peerId, peer);
 
     for (const track of this.#localStream?.getTracks() ?? []) {
-      connection.addTrack(track, this.#localStream as MediaStream);
+      const sender = connection.addTrack(track, this.#localStream as MediaStream);
+      if (track.kind === 'video') {
+        peer.videoSender = sender;
+      }
     }
 
     connection.onicecandidate = (event) => {
@@ -1676,6 +2273,12 @@ export class RoomSession {
         return;
       }
       this.#attachDataChannel(peer, event.channel);
+    };
+
+    connection.onsignalingstatechange = () => {
+      if (this.#isCurrentPeer(peer)) {
+        this.#drainPendingLocalRenegotiation(peer);
+      }
     };
 
     connection.onconnectionstatechange = () => {
@@ -1806,6 +2409,42 @@ export class RoomSession {
 
   #isPeerRecoveryInitiator(peerId: string): boolean {
     return this.#selfId !== null && this.#selfId < peerId;
+  }
+
+  #requestLocalRenegotiation(peer: PeerContext): void {
+    if (!this.#isCurrentPeer(peer)) {
+      return;
+    }
+    peer.pendingLocalRenegotiation = true;
+    this.#drainPendingLocalRenegotiation(peer);
+  }
+
+  #drainPendingLocalRenegotiation(peer: PeerContext): void {
+    if (
+      !this.#isCurrentPeer(peer) ||
+      !peer.pendingLocalRenegotiation ||
+      this.#disposed ||
+      this.#status !== 'active' ||
+      this.#socket?.readyState !== SOCKET_OPEN ||
+      peer.makingOffer ||
+      peer.remoteOffersInProgress.size > 0 ||
+      peer.connection.signalingState !== 'stable'
+    ) {
+      return;
+    }
+
+    peer.pendingLocalRenegotiation = false;
+    void this.#createOffer(peer.peerId)
+      .then((published) => {
+        if (!published && this.#isCurrentPeer(peer)) {
+          peer.pendingLocalRenegotiation = true;
+        }
+      })
+      .catch((error: unknown) => {
+        if (this.#isCurrentPeer(peer)) {
+          this.#scheduleInitialOfferRetry(peer.peerId, error);
+        }
+      });
   }
 
   #scheduleInitialOfferRetry(peerId: string, error: unknown): void {
@@ -2031,6 +2670,7 @@ export class RoomSession {
         'peer-ice-restart-failed',
         'peer-restart-deferred',
         'peer-negotiation-retrying',
+        'screen-share-sender-recovery',
         'ice-candidate-queue-overflow',
         'ice-candidate-rejected',
       ]) || this.#clearRecoveredDataChannelWarning(peer);
@@ -2084,8 +2724,10 @@ export class RoomSession {
     const participant = this.#participants.get(peerId);
     if (participant !== undefined) {
       participant.connectionState = 'connecting';
-      participant.audioEnabled = false;
-      participant.videoEnabled = false;
+      const semanticMedia = this.#remoteMediaStates.get(peerId);
+      participant.audioEnabled = semanticMedia?.audioEnabled ?? false;
+      participant.videoEnabled = semanticMedia?.videoEnabled ?? false;
+      participant.videoSource = semanticMedia?.videoSource ?? participant.videoSource;
     }
 
     let replacement: PeerContext;
@@ -2241,8 +2883,10 @@ export class RoomSession {
     if (data.type === 'participant.media') {
       const participant = this.#participants.get(peer.peerId);
       if (participant !== undefined) {
+        this.#remoteMediaStates.set(peer.peerId, data);
         participant.audioEnabled = data.audioEnabled;
         participant.videoEnabled = data.videoEnabled;
+        participant.videoSource = data.videoSource;
         this.#emit();
       }
       return;
@@ -2371,6 +3015,7 @@ export class RoomSession {
       type: 'participant.media',
       audioEnabled: media.audioEnabled,
       videoEnabled: media.videoEnabled,
+      videoSource: media.videoSource,
     };
   }
 
@@ -2650,6 +3295,7 @@ export class RoomSession {
     const existing = this.#participants.get(participant.peerId);
     if (existing !== undefined) {
       existing.displayName = participant.displayName;
+      existing.role = participant.role;
       existing.isLocal = isLocal;
       return;
     }
@@ -2657,10 +3303,12 @@ export class RoomSession {
     this.#participants.set(participant.peerId, {
       peerId: participant.peerId,
       displayName: participant.displayName,
+      role: participant.role,
       isLocal,
       connectionState: isLocal ? 'connected' : 'new',
       audioEnabled: false,
       videoEnabled: false,
+      videoSource: 'camera',
     });
   }
 
@@ -2675,11 +3323,19 @@ export class RoomSession {
     const media = this.#getLocalMediaSnapshot();
     participant.audioEnabled = media.audioEnabled;
     participant.videoEnabled = media.videoEnabled;
+    participant.videoSource = media.videoSource;
   }
 
   #syncRemoteParticipantTracks(peerId: string, stream: MediaStream): void {
     const participant = this.#participants.get(peerId);
     if (participant === undefined) {
+      return;
+    }
+    const semanticMedia = this.#remoteMediaStates.get(peerId);
+    if (semanticMedia !== undefined) {
+      participant.audioEnabled = semanticMedia.audioEnabled;
+      participant.videoEnabled = semanticMedia.videoEnabled;
+      participant.videoSource = semanticMedia.videoSource;
       return;
     }
     participant.audioEnabled = stream.getAudioTracks().some((track) => track.enabled);
@@ -2740,6 +3396,7 @@ export class RoomSession {
     this.#stopRemoteStream(peerId);
     if (removeParticipant) {
       this.#participants.delete(peerId);
+      this.#remoteMediaStates.delete(peerId);
     }
   }
 
@@ -2769,6 +3426,7 @@ export class RoomSession {
     peer.connection.ontrack = null;
     peer.connection.ondatachannel = null;
     peer.connection.onconnectionstatechange = null;
+    peer.connection.onsignalingstatechange = null;
     if (peer.channel !== null) {
       this.#detachAndCloseChannel(peer.channel);
       peer.channel = null;
@@ -2776,6 +3434,8 @@ export class RoomSession {
     if (peer.connection.connectionState !== 'closed') {
       peer.connection.close();
     }
+    peer.videoSender = null;
+    peer.pendingLocalRenegotiation = false;
     peer.pendingCandidates.length = 0;
     peer.pendingLocalCandidates.length = 0;
     for (const pendingChat of peer.pendingChatMessages) {
@@ -2817,14 +3477,30 @@ export class RoomSession {
   }
 
   #cleanupAllResources(): void {
+    ++this.#screenShareOperation;
     this.#pendingSignalRequests.clear();
     this.#cleanupPeerResources();
+    this.#remoteMediaStates.clear();
 
     this.#detachLocalTrackEndedListeners();
-    for (const track of this.#localStream?.getTracks() ?? []) {
+    this.#detachScreenTrackEndedListener();
+    const ownedTracks = new Set([
+      ...(this.#localStream?.getTracks() ?? []),
+      ...this.#cameraVideoTracks,
+      ...(this.#pendingScreenTrack === null ? [] : [this.#pendingScreenTrack]),
+      ...(this.#screenTrack === null ? [] : [this.#screenTrack]),
+    ]);
+    for (const track of ownedTracks) {
       track.stop();
     }
     this.#localStream = null;
+    this.#cameraVideoTracks = [];
+    this.#pendingScreenTrack = null;
+    this.#screenTrack = null;
+    this.#screenShareCreatedLocalStream = false;
+    this.#screenShareStopTrack = null;
+    this.#screenShareStopGeneration = 0;
+    this.#screenShareStopDisableCamera = false;
     if (this.#warning?.code === 'local-media-ended') {
       this.#warning = null;
       this.#warningPeerId = null;
@@ -2855,6 +3531,10 @@ export class RoomSession {
     }
 
     this.#detachLocalTrackEndedListener(track);
+    const retainedCameraIndex = this.#cameraVideoTracks.indexOf(track);
+    if (retainedCameraIndex >= 0) {
+      this.#cameraVideoTracks.splice(retainedCameraIndex, 1);
+    }
     if (stream.getTracks().includes(track)) {
       stream.removeTrack(track);
     }
@@ -2883,6 +3563,13 @@ export class RoomSession {
     for (const track of [...this.#localTrackEndedListeners.keys()]) {
       this.#detachLocalTrackEndedListener(track);
     }
+  }
+
+  #detachScreenTrackEndedListener(): void {
+    if (this.#screenTrack !== null && this.#screenTrackEndedListener !== null) {
+      this.#screenTrack.removeEventListener('ended', this.#screenTrackEndedListener);
+    }
+    this.#screenTrackEndedListener = null;
   }
 
   #closeSocket(code = 1000, reason = 'client leave'): void {
@@ -2955,6 +3642,7 @@ export class RoomSession {
       case 'INVALID_MESSAGE':
         this.#finishFatalSignalingError(error);
         return;
+      case 'FORBIDDEN':
       case 'INTERNAL_ERROR':
         if (this.#warning === null || this.#warning.code === code) {
           this.#setWarning(code, error.message);
@@ -3036,6 +3724,8 @@ export class RoomSession {
     this.#exhaustedPeerIds.clear();
     this.#participants.clear();
     this.#selfId = null;
+    this.#selfRole = null;
+    this.#canModerateMedia = false;
     this.#warning = null;
     this.#warningPeerId = null;
     this.#setFatalError(error.code, error.message);
@@ -3087,11 +3777,13 @@ export class RoomSession {
   #getLocalMediaSnapshot(): LocalMediaSnapshot {
     const audioTracks = this.#liveLocalTracks('audio');
     const videoTracks = this.#liveLocalTracks('video');
+    const screenSharing = this.#screenTrack !== null && this.#screenTrack.readyState === 'live';
     return {
       audioAvailable: audioTracks.length > 0,
       audioEnabled: audioTracks.length > 0 && audioTracks.some((track) => track.enabled),
       videoAvailable: videoTracks.length > 0,
       videoEnabled: videoTracks.length > 0 && videoTracks.some((track) => track.enabled),
+      videoSource: screenSharing ? 'screen' : 'camera',
     };
   }
 
@@ -3108,11 +3800,17 @@ export class RoomSession {
       roomId: this.#options.roomId,
       status: this.#status,
       selfId: this.#selfId,
+      selfRole: this.#selfRole,
+      canModerateMedia: this.#canModerateMedia,
+      screenShareAvailable: this.#getMediaDevices()?.getDisplayMedia !== undefined,
+      screenSharing: this.#screenTrack !== null && this.#screenTrack.readyState === 'live',
       participants: [...this.#participants.values()].map((participant) => ({
         ...participant,
       })),
       localMedia: this.#getLocalMediaSnapshot(),
       messages: this.#messages.map((message) => ({ ...message })),
+      lastModerationNotice:
+        this.#lastModerationNotice === null ? null : { ...this.#lastModerationNotice },
       warning: this.#warning === null ? null : { ...this.#warning },
       error: this.#error === null ? null : { ...this.#error },
     };

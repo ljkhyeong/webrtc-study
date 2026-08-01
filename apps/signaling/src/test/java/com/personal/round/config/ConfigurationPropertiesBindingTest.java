@@ -89,6 +89,19 @@ class ConfigurationPropertiesBindingTest {
 	}
 
 	@Test
+	void bindsTheOptionalStandaloneHostTokenDigestWithoutExposingIt() {
+		String digest = "767fda184345e4e642316ae50989a6c79da0396264fac6c141582dad1fb4a7d0";
+		contextRunner
+				.withPropertyValues("round.auth.standalone-host-token-sha256=" + digest)
+				.run(context -> {
+					assertThat(context.getStartupFailure()).isNull();
+					RoundAuthProperties auth = context.getBean(RoundAuthProperties.class);
+					assertThat(auth.standaloneHostTokenSha256()).isEqualTo(digest);
+					assertThat(auth.toString()).doesNotContain(digest);
+				});
+	}
+
+	@Test
 	void recordConstructorsDefensivelyCopyBothConfigurationCollections() {
 		List<String> origins = new ArrayList<>(List.of("https://study.example"));
 		List<String> urls = new ArrayList<>(List.of("turn:turn.example.com:3478"));

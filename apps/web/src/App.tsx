@@ -54,6 +54,10 @@ const SIGNALING_ISSUE_MESSAGES = {
     error: '참가자 연결 정보가 올바르지 않습니다. 방에 다시 입장해 주세요.',
     warning: '올바르지 않은 참가자 연결 요청을 감지했습니다. 방에 다시 입장해 주세요.',
   },
+  FORBIDDEN: {
+    error: '방장 키가 올바르지 않거나 이 작업을 수행할 권한이 없습니다.',
+    warning: '이 미디어 관리 작업을 수행할 방장 권한이 없습니다.',
+  },
   INTERNAL_ERROR: {
     error: '스터디 서버가 요청을 처리하지 못했습니다. 잠시 후 다시 연결해 주세요.',
     warning: '스터디 서버가 요청 하나를 처리하지 못했습니다. 현재 통화는 유지됩니다.',
@@ -123,6 +127,8 @@ export function roomWarningMessage(issue: RoomIssue | null | undefined): string 
       return '일부 참가자의 TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.';
     case 'data-channel-rate-limit':
       return '한 참가자의 채팅 연결에서 너무 많은 데이터가 전송되어 일부 업데이트를 잠시 무시했습니다. 통화는 유지됩니다.';
+    case 'screen-share-sender-recovery':
+      return '일부 참가자와 화면 공유 전환에 실패해 영상 연결을 자동으로 복구하고 있습니다. 현재 통화는 유지됩니다.';
     case 'local-media-ended':
       return '마이크 또는 카메라 연결이 종료되었습니다. 현재 통화는 유지됩니다. 다시 사용하려면 방에 다시 입장해 장치를 확인해 주세요.';
     case 'peer-connection-timeout':
@@ -251,6 +257,7 @@ function usePathname() {
 interface ActiveRoomProps {
   displayName: string;
   roomId: string;
+  hostCapability?: string | undefined;
   releasePreparedMediaStream: () => void;
   takePreparedMediaStream: () => MediaStream | null;
   onReconnect: () => void;
@@ -260,6 +267,7 @@ interface ActiveRoomProps {
 function ActiveRoom({
   displayName,
   roomId,
+  hostCapability,
   releasePreparedMediaStream,
   takePreparedMediaStream,
   onReconnect,
@@ -453,6 +461,7 @@ function ActiveRoom({
                   signalingUrl: resolvedEndpoints.signalingUrl,
                   rtcConfiguration: loaded.configuration,
                   preparedMediaStream,
+                  ...(hostCapability === undefined ? {} : { hostCapability }),
                   ...(participationGrantLeaseManager === null
                     ? {}
                     : { beforeSignalingConnect: ensureFreshParticipationGrant }),
@@ -521,7 +530,7 @@ function ActiveRoom({
         void session.leave();
       });
     };
-  }, [displayName, releasePreparedMediaStream, roomId, takePreparedMediaStream]);
+  }, [displayName, hostCapability, releasePreparedMediaStream, roomId, takePreparedMediaStream]);
 
   const participants = useMemo<ParticipantView[]>(() => {
     const session = sessionRef.current;
@@ -585,6 +594,7 @@ function ActiveRoom({
     audioEnabled: false,
     videoAvailable: false,
     videoEnabled: false,
+    videoSource: 'camera' as const,
   };
   const hasFailedRemotePeer = participants.some(
     (participant) => !participant.isLocal && participant.connectionState === 'failed',
@@ -601,6 +611,16 @@ function ActiveRoom({
       audioEnabled={localMedia.audioEnabled}
       videoAvailable={localMedia.videoAvailable}
       videoEnabled={localMedia.videoEnabled}
+      screenShareAvailable={snapshot?.screenShareAvailable ?? false}
+      screenSharing={snapshot?.screenSharing ?? false}
+      canModerateMedia={snapshot?.canModerateMedia ?? false}
+      moderationNotice={
+        snapshot?.lastModerationNotice?.kind === 'audio'
+          ? '방장이 마이크를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.'
+          : snapshot?.lastModerationNotice?.kind === 'video'
+            ? '방장이 비디오를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.'
+            : undefined
+      }
       peerRecoveryMessage={hasFailedRemotePeer ? PEER_CONNECTION_FAILURE_MESSAGE : undefined}
       mediaWarning={
         isTerminalPeerWarning(snapshot?.warning) ? undefined : roomWarningMessage(snapshot?.warning)
@@ -618,6 +638,38 @@ function ActiveRoom({
       onToggleVideo={() => {
         sessionRef.current?.toggleVideo();
       }}
+      onToggleScreenShare={() => {
+        const session = sessionRef.current;
+        if (session === null) {
+          return;
+        }
+        setActionError('');
+        const wasSharing = snapshot?.screenSharing === true;
+        const operation = wasSharing ? session.stopScreenShare() : session.startScreenShare();
+        void operation
+          .then((changed) => {
+            if (!changed && !wasSharing && sessionRef.current === session) {
+              setActionError(
+                '화면 공유를 시작하지 못했습니다. 공유할 화면을 선택하고 브라우저 권한을 확인해 주세요.',
+              );
+            }
+          })
+          .catch((error: unknown) => {
+            setActionError(
+              error instanceof Error ? error.message : '화면 공유를 변경하지 못했습니다.',
+            );
+          });
+      }}
+      onDisableParticipantAudio={(peerId) => {
+        if (!sessionRef.current?.disableParticipantMedia(peerId, 'audio')) {
+          setActionError('이 참가자의 마이크를 끌 수 없습니다.');
+        }
+      }}
+      onDisableParticipantVideo={(peerId) => {
+        if (!sessionRef.current?.disableParticipantMedia(peerId, 'video')) {
+          setActionError('이 참가자의 비디오를 끌 수 없습니다.');
+        }
+      }}
       onSendMessage={handleSendMessage}
       onReconnect={onReconnect}
       onLeave={handleLeave}
@@ -631,6 +683,7 @@ export function App() {
   const [displayName, setDisplayName] = useState(readStoredDisplayName);
   const [approvedRoomKey, setApprovedRoomKey] = useState<string | null>(null);
   const [activeRoomKey, setActiveRoomKey] = useState<string | null>(null);
+  const [activeHostCapability, setActiveHostCapability] = useState<string | undefined>();
   const preparedMediaStreamRef = useRef<MediaStream | null>(null);
 
   const stopUnclaimedPreparedMedia = useCallback(() => {
@@ -658,12 +711,14 @@ export function App() {
 
     stopUnclaimedPreparedMedia();
     setActiveRoomKey(null);
+    setActiveHostCapability(undefined);
     setApprovedRoomKey(null);
   }, [approvedRoomKey, displayName, roomId, stopUnclaimedPreparedMedia]);
 
   const goHome = () => {
     stopUnclaimedPreparedMedia();
     setActiveRoomKey(null);
+    setActiveHostCapability(undefined);
     setApprovedRoomKey(null);
     navigate('/');
   };
@@ -671,6 +726,7 @@ export function App() {
   const retryCurrentRoom = () => {
     stopUnclaimedPreparedMedia();
     setActiveRoomKey(null);
+    setActiveHostCapability(undefined);
   };
 
   const enterRoom = (nextDisplayName: string, nextRoomId: string) => {
@@ -707,10 +763,12 @@ export function App() {
         key={roomKey}
         displayName={displayName}
         roomId={roomId}
+        showHostCapabilityInput={import.meta.env.VITE_ROUND_AUTH_MODE !== 'baton'}
         onBack={goHome}
-        onJoin={(preparedMediaStream) => {
+        onJoin={(preparedMediaStream, hostCapability) => {
           stopUnclaimedPreparedMedia();
           preparedMediaStreamRef.current = preparedMediaStream;
+          setActiveHostCapability(hostCapability);
           setActiveRoomKey(roomKey);
         }}
       />
@@ -722,6 +780,7 @@ export function App() {
       key={roomKey}
       displayName={displayName}
       roomId={roomId}
+      hostCapability={activeHostCapability}
       releasePreparedMediaStream={stopUnclaimedPreparedMedia}
       takePreparedMediaStream={takePreparedMediaStream}
       onReconnect={retryCurrentRoom}

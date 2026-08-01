@@ -29,6 +29,7 @@ export interface ParticipantMediaDataMessage {
   readonly type: 'participant.media';
   readonly audioEnabled: boolean;
   readonly videoEnabled: boolean;
+  readonly videoSource: 'camera' | 'screen';
 }
 
 export type PeerDataMessage = ChatDataMessage | ChatAckDataMessage | ParticipantMediaDataMessage;
@@ -66,9 +67,10 @@ function validatePeerDataMessage(input: unknown): PeerDataMessage {
       boundedIdentifier(message.messageId, '$.messageId');
       return message as unknown as ChatAckDataMessage;
     case 'participant.media':
-      exactKeys(message, ['type', 'audioEnabled', 'videoEnabled'], '$');
+      exactKeys(message, ['type', 'audioEnabled', 'videoEnabled', 'videoSource'], '$');
       booleanValue(message.audioEnabled, '$.audioEnabled');
       booleanValue(message.videoEnabled, '$.videoEnabled');
+      videoSource(message.videoSource, '$.videoSource');
       return message as unknown as ParticipantMediaDataMessage;
     default:
       throw new ProtocolValidationError('$.type', 'must be a supported DataChannel message type');
@@ -144,5 +146,11 @@ function boundedText(input: unknown, path: string): void {
 function booleanValue(input: unknown, path: string): void {
   if (typeof input !== 'boolean') {
     throw new ProtocolValidationError(path, 'must be a boolean');
+  }
+}
+
+function videoSource(input: unknown, path: string): void {
+  if (input !== 'camera' && input !== 'screen') {
+    throw new ProtocolValidationError(path, 'must be one of camera, screen');
   }
 }

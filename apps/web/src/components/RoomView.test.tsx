@@ -20,8 +20,14 @@ function renderRoom(overrides: Partial<Parameters<typeof RoomView>[0]> = {}) {
       audioEnabled={false}
       videoAvailable={false}
       videoEnabled={false}
+      screenShareAvailable={false}
+      screenSharing={false}
+      canModerateMedia={false}
       onToggleAudio={vi.fn()}
       onToggleVideo={vi.fn()}
+      onToggleScreenShare={vi.fn()}
+      onDisableParticipantAudio={vi.fn()}
+      onDisableParticipantVideo={vi.fn()}
       onSendMessage={vi.fn(() => true)}
       onReconnect={vi.fn()}
       onLeave={vi.fn()}
@@ -164,7 +170,33 @@ describe('RoomView connection state', () => {
     expect(markup).toContain('aria-label="사용 가능한 카메라 없음"');
     expect(markup).toContain('마이크 없음');
     expect(markup).toContain('카메라 없음');
-    expect(markup.match(/disabled=""/g)).toHaveLength(3);
+    expect(markup).toContain('이 브라우저는 화면 공유를 지원하지 않음');
+    expect(markup.match(/disabled=""/g)).toHaveLength(4);
+  });
+
+  it('shows active screen sharing and locks the camera toggle until sharing stops', () => {
+    const markup = renderRoom({
+      status: 'active',
+      videoAvailable: true,
+      videoEnabled: true,
+      screenShareAvailable: true,
+      screenSharing: true,
+    });
+
+    expect(markup).toContain('aria-label="화면 공유 중지"');
+    expect(markup).toContain('aria-label="화면 공유 중에는 카메라를 변경할 수 없음"');
+    expect(markup).toContain('aria-pressed="true"');
+  });
+
+  it('renders the trusted moderation notice alongside other non-terminal notices', () => {
+    const markup = renderRoom({
+      status: 'active',
+      moderationNotice: '방장이 마이크를 껐습니다.',
+    });
+
+    expect(markup).toContain('room-notice--moderation');
+    expect(markup).toContain('방장이 마이크를 껐습니다.');
+    expect(markup).toContain('role="status"');
   });
 
   it('detects unread messages after the bounded chat list reaches 200 items', () => {

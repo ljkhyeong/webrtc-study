@@ -29,6 +29,10 @@ public record RoundAuthProperties(
 		@Size(max = 256, message = "round.auth.audience must contain at most 256 characters")
 		String audience,
 		String jwkSetUri,
+		@Pattern(
+				regexp = "[0-9a-fA-F]{64}",
+				message = "round.auth.standalone-host-token-sha256 must contain exactly 64 hexadecimal characters")
+		String standaloneHostTokenSha256,
 		@NotNull(message = "round.auth.max-grant-lifetime must be configured")
 		@DurationMin(
 				seconds = 30,
@@ -43,6 +47,7 @@ public record RoundAuthProperties(
 		issuer = normalize(issuer);
 		audience = normalize(audience);
 		jwkSetUri = normalize(jwkSetUri);
+		standaloneHostTokenSha256 = normalizeOptional(standaloneHostTokenSha256);
 	}
 
 	public boolean batonMode() {
@@ -65,8 +70,25 @@ public record RoundAuthProperties(
 				|| (isSecureServiceUri(issuer) && isSecureServiceUri(jwkSetUri));
 	}
 
+	@AssertTrue(message = "BATON auth mode must not configure a standalone host token")
+	public boolean isStandaloneHostTokenModeSafe() {
+		return !batonMode() || !hasText(standaloneHostTokenSha256);
+	}
+
+	@Override
+	public String toString() {
+		return "RoundAuthProperties[mode=%s, cookieName=%s, issuer=%s, audience=%s, "
+				+ "jwkSetUri=%s, standaloneHostTokenSha256=<redacted>, maxGrantLifetime=%s]"
+				.formatted(mode, cookieName, issuer, audience, jwkSetUri, maxGrantLifetime);
+	}
+
 	private static String normalize(String value) {
 		return value == null ? null : value.trim();
+	}
+
+	private static String normalizeOptional(String value) {
+		String normalized = normalize(value);
+		return hasText(normalized) ? normalized : null;
 	}
 
 	private static boolean hasText(String value) {

@@ -14,18 +14,21 @@ import tools.jackson.databind.node.ObjectNode;
 @Component
 public class ProtocolParser {
 
-	public static final int PROTOCOL_VERSION = 2;
+	public static final int PROTOCOL_VERSION = 3;
 	public static final int MAX_ROOM_ID_LENGTH = RoomIdFormat.MAX_LENGTH;
 	public static final int MAX_PEER_ID_LENGTH = 128;
 	public static final int MAX_DISPLAY_NAME_LENGTH = 64;
 	public static final int MAX_REQUEST_ID_LENGTH = 128;
+	public static final int MIN_HOST_CAPABILITY_LENGTH = 32;
+	public static final int MAX_HOST_CAPABILITY_LENGTH = 256;
 	public static final int MAX_NEGOTIATION_ID_LENGTH = MAX_REQUEST_ID_LENGTH;
 	public static final int MAX_SIGNALING_FRAME_BYTES = 64 * 1024;
 	public static final int MAX_SDP_BYTES = 48 * 1024;
 	public static final int MAX_CANDIDATE_LENGTH = 8 * 1024;
 
 	private static final Set<String> CLIENT_TYPES = Set.of(
-			"room.join", "room.leave", "rtc.offer", "rtc.answer", "rtc.ice");
+			"room.join", "room.leave", "rtc.offer", "rtc.answer", "rtc.ice",
+			"moderation.media.disable");
 	private final ObjectReader objectReader;
 
 	public ProtocolParser(ObjectMapper objectMapper) {
@@ -59,7 +62,7 @@ public class ProtocolParser {
 		numericLiteral(message.get("v"), PROTOCOL_VERSION, "$.v");
 		String type = requiredText(message.get("type"), "$.type");
 		if (!CLIENT_TYPES.contains(type)) {
-			throw fail("$.type", "must be one of room.join, rtc.offer, rtc.answer, rtc.ice, room.leave");
+			throw fail("$.type", "must be a supported client message type");
 		}
 
 		return switch (type) {
@@ -68,6 +71,7 @@ public class ProtocolParser {
 			case "rtc.offer" -> parseDescriptionRelay(message, "offer");
 			case "rtc.answer" -> parseDescriptionRelay(message, "answer");
 			case "rtc.ice" -> parseIceRelay(message);
+			case "moderation.media.disable" -> parseModeration(message);
 			default -> throw fail("$.type", "is not supported");
 		};
 	}
@@ -78,10 +82,35 @@ public class ProtocolParser {
 		String requestId = optionalNonBlankString(
 				message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId");
 		ObjectNode payload = object(message.get("payload"), "$.payload");
-		exactKeys(payload, Set.of("displayName"), "$.payload");
+		exactKeys(payload, Set.of("displayName", "hostCapability"), "$.payload");
 		String displayName = normalizedString(
 				payload.get("displayName"), MAX_DISPLAY_NAME_LENGTH, "$.payload.displayName");
-		return new ClientMessage.Join(roomId, requestId, displayName);
+		String hostCapability = optionalNonBlankString(
+				payload,
+				"hostCapability",
+				MAX_HOST_CAPABILITY_LENGTH,
+				"$.payload.hostCapability");
+		if (hostCapability != null && hostCapability.length() < MIN_HOST_CAPABILITY_LENGTH) {
+			throw fail(
+					"$.payload.hostCapability",
+					"must contain at least " + MIN_HOST_CAPABILITY_LENGTH + " characters");
+		}
+		return new ClientMessage.Join(roomId, requestId, displayName, hostCapability);
+	}
+
+	private ClientMessage.Moderation parseModeration(ObjectNode message) {
+		exactKeys(message, Set.of("v", "type", "roomId", "requestId", "to", "payload"), "$");
+		RelayEnvelope envelope = relayEnvelope(message);
+		ObjectNode payload = object(message.get("payload"), "$.payload");
+		exactKeys(payload, Set.of("kind"), "$.payload");
+		String kind = requiredText(payload.get("kind"), "$.payload.kind");
+		ClientMessage.MediaKind mediaKind = switch (kind) {
+			case "audio" -> ClientMessage.MediaKind.AUDIO;
+			case "video" -> ClientMessage.MediaKind.VIDEO;
+			default -> throw fail("$.payload.kind", "must be one of audio, video");
+		};
+		return new ClientMessage.Moderation(
+				envelope.roomId(), envelope.requestId(), envelope.to(), mediaKind);
 	}
 
 	private ClientMessage.Leave parseLeave(ObjectNode message) {

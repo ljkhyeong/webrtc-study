@@ -16,10 +16,14 @@ const ROOM_ID_PATTERN =
 const MAX_ROOM_ID_LENGTH = 14;
 const MAX_PEER_ID_LENGTH = 128;
 const MAX_DISPLAY_NAME_LENGTH = 64;
+const MIN_HOST_CAPABILITY_LENGTH = 32;
+const MAX_HOST_CAPABILITY_LENGTH = 256;
 const MAX_REQUEST_ID_LENGTH = 128;
 const MAX_NEGOTIATION_ID_LENGTH = MAX_REQUEST_ID_LENGTH;
 const MAX_CANDIDATE_LENGTH = 8 * 1024;
 const MAX_ERROR_MESSAGE_LENGTH = 1_024;
+const PARTICIPANT_ROLES = ['host', 'participant'] as const;
+const MODERATED_MEDIA_KINDS = ['audio', 'video'] as const;
 
 export const MAX_SIGNALING_FRAME_BYTES = 64 * 1024;
 export const MAX_SDP_BYTES = 48 * 1024;
@@ -64,6 +68,11 @@ export function parseClientMessage(input: unknown): ClientMessage {
       relayEnvelope(message);
       validateIcePayload(message.payload, '$.payload');
       return message as unknown as ClientMessage;
+    case 'moderation.media.disable':
+      exactKeys(message, ['v', 'type', 'roomId', 'requestId', 'to', 'payload'], '$');
+      relayEnvelope(message);
+      validateModerationMediaDisablePayload(message.payload, '$.payload');
+      return message as unknown as ClientMessage;
     case 'room.leave':
       exactKeys(message, ['v', 'type', 'roomId', 'requestId'], '$');
       roomId(message.roomId, '$.roomId');
@@ -104,6 +113,13 @@ export function parseServerMessage(input: unknown): ServerMessage {
       exactKeys(message, ['v', 'type', 'roomId', 'from', 'payload'], '$');
       serverRelayEnvelope(message);
       validateIcePayload(message.payload, '$.payload');
+      return message as unknown as ServerMessage;
+    case 'moderation.media.disabled':
+      exactKeys(message, ['v', 'type', 'roomId', 'from', 'requestId', 'payload'], '$');
+      roomId(message.roomId, '$.roomId');
+      boundedNonBlankString(message.from, MAX_PEER_ID_LENGTH, '$.from');
+      optionalRequestId(message.requestId, '$.requestId');
+      validateModerationMediaDisabledPayload(message.payload, '$.payload');
       return message as unknown as ServerMessage;
     case 'peer.left':
       exactKeys(message, ['v', 'type', 'roomId', 'payload'], '$');
@@ -181,8 +197,21 @@ function serverRelayEnvelope(message: UnknownRecord): void {
 
 function validateJoinPayload(input: unknown, path: string): void {
   const payload = record(input, path);
-  exactKeys(payload, ['displayName'], path);
+  exactKeys(payload, ['displayName', 'hostCapability'], path);
   boundedNormalizedString(payload.displayName, MAX_DISPLAY_NAME_LENGTH, `${path}.displayName`);
+  if (payload.hostCapability !== undefined) {
+    boundedNonBlankString(
+      payload.hostCapability,
+      MAX_HOST_CAPABILITY_LENGTH,
+      `${path}.hostCapability`,
+    );
+    if ((payload.hostCapability as string).length < MIN_HOST_CAPABILITY_LENGTH) {
+      fail(
+        `${path}.hostCapability`,
+        `must contain at least ${MIN_HOST_CAPABILITY_LENGTH} characters`,
+      );
+    }
+  }
 }
 
 function validateDescriptionPayload(
@@ -211,6 +240,19 @@ function validateIcePayload(input: unknown, path: string): void {
   validateIceCandidate(payload.candidate, `${path}.candidate`);
 }
 
+function validateModerationMediaDisablePayload(input: unknown, path: string): void {
+  const payload = record(input, path);
+  exactKeys(payload, ['kind'], path);
+  oneOf(payload.kind, MODERATED_MEDIA_KINDS, `${path}.kind`);
+}
+
+function validateModerationMediaDisabledPayload(input: unknown, path: string): void {
+  const payload = record(input, path);
+  exactKeys(payload, ['targetPeerId', 'kind'], path);
+  boundedNonBlankString(payload.targetPeerId, MAX_PEER_ID_LENGTH, `${path}.targetPeerId`);
+  oneOf(payload.kind, MODERATED_MEDIA_KINDS, `${path}.kind`);
+}
+
 function validateIceCandidate(
   input: unknown,
   path: string,
@@ -233,8 +275,10 @@ function validateIceCandidate(
 
 function validateRoomJoinedPayload(input: unknown, path: string): void {
   const payload = record(input, path);
-  exactKeys(payload, ['peerId', 'participants'], path);
+  exactKeys(payload, ['peerId', 'selfRole', 'capabilities', 'participants'], path);
   boundedNonBlankString(payload.peerId, MAX_PEER_ID_LENGTH, `${path}.peerId`);
+  oneOf(payload.selfRole, PARTICIPANT_ROLES, `${path}.selfRole`);
+  validateCapabilities(payload.capabilities, `${path}.capabilities`);
   if (!Array.isArray(payload.participants)) {
     fail(`${path}.participants`, 'must be an array');
   }
@@ -257,9 +301,16 @@ function validatePeerLeftPayload(input: unknown, path: string): void {
 
 function validateParticipant(input: unknown, path: string): asserts input is Participant {
   const participant = record(input, path);
-  exactKeys(participant, ['peerId', 'displayName'], path);
+  exactKeys(participant, ['peerId', 'displayName', 'role'], path);
   boundedNonBlankString(participant.peerId, MAX_PEER_ID_LENGTH, `${path}.peerId`);
   boundedNormalizedString(participant.displayName, MAX_DISPLAY_NAME_LENGTH, `${path}.displayName`);
+  oneOf(participant.role, PARTICIPANT_ROLES, `${path}.role`);
+}
+
+function validateCapabilities(input: unknown, path: string): void {
+  const capabilities = record(input, path);
+  exactKeys(capabilities, ['canModerateMedia'], path);
+  booleanValue(capabilities.canModerateMedia, `${path}.canModerateMedia`);
 }
 
 function validateErrorPayload(input: unknown, path: string): void {
@@ -323,6 +374,12 @@ function boundedUtf8String(input: unknown, maximumBytes: number, path: string): 
   }
   if (utf8ByteLength(input) > maximumBytes) {
     fail(path, `must contain at most ${maximumBytes} UTF-8 bytes`);
+  }
+}
+
+function booleanValue(input: unknown, path: string): void {
+  if (typeof input !== 'boolean') {
+    fail(path, 'must be a boolean');
   }
 }
 

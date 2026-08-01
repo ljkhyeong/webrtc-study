@@ -63,7 +63,55 @@ class FakeWebSocket {
   }
 
   serverMessage(message: unknown): void {
-    this.#dispatch('message', { data: JSON.stringify(message) });
+    let normalized = message;
+    if (typeof message === 'object' && message !== null && !Array.isArray(message)) {
+      const serverMessage = message as Record<string, unknown>;
+      if (
+        serverMessage.type === 'room.joined' &&
+        typeof serverMessage.payload === 'object' &&
+        serverMessage.payload !== null &&
+        !Array.isArray(serverMessage.payload)
+      ) {
+        const payload = serverMessage.payload as Record<string, unknown>;
+        normalized = {
+          ...serverMessage,
+          payload: {
+            selfRole: 'participant',
+            capabilities: { canModerateMedia: false },
+            ...payload,
+            participants: Array.isArray(payload.participants)
+              ? payload.participants.map((participant) =>
+                  typeof participant === 'object' &&
+                  participant !== null &&
+                  !Array.isArray(participant)
+                    ? { role: 'participant', ...participant }
+                    : participant,
+                )
+              : payload.participants,
+          },
+        };
+      } else if (
+        serverMessage.type === 'peer.joined' &&
+        typeof serverMessage.payload === 'object' &&
+        serverMessage.payload !== null &&
+        !Array.isArray(serverMessage.payload)
+      ) {
+        const payload = serverMessage.payload as Record<string, unknown>;
+        normalized = {
+          ...serverMessage,
+          payload: {
+            ...payload,
+            participant:
+              typeof payload.participant === 'object' &&
+              payload.participant !== null &&
+              !Array.isArray(payload.participant)
+                ? { role: 'participant', ...payload.participant }
+                : payload.participant,
+          },
+        };
+      }
+    }
+    this.#dispatch('message', { data: JSON.stringify(normalized) });
   }
 
   serverClose(code = 1006, reason = ''): void {
@@ -205,7 +253,14 @@ class FakeDataChannel {
   }
 
   receive(message: unknown): void {
-    this.receiveRaw(JSON.stringify(message));
+    const normalized =
+      typeof message === 'object' &&
+      message !== null &&
+      !Array.isArray(message) &&
+      (message as { type?: unknown }).type === 'participant.media'
+        ? { videoSource: 'camera', ...message }
+        : message;
+    this.receiveRaw(JSON.stringify(normalized));
   }
 
   receiveRaw(data: unknown): void {
@@ -222,6 +277,29 @@ class FakeDataChannel {
   }
 }
 
+class FakeRtpSender {
+  readonly replaceTrackCalls: (MediaStreamTrack | null)[] = [];
+  readonly replacements: (MediaStreamTrack | null)[] = [];
+  readonly replaceTrackGates: Promise<void>[] = [];
+  readonly replaceTrackErrors: (Error | undefined)[] = [];
+
+  constructor(public track: MediaStreamTrack | null) {}
+
+  async replaceTrack(track: MediaStreamTrack | null): Promise<void> {
+    this.replaceTrackCalls.push(track);
+    const gate = this.replaceTrackGates.shift();
+    if (gate !== undefined) {
+      await gate;
+    }
+    const error = this.replaceTrackErrors.shift();
+    if (error !== undefined) {
+      throw error;
+    }
+    this.track = track;
+    this.replacements.push(track);
+  }
+}
+
 class FakePeerConnection {
   connectionState: RTCPeerConnectionState = 'new';
   signalingState: RTCSignalingState = 'stable';
@@ -231,7 +309,10 @@ class FakePeerConnection {
   ontrack: ((event: RTCTrackEvent) => void) | null = null;
   ondatachannel: ((event: RTCDataChannelEvent) => void) | null = null;
   onconnectionstatechange: ((event: Event) => void) | null = null;
+  onsignalingstatechange: ((event: Event) => void) | null = null;
   readonly addedTracks: MediaStreamTrack[] = [];
+  readonly senders: FakeRtpSender[] = [];
+  readonly removedSenders: FakeRtpSender[] = [];
   readonly addedCandidates: (RTCIceCandidateInit | null)[] = [];
   readonly channels: FakeDataChannel[] = [];
   readonly offerOptions: (RTCOfferOptions | undefined)[] = [];
@@ -252,7 +333,15 @@ class FakePeerConnection {
       throw error;
     }
     this.addedTracks.push(track);
-    return {} as RTCRtpSender;
+    const sender = new FakeRtpSender(track);
+    this.senders.push(sender);
+    return sender as unknown as RTCRtpSender;
+  }
+
+  removeTrack(sender: RTCRtpSender): void {
+    const fakeSender = sender as unknown as FakeRtpSender;
+    fakeSender.track = null;
+    this.removedSenders.push(fakeSender);
   }
 
   createDataChannel(): RTCDataChannel {
@@ -295,6 +384,7 @@ class FakePeerConnection {
     } else if (description.type === 'answer' || description.type === 'rollback') {
       this.signalingState = 'stable';
     }
+    this.onsignalingstatechange?.({} as Event);
   }
 
   async setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
@@ -309,6 +399,7 @@ class FakePeerConnection {
     } else if (description.type === 'answer') {
       this.signalingState = 'stable';
     }
+    this.onsignalingstatechange?.({} as Event);
   }
 
   async addIceCandidate(candidate?: RTCIceCandidateInit | null): Promise<void> {
@@ -361,10 +452,12 @@ interface Harness {
 function createHarness(
   overrides: {
     getUserMedia?: () => Promise<MediaStream>;
+    getDisplayMedia?: (constraints: DisplayMediaStreamOptions) => Promise<MediaStream>;
     preparedMediaStream?: MediaStream | null;
     createId?: () => string;
     now?: () => number;
     displayName?: string;
+    hostCapability?: string;
     maxChatMessages?: number;
     recovery?: RoomSessionRecoveryOptions;
     rtcConfiguration?: RTCConfiguration;
@@ -383,6 +476,7 @@ function createHarness(
     roomId: ROOM_ID,
     displayName: overrides.displayName ?? 'Jin',
     signalingUrl: 'ws://localhost:8787',
+    ...(overrides.hostCapability === undefined ? {} : { hostCapability: overrides.hostCapability }),
     webSocketFactory: () => {
       const socket = new FakeWebSocket();
       sockets.push(socket);
@@ -398,6 +492,9 @@ function createHarness(
     mediaDevices: {
       getUserMedia:
         overrides.getUserMedia ?? vi.fn(async () => localStream as unknown as MediaStream),
+      ...(overrides.getDisplayMedia === undefined
+        ? {}
+        : { getDisplayMedia: overrides.getDisplayMedia }),
     },
     mediaStreamFactory: () => new FakeMediaStream() as unknown as MediaStream,
     ...(overrides.rtcConfiguration === undefined
@@ -452,8 +549,12 @@ function createPromiseGate(): {
 
 async function joinSession(
   harness: Harness,
-  participants: { peerId: string; displayName: string }[] = [],
+  participants: { peerId: string; displayName: string; role?: 'host' | 'participant' }[] = [],
   selfId = 'self',
+  authorization: {
+    readonly selfRole?: 'host' | 'participant';
+    readonly canModerateMedia?: boolean;
+  } = {},
 ): Promise<void> {
   const joining = harness.session.join();
   await flushMicrotasks();
@@ -465,7 +566,14 @@ async function joinSession(
     roomId: ROOM_ID,
     payload: {
       peerId: selfId,
-      participants,
+      selfRole: authorization.selfRole ?? 'participant',
+      capabilities: {
+        canModerateMedia: authorization.canModerateMedia ?? false,
+      },
+      participants: participants.map((participant) => ({
+        role: participant.role ?? 'participant',
+        ...participant,
+      })),
     },
   });
   await joining;
@@ -696,12 +804,41 @@ describe('RoomSession', () => {
       audioEnabled: false,
       videoAvailable: true,
       videoEnabled: true,
+      videoSource: 'camera',
     });
 
     await harness.session.leave();
 
     expect(preparedAudio.stopped).toBe(true);
     expect(preparedVideo.stopped).toBe(true);
+  });
+
+  it('normalizes multiple prepared video tracks to one owned camera track', async () => {
+    const preparedAudio = new FakeTrack('audio');
+    const primaryVideo = new FakeTrack('video');
+    const extraVideo = new FakeTrack('video');
+    const preparedStream = new FakeMediaStream([preparedAudio, primaryVideo, extraVideo]);
+    const harness = createHarness({
+      preparedMediaStream: preparedStream as unknown as MediaStream,
+    });
+
+    expect(preparedStream.getVideoTracks()).toEqual([primaryVideo as unknown as MediaStreamTrack]);
+    expect(extraVideo.stopped).toBe(true);
+    expect(extraVideo.endedListenerCount()).toBe(0);
+
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+
+    expect(
+      harness.peerConnections[0]?.addedTracks.filter((track) => track.kind === 'video'),
+    ).toEqual([primaryVideo as unknown as MediaStreamTrack]);
+    expect(harness.session.getSnapshot().localMedia).toMatchObject({
+      videoAvailable: true,
+      videoEnabled: true,
+      videoSource: 'camera',
+    });
+
+    await harness.session.leave();
+    expect(primaryVideo.stopped).toBe(true);
   });
 
   it('drops an already-ended prepared track and still observes the remaining live track', async () => {
@@ -751,6 +888,7 @@ describe('RoomSession', () => {
       audioEnabled: false,
       videoAvailable: false,
       videoEnabled: false,
+      videoSource: 'camera',
     });
   });
 
@@ -2545,11 +2683,13 @@ describe('RoomSession', () => {
         type: 'participant.media',
         audioEnabled: false,
         videoEnabled: true,
+        videoSource: 'camera',
       },
       {
         type: 'participant.media',
         audioEnabled: false,
         videoEnabled: false,
+        videoSource: 'camera',
       },
     ]);
   });
@@ -2593,6 +2733,7 @@ describe('RoomSession', () => {
       type: 'participant.media',
       audioEnabled: false,
       videoEnabled: true,
+      videoSource: 'camera',
     });
 
     harness.videoTrack.end();
@@ -2603,6 +2744,7 @@ describe('RoomSession', () => {
       audioEnabled: false,
       videoAvailable: false,
       videoEnabled: false,
+      videoSource: 'camera',
     });
     expect(harness.session.toggleVideo()).toBe(false);
     expect(
@@ -2621,6 +2763,7 @@ describe('RoomSession', () => {
       type: 'participant.media',
       audioEnabled: false,
       videoEnabled: false,
+      videoSource: 'camera',
     });
     expect(harness.audioTrack.endedListenerCount()).toBe(0);
     expect(harness.videoTrack.endedListenerCount()).toBe(0);
@@ -2663,6 +2806,844 @@ describe('RoomSession', () => {
         code: 'rtc-configuration-update-failed',
       },
     });
+    await harness.session.leave();
+  });
+
+  it('replaces camera senders with screen video and restores the disabled camera state', async () => {
+    const screenTrack = new FakeTrack('video');
+    const displayStream = new FakeMediaStream([screenTrack]);
+    const getDisplayMedia = vi.fn(async () => displayStream as unknown as MediaStream);
+    const harness = createHarness({ getDisplayMedia });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const firstPeer = harness.peerConnections[0];
+    const channel = firstPeer?.channels[0];
+    const cameraSender = firstPeer?.senders.find(
+      (sender) => sender.track === (harness.videoTrack as unknown as MediaStreamTrack),
+    );
+    if (firstPeer === undefined || channel === undefined || cameraSender === undefined) {
+      throw new Error('Expected a camera sender and open DataChannel');
+    }
+
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenShareAvailable: true,
+      screenSharing: false,
+      localMedia: { videoSource: 'camera' },
+    });
+    expect(harness.session.toggleVideo()).toBe(false);
+    expect(harness.videoTrack.enabled).toBe(false);
+
+    await expect(harness.session.startScreenShare()).resolves.toBe(true);
+
+    expect(getDisplayMedia).toHaveBeenCalledWith({ video: true, audio: false });
+    expect(cameraSender.track).toBe(screenTrack as unknown as MediaStreamTrack);
+    expect(harness.session.getLocalStream()?.getVideoTracks()).toEqual([
+      screenTrack as unknown as MediaStreamTrack,
+    ]);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenShareAvailable: true,
+      screenSharing: true,
+      localMedia: {
+        videoAvailable: true,
+        videoEnabled: true,
+        videoSource: 'screen',
+      },
+      participants: expect.arrayContaining([
+        expect.objectContaining({
+          peerId: 'self',
+          videoEnabled: true,
+          videoSource: 'screen',
+        }),
+      ]),
+    });
+    const mediaFramesBeforeToggle = channel.sent.filter(
+      (raw) => (JSON.parse(raw) as { type: string }).type === 'participant.media',
+    ).length;
+    expect(harness.session.toggleVideo()).toBe(false);
+    expect(screenTrack.enabled).toBe(true);
+    expect(
+      channel.sent.filter(
+        (raw) => (JSON.parse(raw) as { type: string }).type === 'participant.media',
+      ),
+    ).toHaveLength(mediaFramesBeforeToggle);
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'peer.joined',
+      roomId: ROOM_ID,
+      payload: {
+        participant: { peerId: 'peer-b', displayName: 'Bo', role: 'participant' },
+      },
+    });
+    const secondPeer = harness.peerConnections[1];
+    expect(secondPeer?.addedTracks).toContain(screenTrack as unknown as MediaStreamTrack);
+
+    await expect(harness.session.stopScreenShare()).resolves.toBe(true);
+
+    expect(cameraSender.track).toBe(harness.videoTrack as unknown as MediaStreamTrack);
+    expect(secondPeer?.senders.find((sender) => sender.track?.kind === 'video')?.track).toBe(
+      harness.videoTrack as unknown as MediaStreamTrack,
+    );
+    expect(harness.videoTrack.enabled).toBe(false);
+    expect(screenTrack.stopped).toBe(true);
+    expect(screenTrack.endedListenerCount()).toBe(0);
+    expect(harness.session.getLocalStream()?.getVideoTracks()).toEqual([
+      harness.videoTrack as unknown as MediaStreamTrack,
+    ]);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenSharing: false,
+      localMedia: {
+        videoEnabled: false,
+        videoSource: 'camera',
+      },
+    });
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter(({ type }) => type === 'participant.media')
+        .at(-1),
+    ).toEqual({
+      type: 'participant.media',
+      audioEnabled: true,
+      videoEnabled: false,
+      videoSource: 'camera',
+    });
+    await expect(harness.session.stopScreenShare()).resolves.toBe(false);
+    await harness.session.leave();
+  });
+
+  it('restores the camera when the browser ends the display track', async () => {
+    const screenTrack = new FakeTrack('video');
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const cameraSender = harness.peerConnections[0]?.senders.find(
+      (sender) => sender.track === (harness.videoTrack as unknown as MediaStreamTrack),
+    );
+    if (cameraSender === undefined) {
+      throw new Error('Expected a camera sender');
+    }
+    await harness.session.startScreenShare();
+
+    screenTrack.end();
+    await flushMicrotasks();
+
+    expect(cameraSender.track).toBe(harness.videoTrack as unknown as MediaStreamTrack);
+    expect(screenTrack.stopped).toBe(true);
+    expect(screenTrack.endedListenerCount()).toBe(0);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenSharing: false,
+      localMedia: { videoEnabled: true, videoSource: 'camera' },
+    });
+    await harness.session.leave();
+  });
+
+  it('joins duplicate stop requests to the browser-ended screen stop operation', async () => {
+    const screenTrack = new FakeTrack('video');
+    const stopGate = createPromiseGate();
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const peer = harness.peerConnections[0];
+    const cameraSender = peer?.senders.find(
+      (sender) => sender.track === (harness.videoTrack as unknown as MediaStreamTrack),
+    );
+    const channel = peer?.channels[0];
+    if (cameraSender === undefined || channel === undefined) {
+      throw new Error('Expected a camera sender and DataChannel');
+    }
+    await harness.session.startScreenShare();
+    cameraSender.replaceTrackCalls.length = 0;
+    cameraSender.replacements.length = 0;
+    cameraSender.replaceTrackGates.push(stopGate.promise);
+    const mediaFramesBeforeStop = channel.sent.filter(
+      (raw) => (JSON.parse(raw) as { type: string }).type === 'participant.media',
+    ).length;
+    let reentrantStop: Promise<boolean> | null = null;
+    const unsubscribe = harness.session.subscribe((snapshot) => {
+      if (!snapshot.screenSharing && reentrantStop === null) {
+        reentrantStop = harness.session.stopScreenShare();
+      }
+    });
+
+    screenTrack.end();
+    await flushMicrotasks();
+    const firstStop = harness.session.stopScreenShare();
+    const duplicateStop = harness.session.stopScreenShare();
+
+    expect(duplicateStop).toBe(firstStop);
+    expect(reentrantStop).toBe(firstStop);
+    expect(cameraSender.replaceTrackCalls).toEqual([
+      harness.videoTrack as unknown as MediaStreamTrack,
+    ]);
+    await expect(harness.session.startScreenShare()).resolves.toBe(false);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenSharing: false,
+      localMedia: { videoSource: 'camera' },
+    });
+
+    stopGate.resolve();
+    await expect(firstStop).resolves.toBe(true);
+    await expect(duplicateStop).resolves.toBe(true);
+    expect(cameraSender.replacements).toEqual([harness.videoTrack as unknown as MediaStreamTrack]);
+    expect(
+      channel.sent.filter(
+        (raw) => (JSON.parse(raw) as { type: string }).type === 'participant.media',
+      ),
+    ).toHaveLength(mediaFramesBeforeStop + 1);
+    unsubscribe();
+    await harness.session.leave();
+  });
+
+  it('escalates an in-flight user stop when video moderation disables the camera', async () => {
+    const screenTrack = new FakeTrack('video');
+    const stopGate = createPromiseGate();
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'host-peer', displayName: 'Host', role: 'host' }]);
+    const cameraSender = harness.peerConnections[0]?.senders.find(
+      (sender) => sender.track === (harness.videoTrack as unknown as MediaStreamTrack),
+    );
+    if (cameraSender === undefined) {
+      throw new Error('Expected a camera sender');
+    }
+    await harness.session.startScreenShare();
+    cameraSender.replaceTrackCalls.length = 0;
+    cameraSender.replaceTrackGates.push(stopGate.promise);
+
+    const firstStop = harness.session.stopScreenShare();
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: ROOM_ID,
+      from: 'host-peer',
+      payload: { targetPeerId: 'self', kind: 'video' },
+    });
+    await flushMicrotasks();
+
+    expect(harness.session.stopScreenShare()).toBe(firstStop);
+    expect(cameraSender.replaceTrackCalls).toEqual([
+      harness.videoTrack as unknown as MediaStreamTrack,
+    ]);
+    expect(harness.videoTrack.enabled).toBe(false);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenSharing: false,
+      localMedia: { videoEnabled: false, videoSource: 'camera' },
+      lastModerationNotice: { kind: 'video' },
+    });
+
+    stopGate.resolve();
+    await expect(firstStop).resolves.toBe(true);
+    expect(cameraSender.track).toBe(harness.videoTrack as unknown as MediaStreamTrack);
+    expect(harness.videoTrack.enabled).toBe(false);
+    await harness.session.leave();
+  });
+
+  it('invalidates a pending display picker immediately on video moderation', async () => {
+    const screenTrack = new FakeTrack('video');
+    const pickerGate = createPromiseGate();
+    const getDisplayMedia = vi.fn(async () => {
+      await pickerGate.promise;
+      return new FakeMediaStream([screenTrack]) as unknown as MediaStream;
+    });
+    const harness = createHarness({ getDisplayMedia });
+    await joinSession(harness, [{ peerId: 'host-peer', displayName: 'Host', role: 'host' }]);
+    const cameraSender = harness.peerConnections[0]?.senders.find(
+      (sender) => sender.track === (harness.videoTrack as unknown as MediaStreamTrack),
+    );
+    if (cameraSender === undefined) {
+      throw new Error('Expected a camera sender');
+    }
+
+    const starting = harness.session.startScreenShare();
+    await flushMicrotasks();
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: ROOM_ID,
+      from: 'host-peer',
+      payload: { targetPeerId: 'self', kind: 'video' },
+    });
+    await flushMicrotasks();
+
+    expect(getDisplayMedia).toHaveBeenCalledOnce();
+    expect(harness.videoTrack.enabled).toBe(false);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenSharing: false,
+      localMedia: { videoEnabled: false, videoSource: 'camera' },
+      lastModerationNotice: { kind: 'video' },
+    });
+    expect(cameraSender.replaceTrackCalls).toEqual([]);
+
+    pickerGate.resolve();
+    await expect(starting).resolves.toBe(false);
+    expect(screenTrack.stopped).toBe(true);
+    expect(cameraSender.track).toBe(harness.videoTrack as unknown as MediaStreamTrack);
+    expect(harness.session.getSnapshot().screenSharing).toBe(false);
+    await harness.session.leave();
+  });
+
+  it('rolls a pending screen sender replacement back after video moderation', async () => {
+    const screenTrack = new FakeTrack('video');
+    const replaceGate = createPromiseGate();
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'host-peer', displayName: 'Host', role: 'host' }]);
+    const cameraSender = harness.peerConnections[0]?.senders.find(
+      (sender) => sender.track === (harness.videoTrack as unknown as MediaStreamTrack),
+    );
+    if (cameraSender === undefined) {
+      throw new Error('Expected a camera sender');
+    }
+    cameraSender.replaceTrackGates.push(replaceGate.promise);
+
+    const starting = harness.session.startScreenShare();
+    await flushMicrotasks();
+    expect(cameraSender.replaceTrackCalls).toEqual([screenTrack as unknown as MediaStreamTrack]);
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: ROOM_ID,
+      from: 'host-peer',
+      payload: { targetPeerId: 'self', kind: 'video' },
+    });
+    await flushMicrotasks();
+
+    expect(screenTrack.stopped).toBe(true);
+    expect(harness.videoTrack.enabled).toBe(false);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenSharing: false,
+      localMedia: { videoEnabled: false, videoSource: 'camera' },
+    });
+
+    replaceGate.resolve();
+    await expect(starting).resolves.toBe(false);
+    expect(cameraSender.replaceTrackCalls).toEqual([
+      screenTrack as unknown as MediaStreamTrack,
+      harness.videoTrack as unknown as MediaStreamTrack,
+    ]);
+    expect(cameraSender.track).toBe(harness.videoTrack as unknown as MediaStreamTrack);
+    expect(harness.videoTrack.enabled).toBe(false);
+    await harness.session.leave();
+  });
+
+  it('recreates a sender when cancellation rollback cannot restore the camera', async () => {
+    const screenTrack = new FakeTrack('video');
+    const replaceGate = createPromiseGate();
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'host-peer', displayName: 'Host', role: 'host' }]);
+    const failedPeer = harness.peerConnections[0];
+    const cameraSender = failedPeer?.senders.find(
+      (sender) => sender.track === (harness.videoTrack as unknown as MediaStreamTrack),
+    );
+    if (failedPeer === undefined || cameraSender === undefined) {
+      throw new Error('Expected a camera sender');
+    }
+    cameraSender.replaceTrackGates.push(replaceGate.promise);
+    cameraSender.replaceTrackErrors.push(undefined, new Error('camera rollback failed'));
+
+    const starting = harness.session.startScreenShare();
+    await flushMicrotasks();
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: ROOM_ID,
+      from: 'host-peer',
+      payload: { targetPeerId: 'self', kind: 'video' },
+    });
+    await flushMicrotasks();
+
+    replaceGate.resolve();
+    await expect(starting).resolves.toBe(false);
+    await flushMicrotasks();
+
+    const replacementPeer = harness.peerConnections[1];
+    const replacementVideo = replacementPeer?.addedTracks.find((track) => track.kind === 'video');
+    expect(failedPeer.closed).toBe(true);
+    expect(cameraSender.track).toBe(screenTrack as unknown as MediaStreamTrack);
+    expect(replacementVideo).toBe(harness.videoTrack as unknown as MediaStreamTrack);
+    expect(replacementVideo?.enabled).toBe(false);
+    expect(screenTrack.stopped).toBe(true);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenSharing: false,
+      localMedia: { videoEnabled: false, videoSource: 'camera' },
+      warning: { code: 'screen-share-sender-recovery' },
+    });
+    await harness.session.leave();
+  });
+
+  it('stops a display track returned after leave invalidates the pending picker', async () => {
+    const screenTrack = new FakeTrack('video');
+    const pickerGate = createPromiseGate();
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(async () => {
+        await pickerGate.promise;
+        return new FakeMediaStream([screenTrack]) as unknown as MediaStream;
+      }),
+    });
+    await joinSession(harness);
+
+    const starting = harness.session.startScreenShare();
+    await flushMicrotasks();
+    await harness.session.leave();
+
+    expect(harness.session.getSnapshot().status).toBe('ended');
+    await expect(harness.session.startScreenShare()).resolves.toBe(false);
+    pickerGate.resolve();
+    await expect(starting).resolves.toBe(false);
+    expect(screenTrack.stopped).toBe(true);
+    expect(harness.session.getLocalStream()).toBeNull();
+    expect(harness.session.getSnapshot()).toMatchObject({
+      status: 'ended',
+      screenSharing: false,
+    });
+  });
+
+  it('ignores a pending screen sender replacement after leave disposes its peer', async () => {
+    const screenTrack = new FakeTrack('video');
+    const replaceGate = createPromiseGate();
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const disposedPeer = harness.peerConnections[0];
+    const cameraSender = disposedPeer?.senders.find(
+      (sender) => sender.track === (harness.videoTrack as unknown as MediaStreamTrack),
+    );
+    if (disposedPeer === undefined || cameraSender === undefined) {
+      throw new Error('Expected a camera sender');
+    }
+    cameraSender.replaceTrackGates.push(replaceGate.promise);
+
+    const starting = harness.session.startScreenShare();
+    await flushMicrotasks();
+    await harness.session.leave();
+
+    expect(disposedPeer.closed).toBe(true);
+    expect(screenTrack.stopped).toBe(true);
+    replaceGate.resolve();
+    await expect(starting).resolves.toBe(false);
+    expect(harness.peerConnections).toHaveLength(1);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      status: 'ended',
+      screenSharing: false,
+      warning: null,
+    });
+  });
+
+  it('recreates a failed screen sender and reports a non-successful start', async () => {
+    const screenTrack = new FakeTrack('video');
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Ara' }], 'a-self');
+    const failedPeer = harness.peerConnections[0];
+    const cameraSender = failedPeer?.senders.find(
+      (sender) => sender.track === (harness.videoTrack as unknown as MediaStreamTrack),
+    );
+    if (failedPeer === undefined || cameraSender === undefined) {
+      throw new Error('Expected a camera sender');
+    }
+    const offersBeforeRecovery = harness.socket.messagesOfType('rtc.offer').length;
+    cameraSender.replaceTrackErrors.push(new Error('screen sender failed'));
+
+    await expect(harness.session.startScreenShare()).resolves.toBe(false);
+    await flushMicrotasks();
+
+    const replacementPeer = harness.peerConnections[1];
+    expect(failedPeer.closed).toBe(true);
+    expect(replacementPeer?.addedTracks).toContain(screenTrack as unknown as MediaStreamTrack);
+    expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(offersBeforeRecovery + 1);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenSharing: true,
+      localMedia: { videoSource: 'screen' },
+      warning: { code: 'screen-share-sender-recovery' },
+    });
+    await harness.session.stopScreenShare();
+    await harness.session.leave();
+  });
+
+  it('recreates a failed camera restore sender and reports a non-successful stop', async () => {
+    const screenTrack = new FakeTrack('video');
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const failedPeer = harness.peerConnections[0];
+    const videoSender = failedPeer?.senders.find(
+      (sender) => sender.track === (harness.videoTrack as unknown as MediaStreamTrack),
+    );
+    if (failedPeer === undefined || videoSender === undefined) {
+      throw new Error('Expected a video sender');
+    }
+    await harness.session.startScreenShare();
+    const offersBeforeRecovery = harness.socket.messagesOfType('rtc.offer').length;
+    videoSender.replaceTrackErrors.push(new Error('camera restore failed'));
+
+    await expect(harness.session.stopScreenShare()).resolves.toBe(false);
+    await flushMicrotasks();
+
+    const replacementPeer = harness.peerConnections[1];
+    expect(failedPeer.closed).toBe(true);
+    expect(replacementPeer?.addedTracks).toContain(
+      harness.videoTrack as unknown as MediaStreamTrack,
+    );
+    expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(offersBeforeRecovery);
+    expect(screenTrack.stopped).toBe(true);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenSharing: false,
+      localMedia: { videoSource: 'camera' },
+      warning: { code: 'screen-share-sender-recovery' },
+    });
+    await harness.session.leave();
+  });
+
+  it('shares to an existing peer without a camera and restores the media-less stream', async () => {
+    const screenTrack = new FakeTrack('video');
+    const harness = createHarness({
+      preparedMediaStream: null,
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    await answerPeer(harness, 'peer-a');
+    const peer = harness.peerConnections[0];
+    if (peer === undefined) {
+      throw new Error('Expected a peer connection');
+    }
+    const offersBeforeShare = harness.socket.messagesOfType('rtc.offer').length;
+
+    await expect(harness.session.startScreenShare()).resolves.toBe(true);
+    await flushMicrotasks();
+
+    const screenSender = peer.senders.find(
+      (sender) => sender.track === (screenTrack as unknown as MediaStreamTrack),
+    );
+    expect(screenSender).toBeDefined();
+    expect(harness.session.getLocalStream()?.getVideoTracks()).toEqual([
+      screenTrack as unknown as MediaStreamTrack,
+    ]);
+    expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(offersBeforeShare + 1);
+
+    await expect(harness.session.stopScreenShare()).resolves.toBe(true);
+
+    expect(screenSender?.track).toBeNull();
+    expect(screenTrack.stopped).toBe(true);
+    expect(harness.session.getLocalStream()).toBeNull();
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenSharing: false,
+      localMedia: {
+        videoAvailable: false,
+        videoEnabled: false,
+        videoSource: 'camera',
+      },
+    });
+    await harness.session.leave();
+  });
+
+  it('drains a camera-less screen addTrack renegotiation after signaling becomes stable', async () => {
+    const screenTrack = new FakeTrack('video');
+    const harness = createHarness({
+      preparedMediaStream: null,
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const peer = harness.peerConnections[0];
+    if (peer === undefined) {
+      throw new Error('Expected a peer connection');
+    }
+    expect(peer.signalingState).toBe('have-local-offer');
+    expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(1);
+
+    await expect(harness.session.startScreenShare()).resolves.toBe(true);
+    await flushMicrotasks();
+
+    expect(peer.addedTracks).toContain(screenTrack as unknown as MediaStreamTrack);
+    expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(1);
+
+    await answerPeer(harness, 'peer-a');
+    await flushMicrotasks();
+
+    expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(2);
+    expect(harness.socket.messagesOfType('rtc.offer').at(-1)).toMatchObject({
+      to: 'peer-a',
+      payload: {
+        description: { type: 'offer' },
+      },
+    });
+    await harness.session.stopScreenShare();
+    await harness.session.leave();
+  });
+
+  it('stops both retained camera and active display ownership on leave', async () => {
+    const screenTrack = new FakeTrack('video');
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    await harness.session.startScreenShare();
+
+    expect(harness.videoTrack.stopped).toBe(false);
+    expect(screenTrack.stopped).toBe(false);
+    expect(harness.videoTrack.endedListenerCount()).toBe(1);
+    expect(screenTrack.endedListenerCount()).toBe(1);
+
+    await harness.session.leave();
+
+    expect(harness.videoTrack.stopped).toBe(true);
+    expect(screenTrack.stopped).toBe(true);
+    expect(harness.videoTrack.endedListenerCount()).toBe(0);
+    expect(screenTrack.endedListenerCount()).toBe(0);
+    expect(harness.session.getLocalStream()).toBeNull();
+  });
+
+  it('publishes roles and sends media-disable requests only with server capability', async () => {
+    const host = createHarness();
+    await joinSession(
+      host,
+      [
+        { peerId: 'peer-a', displayName: 'Ara', role: 'participant' },
+        { peerId: 'peer-host', displayName: 'Other host', role: 'host' },
+      ],
+      'self-host',
+      { selfRole: 'host', canModerateMedia: true },
+    );
+
+    expect(host.session.getSnapshot()).toMatchObject({
+      selfRole: 'host',
+      canModerateMedia: true,
+      participants: expect.arrayContaining([
+        expect.objectContaining({ peerId: 'self-host', role: 'host' }),
+        expect.objectContaining({ peerId: 'peer-a', role: 'participant' }),
+      ]),
+    });
+    expect(host.session.disableParticipantMedia('peer-a', 'audio')).toBe(true);
+    expect(host.socket.messagesOfType('moderation.media.disable')).toEqual([
+      expect.objectContaining({
+        v: PROTOCOL_VERSION,
+        type: 'moderation.media.disable',
+        roomId: ROOM_ID,
+        to: 'peer-a',
+        payload: { kind: 'audio' },
+        requestId: expect.any(String),
+      }),
+    ]);
+    expect(host.session.disableParticipantMedia('self-host', 'audio')).toBe(false);
+    expect(host.session.disableParticipantMedia('peer-host', 'video')).toBe(false);
+    expect(host.session.disableParticipantMedia('missing-peer', 'video')).toBe(false);
+
+    const participant = createHarness();
+    await joinSession(participant, [{ peerId: 'peer-a', displayName: 'Ara' }], 'self-participant', {
+      selfRole: 'participant',
+      canModerateMedia: false,
+    });
+    expect(participant.session.disableParticipantMedia('peer-a', 'audio')).toBe(false);
+    expect(participant.socket.messagesOfType('moderation.media.disable')).toEqual([]);
+
+    await host.session.leave();
+    await participant.session.leave();
+  });
+
+  it('applies trusted moderation only to self and gives repeated notices unique ids', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [{ peerId: 'host-peer', displayName: 'Host', role: 'host' }]);
+    const channel = harness.peerConnections[0]?.channels[0];
+    if (channel === undefined) {
+      throw new Error('Expected an open DataChannel');
+    }
+    const mediaFramesBefore = channel.sent.length;
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: ROOM_ID,
+      from: 'host-peer',
+      payload: { targetPeerId: 'someone-else', kind: 'audio' },
+    });
+    await flushMicrotasks();
+
+    expect(harness.audioTrack.enabled).toBe(true);
+    expect(harness.session.getSnapshot().lastModerationNotice).toBeNull();
+    expect(channel.sent).toHaveLength(mediaFramesBefore);
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: ROOM_ID,
+      from: 'host-peer',
+      requestId: 'moderation-request-1',
+      payload: { targetPeerId: 'self', kind: 'audio' },
+    });
+    await flushMicrotasks();
+
+    const firstNotice = harness.session.getSnapshot().lastModerationNotice;
+    expect(harness.audioTrack.enabled).toBe(false);
+    expect(firstNotice).toEqual({
+      id: 'moderation-1',
+      sequence: 1,
+      fromPeerId: 'host-peer',
+      kind: 'audio',
+    });
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter(({ type }) => type === 'participant.media')
+        .at(-1),
+    ).toEqual({
+      type: 'participant.media',
+      audioEnabled: false,
+      videoEnabled: true,
+      videoSource: 'camera',
+    });
+
+    expect(harness.session.toggleAudio()).toBe(true);
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: ROOM_ID,
+      from: 'host-peer',
+      requestId: 'moderation-request-2',
+      payload: { targetPeerId: 'self', kind: 'audio' },
+    });
+    await flushMicrotasks();
+
+    const secondNotice = harness.session.getSnapshot().lastModerationNotice;
+    expect(harness.audioTrack.enabled).toBe(false);
+    expect(secondNotice?.sequence).toBe(2);
+    expect(secondNotice?.id).not.toBe(firstNotice?.id);
+    await harness.session.leave();
+  });
+
+  it('ends screen sharing and disables the restored camera on video moderation', async () => {
+    const screenTrack = new FakeTrack('video');
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(
+        async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+      ),
+    });
+    await joinSession(harness, [{ peerId: 'host-peer', displayName: 'Host', role: 'host' }]);
+    const peer = harness.peerConnections[0];
+    const channel = peer?.channels[0];
+    const videoSender = peer?.senders.find(
+      (sender) => sender.track === (harness.videoTrack as unknown as MediaStreamTrack),
+    );
+    if (channel === undefined || videoSender === undefined) {
+      throw new Error('Expected video sender and DataChannel');
+    }
+    await harness.session.startScreenShare();
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: ROOM_ID,
+      from: 'host-peer',
+      payload: { targetPeerId: 'self', kind: 'video' },
+    });
+    await flushMicrotasks();
+
+    expect(screenTrack.stopped).toBe(true);
+    expect(harness.videoTrack.enabled).toBe(false);
+    expect(videoSender.track).toBe(harness.videoTrack as unknown as MediaStreamTrack);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      screenSharing: false,
+      localMedia: {
+        videoEnabled: false,
+        videoSource: 'camera',
+      },
+      lastModerationNotice: {
+        fromPeerId: 'host-peer',
+        kind: 'video',
+      },
+    });
+    expect(
+      channel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter(({ type }) => type === 'participant.media')
+        .at(-1),
+    ).toEqual({
+      type: 'participant.media',
+      audioEnabled: true,
+      videoEnabled: false,
+      videoSource: 'camera',
+    });
+    await harness.session.leave();
+  });
+
+  it('forwards host capability only in every room.join frame', async () => {
+    const hostCapability = 'standalone-host-proof-test-only-32-characters';
+    const harness = createHarness({ hostCapability });
+    await joinSession(harness);
+
+    expect(harness.socket.messagesOfType('room.join')).toEqual([
+      {
+        v: PROTOCOL_VERSION,
+        type: 'room.join',
+        roomId: ROOM_ID,
+        payload: { displayName: 'Jin', hostCapability },
+      },
+    ]);
+    expect(JSON.stringify(harness.session.getSnapshot())).not.toContain(hostCapability);
+
+    const initialSocket = harness.socket;
+    initialSocket.serverClose(1006, 'network lost');
+    await flushMicrotasks();
+    const reconnectSocket = harness.socket;
+    reconnectSocket.open();
+    await flushMicrotasks();
+
+    expect(reconnectSocket.messagesOfType('room.join')).toEqual([
+      {
+        v: PROTOCOL_VERSION,
+        type: 'room.join',
+        roomId: ROOM_ID,
+        payload: { displayName: 'Jin', hostCapability },
+      },
+    ]);
+    expect(
+      [...initialSocket.sent, ...reconnectSocket.sent]
+        .filter((raw) => (JSON.parse(raw) as { type: string }).type !== 'room.join')
+        .some((raw) => raw.includes(hostCapability)),
+    ).toBe(false);
+
+    reconnectSocket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'room.joined',
+      roomId: ROOM_ID,
+      payload: {
+        peerId: 'self-after-reconnect',
+        selfRole: 'host',
+        capabilities: { canModerateMedia: true },
+        participants: [],
+      },
+    });
+    await flushMicrotasks();
     await harness.session.leave();
   });
 
@@ -3110,6 +4091,41 @@ describe('RoomSession', () => {
         deliveryState: 'received',
       },
     ]);
+  });
+
+  it('preserves semantic remote media state when an enabled track arrives late', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const peer = harness.peerConnections[0];
+    const channel = peer?.channels[0];
+    if (peer === undefined || channel === undefined) {
+      throw new Error('Expected a peer and DataChannel');
+    }
+    channel.receive({
+      type: 'participant.media',
+      audioEnabled: false,
+      videoEnabled: false,
+      videoSource: 'screen',
+    });
+
+    const remoteAudio = new FakeTrack('audio');
+    const remoteVideo = new FakeTrack('video');
+    const remoteStream = new FakeMediaStream([remoteAudio, remoteVideo]);
+    peer.ontrack?.({
+      track: remoteVideo as unknown as MediaStreamTrack,
+      streams: [remoteStream as unknown as MediaStream],
+    } as unknown as RTCTrackEvent);
+
+    expect(
+      harness.session
+        .getSnapshot()
+        .participants.find((participant) => participant.peerId === 'peer-a'),
+    ).toMatchObject({
+      audioEnabled: false,
+      videoEnabled: false,
+      videoSource: 'screen',
+    });
+    await harness.session.leave();
   });
 
   it('rate-limits DataChannel work per peer and expires the warning with its fixed window', async () => {

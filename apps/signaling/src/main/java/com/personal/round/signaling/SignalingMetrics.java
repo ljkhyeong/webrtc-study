@@ -17,6 +17,7 @@ public final class SignalingMetrics {
 	private final Counter roomFullRejections;
 	private final Counter alreadyJoinedRejections;
 	private final Counter unauthorizedRoomRejections;
+	private final Counter invalidHostCapabilityRejections;
 	private final Counter invalidFrames;
 	private final Counter rateLimitedFrames;
 	private final Counter clientRateLimitedFrames;
@@ -62,6 +63,10 @@ public final class SignalingMetrics {
 		unauthorizedRoomRejections = Counter.builder("round.signaling.joins.rejected")
 				.tag("reason", "unauthorized_room")
 				.description("Room join requests rejected by the verified room grant")
+				.register(registry);
+		invalidHostCapabilityRejections = Counter.builder("round.signaling.joins.rejected")
+				.tag("reason", "invalid_host_capability")
+				.description("Room join requests rejected by standalone host capability verification")
 				.register(registry);
 		invalidFrames = Counter.builder("round.signaling.frames.invalid")
 				.description("Malformed, unsupported, or oversized inbound WebSocket frames")
@@ -140,6 +145,10 @@ public final class SignalingMetrics {
 
 	void recordJoinRejectedUnauthorizedRoom() {
 		unauthorizedRoomRejections.increment();
+	}
+
+	void recordJoinRejectedInvalidHostCapability() {
+		invalidHostCapabilityRejections.increment();
 	}
 
 	void recordInvalidFrame() {

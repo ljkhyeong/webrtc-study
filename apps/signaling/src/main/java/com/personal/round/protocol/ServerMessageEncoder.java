@@ -1,5 +1,6 @@
 package com.personal.round.protocol;
 
+import com.personal.round.auth.ParticipationGrant;
 import java.util.List;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
@@ -20,6 +21,7 @@ public final class ServerMessageEncoder {
 			String roomId,
 			String requestId,
 			String peerId,
+			ParticipationGrant.Role selfRole,
 			List<Participant> participants) {
 		ObjectNode message = base("room.joined", roomId);
 		if (requestId != null) {
@@ -27,6 +29,9 @@ public final class ServerMessageEncoder {
 		}
 		ObjectNode payload = message.putObject("payload");
 		payload.put("peerId", peerId);
+		payload.put("selfRole", roleValue(selfRole));
+		payload.putObject("capabilities")
+				.put("canModerateMedia", selfRole == ParticipationGrant.Role.HOST);
 		ArrayNode participantNodes = payload.putArray("participants");
 		for (Participant participant : participants) {
 			participantNodes.add(participantNode(participant));
@@ -45,6 +50,23 @@ public final class ServerMessageEncoder {
 		ObjectNode message = base(type, roomId);
 		message.put("from", from);
 		message.set("payload", payload.deepCopy());
+		return textMessage(message);
+	}
+
+	public TextMessage moderationMediaDisabled(
+			String roomId,
+			String requestId,
+			String from,
+			String targetPeerId,
+			ClientMessage.MediaKind kind) {
+		ObjectNode message = base("moderation.media.disabled", roomId);
+		message.put("from", from);
+		if (requestId != null) {
+			message.put("requestId", requestId);
+		}
+		message.putObject("payload")
+				.put("targetPeerId", targetPeerId)
+				.put("kind", kind.wireValue());
 		return textMessage(message);
 	}
 
@@ -86,13 +108,21 @@ public final class ServerMessageEncoder {
 		ObjectNode node = objectMapper.createObjectNode();
 		node.put("peerId", participant.peerId());
 		node.put("displayName", participant.displayName());
+		node.put("role", roleValue(participant.role()));
 		return node;
+	}
+
+	private static String roleValue(ParticipationGrant.Role role) {
+		return role.name().toLowerCase(java.util.Locale.ROOT);
 	}
 
 	private static TextMessage textMessage(ObjectNode message) {
 		return new TextMessage(message.toString());
 	}
 
-	public record Participant(String peerId, String displayName) {
+	public record Participant(
+			String peerId,
+			String displayName,
+			ParticipationGrant.Role role) {
 	}
 }

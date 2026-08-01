@@ -2,6 +2,7 @@ package com.personal.round.signaling;
 
 import com.personal.round.auth.RoomAccess;
 import com.personal.round.auth.RoomAccessPolicy;
+import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.config.MonotonicTicker;
 import com.personal.round.config.SignalingExecutionConfig;
 import com.personal.round.config.SignalingProperties;
@@ -19,6 +20,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -329,6 +331,7 @@ public class SignalingService implements SmartLifecycle {
 					case ClientMessage.Join join -> join(peer, join, workPlan);
 					case ClientMessage.Leave leave -> leave(peer, leave, workPlan);
 					case ClientMessage.Relay relay -> relay(peer, relay, workPlan);
+					case ClientMessage.Moderation moderation -> moderate(peer, moderation, workPlan);
 				}
 			}
 		}
@@ -552,6 +555,19 @@ public class SignalingService implements SmartLifecycle {
 					workPlan);
 			return;
 		}
+		Optional<ParticipationGrant.Role> resolvedRole =
+				peer.roomAccess.roleFor(message.hostCapability());
+		if (resolvedRole.isEmpty()) {
+			metrics.recordJoinRejectedInvalidHostCapability();
+			sendError(
+					peer,
+					SignalingErrorCode.FORBIDDEN,
+					"The supplied host capability is not valid for this connection.",
+					message.roomId(),
+					message.requestId(),
+					workPlan);
+			return;
+		}
 
 		LinkedHashMap<String, Peer> room = rooms.computeIfAbsent(
 				message.roomId(), ignored -> new LinkedHashMap<>());
@@ -568,10 +584,11 @@ public class SignalingService implements SmartLifecycle {
 		}
 
 		List<Participant> participants = room.values().stream()
-				.map(existing -> new Participant(existing.peerId, existing.displayName))
+				.map(existing -> new Participant(existing.peerId, existing.displayName, existing.role))
 				.toList();
 		peer.roomId = message.roomId();
 		peer.displayName = message.displayName();
+		peer.role = resolvedRole.orElseThrow();
 		peer.unjoinedSinceMillis = -1;
 		room.put(peer.peerId, peer);
 		refreshMetricsLocked();
@@ -580,6 +597,7 @@ public class SignalingService implements SmartLifecycle {
 				message.roomId(),
 				message.requestId(),
 				peer.peerId,
+				peer.role,
 				participants);
 		if (!enqueue(peer, joined, workPlan)) {
 			return;
@@ -588,7 +606,7 @@ public class SignalingService implements SmartLifecycle {
 
 		TextMessage peerJoined = serverMessageEncoder.peerJoined(
 				message.roomId(),
-				new Participant(peer.peerId, peer.displayName));
+				new Participant(peer.peerId, peer.displayName, peer.role));
 		broadcast(room, peerJoined, peer.peerId, workPlan);
 	}
 
@@ -669,6 +687,83 @@ public class SignalingService implements SmartLifecycle {
 						peer.peerId,
 						message.payload()),
 				workPlan);
+	}
+
+	private void moderate(
+			Peer peer,
+			ClientMessage.Moderation message,
+			WorkPlan workPlan) {
+		if (peer.roomId == null) {
+			sendError(
+					peer,
+					SignalingErrorCode.NOT_IN_ROOM,
+					"Join a room before moderating participant media.",
+					message.roomId(),
+					message.requestId(),
+					workPlan);
+			return;
+		}
+		if (!peer.roomId.equals(message.roomId())) {
+			sendError(
+					peer,
+					SignalingErrorCode.ROOM_MISMATCH,
+					"The message room does not match the joined room.",
+					peer.roomId,
+					message.requestId(),
+					workPlan);
+			return;
+		}
+		if (peer.role != ParticipationGrant.Role.HOST) {
+			sendError(
+					peer,
+					SignalingErrorCode.FORBIDDEN,
+					"Only a room host may disable participant media.",
+					peer.roomId,
+					message.requestId(),
+					workPlan);
+			return;
+		}
+		if (peer.peerId.equals(message.to())) {
+			sendError(
+					peer,
+					SignalingErrorCode.TARGET_SELF,
+					"A host cannot moderate its own media through a remote command.",
+					peer.roomId,
+					message.requestId(),
+					workPlan);
+			return;
+		}
+
+		Map<String, Peer> room = rooms.get(peer.roomId);
+		Peer target = room == null ? null : room.get(message.to());
+		if (target == null) {
+			sendError(
+					peer,
+					SignalingErrorCode.TARGET_NOT_FOUND,
+					"The target peer is not in this room.",
+					peer.roomId,
+					message.requestId(),
+					workPlan);
+			return;
+		}
+		if (target.role != ParticipationGrant.Role.PARTICIPANT) {
+			sendError(
+					peer,
+					SignalingErrorCode.FORBIDDEN,
+					"A host cannot disable another host's media.",
+					peer.roomId,
+					message.requestId(),
+					workPlan);
+			return;
+		}
+
+		TextMessage disabled = serverMessageEncoder.moderationMediaDisabled(
+				peer.roomId,
+				message.requestId(),
+				peer.peerId,
+				target.peerId,
+				message.kind());
+		enqueue(target, disabled, workPlan);
 	}
 
 	private boolean closeForExpiredAuthorizationLocked(Peer peer, WorkPlan workPlan) {
@@ -758,6 +853,7 @@ public class SignalingService implements SmartLifecycle {
 		boolean wasAnnounced = peer.announced;
 		peer.roomId = null;
 		peer.displayName = null;
+		peer.role = null;
 		peer.announced = false;
 		if (peer.connected) {
 			peer.unjoinedSinceMillis = clock.millis();
@@ -1031,6 +1127,7 @@ public class SignalingService implements SmartLifecycle {
 		private byte[] expectedPongPayload;
 		private String roomId;
 		private String displayName;
+		private ParticipationGrant.Role role;
 		private long unjoinedSinceMillis;
 		private final UsageWindow inboundWindow = new UsageWindow();
 		private final ConnectionAdmissionPolicy.Reservation reservation;

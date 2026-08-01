@@ -20,6 +20,7 @@ class RoundAuthPropertiesTest {
 				null,
 				"round",
 				null,
+				null,
 				Duration.ofMinutes(5));
 
 		assertThat(properties.batonMode()).isFalse();
@@ -34,6 +35,7 @@ class RoundAuthPropertiesTest {
 				"  https://baton.example/oauth2/issuer  ",
 				"  round  ",
 				"  https://baton.example/oauth2/jwks.json  ",
+				null,
 				Duration.ofMinutes(5));
 
 		assertThat(properties.batonMode()).isTrue();
@@ -53,6 +55,7 @@ class RoundAuthPropertiesTest {
 				"http://127.0.0.1:8080/oauth2/issuer",
 				"round",
 				"http://localhost:8080/oauth2/jwks",
+				null,
 				Duration.ofMinutes(5));
 
 		assertThat(validator.validate(properties)).isEmpty();
@@ -66,6 +69,7 @@ class RoundAuthPropertiesTest {
 				"https://baton.example/oauth2",
 				"round",
 				null,
+				null,
 				Duration.ofMinutes(5));
 		RoundAuthProperties insecureCookie = new RoundAuthProperties(
 				RoundAuthProperties.Mode.BATON,
@@ -73,6 +77,7 @@ class RoundAuthPropertiesTest {
 				"https://baton.example/oauth2",
 				"round",
 				"https://baton.example/oauth2/jwks",
+				null,
 				Duration.ofMinutes(5));
 		RoundAuthProperties insecureUri = new RoundAuthProperties(
 				RoundAuthProperties.Mode.BATON,
@@ -80,6 +85,7 @@ class RoundAuthPropertiesTest {
 				"http://baton.example/oauth2",
 				"round",
 				"https://baton.example/oauth2/jwks",
+				null,
 				Duration.ofMinutes(5));
 
 		assertThat(validator.validate(incomplete))
@@ -101,6 +107,7 @@ class RoundAuthPropertiesTest {
 				"https://baton.example/oauth2",
 				"round",
 				"https://baton.example/oauth2/jwks",
+				null,
 				Duration.ofSeconds(29));
 		RoundAuthProperties tooLong = new RoundAuthProperties(
 				RoundAuthProperties.Mode.BATON,
@@ -108,6 +115,7 @@ class RoundAuthPropertiesTest {
 				"https://baton.example/oauth2",
 				"round",
 				"https://baton.example/oauth2/jwks",
+				null,
 				Duration.ofMinutes(16));
 
 		assertThat(validator.validate(tooShort))
@@ -116,5 +124,44 @@ class RoundAuthPropertiesTest {
 		assertThat(validator.validate(tooLong))
 				.extracting(violation -> violation.getMessage())
 				.contains("round.auth.max-grant-lifetime must be at most 15m");
+	}
+
+	@Test
+	void validatesAndRedactsTheStandaloneHostTokenDigest() {
+		String digest = "767fda184345e4e642316ae50989a6c79da0396264fac6c141582dad1fb4a7d0";
+		RoundAuthProperties valid = new RoundAuthProperties(
+				RoundAuthProperties.Mode.STANDALONE,
+				"round_access",
+				null,
+				"round",
+				null,
+				"  " + digest.toUpperCase() + "  ",
+				Duration.ofMinutes(5));
+		RoundAuthProperties invalid = new RoundAuthProperties(
+				RoundAuthProperties.Mode.STANDALONE,
+				"round_access",
+				null,
+				"round",
+				null,
+				"not-a-sha256",
+				Duration.ofMinutes(5));
+		RoundAuthProperties mixedBaton = new RoundAuthProperties(
+				RoundAuthProperties.Mode.BATON,
+				"__Secure-round_access",
+				"https://baton.example/oauth2",
+				"round",
+				"https://baton.example/oauth2/jwks",
+				digest,
+				Duration.ofMinutes(5));
+
+		assertThat(validator.validate(valid)).isEmpty();
+		assertThat(valid.standaloneHostTokenSha256()).isEqualTo(digest.toUpperCase());
+		assertThat(valid.toString()).doesNotContain(digest, digest.toUpperCase());
+		assertThat(validator.validate(invalid))
+				.extracting(violation -> violation.getMessage())
+				.contains("round.auth.standalone-host-token-sha256 must contain exactly 64 hexadecimal characters");
+		assertThat(validator.validate(mixedBaton))
+				.extracting(violation -> violation.getMessage())
+				.contains("BATON auth mode must not configure a standalone host token");
 	}
 }

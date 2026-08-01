@@ -1,18 +1,23 @@
 import { useEffect, useRef } from 'react';
-import { MicOffIcon } from './Icons';
+import { CameraOffIcon, MicOffIcon } from './Icons';
 
 export interface ParticipantView {
   peerId: string;
   displayName: string;
+  role: 'host' | 'participant';
   isLocal: boolean;
   audioEnabled: boolean;
   videoEnabled: boolean;
+  videoSource: 'camera' | 'screen';
   connectionState: string;
   stream?: MediaStream | undefined;
 }
 
 interface VideoTileProps {
   participant: ParticipantView;
+  canModerateMedia?: boolean;
+  onDisableAudio?: ((peerId: string) => void) | undefined;
+  onDisableVideo?: ((peerId: string) => void) | undefined;
 }
 
 function initials(name: string) {
@@ -32,7 +37,12 @@ function connectionLabel(connectionState: string) {
   }
 }
 
-export function VideoTile({ participant }: VideoTileProps) {
+export function VideoTile({
+  participant,
+  canModerateMedia = false,
+  onDisableAudio,
+  onDisableVideo,
+}: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -61,7 +71,14 @@ export function VideoTile({ participant }: VideoTileProps) {
       {hasStream ? (
         <video
           ref={videoRef}
-          className={hasVisibleVideo ? undefined : 'video-tile__media--hidden'}
+          className={
+            [
+              hasVisibleVideo ? '' : 'video-tile__media--hidden',
+              participant.videoSource === 'screen' ? 'video-tile__media--screen' : '',
+            ]
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           autoPlay
           muted={participant.isLocal}
           playsInline
@@ -83,6 +100,37 @@ export function VideoTile({ participant }: VideoTileProps) {
         >
           {connectionLabel(participant.connectionState)}
         </span>
+      ) : null}
+
+      <div className="video-tile__badges">
+        {participant.role === 'host' ? <span>방장</span> : null}
+        {participant.videoSource === 'screen' && participant.videoEnabled ? (
+          <span>화면 공유 중</span>
+        ) : null}
+      </div>
+
+      {canModerateMedia && !participant.isLocal && participant.role === 'participant' ? (
+        <div
+          className="video-tile__moderation"
+          aria-label={`${participant.displayName} 미디어 관리`}
+        >
+          <button
+            type="button"
+            disabled={!participant.audioEnabled}
+            aria-label={`${participant.displayName} 마이크 끄기`}
+            onClick={() => onDisableAudio?.(participant.peerId)}
+          >
+            <MicOffIcon />
+          </button>
+          <button
+            type="button"
+            disabled={!participant.videoEnabled}
+            aria-label={`${participant.displayName} 비디오 끄기`}
+            onClick={() => onDisableVideo?.(participant.peerId)}
+          >
+            <CameraOffIcon />
+          </button>
+        </div>
       ) : null}
 
       <div className="video-tile__shade" />

@@ -69,6 +69,7 @@ class RoundJwtDecoderIntegrationTest {
 				issuer,
 				"round",
 				baseUrl + "/jwks",
+				null,
 				Duration.ofMinutes(5));
 		decoder = new RoundSecurityConfig().batonJwtDecoder(properties);
 	}

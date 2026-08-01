@@ -5,8 +5,9 @@ import { ArrowIcon, CameraIcon, CameraOffIcon, MicIcon, MicOffIcon } from './Ico
 interface PrejoinScreenProps {
   displayName: string;
   roomId: string;
+  showHostCapabilityInput: boolean;
   onBack: () => void;
-  onJoin: (preparedMediaStream: MediaStream | null) => void;
+  onJoin: (preparedMediaStream: MediaStream | null, hostCapability?: string) => void;
 }
 
 const initialSnapshot: PrejoinMediaSnapshot = {
@@ -29,12 +30,23 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '장치를 확인하지 못했습니다.';
 }
 
-export function PrejoinScreen({ displayName, roomId, onBack, onJoin }: PrejoinScreenProps) {
+export function PrejoinScreen({
+  displayName,
+  roomId,
+  showHostCapabilityInput,
+  onBack,
+  onJoin,
+}: PrejoinScreenProps) {
   const controllerRef = useRef<PrejoinMedia | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const previewRef = useRef<HTMLVideoElement>(null);
   const [snapshot, setSnapshot] = useState<PrejoinMediaSnapshot>(initialSnapshot);
   const [actionError, setActionError] = useState('');
+  const [hostCapability, setHostCapability] = useState('');
+
+  const normalizedHostCapability = hostCapability.trim() || undefined;
+  const hostCapabilityInvalid =
+    normalizedHostCapability !== undefined && normalizedHostCapability.length < 32;
 
   const ensureController = () => {
     const existing = controllerRef.current;
@@ -101,7 +113,7 @@ export function PrejoinScreen({ displayName, roomId, onBack, onJoin }: PrejoinSc
 
     try {
       const stream = controllerRef.current?.takeStream() ?? null;
-      onJoin(stream);
+      onJoin(stream, normalizedHostCapability);
     } catch (error) {
       setActionError(errorMessage(error));
     }
@@ -110,7 +122,7 @@ export function PrejoinScreen({ displayName, roomId, onBack, onJoin }: PrejoinSc
   const handleJoinWithoutMedia = () => {
     controllerRef.current?.dispose();
     controllerRef.current = null;
-    onJoin(null);
+    onJoin(null, normalizedHostCapability);
   };
 
   const handleBack = () => {
@@ -204,6 +216,28 @@ export function PrejoinScreen({ displayName, roomId, onBack, onJoin }: PrejoinSc
             연결은 입장 버튼을 눌러야 시작됩니다.
           </p>
 
+          {showHostCapabilityInput ? (
+            <label className="prejoin-host-capability">
+              <span>방장 키 (선택)</span>
+              <input
+                type="password"
+                value={hostCapability}
+                minLength={32}
+                maxLength={256}
+                autoComplete="off"
+                placeholder="방장일 때만 입력"
+                aria-describedby="prejoin-host-capability-help"
+                aria-invalid={hostCapabilityInvalid}
+                onChange={(event) => setHostCapability(event.target.value)}
+              />
+              <small id="prejoin-host-capability-help">
+                {hostCapabilityInvalid
+                  ? '방장 키는 32자 이상이어야 합니다.'
+                  : '일반 참가자는 비워 두세요. 32자 이상의 무작위 키만 사용하며 화면에 표시되지 않습니다.'}
+              </small>
+            </label>
+          ) : null}
+
           {isIdle ? (
             <div className="prejoin-idle-actions">
               <button className="prejoin-primary-action" type="button" onClick={handleCheckDevices}>
@@ -213,6 +247,7 @@ export function PrejoinScreen({ displayName, roomId, onBack, onJoin }: PrejoinSc
               <button
                 className="prejoin-text-action"
                 type="button"
+                disabled={hostCapabilityInvalid}
                 onClick={handleJoinWithoutMedia}
               >
                 미디어 없이 입장
@@ -304,7 +339,7 @@ export function PrejoinScreen({ displayName, roomId, onBack, onJoin }: PrejoinSc
                 <button
                   className="prejoin-primary-action"
                   type="button"
-                  disabled={isChecking}
+                  disabled={isChecking || hostCapabilityInvalid}
                   onClick={handleJoinWithMedia}
                 >
                   {hasAnyMedia ? '이 설정으로 입장' : '미디어 없이 입장'}
@@ -314,7 +349,7 @@ export function PrejoinScreen({ displayName, roomId, onBack, onJoin }: PrejoinSc
                   <button
                     className="prejoin-text-action"
                     type="button"
-                    disabled={isChecking}
+                    disabled={isChecking || hostCapabilityInvalid}
                     onClick={handleJoinWithoutMedia}
                   >
                     미디어 없이 입장

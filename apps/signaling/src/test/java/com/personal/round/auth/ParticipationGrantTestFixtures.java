@@ -77,6 +77,7 @@ final class ParticipationGrantTestFixtures {
 				null,
 				"round",
 				null,
+				null,
 				Duration.ofMinutes(5));
 	}
 
@@ -87,6 +88,7 @@ final class ParticipationGrantTestFixtures {
 				"https://baton.example/oauth2",
 				"round",
 				"https://baton.example/oauth2/jwks",
+				null,
 				Duration.ofMinutes(5));
 	}
 }
