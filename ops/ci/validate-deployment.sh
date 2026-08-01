@@ -47,6 +47,7 @@ require_command() {
 
 require_command docker
 require_command jq
+require_command node
 require_command openssl
 docker compose version >/dev/null
 
@@ -85,9 +86,17 @@ docker compose --env-file ops/production.env.example config --quiet
 printf 'Validating deployment shell scripts...\n'
 sh -n ops/turn/entrypoint.sh
 bash -n ops/turn/probe.sh
+bash -n ops/turn/resolve-external-pilot-target.sh
+bash -n ops/turn/resolve-external-release.sh
+bash -n ops/turn/test-external-pilot-target.sh
+bash -n ops/turn/test-external-release.sh
+bash -n ops/turn/test-probe.sh
 bash -n ops/turn/verify-tls.sh
 bash -n ops/turn/test-tls-verification.sh
 bash ops/turn/probe.sh --help >/dev/null
+bash ops/turn/test-external-pilot-target.sh
+bash ops/turn/test-external-release.sh
+bash ops/turn/test-probe.sh
 bash ops/turn/test-tls-verification.sh
 
 tls_gate_line=$(
@@ -105,6 +114,10 @@ tls_client_line=$(
 grep -Fq -- '-servername "$host"' ops/turn/verify-tls.sh
 grep -Fq -- '-verify_hostname "$host"' ops/turn/verify-tls.sh
 grep -Fq -- '-verify_return_error' ops/turn/verify-tls.sh
+
+printf 'Validating the external TURN workflow contract...\n'
+node ops/ci/validate-external-turn-workflow.mjs
+node ops/ci/test-validate-external-turn-workflow.mjs
 
 caddy_validation_image=round-caddy-validation:local
 printf 'Building the pinned custom Caddy runtime...\n'
