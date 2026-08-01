@@ -72,6 +72,7 @@ services:
       # Safety boundary: this bundled edge and its Basic Auth routes implement
       # only the standalone contract. BATON uses a separate manifest and edge.
       ROUND_AUTH_MODE: standalone
+      ROUND_STANDALONE_HOST_TOKEN_SHA256: ${ROUND_STANDALONE_HOST_TOKEN_SHA256:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set ALLOWED_ORIGINS to the exact HTTPS origin}
       MAX_ROOM_SIZE: ${MAX_ROOM_SIZE:-6}
       MAX_SIGNALING_CONNECTIONS: ${MAX_SIGNALING_CONNECTIONS:-1000}
