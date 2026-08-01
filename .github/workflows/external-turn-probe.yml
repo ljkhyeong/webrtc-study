@@ -1,0 +1,125 @@
+name: External TURN pilot probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Operator-declared annotated ROUND release tag
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: external-turn-pilot-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Validate release reference and reviewed target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      release_sha: ${{ steps.release.outputs.release_sha }}
+      tag_object_sha: ${{ steps.release.outputs.tag_object_sha }}
+      round_url: ${{ steps.target.outputs.round_url }}
+      turn_host: ${{ steps.target.outputs.turn_host }}
+      probe_image: ${{ steps.target.outputs.probe_image }}
+
+    steps:
+      - name: Require a default-branch dispatch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+            printf 'External TURN probes must be dispatched from the default branch.\n' >&2
+            exit 1
+          fi
+
+      - name: Check out repository and tags
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Resolve code-reviewed pilot target
+        id: target
+        shell: bash
+        run: bash ops/turn/resolve-external-pilot-target.sh ops/turn/external-pilot-target.properties >>"$GITHUB_OUTPUT"
+
+      - name: Resolve the declared release reference
+        id: release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: bash ops/turn/resolve-external-release.sh "$RELEASE_TAG" >>"$GITHUB_OUTPUT"
+
+  probe:
+    name: Authenticate UDP, TCP, and TLS relay traffic
+    needs: release
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: round-pilot
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out trusted probe implementation
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Prepare optional private TURN CA
+        shell: bash
+        env:
+          TURN_PROBE_CA_PEM: ${{ secrets.TURN_PROBE_CA_PEM }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$TURN_PROBE_CA_PEM" ]]; then
+            exit 0
+          fi
+          ca_file="$RUNNER_TEMP/round-turn-probe-ca.pem"
+          umask 077
+          printf '%s\n' "$TURN_PROBE_CA_PEM" >"$ca_file"
+          chmod 0600 "$ca_file"
+          printf 'TURN_PROBE_CA_FILE=%s\n' "$ca_file" >>"$GITHUB_ENV"
+
+      - name: Probe every public TURN transport
+        shell: bash
+        env:
+          ROUND_URL: ${{ needs.release.outputs.round_url }}
+          ROUND_ACCESS_USER: ${{ secrets.ROUND_ACCESS_USER }}
+          ROUND_ACCESS_PASSWORD: ${{ secrets.ROUND_ACCESS_PASSWORD }}
+          TURN_PROBE_HOST: ${{ needs.release.outputs.turn_host }}
+          TURN_PROBE_IMAGE: ${{ needs.release.outputs.probe_image }}
+          TURN_PROBE_TRANSPORTS: udp,tcp,tls
+        run: bash ops/turn/probe.sh
+
+      - name: Record pilot evidence
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ needs.release.outputs.release_sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          ROUND_URL: ${{ needs.release.outputs.round_url }}
+          TAG_OBJECT_SHA: ${{ needs.release.outputs.tag_object_sha }}
+          TURN_PROBE_HOST: ${{ needs.release.outputs.turn_host }}
+          TURN_PROBE_IMAGE: ${{ needs.release.outputs.probe_image }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          {
+            printf '### External TURN pilot probe\n\n'
+            printf -- '- Operator-declared release: `%s` (`%s`)\n' "$RELEASE_TAG" "$RELEASE_SHA"
+            printf -- '- Tag object: `%s`\n' "$TAG_OBJECT_SHA"
+            printf -- '- Workflow commit: `%s`\n' "$WORKFLOW_SHA"
+            printf -- '- Target: `%s` / `%s`\n' "$ROUND_URL" "$TURN_PROBE_HOST"
+            printf -- '- Probe image: `%s`\n' "$TURN_PROBE_IMAGE"
+            printf -- '- Transports: authenticated UDP, TCP, and TLS relay\n'
+            printf -- '- Result: passed from GitHub-hosted external runner\n'
+            printf -- '- Scope: deployment identity was not verified automatically\n'
+          } >>"$GITHUB_STEP_SUMMARY"
