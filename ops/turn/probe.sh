@@ -63,6 +63,7 @@ tls_port=${TURN_PROBE_TLS_PORT:-5349}
 probe_timeout=${TURN_PROBE_TIMEOUT_SECONDS:-20}
 probe_image=${TURN_PROBE_IMAGE:-coturn/coturn:4.14.0-r0-alpine}
 tls_ca_file=${TURN_PROBE_CA_FILE:-}
+export LC_ALL=C
 
 [[ "$round_url" == https://* ]] || fail "ROUND_URL must use https://"
 [[ "$access_user" =~ ^[A-Za-z0-9._-]+$ ]] \
@@ -70,7 +71,7 @@ tls_ca_file=${TURN_PROBE_CA_FILE:-}
 [[ -n "$access_password" ]] || fail "ROUND_ACCESS_PASSWORD must be nonempty"
 [[ "$access_password" != *$'\r'* && "$access_password" != *$'\n'* ]] \
   || fail "ROUND_ACCESS_PASSWORD must contain no line break"
-LC_ALL=C [[ "$access_password" =~ ^[[:print:]]+$ ]] \
+[[ "$access_password" =~ ^[[:print:]]+$ ]] \
   || fail "ROUND_ACCESS_PASSWORD must contain only printable characters"
 case "$turn_host" in
   '' | -* | *[!A-Za-z0-9.-]*)
@@ -93,11 +94,24 @@ validate_port TURN_PROBE_TLS_PORT "$tls_port"
 umask 077
 credential_file=$(mktemp)
 curl_config_file=$(mktemp)
+container_ca_file=
 cleanup() {
   rm -f -- "$credential_file" "$curl_config_file"
+  if [[ -n "$container_ca_file" ]]; then
+    rm -f -- "$container_ca_file"
+  fi
 }
 trap cleanup EXIT
 chmod 0600 "$credential_file" "$curl_config_file"
+
+if [[ -n "$tls_ca_file" ]]; then
+  [[ -f "$tls_ca_file" && -r "$tls_ca_file" ]] \
+    || fail "TURN_PROBE_CA_FILE must be a readable regular file"
+  container_ca_file=$(mktemp)
+  chmod 0600 "$container_ca_file"
+  cp -- "$tls_ca_file" "$container_ca_file" \
+    || fail "TURN_PROBE_CA_FILE could not be copied into a private snapshot"
+fi
 
 escape_curl_config_value() {
   local value=$1
@@ -145,13 +159,10 @@ export TURN_PROBE_HOST=$turn_host
 verify_tls_endpoint() {
   require_command openssl
   [[ -r "$tls_verifier" ]] || fail "TLS verifier is missing or unreadable"
-  if [[ -n "$tls_ca_file" && ! -r "$tls_ca_file" ]]; then
-    fail "TURN_PROBE_CA_FILE must be readable"
-  fi
 
   local command=(bash "$tls_verifier" "$turn_host" "$tls_port")
-  if [[ -n "$tls_ca_file" ]]; then
-    command+=("$tls_ca_file")
+  if [[ -n "$container_ca_file" ]]; then
+    command+=("$container_ca_file")
   fi
 
   if ! timeout "${probe_timeout}s" "${command[@]}" >/dev/null 2>&1; then
@@ -195,13 +206,30 @@ probe_transport() {
 
   export TURN_PROBE_PORT=$port
   export TURN_PROBE_TRANSPORT=$transport
+  export TURN_PROBE_TLS_CA_FILE=/etc/ssl/certs/ca-certificates.crt
 
-  if ! timeout "${probe_timeout}s" docker run --rm \
-    -e TURN_PROBE_CREDENTIAL \
-    -e TURN_PROBE_HOST \
-    -e TURN_PROBE_PORT \
-    -e TURN_PROBE_TRANSPORT \
-    -e TURN_PROBE_USERNAME \
+  local docker_options=(
+    --rm
+    -e TURN_PROBE_CREDENTIAL
+    -e TURN_PROBE_HOST
+    -e TURN_PROBE_PORT
+    -e TURN_PROBE_TRANSPORT
+    -e TURN_PROBE_USERNAME
+  )
+  if [[ "$transport" == tls ]]; then
+    if [[ -n "$container_ca_file" ]]; then
+      TURN_PROBE_TLS_CA_FILE=/run/round-turn-probe/ca.pem
+      export TURN_PROBE_TLS_CA_FILE
+      docker_options+=(
+        --mount
+        "type=bind,source=$container_ca_file,target=$TURN_PROBE_TLS_CA_FILE,readonly"
+      )
+    fi
+    docker_options+=(-e TURN_PROBE_TLS_CA_FILE)
+  fi
+
+  if ! timeout "${probe_timeout}s" docker run \
+    "${docker_options[@]}" \
     --entrypoint /bin/sh \
     "$probe_image" \
     -eu -c '
@@ -221,7 +249,7 @@ probe_transport() {
         tls)
           exec /usr/bin/turnutils_uclient \
             -t -S -y -c -n 1 -p "$TURN_PROBE_PORT" \
-            -E /etc/ssl/certs/ca-certificates.crt \
+            -E "$TURN_PROBE_TLS_CA_FILE" \
             -u "$TURN_PROBE_USERNAME" -w "$TURN_PROBE_CREDENTIAL" \
             "$TURN_PROBE_HOST"
           ;;
