@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { CameraOffIcon, MicOffIcon } from './Icons';
+import { enterVideoFullscreen, exitVideoFullscreen } from '../lib/fullscreen';
+import { CameraOffIcon, FullscreenIcon, MicOffIcon } from './Icons';
 
 export interface ParticipantView {
   peerId: string;
@@ -59,8 +60,20 @@ export function VideoTile({
 
   const hasStream = Boolean(participant.stream);
   const hasVisibleVideo = participant.videoEnabled && hasStream;
+  const isRemoteScreenShare =
+    !participant.isLocal && participant.videoSource === 'screen' && hasVisibleVideo;
   const isConnected =
     participant.isLocal || ['connected', 'completed'].includes(participant.connectionState);
+
+  useEffect(() => {
+    if (isRemoteScreenShare) {
+      return;
+    }
+    const video = videoRef.current;
+    if (video !== null) {
+      void exitVideoFullscreen(video);
+    }
+  }, [isRemoteScreenShare]);
 
   return (
     <article
@@ -108,6 +121,23 @@ export function VideoTile({
           <span>화면 공유 중</span>
         ) : null}
       </div>
+
+      {isRemoteScreenShare ? (
+        <button
+          className="video-tile__fullscreen"
+          type="button"
+          aria-label={`${participant.displayName}의 화면 공유 전체 화면으로 보기`}
+          onClick={() => {
+            const video = videoRef.current;
+            if (video !== null) {
+              void enterVideoFullscreen(video);
+            }
+          }}
+        >
+          <FullscreenIcon />
+          <span>전체 화면</span>
+        </button>
+      ) : null}
 
       {canModerateMedia && !participant.isLocal && participant.role === 'participant' ? (
         <div

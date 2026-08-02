@@ -77,6 +77,14 @@ export function CopyIcon(props: IconProps) {
   );
 }
 
+export function FullscreenIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+    </IconFrame>
+  );
+}
+
 export function MessageIcon(props: IconProps) {
   return (
     <IconFrame {...props}>

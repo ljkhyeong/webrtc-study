@@ -5,6 +5,7 @@ import {
   countNewLocalDeliveryIssues,
   countNewRemoteMessages,
   RoomView,
+  shouldSubmitChatOnEnter,
   type ChatMessageView,
 } from './RoomView';
 
@@ -29,6 +30,7 @@ function renderRoom(overrides: Partial<Parameters<typeof RoomView>[0]> = {}) {
       onDisableParticipantAudio={vi.fn()}
       onDisableParticipantVideo={vi.fn()}
       onSendMessage={vi.fn(() => true)}
+      onSelectDevices={vi.fn()}
       onReconnect={vi.fn()}
       onLeave={vi.fn()}
       {...overrides}
@@ -156,7 +158,7 @@ describe('RoomView connection state', () => {
     expect(markup).toContain('class="chat-panel" aria-hidden="true" inert=""');
   });
 
-  it('disables controls for unavailable local media instead of offering a no-op toggle', () => {
+  it('offers device selection for unavailable local media after joining', () => {
     const markup = renderRoom({
       status: 'active',
       statusLabel: '입장 완료 · 대기 중',
@@ -166,12 +168,29 @@ describe('RoomView connection state', () => {
       videoEnabled: false,
     });
 
-    expect(markup).toContain('aria-label="사용 가능한 마이크 없음"');
-    expect(markup).toContain('aria-label="사용 가능한 카메라 없음"');
-    expect(markup).toContain('마이크 없음');
-    expect(markup).toContain('카메라 없음');
+    expect(markup).toContain('aria-label="마이크 장치 다시 선택"');
+    expect(markup).toContain('aria-label="카메라 장치 다시 선택"');
+    expect(markup).toContain('마이크 연결');
+    expect(markup).toContain('카메라 연결');
     expect(markup).toContain('이 브라우저는 화면 공유를 지원하지 않음');
-    expect(markup.match(/disabled=""/g)).toHaveLength(4);
+    expect(markup.match(/disabled=""/g)).toHaveLength(2);
+  });
+
+  it('shows device recovery only for a recoverable local media warning', () => {
+    const recoverable = renderRoom({
+      status: 'active',
+      mediaWarning: '마이크 연결이 종료되었습니다.',
+      mediaRecoveryAvailable: true,
+    });
+    const generic = renderRoom({
+      status: 'active',
+      mediaWarning: 'TURN 연결 정보를 갱신하지 못했습니다.',
+    });
+
+    expect(recoverable).toContain('room-notice--recoverable');
+    expect(recoverable).toContain('>장치 다시 선택</button>');
+    expect(generic).not.toContain('room-notice--recoverable');
+    expect(generic).not.toContain('>장치 다시 선택</button>');
   });
 
   it('shows active screen sharing and locks the camera toggle until sharing stops', () => {
@@ -314,5 +333,56 @@ describe('RoomView connection state', () => {
     ];
 
     expect(countNewLocalDeliveryIssues(messages, previousDeliveryStates)).toBe(2);
+  });
+});
+
+describe('RoomView chat enter handling', () => {
+  it.each([
+    {
+      name: 'active Korean composition',
+      state: {
+        key: 'Enter',
+        shiftKey: false,
+        isComposing: true,
+        compositionActive: true,
+        keyCode: 229,
+      },
+      expected: false,
+    },
+    {
+      name: 'Safari composition commit fallback',
+      state: {
+        key: 'Enter',
+        shiftKey: false,
+        isComposing: false,
+        compositionActive: false,
+        keyCode: 229,
+      },
+      expected: false,
+    },
+    {
+      name: 'shift-enter newline',
+      state: {
+        key: 'Enter',
+        shiftKey: true,
+        isComposing: false,
+        compositionActive: false,
+        keyCode: 13,
+      },
+      expected: false,
+    },
+    {
+      name: 'ordinary enter send',
+      state: {
+        key: 'Enter',
+        shiftKey: false,
+        isComposing: false,
+        compositionActive: false,
+        keyCode: 13,
+      },
+      expected: true,
+    },
+  ])('$name', ({ state, expected }) => {
+    expect(shouldSubmitChatOnEnter(state)).toBe(expected);
   });
 });

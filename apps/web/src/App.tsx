@@ -130,7 +130,7 @@ export function roomWarningMessage(issue: RoomIssue | null | undefined): string 
     case 'screen-share-sender-recovery':
       return '일부 참가자와 화면 공유 전환에 실패해 영상 연결을 자동으로 복구하고 있습니다. 현재 통화는 유지됩니다.';
     case 'local-media-ended':
-      return '마이크 또는 카메라 연결이 종료되었습니다. 현재 통화는 유지됩니다. 다시 사용하려면 방에 다시 입장해 장치를 확인해 주세요.';
+      return '마이크 또는 카메라 연결이 종료되었습니다. 장치를 다시 선택하면 현재 방 연결을 새로 시작합니다.';
     case 'peer-connection-timeout':
     case 'peer-negotiation-failed':
       return PEER_CONNECTION_FAILURE_MESSAGE;
@@ -625,6 +625,7 @@ function ActiveRoom({
       mediaWarning={
         isTerminalPeerWarning(snapshot?.warning) ? undefined : roomWarningMessage(snapshot?.warning)
       }
+      mediaRecoveryAvailable={snapshot?.warning?.code === 'local-media-ended'}
       errorMessage={
         roomErrorMessage(snapshot?.error) ||
         actionError ||
@@ -671,6 +672,7 @@ function ActiveRoom({
         }
       }}
       onSendMessage={handleSendMessage}
+      onSelectDevices={onReconnect}
       onReconnect={onReconnect}
       onLeave={handleLeave}
     />

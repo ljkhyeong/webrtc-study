@@ -64,6 +64,31 @@ describe('VideoTile', () => {
     expect(markup).toContain('video-tile__media--screen');
     expect(markup).toContain('화면 공유 중');
     expect(markup).toContain('방장');
+    expect(markup).toContain('스터디원의 화면 공유 전체 화면으로 보기');
+  });
+
+  it.each([
+    { name: 'local share', overrides: { isLocal: true, videoSource: 'screen' as const } },
+    { name: 'remote camera', overrides: { videoSource: 'camera' as const } },
+    {
+      name: 'disabled remote share',
+      overrides: { videoSource: 'screen' as const, videoEnabled: false },
+    },
+    {
+      name: 'remote share without stream',
+      overrides: { videoSource: 'screen' as const, stream: undefined },
+    },
+  ])('does not offer fullscreen for $name', ({ overrides }) => {
+    const markup = renderToStaticMarkup(
+      <VideoTile
+        participant={participant({
+          stream: {} as MediaStream,
+          ...overrides,
+        })}
+      />,
+    );
+
+    expect(markup).not.toContain('화면 공유 전체 화면으로 보기');
   });
 
   it('offers host-only disable controls for a remote participant', () => {

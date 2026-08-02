@@ -1180,6 +1180,33 @@ textarea:focus-visible {
   font-weight: 800;
 }
 
+.video-tile__fullscreen {
+  position: absolute;
+  right: 13px;
+  bottom: 52px;
+  z-index: 6;
+  display: flex;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 9px;
+  align-items: center;
+  gap: 7px;
+  color: #e8eeee;
+  background: rgb(9 17 21 / 78%);
+  font-size: 0.62rem;
+  font-weight: 750;
+  backdrop-filter: blur(10px);
+}
+
+.video-tile__fullscreen:hover {
+  background: rgb(28 42 48 / 92%);
+}
+
+.video-tile__fullscreen svg {
+  width: 16px;
+}
+
 .video-tile__shade {
   top: auto;
   height: 34%;
@@ -1388,6 +1415,29 @@ textarea:focus-visible {
   border-color: rgb(220 177 79 / 30%);
   color: #ecd291;
   background: rgb(59 48 21 / 88%);
+}
+
+.room-notice--recoverable {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.room-notice--recoverable span {
+  min-width: 0;
+}
+
+.room-notice--recoverable button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgb(236 210 145 / 32%);
+  border-radius: 8px;
+  flex: 0 0 auto;
+  color: #fff0c6;
+  background: rgb(87 67 22 / 72%);
+  font-size: 0.68rem;
+  font-weight: 750;
 }
 
 .room-notice--error {

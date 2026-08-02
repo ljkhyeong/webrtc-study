@@ -40,6 +40,7 @@ interface RoomViewProps {
   moderationNotice?: string | undefined;
   peerRecoveryMessage?: string | undefined;
   mediaWarning?: string | undefined;
+  mediaRecoveryAvailable?: boolean | undefined;
   errorMessage?: string | undefined;
   onToggleAudio: () => void;
   onToggleVideo: () => void;
@@ -47,8 +48,27 @@ interface RoomViewProps {
   onDisableParticipantAudio: (peerId: string) => void;
   onDisableParticipantVideo: (peerId: string) => void;
   onSendMessage: (text: string) => boolean;
+  onSelectDevices: () => void;
   onReconnect: () => void;
   onLeave: () => void;
+}
+
+interface ChatEnterState {
+  readonly key: string;
+  readonly shiftKey: boolean;
+  readonly isComposing: boolean;
+  readonly compositionActive: boolean;
+  readonly keyCode: number;
+}
+
+export function shouldSubmitChatOnEnter(state: ChatEnterState): boolean {
+  return (
+    state.key === 'Enter' &&
+    !state.shiftKey &&
+    !state.isComposing &&
+    !state.compositionActive &&
+    state.keyCode !== 229
+  );
 }
 
 const messageTime = new Intl.DateTimeFormat('ko-KR', {
@@ -171,6 +191,7 @@ export function RoomView({
   moderationNotice,
   peerRecoveryMessage,
   mediaWarning,
+  mediaRecoveryAvailable = false,
   errorMessage,
   onToggleAudio,
   onToggleVideo,
@@ -178,6 +199,7 @@ export function RoomView({
   onDisableParticipantAudio,
   onDisableParticipantVideo,
   onSendMessage,
+  onSelectDevices,
   onReconnect,
   onLeave,
 }: RoomViewProps) {
@@ -192,6 +214,7 @@ export function RoomView({
   const previousLocalDeliveryStates = useRef(collectLocalDeliveryStates(messages));
   const hasObservedMessages = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatCompositionActive = useRef(false);
 
   useEffect(() => {
     const currentLocalDeliveryStates = collectLocalDeliveryStates(messages);
@@ -361,9 +384,19 @@ export function RoomView({
                 </div>
               ) : null}
               {mediaWarning ? (
-                <p className="room-notice room-notice--warning" role="status">
-                  {mediaWarning}
-                </p>
+                <div
+                  className={`room-notice room-notice--warning${
+                    mediaRecoveryAvailable ? ' room-notice--recoverable' : ''
+                  }`}
+                  role="status"
+                >
+                  <span>{mediaWarning}</span>
+                  {mediaRecoveryAvailable ? (
+                    <button type="button" onClick={onSelectDevices}>
+                      장치 다시 선택
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
               {moderationNotice ? (
                 <p className="room-notice room-notice--moderation" role="status">
@@ -429,11 +462,26 @@ export function RoomView({
               placeholder="메시지 입력"
               value={message}
               onChange={(event) => setMessage(event.target.value)}
+              onCompositionStart={() => {
+                chatCompositionActive.current = true;
+              }}
+              onCompositionEnd={() => {
+                chatCompositionActive.current = false;
+              }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
+                if (
+                  !shouldSubmitChatOnEnter({
+                    key: event.key,
+                    shiftKey: event.shiftKey,
+                    isComposing: event.nativeEvent.isComposing,
+                    compositionActive: chatCompositionActive.current,
+                    keyCode: event.keyCode,
+                  })
+                ) {
+                  return;
                 }
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
               }}
             />
             <button type="submit" aria-label="메시지 보내기" disabled={!message.trim()}>
@@ -453,36 +501,40 @@ export function RoomView({
         <button
           className={`control-button${audioEnabled ? '' : ' control-button--off'}`}
           type="button"
-          disabled={!audioAvailable}
+          disabled={!audioAvailable && !isActive}
           aria-label={
             !audioAvailable
-              ? '사용 가능한 마이크 없음'
+              ? isActive
+                ? '마이크 장치 다시 선택'
+                : '사용 가능한 마이크 없음'
               : audioEnabled
                 ? '마이크 끄기'
                 : '마이크 켜기'
           }
-          onClick={onToggleAudio}
+          onClick={audioAvailable ? onToggleAudio : onSelectDevices}
         >
           {audioEnabled ? <MicIcon /> : <MicOffIcon />}
-          <span>{!audioAvailable ? '마이크 없음' : audioEnabled ? '마이크' : '음소거'}</span>
+          <span>{!audioAvailable ? '마이크 연결' : audioEnabled ? '마이크' : '음소거'}</span>
         </button>
         <button
           className={`control-button${videoEnabled ? '' : ' control-button--off'}`}
           type="button"
-          disabled={!videoAvailable || screenSharing}
+          disabled={screenSharing || (!videoAvailable && !isActive)}
           aria-label={
             screenSharing
               ? '화면 공유 중에는 카메라를 변경할 수 없음'
               : !videoAvailable
-                ? '사용 가능한 카메라 없음'
+                ? isActive
+                  ? '카메라 장치 다시 선택'
+                  : '사용 가능한 카메라 없음'
                 : videoEnabled
                   ? '카메라 끄기'
                   : '카메라 켜기'
           }
-          onClick={onToggleVideo}
+          onClick={videoAvailable ? onToggleVideo : onSelectDevices}
         >
           {videoEnabled ? <CameraIcon /> : <CameraOffIcon />}
-          <span>{!videoAvailable ? '카메라 없음' : videoEnabled ? '카메라' : '카메라 꺼짐'}</span>
+          <span>{!videoAvailable ? '카메라 연결' : videoEnabled ? '카메라' : '카메라 꺼짐'}</span>
         </button>
         <button
           className={`control-button${screenSharing ? ' control-button--active' : ''}`}
