@@ -285,6 +285,60 @@ gate open until those checks pass in the deployment environment.
   obtains and renews the web certificate separately through ACME.
 - NAT port forwarding, if the Docker host does not own the public address.
 
+### Temporary macOS study pilot
+
+The Linux Compose topology remains the production contract. For a short-lived
+study test on Docker Desktop, layer `compose.macos-pilot.yml` on top of
+`compose.yml` and use `ops/macos-pilot.env`. The override publishes coturn and
+its relay range explicitly on Docker Desktop, gives coturn a fixed bridge
+address, and binds Caddy to alternate Mac host ports so another local service
+can keep port 80.
+
+```bash
+cp ops/macos-pilot.env.example ops/macos-pilot.env
+chmod 0600 ops/macos-pilot.env
+docker compose \
+  -f compose.yml \
+  -f compose.macos-pilot.yml \
+  --env-file ops/macos-pilot.env \
+  config --quiet
+```
+
+Before starting the stack, reserve the Mac's LAN address in DHCP and configure
+the router with these mappings. The left side is the public port and the right
+side is the Mac destination:
+
+| Public port     | Protocol | Mac destination |
+| --------------- | -------- | --------------- |
+| `80`            | TCP      | `ROUND_HTTP_BIND_PORT` (default `8080`)  |
+| `443`           | TCP      | `ROUND_HTTPS_BIND_PORT` (default `8443`) |
+| `443`           | UDP      | `ROUND_HTTPS_BIND_PORT` (default `8443`) |
+| `3478`          | TCP/UDP  | `3478`          |
+| `5349`          | TCP/UDP  | `5349`          |
+| `49160-49259`   | UDP      | same range      |
+
+The HTTP and HTTPS translations still deliver the public ACME ports to Caddy's
+container ports 80 and 443. `turn.b4ton.com` must remain DNS-only at Cloudflare,
+and coturn still requires a publicly trusted certificate at the configured
+`TURN_TLS_CERT_FILE` and `TURN_TLS_KEY_FILE` paths. Keep the Mac awake, disable
+automatic sleep for the test window, and stop the stack afterward. This Docker
+Desktop topology is a pilot convenience only; it is not evidence for the Linux
+production gate or a substitute for the external TURN probe.
+
+The macOS override also mounts `ops/caddy/Caddyfile.macos-pilot`. Mobile Safari
+and some Android browsers do not consistently reuse a page's HTTP Basic Auth
+credential for the `/signal` WebSocket upgrade, so this pilot-only policy keeps
+the UI and static assets behind Basic Auth while excluding `/signal` and
+`/api/turn-credentials` from that coarse edge gate. Those two routes still pass
+through the signaling service's exact-origin validation, connection and frame
+limits, and TURN issuance quotas. This is a short-lived compatibility tradeoff:
+non-browser clients can forge an Origin header, so do not copy the exception to
+the Linux production Caddyfile or treat it as user authentication.
+
+If either default host port is already occupied, set a free value in
+`ops/macos-pilot.env` and change the router destination to the same value. Do
+not stop an unrelated local service merely to preserve the example port.
+
 The included coturn configuration is IPv4-only. Do not publish an `AAAA` record
 for the TURN hostname without adding and testing an IPv6 relay configuration.
 

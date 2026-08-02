@@ -1,0 +1,42 @@
+# Temporary Docker Desktop topology for study-group testing on macOS.
+#
+# Keep compose.yml as the Linux production contract. This override replaces
+# host networking with explicit Docker Desktop port publishing and binds the
+# edge to alternate host ports so it can coexist with a local service on :80.
+
+services:
+  edge:
+    # Mobile Safari and some Android browsers do not reuse HTTP Basic Auth
+    # credentials for a WebSocket upgrade. Keep the web UI behind Basic Auth,
+    # but use the pilot-only Caddy policy for the same-origin transport paths.
+    command:
+      - caddy
+      - run
+      - --config
+      - /etc/caddy/Caddyfile.macos-pilot
+      - --adapter
+      - caddyfile
+    ports: !override
+      - '${ROUND_HTTP_BIND_PORT:-8080}:80/tcp'
+      - '${ROUND_HTTPS_BIND_PORT:-8443}:443/tcp'
+      - '${ROUND_HTTPS_BIND_PORT:-8443}:443/udp'
+    volumes:
+      - ./ops/caddy/Caddyfile.macos-pilot:/etc/caddy/Caddyfile.macos-pilot:ro
+
+  turn:
+    network_mode: !reset null
+    ports:
+      - '3478:3478/udp'
+      - '3478:3478/tcp'
+      - '5349:5349/udp'
+      - '5349:5349/tcp'
+      - '${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49259}:${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49259}/udp'
+    networks:
+      turn:
+        ipv4_address: ${TURN_CONTAINER_IP:-172.31.0.10}
+
+networks:
+  turn:
+    ipam:
+      config:
+        - subnet: ${TURN_CONTAINER_SUBNET:-172.31.0.0/24}

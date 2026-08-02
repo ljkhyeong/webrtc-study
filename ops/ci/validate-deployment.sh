@@ -83,6 +83,59 @@ export ROUND_ACCESS_USER ROUND_ACCESS_PASSWORD_HASH
 printf 'Validating Compose interpolation with temporary dummy fixtures...\n'
 docker compose --env-file ops/production.env.example config --quiet
 
+printf 'Validating the macOS pilot Compose override...\n'
+macos_pilot_config=$(
+  ACME_EMAIL=ci@round.invalid \
+  TURN_EXTERNAL_IP=203.0.113.10 \
+    docker compose \
+      -f compose.yml \
+      -f compose.macos-pilot.yml \
+      --env-file ops/macos-pilot.env.example \
+      config --format json
+)
+jq -e '
+  ([.services.edge.ports[]
+      | {target, published, protocol}]
+    | contains([
+        {target: 80, published: "8080", protocol: "tcp"},
+        {target: 443, published: "8443", protocol: "tcp"},
+        {target: 443, published: "8443", protocol: "udp"}
+      ]))
+  and (.services.turn.network_mode == null)
+  and (.services.turn.networks.turn.ipv4_address == "172.31.0.10")
+  and (.networks.turn.ipam.config[0].subnet == "172.31.0.0/24")
+  and (.services.edge.command == [
+        "caddy",
+        "run",
+        "--config",
+        "/etc/caddy/Caddyfile.macos-pilot",
+        "--adapter",
+        "caddyfile"
+      ])
+  and ([.services.edge.volumes[]
+        | select(
+            .type == "bind"
+            and .target == "/etc/caddy/Caddyfile.macos-pilot"
+            and .read_only == true
+          )]
+      | length == 1)
+  and ([.services.turn.ports[]
+        | select(.target == 3478 and .protocol == "tcp")]
+      | length == 1)
+  and ([.services.turn.ports[]
+        | select(.target == 3478 and .protocol == "udp")]
+      | length == 1)
+  and ([.services.turn.ports[]
+        | select(.target == 5349 and .protocol == "tcp")]
+      | length == 1)
+  and ([.services.turn.ports[]
+        | select(.target == 5349 and .protocol == "udp")]
+      | length == 1)
+  and ([.services.turn.ports[]
+        | select(.target >= 49160 and .target <= 49259 and .protocol == "udp")]
+      | length == 100)
+' <<<"$macos_pilot_config" >/dev/null
+
 printf 'Validating deployment shell scripts...\n'
 sh -n ops/turn/entrypoint.sh
 bash -n ops/turn/probe.sh
@@ -136,6 +189,14 @@ docker run --rm \
   -e ROUND_DOMAIN=round.invalid \
   "$caddy_validation_image" \
   caddy validate --config /etc/caddy/Caddyfile
+docker run --rm \
+  -v "$repo_root/ops/caddy/Caddyfile.macos-pilot:/etc/caddy/Caddyfile.macos-pilot:ro" \
+  -e ACME_EMAIL=ci@round.invalid \
+  -e ROUND_ACCESS_PASSWORD_HASH \
+  -e ROUND_ACCESS_USER \
+  -e ROUND_DOMAIN=round.invalid \
+  "$caddy_validation_image" \
+  caddy validate --config /etc/caddy/Caddyfile.macos-pilot
 
 printf 'Verifying the adapted rate-limit policy and handler order...\n'
 docker run --rm \
@@ -162,6 +223,25 @@ docker run --rm \
         and ($rate.rate_limits.pilot_client.match[0].not[0].path == ["/healthz"])
         and ($rate.rate_limits.pilot_client.match[0].header.Authorization == ["*"])
         and (($rate.rate_limits | keys) == ["pilot_client"])
+    ' >/dev/null
+
+printf 'Verifying the macOS pilot mobile transport exception...\n'
+docker run --rm \
+  -v "$repo_root/ops/caddy/Caddyfile.macos-pilot:/etc/caddy/Caddyfile.macos-pilot:ro" \
+  -e ACME_EMAIL=ci@round.invalid \
+  -e ROUND_ACCESS_PASSWORD_HASH \
+  -e ROUND_ACCESS_USER \
+  -e ROUND_DOMAIN=round.invalid \
+  "$caddy_validation_image" \
+  caddy adapt --config /etc/caddy/Caddyfile.macos-pilot \
+  | jq -e '
+      [.. | objects
+        | select((.handle? // []) | any(.handler? == "authentication"))
+        | .match[0].not[0].path] == [[
+          "/healthz",
+          "/signal",
+          "/api/turn-credentials"
+        ]]
     ' >/dev/null
 
 printf 'Checking Dockerfile runtime targets...\n'

@@ -1,3 +1,5 @@
 production.env
+macos-pilot.env
+macos-pilot.credentials
 certs/*
 !certs/.gitignore
