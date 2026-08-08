@@ -52,8 +52,7 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 		int payloadBytes = message.getPayloadLength();
 		if (payloadBytes > maxTextPayloadBytes) {
 			signalingService.recordInvalidFrame();
-			signalingService.disconnect(session);
-			session.close(MESSAGE_TOO_BIG);
+			signalingService.disconnectAndClose(session, MESSAGE_TOO_BIG);
 			return;
 		}
 		if (!signalingService.acceptInboundFrame(session, payloadBytes)) {
@@ -98,10 +97,7 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 		log.debug(
 				"WebSocket transport error; closing transport ({})",
 				exception.getClass().getSimpleName());
-		signalingService.disconnect(session);
-		if (session.isOpen()) {
-			session.close(CloseStatus.SERVER_ERROR);
-		}
+		signalingService.disconnectAndClose(session, CloseStatus.SERVER_ERROR);
 	}
 
 	@Override

@@ -63,9 +63,20 @@ class SignalingWebSocketHandlerTest {
 		handler.handleMessage(session, new TextMessage(oversized));
 
 		var order = inOrder(service, session);
-		order.verify(service).disconnect(session);
-		order.verify(session).close(new CloseStatus(1009, "Message exceeds 64 KiB"));
+		order.verify(service).recordInvalidFrame();
+		order.verify(service).disconnectAndClose(
+				session,
+				new CloseStatus(1009, "Message exceeds 64 KiB"));
+		verify(session, never()).close(any(CloseStatus.class));
 		verify(service, org.mockito.Mockito.never()).handle(any(), any());
+	}
+
+	@Test
+	void delegatesTransportErrorClosePolicyToTheSignalingService() throws Exception {
+		handler.handleTransportError(session, new java.io.IOException("transport failed"));
+
+		verify(service).disconnectAndClose(session, CloseStatus.SERVER_ERROR);
+		verify(session, never()).close(any(CloseStatus.class));
 	}
 
 	@Test
