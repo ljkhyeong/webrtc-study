@@ -205,13 +205,113 @@ test('방장과 참가자가 미디어·화면 공유·채팅을 사용하고 �
     await expect(second.page.getByRole('button', { name: '가온 마이크 끄기' })).toHaveCount(0);
 
     await first.page.getByRole('button', { name: '화면 공유 시작' }).click();
-    await expect(participantTile(second.page, '가온').getByText('화면 공유 중')).toBeVisible();
+    const firstTileOnSecondPage = participantTile(second.page, '가온');
+    await expect(firstTileOnSecondPage.getByText('화면 공유 중')).toBeVisible();
     await expect(
       first.page.getByRole('button', { name: '화면 공유 중에는 카메라를 변경할 수 없음' }),
     ).toBeDisabled();
     await expect.poll(() => remoteVideoHasVisibleContent(second.page, '가온')).toBe(true);
+
+    const remoteScreenVideo = firstTileOnSecondPage.locator('video');
+    const remoteFullscreenButton = firstTileOnSecondPage.getByRole('button', {
+      name: '가온의 화면 공유 전체 화면으로 보기',
+    });
+    await remoteScreenVideo.evaluate((element) => {
+      const video = element as HTMLVideoElement & {
+        webkitEnterFullscreen?: () => void;
+        webkitRequestFullscreen?: () => Promise<void>;
+        readonly webkitSupportsFullscreen?: boolean;
+      };
+      const recordAttempt = (name: string) => {
+        const attempts = Number.parseInt(video.dataset[name] ?? '0', 10);
+        video.dataset[name] = String(attempts + 1);
+      };
+
+      Object.defineProperties(video, {
+        requestFullscreen: {
+          configurable: true,
+          value: async () => {
+            recordAttempt('standardFullscreenAttempts');
+            throw new DOMException('standard fullscreen denied', 'NotAllowedError');
+          },
+        },
+        webkitRequestFullscreen: {
+          configurable: true,
+          value: async () => {
+            recordAttempt('webkitRequestFullscreenAttempts');
+            throw new DOMException('prefixed fullscreen denied', 'NotAllowedError');
+          },
+        },
+        webkitSupportsFullscreen: {
+          configurable: true,
+          value: true,
+        },
+        webkitEnterFullscreen: {
+          configurable: true,
+          value: () => {
+            recordAttempt('webkitEnterFullscreenAttempts');
+          },
+        },
+      });
+    });
+
+    await remoteFullscreenButton.click();
+    await expect(remoteScreenVideo).toHaveAttribute('data-standard-fullscreen-attempts', '1');
+    await expect(remoteScreenVideo).toHaveAttribute('data-webkit-request-fullscreen-attempts', '1');
+    await expect(remoteScreenVideo).toHaveAttribute('data-webkit-enter-fullscreen-attempts', '1');
+    await expect(firstTileOnSecondPage.locator('.video-tile__fullscreen-error')).toHaveCount(0);
+
+    await remoteScreenVideo.evaluate((element) => {
+      const video = element as HTMLVideoElement & {
+        webkitEnterFullscreen?: () => void;
+        webkitRequestFullscreen?: () => Promise<void>;
+      };
+      const rejectFullscreen = () => {
+        throw new DOMException('fullscreen denied', 'NotAllowedError');
+      };
+
+      delete video.dataset.standardFullscreenAttempts;
+      delete video.dataset.webkitRequestFullscreenAttempts;
+      delete video.dataset.webkitEnterFullscreenAttempts;
+      Object.defineProperties(video, {
+        requestFullscreen: {
+          configurable: true,
+          value: async () => {
+            video.dataset.standardFullscreenAttempts = '1';
+            rejectFullscreen();
+          },
+        },
+        webkitRequestFullscreen: {
+          configurable: true,
+          value: async () => {
+            video.dataset.webkitRequestFullscreenAttempts = '1';
+            rejectFullscreen();
+          },
+        },
+        webkitEnterFullscreen: {
+          configurable: true,
+          value: () => {
+            video.dataset.webkitEnterFullscreenAttempts = '1';
+            rejectFullscreen();
+          },
+        },
+      });
+    });
+
+    await remoteFullscreenButton.click();
+    await expect(remoteScreenVideo).toHaveAttribute('data-standard-fullscreen-attempts', '1');
+    await expect(remoteScreenVideo).toHaveAttribute('data-webkit-request-fullscreen-attempts', '1');
+    await expect(remoteScreenVideo).toHaveAttribute('data-webkit-enter-fullscreen-attempts', '1');
+    await expect(
+      firstTileOnSecondPage.getByRole('alert').filter({
+        hasText:
+          '화면 공유를 전체 화면으로 열지 못했습니다. 브라우저의 전체 화면 기능을 사용해 주세요.',
+      }),
+    ).toBeVisible();
+
     await first.page.getByRole('button', { name: '화면 공유 중지' }).click();
-    await expect(participantTile(second.page, '가온').getByText('화면 공유 중')).toHaveCount(0);
+    await expect(firstTileOnSecondPage.getByText('화면 공유 중')).toHaveCount(0);
+    await expect(firstTileOnSecondPage.locator('.video-tile__fullscreen-error')).toHaveCount(0);
     await expectRemoteMedia(second.page, '가온');
 
     expect(
@@ -222,9 +322,32 @@ test('방장과 참가자가 미디어·화면 공유·채팅을 사용하고 �
     ).toBe(false);
 
     await first.page.getByRole('button', { name: '채팅 열기' }).click();
-    await first.page
-      .getByRole('textbox', { name: '메시지', exact: true })
-      .fill('오늘 목표는 3장까지');
+    const firstChatComposer = first.page.getByRole('textbox', { name: '메시지', exact: true });
+    await firstChatComposer.fill('한글 조합 메시지');
+    await firstChatComposer.dispatchEvent('compositionstart', { data: '지' });
+    await firstChatComposer.dispatchEvent('keydown', {
+      code: 'Enter',
+      isComposing: true,
+      key: 'Enter',
+      keyCode: 229,
+    });
+    await expect(firstChatComposer).toHaveValue('한글 조합 메시지');
+    await expect(
+      first.page.locator('article.chat-message', { hasText: '한글 조합 메시지' }),
+    ).toHaveCount(0);
+    await expect(second.page.getByText('한글 조합 메시지', { exact: true })).toHaveCount(0);
+
+    await firstChatComposer.dispatchEvent('compositionend', { data: '지' });
+    await firstChatComposer.press('Enter');
+    await expect(firstChatComposer).toHaveValue('');
+    await expect(second.page.getByText('한글 조합 메시지', { exact: true })).toHaveCount(1);
+    const composedOutgoingMessage = first.page.locator('article.chat-message', {
+      hasText: '한글 조합 메시지',
+    });
+    await expect(composedOutgoingMessage).toHaveCount(1);
+    await expect(composedOutgoingMessage).toHaveAttribute('data-delivery-state', 'sent');
+
+    await firstChatComposer.fill('오늘 목표는 3장까지');
     await first.page.getByRole('button', { name: '메시지 보내기' }).click();
 
     await second.page.getByRole('button', { name: '채팅 열기' }).click();
@@ -273,7 +396,6 @@ test('방장과 참가자가 미디어·화면 공유·채팅을 사용하고 �
     await second.page.getByRole('button', { name: '카메라 켜기', exact: true }).click();
     await expectRemoteMedia(first.page, '나래');
 
-    const firstTileOnSecondPage = participantTile(second.page, '가온');
     await first.page.getByRole('button', { name: '마이크 끄기', exact: true }).click();
     await expect(firstTileOnSecondPage.getByLabel('마이크 꺼짐')).toBeVisible();
 
@@ -295,6 +417,35 @@ test('방장과 참가자가 미디어·화면 공유·채팅을 사용하고 �
     await expect(participantTile(second.page, '가온')).toHaveCount(0);
     await expect(second.page.getByLabel('참가자 1명')).toBeVisible();
     await expect(second.page.getByText('입장 완료 · 대기 중', { exact: true })).toBeVisible();
+
+    const secondLocalVideo = second.page
+      .getByRole('article', { name: '나래 (나) 참가자', exact: true })
+      .locator('video');
+    await secondLocalVideo.evaluate((element) => {
+      const stream = (element as HTMLVideoElement).srcObject;
+      if (!(stream instanceof MediaStream)) {
+        throw new Error('Local media stream is unavailable');
+      }
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack === undefined) {
+        throw new Error('Local audio track is unavailable');
+      }
+      audioTrack.dispatchEvent(new Event('ended'));
+    });
+    await expect(
+      second.page.getByText(
+        '마이크 또는 카메라 연결이 종료되었습니다. 장치를 다시 선택하면 현재 방 연결을 새로 시작합니다.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      second.page.getByRole('button', { name: '마이크 장치 다시 선택', exact: true }),
+    ).toBeVisible();
+    await second.page.getByRole('button', { name: '장치 다시 선택', exact: true }).click();
+    await expect(
+      second.page.getByRole('heading', { name: '입장 전에 장치를 확인해 주세요.' }),
+    ).toBeVisible();
+    await expect(second.page.getByRole('button', { name: '장치 확인', exact: true })).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
