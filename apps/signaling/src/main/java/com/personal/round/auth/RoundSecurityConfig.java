@@ -7,6 +7,8 @@ import static com.personal.round.config.RoundRoutes.STANDALONE_TURN_CREDENTIALS;
 import static org.springframework.security.config.Customizer.withDefaults;
 import static org.springframework.security.config.http.SessionCreationPolicy.STATELESS;
 
+import com.nimbusds.jose.proc.JWSKeySelector;
+import com.nimbusds.jose.proc.SecurityContext;
 import jakarta.servlet.DispatcherType;
 import java.time.Clock;
 import java.time.Duration;
@@ -111,6 +113,12 @@ public class RoundSecurityConfig {
 	JwtDecoder batonJwtDecoder(RoundAuthProperties properties, Clock clock) {
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.jwkSetUri())
 				.jwsAlgorithm(SignatureAlgorithm.RS256)
+				.jwtProcessorCustomizer(processor -> {
+					JWSKeySelector<SecurityContext> keySelector =
+							processor.getJWSKeySelector();
+					processor.setJWSKeySelector(
+							new BatonJwsKeySelector(keySelector));
+				})
 				.build();
 		JwtTimestampValidator timestampValidator =
 				new JwtTimestampValidator(Duration.ZERO);

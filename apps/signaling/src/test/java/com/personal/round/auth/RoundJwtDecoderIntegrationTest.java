@@ -26,6 +26,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -171,6 +172,50 @@ class RoundJwtDecoderIntegrationTest {
 				}));
 	}
 
+	@Test
+	@DisplayName("JOSE header에 kid가 없으면 BATON 참여권을 거부한다")
+	void rejectsAMissingKeyId() throws Exception {
+		assertInvalid(token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				null,
+				claims -> {
+				}));
+	}
+
+	@Test
+	@DisplayName("JOSE header의 kid가 공백이면 BATON 참여권을 거부한다")
+	void rejectsABlankKeyId() throws Exception {
+		assertInvalid(token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				" \t",
+				claims -> {
+				}));
+	}
+
+	@Test
+	@DisplayName("JOSE header의 kid 형식이 잘못되면 BATON 참여권을 거부한다")
+	void rejectsAMalformedKeyId() throws Exception {
+		assertInvalid(token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				"../baton signing key",
+				claims -> {
+				}));
+	}
+
+	@Test
+	@DisplayName("JWK Set에 없는 kid이면 BATON 참여권을 거부한다")
+	void rejectsAnUnsupportedKeyId() throws Exception {
+		assertInvalid(token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				"retired-baton-key",
+				claims -> {
+				}));
+	}
+
 	private void assertInvalid(SignedJWT token) {
 		assertThatThrownBy(() -> decoder.decode(token.serialize()))
 				.isInstanceOf(JwtException.class);
@@ -179,6 +224,15 @@ class RoundJwtDecoderIntegrationTest {
 	private SignedJWT token(
 			KeyPair signingKey,
 			JWSAlgorithm algorithm,
+			Consumer<JWTClaimsSet.Builder> customizer)
+			throws Exception {
+		return token(signingKey, algorithm, KEY_ID, customizer);
+	}
+
+	private SignedJWT token(
+			KeyPair signingKey,
+			JWSAlgorithm algorithm,
+			String keyId,
 			Consumer<JWTClaimsSet.Builder> customizer)
 			throws Exception {
 		JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
@@ -192,11 +246,13 @@ class RoundJwtDecoderIntegrationTest {
 				.claim("room_id", ROOM_ID)
 				.claim("role", "participant");
 		customizer.accept(claims);
+		JWSHeader.Builder header = new JWSHeader.Builder(algorithm)
+				.type(JOSEObjectType.JWT);
+		if (keyId != null) {
+			header.keyID(keyId);
+		}
 		SignedJWT token = new SignedJWT(
-				new JWSHeader.Builder(algorithm)
-						.type(JOSEObjectType.JWT)
-						.keyID(KEY_ID)
-						.build(),
+				header.build(),
 				claims.build());
 		token.sign(new RSASSASigner(signingKey.getPrivate()));
 		return token;
