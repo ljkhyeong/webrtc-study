@@ -27,7 +27,7 @@ ROUND의 첫 버전은 최대 6명이 브라우저끼리 직접 연결되는 mes
 
 필요한 도구:
 
-- Node.js 22 이상
+- Node.js 22.13 이상
 - npm 11 이상
 - Java 21
 
@@ -50,18 +50,20 @@ Gradle은 저장소의 Wrapper를 사용하므로 별도로 설치하지 않아�
 npm run check
 ```
 
-실제 Chromium 두 개로 standalone 영상·음성·화면 공유·방장 제어·채팅 흐름을 검증:
+Chromium 전체 미디어 흐름과 WebKit 호환성 smoke를 함께 검증:
 
 ```bash
-npx playwright install chromium
+npx playwright install chromium webkit
 npm run test:e2e
 ```
 
-브라우저 테스트는 fake 카메라·마이크·화면 스트림을 사용해 직접 초대 입장, 원격 미디어
-연결, 화면 공유 전환, 방장의 원격 미디어 끄기, DataChannel 채팅과 수신 ACK, 퇴장을
-확인합니다. BATON 참여권, 실제 TURN relay, 실장치의 화면 선택 UI, Safari·모바일 검증은
-이 테스트 범위에 포함되지 않으며 파일럿 체크리스트를 별도로 통과해야 합니다. 실패 진단
-자료는 `output/playwright/`에 저장됩니다.
+`chromium-full-media` 프로젝트는 fake 카메라·마이크·화면 스트림을 사용해 직접 초대 입장,
+원격 미디어 연결, 화면 공유 전환, 방장의 원격 미디어 끄기, DataChannel 채팅과 수신 ACK,
+퇴장을 확인합니다. `webkit-smoke` 프로젝트는 실제 Playwright WebKit 엔진에서 직접 초대와
+명시적 장치 동의 경계를 확인하며 카메라·마이크를 자동 허용하지 않습니다. BATON 참여권,
+실제 TURN relay, 실장치의 화면 선택 UI, iPhone/iPad의 Safari·모바일 검증은 이 테스트
+범위에 포함되지 않으며 파일럿 체크리스트를 별도로 통과해야 합니다. 실패 진단 자료는
+`output/playwright/`에 저장됩니다.
 
 ## 환경 변수
 

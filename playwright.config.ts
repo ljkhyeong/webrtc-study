@@ -22,7 +22,8 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
+      name: 'chromium-full-media',
+      testMatch: /standalone-room\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
@@ -32,6 +33,13 @@ export default defineConfig({
             '--disable-features=WebRtcHideLocalIpsWithMdns',
           ],
         },
+      },
+    },
+    {
+      name: 'webkit-smoke',
+      testMatch: /webkit-smoke\.spec\.ts/,
+      use: {
+        ...devices['Desktop Safari'],
       },
     },
   ],
