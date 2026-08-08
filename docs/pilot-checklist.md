@@ -359,8 +359,15 @@ The unchecked production gate below remains authoritative.
       permanent one-time-token store.
 - [ ] Two sockets for the same `(room_id, sub)` can overlap only with distinct
       freshly issued `jti` values, even if their `study_id` values differ. A
-      third receives HTTP 429, and closing either accepted socket immediately
-      makes one slot available.
+      third receives HTTP 429, and closing either accepted socket makes one
+      slot available after that close attempt completes.
+- [ ] When both accepted sockets attempt `room.join`, only the newer connection
+      remains a participant. This succeeds even in a six-person room, keeps the
+      room size at six, emits `peer.left` before `peer.joined`, retains the old
+      reservation through the terminal close attempt, releases it once, and
+      closes the loser with
+      `4002 / Participation session superseded`. A delayed older join loses as
+      well, and its browser does not automatically reconnect.
 - [ ] TURN issuance for the same `(room_id, sub)` reaches the configured quota
       even when BATON issues fresh `jti` values or the client address changes.
       The rejected response is an empty HTTP 429 with `Cache-Control: no-store`

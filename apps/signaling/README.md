@@ -54,16 +54,26 @@ monotonic ticker at connection time, so a wall-clock rollback cannot extend
 the lease. An expired connection is removed through the normal idempotent
 disconnect path and closed with private status `4001` and exact reason
 `Participation grant expired`; an otherwise idle connection is closed within
-one sweep interval. Standalone room access has no lease deadline.
+one sweep interval. The HTTP decoder uses the same injected clock with zero
+expiry skew; the grant-specific future-`iat` allowance remains 60 seconds.
+Standalone room access has no lease deadline.
 
 BATON mode also reserves at most one in-flight or active WebSocket for the same
 participation-grant `jti`, and at most two for the same
 `(room_id, sub)`. The second participant-room slot permits one reconnect
 overlap only when BATON has issued a fresh `jti`. A replay of the same grant or
-a third participant-room socket receives HTTP 429; ROUND never evicts an
-established socket to admit the newcomer. The reservation remains owned until
-the socket closes, including while it is connected but not joined or after
-`room.leave`. Standalone mode retains only the server and client-IP limits.
+a third participant-room socket receives HTTP 429; handshake admission never
+evicts an established socket. When the overlapping sockets attempt
+`room.join`, the newer connection sequence wins atomically. ROUND removes the
+older joined peer and closes it with private status `4002` and exact reason
+`Participation session superseded`; its admission reservation is retained
+until that terminal close attempt completes, then released exactly once even
+if the close reports an I/O failure. An older socket whose delayed join arrives
+last is closed instead. The browser treats `4002`
+as terminal so the two sockets cannot enter a reconnect takeover loop. The
+reservation otherwise remains owned until the socket closes, including while
+it is connected but not joined or after `room.leave`. Standalone mode retains
+only the server and client-IP limits.
 
 The client frame limit must be at least the session limit. The global limit
 must be at least twice the client limit so one client's two misaligned fixed

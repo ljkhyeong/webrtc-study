@@ -108,8 +108,9 @@ ROUND에는 개인키를 배포하지 않으며, JWK Set cache가 갱신될 수 
 | `role`     | `host` 또는 `participant`         |
 
 ROUND는 `RS256` 서명과 JWK 공개키, `iss`, `aud`, 만료 시각, 필수 claim의 존재와 형식을
-모두 검증한다. 기본 5분인 최대 참여권 수명과 60초 clock skew를 적용해 미래 `iat` 또는
-설정된 최대 수명보다 긴 `exp - iat`도 거부한다. URL 경로의 `roomId`와 `room_id`가
+모두 검증한다. HTTP 검증과 WebSocket lease는 같은 `Clock`을 사용하며 `exp`에는 clock
+skew를 허용하지 않는다. 60초 허용치는 미래 `iat`에만 적용하고, 기본 5분인 최대 참여권
+수명보다 긴 `exp - iat`도 거부한다. URL 경로의 `roomId`와 `room_id`가
 다르면 WebSocket upgrade 및 TURN credential 요청을 거부한다. WebSocket 연결 후에는
 검증된 참여권 정보를 세션에 보존하고 `room.join`의 방 식별자도 경로 및 `room_id`와
 일치할 때만 입장을 허용한다.
@@ -131,9 +132,15 @@ one-time 사용을 보장하지 않는다. 문서와 구현에서 참여권을 o
 WebSocket을 합쳐 2개까지만 허용한다. ROUND의 실제 room 경계는 `room_id`이므로
 `study_id`가 달라져도 같은 room의 제한을 분리하지 않는다. 두 번째 슬롯은 BATON이 새
 `jti`의 참여권을 갱신한 뒤 재연결이 기존 socket과 잠시 겹치는 경우를 위한 것이다. 동일
-참여권의 두 번째 연결 또는 사용자-방의 세 번째 연결은 HTTP 429로 거부하며, 새 요청
-때문에 기존 socket을 종료하지 않는다. reservation은 `room.leave`가 아니라 socket 종료
-시 해제된다. 이 정책은 BATON 모드에만 적용한다.
+참여권의 두 번째 연결 또는 사용자-방의 세 번째 연결은 HTTP 429로 거부하며 handshake
+승인만으로 기존 socket을 종료하지 않는다. 두 승인 연결이 `room.join`을 시도하면 단일
+room lock 안에서 더 최근 연결만 남긴다. 기존 peer 또는 뒤늦게 입장한 오래된 연결은 정상
+disconnect 경로로 정리하고 `4002 / Participation session superseded`로 닫는다. 브라우저는
+이 정책 종료를 자동 재연결하지 않으므로 두 연결의 상호 인계 반복을 막는다. reservation은
+`room.leave`가 아니라 socket 종료 시 해제된다. 인계에서 밀려난 연결의 reservation은
+터미널 close 시도가 끝날 때까지 유지하여 close가 막힌 틈에 세 번째 연결이 들어오지 못하게
+하고, close가 I/O 실패를 보고해도 그 직후 정확히 한 번 해제한다. 이 정책은 BATON 모드에만
+적용한다.
 
 `peerId`와 relay 메시지의 `from`은 계속 ROUND가 생성한다. BATON 사용자 식별자나 클라이언트
 입력값을 signaling 발신자 식별자로 신뢰하지 않는다.

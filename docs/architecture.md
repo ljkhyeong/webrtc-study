@@ -115,15 +115,23 @@ in a one-second sweep. It closes an expired socket with
 `4001 / Participation grant expired`. Wall-clock `exp` and a connection-time monotonic deadline
 both apply, so moving the system clock backwards cannot lengthen a lease. The normal idempotent
 disconnect path releases the room, admission reservation, outbound queue, and gauges exactly once.
-Standalone access has no lease deadline.
+The HTTP JWT decoder uses the same injected clock and zero expiry skew, while the grant-specific
+future-`iat` allowance remains 60 seconds. Standalone access has no lease deadline.
 
 BATON connection admission counts both in-progress handshakes and established sockets. The same
 participation-grant `jti` can own only one reservation, while the same
 `(room_id, sub)` can own two reservations so a reconnect with a freshly issued grant may briefly
 overlap the old socket. A replay of the same grant or a third participant-room connection receives
-HTTP 429 without evicting either established socket. The reservation lasts for the whole socket
-lifetime rather than only room membership, so `room.leave` cannot be used to bypass the limit.
-Standalone mode is unaffected.
+HTTP 429 without evicting either established socket during handshake admission. When two admitted
+sockets for the same participant attempt `room.join`, the higher connection sequence wins under the
+same room-state lock. ROUND removes the older peer before admitting the newer peer and closes the
+loser with `4002 / Participation session superseded`; the browser treats this policy close as
+terminal instead of reconnecting. Room membership therefore contains at most one peer per BATON
+participant even at the six-person limit. The losing socket's admission reservation remains held
+until its terminal close attempt completes, preventing a third connection from entering during a
+blocked close, and is then released exactly once even when close reports an I/O failure. Other
+reservations last for the whole socket lifetime rather than only room membership, so `room.leave`
+cannot be used to bypass the limit. Standalone mode is unaffected.
 
 The signaling service must continue to own peer IDs, overwrite the wire-level sender identity, and
 relay SDP/ICE only between peers that are currently in the same room. A generic MVC interceptor,

@@ -208,6 +208,14 @@ BATON 모드는 유효한 참여권이 없으면 fail-closed로 요청을 거부
 종료되고, 제한된 자동 재연결이 미리 회전된 쿠키를 사용합니다. standalone 연결에는 이
 시간 제한과 갱신 흐름을 적용하지 않습니다.
 
+같은 `(room_id, sub)`의 새 참여권 연결이 방에 입장하면 ROUND는 더 최근 연결만 남기고
+기존 연결을 원자적으로 정리한 뒤 `4002 / Participation session superseded`로 닫습니다.
+기존 연결의 입장 예약은 이 터미널 close 시도가 끝날 때까지 유지되므로, close가 지연되는
+동안 세 번째 연결이 제한을 우회할 수 없습니다.
+이 종료는 네트워크 장애가 아니므로 기존 브라우저는 자동 재연결하지 않습니다. 따라서
+6명이 찬 방에서도 정상 재연결이 `ROOM_FULL`에 막히거나 두 브라우저가 서로를 반복해서
+밀어내지 않습니다.
+
 BATON의 Caddy 설정에서는 카메라·마이크·화면 캡처 `Permissions-Policy`, WebSocket `connect-src`,
 두 ROUND proxy 경로, BATON 갱신 경로와 cookie path를 함께 구성해야 합니다. 현재 BATON
 본체에는 인증된 사용자 신원·스터디 멤버십 경계가 아직 없으므로, 실제 참여권 발급·갱신
