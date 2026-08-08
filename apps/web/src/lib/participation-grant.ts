@@ -66,6 +66,8 @@ export class ParticipationGrantLeaseManager {
 
   #state: ParticipationGrantLeaseState | null = null;
   #refreshing: Promise<ParticipationGrantLease> | null = null;
+  #refreshController: AbortController | null = null;
+  #closed = false;
 
   constructor(options: ParticipationGrantLeaseManagerOptions) {
     this.#endpoint = requireSameOriginPath(options.endpoint);
@@ -88,6 +90,9 @@ export class ParticipationGrantLeaseManager {
   }
 
   ensureFresh(): Promise<ParticipationGrantLease> {
+    if (this.#closed) {
+      return Promise.reject(new Error('Participation grant refresh manager is closed'));
+    }
     const nowMs = this.#readNow();
     if (this.#state !== null && nowMs < this.#state.refreshDueAtMs) {
       return Promise.resolve(this.#state.lease);
@@ -106,19 +111,30 @@ export class ParticipationGrantLeaseManager {
   }
 
   refreshDelayMs(): number | null {
-    if (this.#state === null) {
+    if (this.#closed || this.#state === null) {
       return null;
     }
     return Math.max(0, this.#state.refreshDueAtMs - this.#readNow());
   }
 
+  close(): void {
+    if (this.#closed) {
+      return;
+    }
+    this.#closed = true;
+    this.#refreshController?.abort();
+    this.#refreshController = null;
+  }
+
   async #requestRefresh(): Promise<ParticipationGrantLease> {
     const controller = new AbortController();
+    this.#refreshController = controller;
     const timeout = globalThis.setTimeout(() => controller.abort(), this.#timeoutMs);
 
     try {
       const entryContext = readEntryContext(this.#roomId, this.#storage);
       const csrfCredential = await loadBatonCsrfCredential(this.#fetcher, controller.signal);
+      this.#assertOpen();
       const headers: Record<string, string> = {
         Accept: 'application/json',
         [csrfCredential.headerName]: csrfCredential.token,
@@ -144,11 +160,13 @@ export class ParticipationGrantLeaseManager {
         signal: controller.signal,
         ...(requestBody === undefined ? {} : { body: requestBody }),
       });
+      this.#assertOpen();
       if (!response.ok) {
         throw new Error(`Participation grant refresh failed with status ${response.status}`);
       }
 
       const lease = validateLease(await response.json());
+      this.#assertOpen();
       const receivedAtMs = this.#readNow();
       this.#state = {
         lease,
@@ -157,11 +175,23 @@ export class ParticipationGrantLeaseManager {
       return lease;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
+        if (this.#closed) {
+          throw new Error('Participation grant refresh was cancelled', { cause: error });
+        }
         throw new Error('Participation grant refresh timed out', { cause: error });
       }
       throw error;
     } finally {
       globalThis.clearTimeout(timeout);
+      if (this.#refreshController === controller) {
+        this.#refreshController = null;
+      }
+    }
+  }
+
+  #assertOpen(): void {
+    if (this.#closed) {
+      throw new Error('Participation grant refresh was cancelled');
     }
   }
 

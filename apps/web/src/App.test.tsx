@@ -1,7 +1,18 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SIGNALING_ERROR_CODES } from '@round/protocol';
 import { describe, expect, it, vi } from 'vitest';
-import { App, roomErrorMessage, roomStatusLabel, roomWarningMessage } from './App';
+import {
+  App,
+  buildRoomSystemNotices,
+  chatErrorMessage,
+  resolveActiveRoomTerminalState,
+  roomErrorMessage,
+  roomStartupErrorMessage,
+  roomStatusLabel,
+  roomWarningMessage,
+  screenShareStartNotice,
+  shouldStopRoomRefreshes,
+} from './App';
 
 describe('App pre-join boundary', () => {
   it('opens a direct invite link without requesting media or creating a WebSocket', () => {
@@ -128,6 +139,121 @@ describe('App pre-join boundary', () => {
     expect(warning).toContain('자동으로 복구');
     expect(warning).toContain('통화는 유지');
     expect(warning).not.toContain('internal recovery detail');
+  });
+
+  it('gives a neutral retry action for picker cancellation and an error for capture failure', () => {
+    expect(screenShareStartNotice('started')).toBeUndefined();
+    expect(screenShareStartNotice('recovering')).toBeUndefined();
+    expect(screenShareStartNotice('cancelled')).toEqual({
+      tone: 'warning',
+      message: '화면 공유가 시작되지 않았습니다. 다시 시도하려면 화면 공유 버튼을 눌러 주세요.',
+    });
+    expect(screenShareStartNotice('failed')).toEqual({
+      tone: 'error',
+      message:
+        '화면 공유를 시작하지 못했습니다. 공유할 화면을 선택하고 브라우저 권한을 확인해 주세요.',
+    });
+  });
+
+  it('keeps independent session, action, participation-grant, and TURN notices', () => {
+    expect(
+      buildRoomSystemNotices({
+        status: 'active',
+        sessionError: '세션 오류',
+        actionWarning: '작업 안내',
+        actionError: '작업 오류',
+        participationGrantRefreshWarning: '참여권 경고',
+        turnRefreshWarning: 'TURN 경고',
+      }),
+    ).toEqual([
+      { id: 'session-error', tone: 'error', message: '세션 오류' },
+      { id: 'action-warning', tone: 'warning', message: '작업 안내' },
+      { id: 'action-error', tone: 'error', message: '작업 오류' },
+      {
+        id: 'participation-grant-refresh',
+        tone: 'warning',
+        message: '참여권 경고',
+      },
+      { id: 'turn-refresh', tone: 'warning', message: 'TURN 경고' },
+    ]);
+  });
+
+  it('keeps startup failures out of non-active system notices', () => {
+    expect(
+      buildRoomSystemNotices({
+        status: 'idle',
+        actionError: 'raw startup failure',
+        participationGrantRefreshWarning: 'stale participation warning',
+        turnRefreshWarning: 'stale TURN warning',
+      }),
+    ).toEqual([]);
+  });
+
+  it('turns a pre-session startup failure into a safe terminal overlay state', () => {
+    const terminal = resolveActiveRoomTerminalState({
+      snapshotStatus: undefined,
+      sessionError: undefined,
+      startupError: 'turn-configuration',
+    });
+
+    expect(terminal).toEqual({
+      status: 'error',
+      terminalErrorMessage: roomStartupErrorMessage('turn-configuration'),
+    });
+    expect(terminal.terminalErrorMessage).toContain('TURN');
+    expect(terminal.terminalErrorMessage).not.toContain('credential request failed');
+  });
+
+  it('shows a terminal join error once without the raw exception detail', () => {
+    const sessionError = roomErrorMessage({
+      code: 'join-failed',
+      message: 'WebSocket rejected internal-peer-id with secret diagnostic',
+    });
+    const terminal = resolveActiveRoomTerminalState({
+      snapshotStatus: 'error',
+      sessionError,
+      startupError: null,
+    });
+
+    expect(terminal.terminalErrorMessage).toContain('입장을 완료하지 못했습니다');
+    expect(terminal.terminalErrorMessage).not.toContain('WebSocket rejected');
+    expect(terminal.terminalErrorMessage).not.toContain('internal-peer-id');
+    expect(
+      buildRoomSystemNotices({
+        status: terminal.status,
+        sessionError,
+        actionError: 'duplicate raw action error',
+      }),
+    ).toEqual([]);
+  });
+
+  it('stops background refresh loops only at terminal room states', () => {
+    expect(shouldStopRoomRefreshes('active')).toBe(false);
+    expect(shouldStopRoomRefreshes('reconnecting')).toBe(false);
+    expect(shouldStopRoomRefreshes('error')).toBe(true);
+    expect(shouldStopRoomRefreshes('ended')).toBe(true);
+  });
+
+  it('never exposes an unexpected chat exception or peer id', () => {
+    const message = chatErrorMessage(
+      new Error('RTCDataChannel failed for internal-peer-id with secret diagnostic'),
+    );
+
+    expect(message).toContain('메시지를 보내지 못했습니다');
+    expect(message).not.toContain('RTCDataChannel');
+    expect(message).not.toContain('internal-peer-id');
+    expect(message).not.toContain('secret diagnostic');
+  });
+
+  it('localizes a superseded BATON session without exposing the close reason', () => {
+    const message = roomErrorMessage({
+      code: 'connection-superseded',
+      message: 'Participation session superseded internal-peer-id',
+    });
+
+    expect(message).toContain('새 접속으로 대체');
+    expect(message).not.toContain('Participation session superseded');
+    expect(message).not.toContain('internal-peer-id');
   });
 
   it('explains an ended local media track with an explicit recovery action', () => {

@@ -19,6 +19,19 @@ import { canonicalRoomUrl } from '../lib/room';
 
 export type ChatMessageView = ChatMessage;
 
+export type RoomSystemNoticeId =
+  | 'session-error'
+  | 'action-warning'
+  | 'action-error'
+  | 'participation-grant-refresh'
+  | 'turn-refresh';
+
+export interface RoomSystemNoticeView {
+  readonly id: RoomSystemNoticeId;
+  readonly tone: 'warning' | 'error';
+  readonly message: string;
+}
+
 interface ChatMessageIdentity {
   readonly id: string;
   readonly senderId: string;
@@ -42,6 +55,7 @@ interface RoomViewProps {
   mediaWarning?: string | undefined;
   mediaRecoveryAvailable?: boolean | undefined;
   errorMessage?: string | undefined;
+  systemNotices?: readonly RoomSystemNoticeView[] | undefined;
   onToggleAudio: () => void;
   onToggleVideo: () => void;
   onToggleScreenShare: () => void;
@@ -193,6 +207,7 @@ export function RoomView({
   mediaWarning,
   mediaRecoveryAvailable = false,
   errorMessage,
+  systemNotices = [],
   onToggleAudio,
   onToggleVideo,
   onToggleScreenShare,
@@ -368,6 +383,7 @@ export function RoomView({
           {peerRecoveryMessage ||
           moderationNotice ||
           mediaWarning ||
+          systemNotices.length > 0 ||
           (errorMessage && !terminalConnectionError) ? (
             <div className="room-notice-stack">
               {peerRecoveryMessage ? (
@@ -403,6 +419,15 @@ export function RoomView({
                   {moderationNotice}
                 </p>
               ) : null}
+              {systemNotices.map((notice) => (
+                <p
+                  key={notice.id}
+                  className={`room-notice room-notice--${notice.tone}`}
+                  role={notice.tone === 'error' ? 'alert' : 'status'}
+                >
+                  {notice.message}
+                </p>
+              ))}
               {errorMessage && !terminalConnectionError ? (
                 <p className="room-notice room-notice--error" role="alert">
                   {errorMessage}

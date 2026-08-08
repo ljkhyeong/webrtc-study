@@ -155,4 +155,27 @@ describe('TURN credential loading', () => {
       vi.useRealTimers();
     }
   });
+
+  it('cancels an in-flight room refresh when the session becomes terminal', async () => {
+    const controller = new AbortController();
+    const fetcher = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true },
+          );
+        }),
+    );
+
+    const loading = loadTurnCredentials({
+      fetcher: fetcher as typeof fetch,
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(loading).rejects.toThrow('TURN credential request was cancelled');
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
 });

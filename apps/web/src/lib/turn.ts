@@ -7,6 +7,7 @@ export interface LoadTurnCredentialsOptions {
   readonly endpoint?: string;
   readonly fetcher?: typeof fetch;
   readonly now?: () => number;
+  readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
 }
 
@@ -48,15 +49,27 @@ export async function loadTurnCredentials(
   }
 
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (options.signal?.aborted) {
+    controller.abort();
+  } else {
+    options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  }
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    if (controller.signal.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     const response = await fetcher(options.endpoint ?? DEFAULT_ENDPOINT, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
       method: 'POST',
       signal: controller.signal,
     });
+    if (controller.signal.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
 
     if (response.status === 204 || response.status === 404) {
       return null;
@@ -76,11 +89,15 @@ export async function loadTurnCredentials(
     };
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
+      if (options.signal?.aborted) {
+        throw new Error('TURN credential request was cancelled', { cause: error });
+      }
       throw new Error('TURN credential request timed out', { cause: error });
     }
     throw error;
   } finally {
     globalThis.clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 

@@ -21,10 +21,12 @@ export {
   type ParticipantSnapshot,
   type PeerConnectionStatus,
   type RoomIssue,
+  type RoomIssueCode,
   type RoomSessionListener,
   type RoomSessionOptions,
   type RoomSessionRecoveryOptions,
   type RoomSessionSnapshot,
   type RoomSessionStatus,
+  type ScreenShareStartResult,
   type VideoSource,
 } from './room-session.js';

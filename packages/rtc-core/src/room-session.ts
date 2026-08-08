@@ -35,10 +35,44 @@ export type RoomSessionStatus =
 export type PeerConnectionStatus =
   'new' | 'negotiating' | 'connecting' | 'connected' | 'disconnected' | 'failed' | 'closed';
 
+export type RoomIssueCode =
+  | SignalingErrorCode
+  | 'media-unavailable'
+  | 'media-permission-denied'
+  | 'rtc-configuration-update-failed'
+  | 'join-failed'
+  | 'room-join-timeout'
+  | 'signaling-reconnecting'
+  | 'reconnect-exhausted'
+  | 'reconnect-attempt-failed'
+  | 'signaling-connect-failed'
+  | 'signaling-connect-timeout'
+  | 'signaling-closed'
+  | 'connection-superseded'
+  | 'invalid-signal-message'
+  | 'signal-handler-failed'
+  | 'peer-restart-deferred'
+  | 'ice-candidate-queue-overflow'
+  | 'ice-candidate-rejected'
+  | 'peer-negotiation-retrying'
+  | 'peer-connection-recovering'
+  | 'peer-connection-recreated'
+  | 'peer-ice-restart-failed'
+  | 'screen-share-sender-recovery'
+  | 'data-channel-closed'
+  | 'data-channel-error'
+  | 'data-channel-send-failed'
+  | 'data-channel-rate-limit'
+  | 'peer-negotiation-failed'
+  | 'peer-connection-timeout'
+  | 'local-media-ended';
+
 export interface RoomIssue {
-  readonly code: string;
+  readonly code: RoomIssueCode;
   readonly message: string;
 }
+
+export type ScreenShareStartResult = 'started' | 'recovering' | 'cancelled' | 'failed';
 
 export interface LocalMediaSnapshot {
   readonly audioAvailable: boolean;
@@ -269,6 +303,9 @@ const DATA_CHANNEL_RECOVERY_WARNING_CODES = [
   'data-channel-error',
   'data-channel-send-failed',
 ] as const;
+type DataChannelRecoveryIssueCode = (typeof DATA_CHANNEL_RECOVERY_WARNING_CODES)[number];
+const SIGNALING_SESSION_SUPERSEDED_CLOSE_CODE = 4002;
+const SIGNALING_SESSION_SUPERSEDED_REASON = 'Participation session superseded';
 const DEFAULT_SIGNALING_CONNECT_TIMEOUT_MS = 8_000;
 const DEFAULT_ROOM_JOIN_TIMEOUT_MS = 8_000;
 // Longer than the default bounded initial-offer retry backoff (15.5 seconds)
@@ -281,7 +318,7 @@ const DEFAULT_PEER_DISCONNECTED_GRACE_MS = 3_000;
 const DEFAULT_PEER_RECOVERY_TIMEOUT_MS = 8_000;
 class RoomSessionFailure extends Error {
   constructor(
-    readonly code: string,
+    readonly code: RoomIssueCode,
     message: string,
   ) {
     super(message);
@@ -385,6 +422,13 @@ function defaultCreateId(): string {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isDisplayMediaCancellation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('name' in error)) {
+    return false;
+  }
+  return error.name === 'NotAllowedError' || error.name === 'AbortError';
 }
 
 function safeSignalingErrorMessage(code: SignalingErrorCode): string {
@@ -500,7 +544,7 @@ export class RoomSession {
   #screenTrack: MediaStreamTrack | null = null;
   #screenTrackEndedListener: EventListener | null = null;
   #screenShareCreatedLocalStream = false;
-  #screenShareStartPromise: Promise<boolean> | null = null;
+  #screenShareStartPromise: Promise<ScreenShareStartResult> | null = null;
   #screenShareStopPromise: Promise<boolean> | null = null;
   #screenShareStopTrack: MediaStreamTrack | null = null;
   #screenShareStopGeneration = 0;
@@ -723,19 +767,18 @@ export class RoomSession {
     return enabled;
   }
 
-  startScreenShare(): Promise<boolean> {
+  startScreenShare(): Promise<ScreenShareStartResult> {
     if (this.#disposed || this.#status !== 'active' || this.#screenShareStopPromise !== null) {
-      return Promise.resolve(false);
+      return Promise.resolve('cancelled');
     }
     if (this.#screenShareStartPromise !== null) {
       return this.#screenShareStartPromise;
     }
-    if (
-      this.#pendingScreenTrack !== null ||
-      this.#screenTrack !== null ||
-      this.#getMediaDevices()?.getDisplayMedia === undefined
-    ) {
-      return Promise.resolve(false);
+    if (this.#pendingScreenTrack !== null || this.#screenTrack !== null) {
+      return Promise.resolve('cancelled');
+    }
+    if (this.#getMediaDevices()?.getDisplayMedia === undefined) {
+      return Promise.resolve('failed');
     }
 
     const operation = ++this.#screenShareOperation;
@@ -782,17 +825,17 @@ export class RoomSession {
     }
   }
 
-  async #performStartScreenShare(operation: number): Promise<boolean> {
+  async #performStartScreenShare(operation: number): Promise<ScreenShareStartResult> {
     const mediaDevices = this.#getMediaDevices();
     if (mediaDevices?.getDisplayMedia === undefined) {
-      return false;
+      return 'failed';
     }
 
     let displayStream: MediaStream;
     try {
       displayStream = await mediaDevices.getDisplayMedia({ video: true, audio: false });
-    } catch {
-      return false;
+    } catch (error) {
+      return isDisplayMediaCancellation(error) ? 'cancelled' : 'failed';
     }
 
     const screenTrack = displayStream.getVideoTracks().find((track) => track.readyState === 'live');
@@ -804,12 +847,15 @@ export class RoomSession {
     if (screenTrack !== undefined) {
       this.#pendingScreenTrack = screenTrack;
     }
-    if (screenTrack === undefined || !this.#ownsScreenShareStart(operation, screenTrack)) {
-      screenTrack?.stop();
+    if (screenTrack === undefined) {
+      return 'failed';
+    }
+    if (!this.#ownsScreenShareStart(operation, screenTrack)) {
+      screenTrack.stop();
       if (this.#pendingScreenTrack === screenTrack) {
         this.#pendingScreenTrack = null;
       }
-      return false;
+      return 'cancelled';
     }
 
     let localStream = this.#localStream;
@@ -823,7 +869,7 @@ export class RoomSession {
         if (this.#pendingScreenTrack === screenTrack) {
           this.#pendingScreenTrack = null;
         }
-        return false;
+        return 'failed';
       }
     }
 
@@ -874,7 +920,7 @@ export class RoomSession {
         this.#pendingScreenTrack = null;
       }
       this.#recoverPeersAfterScreenSenderFailure(senderFailures, 'starting screen share');
-      return false;
+      return 'cancelled';
     }
 
     for (const cameraTrack of cameraTracks) {
@@ -906,9 +952,9 @@ export class RoomSession {
 
     if (screenTrack.readyState === 'ended') {
       await this.#requestScreenShareStop(false);
-      return false;
+      return 'cancelled';
     }
-    return senderFailures.size === 0;
+    return senderFailures.size === 0 ? 'started' : 'recovering';
   }
 
   async #rollbackScreenSenderUpdates(
@@ -1686,6 +1732,12 @@ export class RoomSession {
     this.#clearJoinedWait();
 
     if (this.#leaving || this.#disposed) {
+      return;
+    }
+    if (event.code === SIGNALING_SESSION_SUPERSEDED_CLOSE_CODE) {
+      this.#finishFatalSignalingError(
+        new RoomSessionFailure('connection-superseded', SIGNALING_SESSION_SUPERSEDED_REASON),
+      );
       return;
     }
     if (this.#status === 'active') {
@@ -2832,7 +2884,7 @@ export class RoomSession {
   #recoverDataChannel(
     peer: PeerContext,
     channel: RTCDataChannel,
-    code: string,
+    code: DataChannelRecoveryIssueCode,
     message: string,
   ): void {
     if (!this.#isCurrentPeer(peer) || peer.channel !== channel) {
@@ -3736,19 +3788,19 @@ export class RoomSession {
     this.#emit();
   }
 
-  #setWarning(code: string, message: string): void {
+  #setWarning(code: RoomIssueCode, message: string): void {
     this.#warningPeerId = null;
     this.#warning = { code, message };
     this.#emit();
   }
 
-  #setPeerWarning(peerId: string, code: string, message: string): void {
+  #setPeerWarning(peerId: string, code: RoomIssueCode, message: string): void {
     this.#warningPeerId = peerId;
     this.#warning = { code, message };
     this.#emit();
   }
 
-  #clearPeerWarning(peerId: string, codes?: readonly string[]): boolean {
+  #clearPeerWarning(peerId: string, codes?: readonly RoomIssueCode[]): boolean {
     if (
       this.#warningPeerId !== peerId ||
       this.#warning === null ||
@@ -3761,13 +3813,13 @@ export class RoomSession {
     return true;
   }
 
-  #setFatalError(code: string, message: string): void {
+  #setFatalError(code: RoomIssueCode, message: string): void {
     this.#error = { code, message };
     this.#status = 'error';
     this.#emit();
   }
 
-  #issueFromError(error: unknown, fallbackCode: string): RoomIssue {
+  #issueFromError(error: unknown, fallbackCode: RoomIssueCode): RoomIssue {
     if (error instanceof RoomSessionFailure) {
       return { code: error.code, message: error.message };
     }

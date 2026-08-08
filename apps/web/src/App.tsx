@@ -3,13 +3,15 @@ import type { SignalingErrorCode } from '@round/protocol';
 import {
   createRoomSession,
   type RoomIssue,
+  type RoomIssueCode,
   type RoomSession,
   type RoomSessionSnapshot,
   type RoomSessionStatus,
+  type ScreenShareStartResult,
 } from '@round/rtc-core';
 import { LandingScreen } from './components/LandingScreen';
 import { PrejoinScreen } from './components/PrejoinScreen';
-import { RoomView, type ChatMessageView } from './components/RoomView';
+import { RoomView, type ChatMessageView, type RoomSystemNoticeView } from './components/RoomView';
 import type { ParticipantView } from './components/VideoTile';
 import {
   createWithPreparedMedia,
@@ -19,11 +21,44 @@ import {
 import { ParticipationGrantLeaseManager } from './lib/participation-grant';
 import { pathForRoom, roomIdFromPath, sanitizeDisplayName } from './lib/room';
 import { resolveRoomEndpoints, type RoomEndpoints } from './lib/room-endpoints';
+import { RoomRefreshLifetime } from './lib/room-refresh-lifetime';
 import { loadTurnCredentials, turnCredentialRefreshDelayMs } from './lib/turn';
 
 const DISPLAY_NAME_STORAGE_KEY = 'round:display-name';
 const PEER_CONNECTION_FAILURE_MESSAGE =
   '일부 참가자와 직접 연결하지 못했습니다. 현재 연결은 유지됩니다. 모두 다시 연결하려면 방에 다시 입장해 주세요.';
+type RoomIssueMessages = Readonly<Record<'error' | 'warning', string>>;
+
+export type RoomStartupErrorCode =
+  'endpoint-configuration' | 'participation-grant' | 'turn-configuration' | 'session-start';
+
+const ROOM_STARTUP_ERROR_MESSAGES = {
+  'endpoint-configuration':
+    '스터디룸 연결 설정을 확인하지 못했습니다. BATON에서 다시 입장하거나 관리자에게 문의해 주세요.',
+  'participation-grant':
+    '스터디 참여 권한을 확인하지 못했습니다. 잠시 후 다시 시도하거나 BATON에서 다시 입장해 주세요.',
+  'turn-configuration':
+    'TURN 서버 정보를 받지 못했습니다. 네트워크를 확인한 뒤 잠시 후 다시 시도해 주세요.',
+  'session-start': '스터디룸 연결을 시작하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
+} satisfies Record<RoomStartupErrorCode, string>;
+
+class RoomStartupFailure extends Error {
+  constructor(
+    readonly code: RoomStartupErrorCode,
+    cause: unknown,
+  ) {
+    super(code, { cause });
+    this.name = 'RoomStartupFailure';
+  }
+}
+
+export function roomStartupErrorMessage(code: RoomStartupErrorCode): string {
+  return ROOM_STARTUP_ERROR_MESSAGES[code];
+}
+
+function startupErrorCode(error: unknown): RoomStartupErrorCode {
+  return error instanceof RoomStartupFailure ? error.code : 'session-start';
+}
 
 const SIGNALING_ISSUE_MESSAGES = {
   INVALID_MESSAGE: {
@@ -62,14 +97,140 @@ const SIGNALING_ISSUE_MESSAGES = {
     error: '스터디 서버가 요청을 처리하지 못했습니다. 잠시 후 다시 연결해 주세요.',
     warning: '스터디 서버가 요청 하나를 처리하지 못했습니다. 현재 통화는 유지됩니다.',
   },
-} satisfies Record<SignalingErrorCode, Readonly<Record<'error' | 'warning', string>>>;
+} satisfies Record<SignalingErrorCode, RoomIssueMessages>;
 
-function signalingIssueMessage(code: string, severity: 'error' | 'warning'): string | undefined {
-  if (!Object.hasOwn(SIGNALING_ISSUE_MESSAGES, code)) {
-    return undefined;
-  }
-  return SIGNALING_ISSUE_MESSAGES[code as SignalingErrorCode][severity];
-}
+const INTERNAL_ROOM_ISSUE_MESSAGES = {
+  'media-unavailable': {
+    error:
+      '이 브라우저에서는 카메라와 마이크를 사용할 수 없습니다. 브라우저 설정을 확인한 뒤 다시 입장해 주세요.',
+    warning: '이 브라우저에서는 카메라와 마이크를 사용할 수 없어 미디어 없이 입장했습니다.',
+  },
+  'media-permission-denied': {
+    error: '카메라 또는 마이크를 열지 못했습니다. 브라우저 권한을 확인한 뒤 다시 입장해 주세요.',
+    warning:
+      '카메라 또는 마이크를 열지 못해 미디어 없이 입장했습니다. 장치를 다시 선택할 수 있습니다.',
+  },
+  'rtc-configuration-update-failed': {
+    error: 'TURN 연결 정보를 적용하지 못했습니다. 네트워크를 확인한 뒤 다시 입장해 주세요.',
+    warning: '일부 참가자의 TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.',
+  },
+  'join-failed': {
+    error: '스터디룸 입장을 완료하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
+    warning: '스터디룸 입장을 완료하지 못했습니다. 다시 연결해 주세요.',
+  },
+  'room-join-timeout': {
+    error: '서버가 입장 요청에 응답하지 않았습니다. 네트워크를 확인해 주세요.',
+    warning: '서버의 입장 응답이 늦어지고 있습니다. 다시 연결해 주세요.',
+  },
+  'signaling-reconnecting': {
+    error: '스터디 서버와의 연결이 끊어졌습니다. 네트워크를 확인한 뒤 다시 연결해 주세요.',
+    warning:
+      '스터디 서버에 다시 연결하는 중입니다. 카메라와 마이크는 유지되지만 참가자 연결은 다시 설정됩니다.',
+  },
+  'reconnect-exhausted': {
+    error: '서버와의 연결을 복구하지 못했습니다. 네트워크를 확인한 뒤 다시 연결해 주세요.',
+    warning: '서버와의 연결을 복구하지 못했습니다. 방에 다시 입장해 주세요.',
+  },
+  'reconnect-attempt-failed': {
+    error: '서버 재연결을 완료하지 못했습니다. 네트워크를 확인한 뒤 다시 연결해 주세요.',
+    warning: '서버 재연결을 다시 시도하고 있습니다.',
+  },
+  'signaling-connect-failed': {
+    error: '스터디 서버에 연결할 수 없습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
+    warning: '스터디 서버 연결에 실패했습니다. 다시 연결하고 있습니다.',
+  },
+  'signaling-connect-timeout': {
+    error: '스터디 서버에 연결할 수 없습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
+    warning: '스터디 서버의 연결 응답이 늦어지고 있습니다.',
+  },
+  'signaling-closed': {
+    error: '서버와의 연결을 복구하지 못했습니다. 네트워크를 확인한 뒤 다시 연결해 주세요.',
+    warning: '스터디 서버와의 연결이 끊겨 다시 연결하고 있습니다.',
+  },
+  'connection-superseded': {
+    error: '이 접속은 같은 계정의 새 접속으로 대체되었습니다. 계속 사용하려면 다시 입장해 주세요.',
+    warning: '이 접속은 같은 계정의 새 접속으로 대체되었습니다.',
+  },
+  'invalid-signal-message': {
+    error: '스터디 서버와 메시지 형식이 맞지 않습니다. 페이지를 새로고침한 뒤 다시 입장해 주세요.',
+    warning: '서버에서 올바르지 않은 연결 메시지를 받아 무시했습니다. 현재 통화는 유지됩니다.',
+  },
+  'signal-handler-failed': {
+    error: '참가자 연결 메시지를 처리하지 못했습니다. 방에 다시 입장해 주세요.',
+    warning: '참가자 연결 메시지 하나를 처리하지 못했습니다. 현재 통화는 유지됩니다.',
+  },
+  'peer-restart-deferred': {
+    error: PEER_CONNECTION_FAILURE_MESSAGE,
+    warning: '일부 참가자의 연결 복구를 안전한 시점까지 기다리고 있습니다. 현재 통화는 유지됩니다.',
+  },
+  'ice-candidate-queue-overflow': {
+    error: PEER_CONNECTION_FAILURE_MESSAGE,
+    warning:
+      '일부 참가자의 네트워크 연결 후보가 많아 오래된 정보를 정리했습니다. 현재 연결은 계속 시도합니다.',
+  },
+  'ice-candidate-rejected': {
+    error: PEER_CONNECTION_FAILURE_MESSAGE,
+    warning:
+      '일부 참가자의 네트워크 연결 후보를 적용하지 못했습니다. 다른 경로로 연결을 계속 시도합니다.',
+  },
+  'peer-negotiation-retrying': {
+    error: PEER_CONNECTION_FAILURE_MESSAGE,
+    warning: '일부 참가자와의 직접 연결을 다시 시도하고 있습니다.',
+  },
+  'peer-connection-recovering': {
+    error: PEER_CONNECTION_FAILURE_MESSAGE,
+    warning: '일부 참가자와의 직접 연결을 자동으로 복구하고 있습니다. 현재 통화는 유지됩니다.',
+  },
+  'peer-connection-recreated': {
+    error: PEER_CONNECTION_FAILURE_MESSAGE,
+    warning: '일부 참가자와의 직접 연결을 새로 만들고 있습니다. 현재 통화는 유지됩니다.',
+  },
+  'peer-ice-restart-failed': {
+    error: PEER_CONNECTION_FAILURE_MESSAGE,
+    warning: '일부 참가자의 네트워크 경로 복구에 실패해 연결을 새로 만들고 있습니다.',
+  },
+  'screen-share-sender-recovery': {
+    error: '일부 참가자에게 화면 공유를 전송하지 못했습니다. 방에 다시 입장해 주세요.',
+    warning:
+      '일부 참가자와 화면 공유 전환에 실패해 영상 연결을 자동으로 복구하고 있습니다. 현재 통화는 유지됩니다.',
+  },
+  'data-channel-closed': {
+    error: '채팅 연결을 복구하지 못했습니다. 방에 다시 입장해 주세요.',
+    warning: '일부 참가자와의 채팅 연결이 끊겨 자동으로 복구하고 있습니다.',
+  },
+  'data-channel-error': {
+    error: '채팅 연결을 복구하지 못했습니다. 방에 다시 입장해 주세요.',
+    warning: '일부 참가자와의 채팅 연결에서 오류가 발생해 자동으로 복구하고 있습니다.',
+  },
+  'data-channel-send-failed': {
+    error: '채팅 메시지를 보내지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.',
+    warning: '일부 참가자에게 채팅을 보내지 못해 연결을 자동으로 복구하고 있습니다.',
+  },
+  'data-channel-rate-limit': {
+    error: '채팅 연결에서 너무 많은 데이터가 전송되었습니다. 방에 다시 입장해 주세요.',
+    warning:
+      '한 참가자의 채팅 연결에서 너무 많은 데이터가 전송되어 일부 업데이트를 잠시 무시했습니다. 통화는 유지됩니다.',
+  },
+  'peer-negotiation-failed': {
+    error: PEER_CONNECTION_FAILURE_MESSAGE,
+    warning: PEER_CONNECTION_FAILURE_MESSAGE,
+  },
+  'peer-connection-timeout': {
+    error: PEER_CONNECTION_FAILURE_MESSAGE,
+    warning: PEER_CONNECTION_FAILURE_MESSAGE,
+  },
+  'local-media-ended': {
+    error:
+      '마이크 또는 카메라 연결이 종료되었습니다. 장치를 다시 선택한 뒤 방에 다시 입장해 주세요.',
+    warning:
+      '마이크 또는 카메라 연결이 종료되었습니다. 장치를 다시 선택하면 현재 방 연결을 새로 시작합니다.',
+  },
+} satisfies Record<Exclude<RoomIssueCode, SignalingErrorCode>, RoomIssueMessages>;
+
+const ROOM_ISSUE_MESSAGES = {
+  ...SIGNALING_ISSUE_MESSAGES,
+  ...INTERNAL_ROOM_ISSUE_MESSAGES,
+} satisfies Record<RoomIssueCode, RoomIssueMessages>;
 
 function isTerminalPeerWarning(issue: RoomIssue | null | undefined): boolean {
   return issue?.code === 'peer-connection-timeout' || issue?.code === 'peer-negotiation-failed';
@@ -90,56 +251,17 @@ export function roomErrorMessage(issue: RoomIssue | null | undefined): string | 
   if (!issue) {
     return undefined;
   }
-
-  const signalingMessage = signalingIssueMessage(issue.code, 'error');
-  if (signalingMessage !== undefined) {
-    return signalingMessage;
-  }
-
-  switch (issue.code) {
-    case 'room-join-timeout':
-      return '서버가 입장 요청에 응답하지 않았습니다. 네트워크를 확인해 주세요.';
-    case 'signaling-connect-timeout':
-      return '스터디 서버에 연결할 수 없습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.';
-    case 'signaling-connect-failed':
-    case 'signaling-closed':
-    case 'reconnect-exhausted':
-      return '서버와의 연결을 복구하지 못했습니다. 네트워크를 확인한 뒤 다시 연결해 주세요.';
-    default:
-      return issue.message;
-  }
+  return ROOM_ISSUE_MESSAGES[issue.code].error;
 }
 
 export function roomWarningMessage(issue: RoomIssue | null | undefined): string | undefined {
   if (!issue) {
     return undefined;
   }
-
-  const signalingMessage = signalingIssueMessage(issue.code, 'warning');
-  if (signalingMessage !== undefined) {
-    return signalingMessage;
-  }
-
-  switch (issue.code) {
-    case 'signaling-reconnecting':
-      return '스터디 서버에 다시 연결하는 중입니다. 카메라와 마이크는 유지되지만 참가자 연결은 다시 설정됩니다.';
-    case 'rtc-configuration-update-failed':
-      return '일부 참가자의 TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.';
-    case 'data-channel-rate-limit':
-      return '한 참가자의 채팅 연결에서 너무 많은 데이터가 전송되어 일부 업데이트를 잠시 무시했습니다. 통화는 유지됩니다.';
-    case 'screen-share-sender-recovery':
-      return '일부 참가자와 화면 공유 전환에 실패해 영상 연결을 자동으로 복구하고 있습니다. 현재 통화는 유지됩니다.';
-    case 'local-media-ended':
-      return '마이크 또는 카메라 연결이 종료되었습니다. 장치를 다시 선택하면 현재 방 연결을 새로 시작합니다.';
-    case 'peer-connection-timeout':
-    case 'peer-negotiation-failed':
-      return PEER_CONNECTION_FAILURE_MESSAGE;
-    default:
-      return issue.message;
-  }
+  return ROOM_ISSUE_MESSAGES[issue.code].warning;
 }
 
-function chatErrorMessage(error: unknown): string {
+export function chatErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : '';
   if (message.startsWith('Chat delivery to ')) {
     return '연결 가능한 참가자가 없어 메시지를 보내지 못했습니다. 입력한 내용은 그대로 두었습니다.';
@@ -147,7 +269,104 @@ function chatErrorMessage(error: unknown): string {
   if (message.startsWith('Chat delivery queue for ')) {
     return '메시지 전송 대기열이 가득 찼습니다. 잠시 후 다시 시도해 주세요.';
   }
-  return message || '메시지를 보내지 못했습니다.';
+  return '메시지를 보내지 못했습니다. 잠시 후 다시 시도해 주세요.';
+}
+
+interface RoomSystemNoticeMessages {
+  readonly status: RoomSessionStatus;
+  readonly sessionError?: string | undefined;
+  readonly actionWarning?: string | undefined;
+  readonly actionError?: string | undefined;
+  readonly participationGrantRefreshWarning?: string | undefined;
+  readonly turnRefreshWarning?: string | undefined;
+}
+
+export function buildRoomSystemNotices({
+  status,
+  sessionError,
+  actionWarning,
+  actionError,
+  participationGrantRefreshWarning,
+  turnRefreshWarning,
+}: RoomSystemNoticeMessages): RoomSystemNoticeView[] {
+  if (status !== 'active') {
+    return [];
+  }
+  return [
+    ...(sessionError
+      ? [{ id: 'session-error', tone: 'error', message: sessionError } as const]
+      : []),
+    ...(actionWarning
+      ? [{ id: 'action-warning', tone: 'warning', message: actionWarning } as const]
+      : []),
+    ...(actionError ? [{ id: 'action-error', tone: 'error', message: actionError } as const] : []),
+    ...(participationGrantRefreshWarning
+      ? [
+          {
+            id: 'participation-grant-refresh',
+            tone: 'warning',
+            message: participationGrantRefreshWarning,
+          } as const,
+        ]
+      : []),
+    ...(turnRefreshWarning
+      ? [{ id: 'turn-refresh', tone: 'warning', message: turnRefreshWarning } as const]
+      : []),
+  ];
+}
+
+interface ActiveRoomTerminalStateInput {
+  readonly snapshotStatus?: RoomSessionStatus | undefined;
+  readonly sessionError?: string | undefined;
+  readonly startupError: RoomStartupErrorCode | null;
+}
+
+export interface ActiveRoomTerminalState {
+  readonly status: RoomSessionStatus;
+  readonly terminalErrorMessage?: string | undefined;
+}
+
+export function resolveActiveRoomTerminalState({
+  snapshotStatus,
+  sessionError,
+  startupError,
+}: ActiveRoomTerminalStateInput): ActiveRoomTerminalState {
+  if (startupError !== null) {
+    return {
+      status: 'error',
+      terminalErrorMessage: roomStartupErrorMessage(startupError),
+    };
+  }
+  const status = snapshotStatus ?? 'idle';
+  return {
+    status,
+    ...(status === 'error'
+      ? { terminalErrorMessage: sessionError ?? roomStartupErrorMessage('session-start') }
+      : {}),
+  };
+}
+
+export function screenShareStartNotice(
+  result: ScreenShareStartResult,
+): Pick<RoomSystemNoticeView, 'tone' | 'message'> | undefined {
+  if (result === 'cancelled') {
+    return {
+      tone: 'warning',
+      message: '화면 공유가 시작되지 않았습니다. 다시 시도하려면 화면 공유 버튼을 눌러 주세요.',
+    };
+  }
+  if (result === 'failed') {
+    return {
+      tone: 'error',
+      message:
+        '화면 공유를 시작하지 못했습니다. 공유할 화면을 선택하고 브라우저 권한을 확인해 주세요.',
+    };
+  }
+  return undefined;
+}
+
+export function shouldStopRoomRefreshes(status: RoomSessionStatus): boolean {
+  return status === 'error' || status === 'ended';
 }
 
 export function roomStatusLabel(
@@ -192,7 +411,10 @@ interface LoadedRtcConfiguration {
   readonly turnExpiresAt: number | null;
 }
 
-async function loadRtcConfiguration(turnCredentialsUrl: string): Promise<LoadedRtcConfiguration> {
+async function loadRtcConfiguration(
+  turnCredentialsUrl: string,
+  signal?: AbortSignal,
+): Promise<LoadedRtcConfiguration> {
   const stunUrls = (
     import.meta.env.VITE_STUN_URLS ?? 'stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302'
   )
@@ -203,7 +425,10 @@ async function loadRtcConfiguration(turnCredentialsUrl: string): Promise<LoadedR
 
   let credentials;
   try {
-    credentials = await loadTurnCredentials({ endpoint: turnCredentialsUrl });
+    credentials = await loadTurnCredentials({
+      endpoint: turnCredentialsUrl,
+      ...(signal === undefined ? {} : { signal }),
+    });
   } catch (error) {
     throw new Error('TURN 서버 정보를 받지 못했습니다. 잠시 후 다시 시도해 주세요.', {
       cause: error,
@@ -275,7 +500,10 @@ function ActiveRoom({
 }: ActiveRoomProps) {
   const sessionRef = useRef<RoomSession | null>(null);
   const lifecycleRef = useRef(0);
+  const ensureFreshParticipationGrantRef = useRef<() => Promise<void>>(async () => {});
   const [snapshot, setSnapshot] = useState<RoomSessionSnapshot | null>(null);
+  const [startupError, setStartupError] = useState<RoomStartupErrorCode | null>(null);
+  const [actionWarning, setActionWarning] = useState('');
   const [actionError, setActionError] = useState('');
   const [participationGrantRefreshWarning, setParticipationGrantRefreshWarning] = useState('');
   const [turnRefreshWarning, setTurnRefreshWarning] = useState('');
@@ -284,61 +512,60 @@ function ActiveRoom({
     const lifecycle = ++lifecycleRef.current;
     let isCurrentSession = true;
     let unsubscribe = () => {};
-    let participationGrantRefreshTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
-    let turnRefreshTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
     let endpoints: RoomEndpoints | null = null;
     let participationGrantLeaseManager: ParticipationGrantLeaseManager | null = null;
+    const refreshLifetime = new RoomRefreshLifetime();
+    const turnRequestController = new AbortController();
 
     const isCurrentLifecycle = () => isCurrentSession && lifecycleRef.current === lifecycle;
+    const canRefresh = () => isCurrentLifecycle() && refreshLifetime.isActive();
 
-    const clearParticipationGrantRefreshTimer = () => {
-      if (participationGrantRefreshTimer !== null) {
-        globalThis.clearTimeout(participationGrantRefreshTimer);
-        participationGrantRefreshTimer = null;
-      }
-    };
-
-    const clearTurnRefreshTimer = () => {
-      if (turnRefreshTimer !== null) {
-        globalThis.clearTimeout(turnRefreshTimer);
-        turnRefreshTimer = null;
-      }
+    const stopBackgroundRefreshes = () => {
+      refreshLifetime.stop();
+      participationGrantLeaseManager?.close();
+      turnRequestController.abort();
     };
 
     const scheduleParticipationGrantRefresh = () => {
-      if (!isCurrentLifecycle()) {
+      if (!canRefresh()) {
         return;
       }
       const delayMs = participationGrantLeaseManager?.refreshDelayMs();
       if (delayMs === undefined || delayMs === null) {
         return;
       }
-      clearParticipationGrantRefreshTimer();
-      participationGrantRefreshTimer = globalThis.setTimeout(() => {
-        void refreshParticipationGrant();
-      }, delayMs);
+      refreshLifetime.schedule(
+        'participation-grant',
+        () => {
+          void refreshParticipationGrant();
+        },
+        delayMs,
+      );
     };
 
     const scheduleParticipationGrantRefreshRetry = () => {
-      if (!isCurrentLifecycle()) {
+      if (!canRefresh()) {
         return;
       }
-      clearParticipationGrantRefreshTimer();
-      participationGrantRefreshTimer = globalThis.setTimeout(() => {
-        void refreshParticipationGrant();
-      }, 30_000);
+      refreshLifetime.schedule(
+        'participation-grant',
+        () => {
+          void refreshParticipationGrant();
+        },
+        30_000,
+      );
     };
 
     const ensureFreshParticipationGrant = async () => {
       const manager = participationGrantLeaseManager;
-      if (manager === null) {
+      if (manager === null || !canRefresh()) {
         return;
       }
 
       try {
         await manager.ensureFresh();
       } catch (error) {
-        if (isCurrentLifecycle()) {
+        if (canRefresh()) {
           setParticipationGrantRefreshWarning(
             '스터디 참여 권한을 갱신하지 못했습니다. 현재 통화는 유지하며 곧 다시 시도합니다.',
           );
@@ -347,12 +574,13 @@ function ActiveRoom({
         throw error;
       }
 
-      if (!isCurrentLifecycle()) {
+      if (!canRefresh()) {
         return;
       }
       setParticipationGrantRefreshWarning('');
       scheduleParticipationGrantRefresh();
     };
+    ensureFreshParticipationGrantRef.current = ensureFreshParticipationGrant;
 
     const refreshParticipationGrant = async () => {
       try {
@@ -363,41 +591,53 @@ function ActiveRoom({
     };
 
     const scheduleTurnRefresh = (expiresAt: number) => {
-      if (!isCurrentLifecycle()) {
+      if (!canRefresh()) {
         return;
       }
-      clearTurnRefreshTimer();
-      turnRefreshTimer = globalThis.setTimeout(() => {
-        void refreshTurnConfiguration();
-      }, turnCredentialRefreshDelayMs(expiresAt));
+      refreshLifetime.schedule(
+        'turn',
+        () => {
+          void refreshTurnConfiguration();
+        },
+        turnCredentialRefreshDelayMs(expiresAt),
+      );
     };
 
     const scheduleTurnRefreshRetry = () => {
-      if (!isCurrentLifecycle()) {
+      if (!canRefresh()) {
         return;
       }
-      clearTurnRefreshTimer();
-      turnRefreshTimer = globalThis.setTimeout(() => {
-        void refreshTurnConfiguration();
-      }, 30_000);
+      refreshLifetime.schedule(
+        'turn',
+        () => {
+          void refreshTurnConfiguration();
+        },
+        30_000,
+      );
     };
 
     const refreshTurnConfiguration = async () => {
       const turnCredentialsUrl = endpoints?.turnCredentialsUrl;
-      if (turnCredentialsUrl === undefined) {
+      if (turnCredentialsUrl === undefined || !canRefresh()) {
         return;
       }
 
       try {
         await ensureFreshParticipationGrant();
       } catch {
-        scheduleTurnRefreshRetry();
+        if (canRefresh()) {
+          scheduleTurnRefreshRetry();
+        }
+        return;
+      }
+
+      if (!canRefresh()) {
         return;
       }
 
       try {
-        const loaded = await loadRtcConfiguration(turnCredentialsUrl);
-        if (!isCurrentLifecycle()) {
+        const loaded = await loadRtcConfiguration(turnCredentialsUrl, turnRequestController.signal);
+        if (!canRefresh()) {
           return;
         }
 
@@ -409,7 +649,7 @@ function ActiveRoom({
           scheduleTurnRefresh(loaded.turnExpiresAt);
         }
       } catch {
-        if (!isCurrentLifecycle()) {
+        if (!canRefresh()) {
           return;
         }
         setTurnRefreshWarning(
@@ -419,17 +659,29 @@ function ActiveRoom({
       }
     };
 
+    const handleSessionSnapshot = (nextSnapshot: RoomSessionSnapshot) => {
+      if (shouldStopRoomRefreshes(nextSnapshot.status)) {
+        stopBackgroundRefreshes();
+      }
+      setSnapshot(nextSnapshot);
+    };
+
     const startSession = async () => {
       try {
         await withPreparedMediaFailureCleanup(
           async () => {
-            const resolvedEndpoints = resolveRoomEndpoints({
-              roomId,
-              authMode: import.meta.env.VITE_ROUND_AUTH_MODE,
-              location: window.location,
-              signalingUrl: import.meta.env.VITE_SIGNALING_URL,
-              turnCredentialsUrl: import.meta.env.VITE_TURN_CREDENTIALS_URL,
-            });
+            let resolvedEndpoints: RoomEndpoints;
+            try {
+              resolvedEndpoints = resolveRoomEndpoints({
+                roomId,
+                authMode: import.meta.env.VITE_ROUND_AUTH_MODE,
+                location: window.location,
+                signalingUrl: import.meta.env.VITE_SIGNALING_URL,
+                turnCredentialsUrl: import.meta.env.VITE_TURN_CREDENTIALS_URL,
+              });
+            } catch (error) {
+              throw new RoomStartupFailure('endpoint-configuration', error);
+            }
             endpoints = resolvedEndpoints;
 
             if (resolvedEndpoints.participationGrantRefreshUrl !== null) {
@@ -440,14 +692,19 @@ function ActiveRoom({
                 });
                 await ensureFreshParticipationGrant();
               } catch (error) {
-                throw new Error(
-                  '스터디 참여 권한을 확인하지 못했습니다. 잠시 후 다시 시도하거나 BATON에서 다시 입장해 주세요.',
-                  { cause: error },
-                );
+                throw new RoomStartupFailure('participation-grant', error);
               }
             }
 
-            const loaded = await loadRtcConfiguration(resolvedEndpoints.turnCredentialsUrl);
+            let loaded: LoadedRtcConfiguration;
+            try {
+              loaded = await loadRtcConfiguration(
+                resolvedEndpoints.turnCredentialsUrl,
+                turnRequestController.signal,
+              );
+            } catch (error) {
+              throw new RoomStartupFailure('turn-configuration', error);
+            }
             if (!isCurrentLifecycle()) {
               return;
             }
@@ -464,7 +721,9 @@ function ActiveRoom({
                   ...(hostCapability === undefined ? {} : { hostCapability }),
                   ...(participationGrantLeaseManager === null
                     ? {}
-                    : { beforeSignalingConnect: ensureFreshParticipationGrant }),
+                    : {
+                        beforeSignalingConnect: () => ensureFreshParticipationGrantRef.current(),
+                      }),
                   mediaConstraints: {
                     audio: {
                       autoGainControl: true,
@@ -484,9 +743,10 @@ function ActiveRoom({
               sessionRef.current = session;
             }
 
+            setActionWarning('');
             setActionError('');
-            setSnapshot(session.getSnapshot());
-            unsubscribe = session.subscribe(setSnapshot);
+            handleSessionSnapshot(session.getSnapshot());
+            unsubscribe = session.subscribe(handleSessionSnapshot);
 
             await session.join();
             if (loaded.turnExpiresAt !== null) {
@@ -500,14 +760,18 @@ function ActiveRoom({
           },
         );
       } catch (error) {
-        clearParticipationGrantRefreshTimer();
-        clearTurnRefreshTimer();
-        if (isCurrentSession) {
-          setActionError(error instanceof Error ? error.message : '스터디룸 연결에 실패했습니다.');
+        stopBackgroundRefreshes();
+        if (isCurrentLifecycle()) {
+          const sessionStatus = sessionRef.current?.getSnapshot().status;
+          if (sessionStatus !== 'error') {
+            setStartupError(startupErrorCode(error));
+          }
         }
       }
     };
 
+    setStartupError(null);
+    setActionWarning('');
     setActionError('');
     setParticipationGrantRefreshWarning('');
     setTurnRefreshWarning('');
@@ -516,14 +780,27 @@ function ActiveRoom({
     return () => {
       isCurrentSession = false;
       unsubscribe();
-      clearParticipationGrantRefreshTimer();
-      clearTurnRefreshTimer();
       // React StrictMode immediately re-runs effects in development. Deferring
       // disposal lets the second setup reuse the single-use session and the
       // transferred pre-join tracks instead of stopping them between setups.
       queueMicrotask(() => {
         const session = sessionRef.current;
-        if (lifecycleRef.current !== lifecycle || session === null) {
+        if (lifecycleRef.current !== lifecycle) {
+          if (session === null) {
+            stopBackgroundRefreshes();
+          } else {
+            void session
+              .join()
+              .catch(() => {})
+              .finally(stopBackgroundRefreshes);
+          }
+          return;
+        }
+        stopBackgroundRefreshes();
+        if (ensureFreshParticipationGrantRef.current === ensureFreshParticipationGrant) {
+          ensureFreshParticipationGrantRef.current = async () => {};
+        }
+        if (session === null) {
           return;
         }
         sessionRef.current = null;
@@ -580,15 +857,22 @@ function ActiveRoom({
         throw new Error('Room session is unavailable');
       }
       session.sendChat(text);
+      setActionWarning('');
       setActionError('');
       return true;
     } catch (error) {
+      setActionWarning('');
       setActionError(chatErrorMessage(error));
       return false;
     }
   };
 
-  const status = snapshot?.status ?? 'idle';
+  const sessionError = roomErrorMessage(snapshot?.error);
+  const { status, terminalErrorMessage } = resolveActiveRoomTerminalState({
+    snapshotStatus: snapshot?.status,
+    sessionError,
+    startupError,
+  });
   const localMedia = snapshot?.localMedia ?? {
     audioAvailable: false,
     audioEnabled: false,
@@ -599,6 +883,14 @@ function ActiveRoom({
   const hasFailedRemotePeer = participants.some(
     (participant) => !participant.isLocal && participant.connectionState === 'failed',
   );
+  const systemNotices = buildRoomSystemNotices({
+    status,
+    sessionError,
+    actionWarning: actionWarning || undefined,
+    actionError: actionError || undefined,
+    participationGrantRefreshWarning: participationGrantRefreshWarning || undefined,
+    turnRefreshWarning: turnRefreshWarning || undefined,
+  });
 
   return (
     <RoomView
@@ -626,13 +918,8 @@ function ActiveRoom({
         isTerminalPeerWarning(snapshot?.warning) ? undefined : roomWarningMessage(snapshot?.warning)
       }
       mediaRecoveryAvailable={snapshot?.warning?.code === 'local-media-ended'}
-      errorMessage={
-        roomErrorMessage(snapshot?.error) ||
-        actionError ||
-        participationGrantRefreshWarning ||
-        turnRefreshWarning ||
-        undefined
-      }
+      errorMessage={terminalErrorMessage}
+      systemNotices={systemNotices}
       onToggleAudio={() => {
         sessionRef.current?.toggleAudio();
       }}
@@ -644,30 +931,49 @@ function ActiveRoom({
         if (session === null) {
           return;
         }
+        setActionWarning('');
         setActionError('');
         const wasSharing = snapshot?.screenSharing === true;
-        const operation = wasSharing ? session.stopScreenShare() : session.startScreenShare();
-        void operation
-          .then((changed) => {
-            if (!changed && !wasSharing && sessionRef.current === session) {
-              setActionError(
-                '화면 공유를 시작하지 못했습니다. 공유할 화면을 선택하고 브라우저 권한을 확인해 주세요.',
-              );
+        if (wasSharing) {
+          void session.stopScreenShare().catch(() => {
+            if (sessionRef.current === session) {
+              setActionWarning('');
+              setActionError('화면 공유를 중지하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+            }
+          });
+          return;
+        }
+        void session
+          .startScreenShare()
+          .then((result) => {
+            if (sessionRef.current !== session) {
+              return;
+            }
+            const notice = screenShareStartNotice(result);
+            if (notice?.tone === 'warning') {
+              setActionError('');
+              setActionWarning(notice.message);
+            } else if (notice?.tone === 'error') {
+              setActionWarning('');
+              setActionError(notice.message);
             }
           })
-          .catch((error: unknown) => {
-            setActionError(
-              error instanceof Error ? error.message : '화면 공유를 변경하지 못했습니다.',
-            );
+          .catch(() => {
+            if (sessionRef.current === session) {
+              setActionWarning('');
+              setActionError('화면 공유를 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+            }
           });
       }}
       onDisableParticipantAudio={(peerId) => {
         if (!sessionRef.current?.disableParticipantMedia(peerId, 'audio')) {
+          setActionWarning('');
           setActionError('이 참가자의 마이크를 끌 수 없습니다.');
         }
       }}
       onDisableParticipantVideo={(peerId) => {
         if (!sessionRef.current?.disableParticipantMedia(peerId, 'video')) {
+          setActionWarning('');
           setActionError('이 참가자의 비디오를 끌 수 없습니다.');
         }
       }}

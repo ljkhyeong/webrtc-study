@@ -225,6 +225,38 @@ describe('BATON participation grant lease manager', () => {
     expect(refreshCallCount(fetcher)).toBe(2);
   });
 
+  it('cancels an in-flight lookup before it can consume protected refresh quota', async () => {
+    let resolveSession!: (value: Response) => void;
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      if (input === SESSION_ENDPOINT) {
+        return new Promise<Response>((resolve) => {
+          resolveSession = resolve;
+        });
+      }
+      return Promise.resolve(
+        response(200, {
+          expiresAt: 1_780_000_000,
+          refreshAfterSeconds: 240,
+        }),
+      );
+    });
+    const manager = new ParticipationGrantLeaseManager({
+      endpoint: ENDPOINT,
+      fetcher: fetcher as typeof fetch,
+      roomId: ROOM_ID,
+      storage: null,
+    });
+
+    const refreshing = manager.ensureFresh();
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    manager.close();
+    resolveSession(sessionResponse());
+
+    await expect(refreshing).rejects.toThrow('cancelled');
+    expect(refreshCallCount(fetcher)).toBe(0);
+    await expect(manager.ensureFresh()).rejects.toThrow('closed');
+  });
+
   it.each([
     {
       body: {

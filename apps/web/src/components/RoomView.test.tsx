@@ -92,6 +92,31 @@ describe('RoomView connection state', () => {
     expect(markup).toContain('role="status"');
   });
 
+  it('renders every typed system notice with its own severity', () => {
+    const markup = renderRoom({
+      status: 'active',
+      systemNotices: [
+        { id: 'session-error', tone: 'error', message: '세션 오류' },
+        { id: 'action-error', tone: 'error', message: '작업 오류' },
+        {
+          id: 'participation-grant-refresh',
+          tone: 'warning',
+          message: '참여권 갱신 경고',
+        },
+        { id: 'turn-refresh', tone: 'warning', message: 'TURN 갱신 경고' },
+      ],
+    });
+
+    expect(markup).toContain('세션 오류');
+    expect(markup).toContain('작업 오류');
+    expect(markup).toContain('참여권 갱신 경고');
+    expect(markup).toContain('TURN 갱신 경고');
+    expect(markup.match(/room-notice--error/g)).toHaveLength(2);
+    expect(markup.match(/room-notice--warning/g)).toHaveLength(2);
+    expect(markup.match(/role="alert"/g)).toHaveLength(2);
+    expect(markup.match(/role="status"/g)).toHaveLength(2);
+  });
+
   it('renders a fallback instead of throwing for an invalid chat timestamp', () => {
     const markup = renderRoom({
       messages: [

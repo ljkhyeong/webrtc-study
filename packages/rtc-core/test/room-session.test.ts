@@ -2809,6 +2809,53 @@ describe('RoomSession', () => {
     await harness.session.leave();
   });
 
+  it('classifies a denied display picker as a recoverable user cancellation', async () => {
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(async () => {
+        throw new DOMException('User cancelled the picker', 'NotAllowedError');
+      }),
+    });
+    await joinSession(harness);
+
+    await expect(harness.session.startScreenShare()).resolves.toBe('cancelled');
+    expect(harness.session.getSnapshot()).toMatchObject({
+      status: 'active',
+      screenSharing: false,
+      warning: null,
+      error: null,
+    });
+    await harness.session.leave();
+  });
+
+  it('reports an operational display-capture rejection as a start failure', async () => {
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(async () => {
+        throw new DOMException('The display source could not be read', 'NotReadableError');
+      }),
+    });
+    await joinSession(harness);
+
+    await expect(harness.session.startScreenShare()).resolves.toBe('failed');
+    expect(harness.session.getSnapshot()).toMatchObject({
+      status: 'active',
+      screenSharing: false,
+      warning: null,
+      error: null,
+    });
+    await harness.session.leave();
+  });
+
+  it('reports a display stream without a live video track as a start failure', async () => {
+    const harness = createHarness({
+      getDisplayMedia: vi.fn(async () => new FakeMediaStream([]) as unknown as MediaStream),
+    });
+    await joinSession(harness);
+
+    await expect(harness.session.startScreenShare()).resolves.toBe('failed');
+    expect(harness.session.getSnapshot().screenSharing).toBe(false);
+    await harness.session.leave();
+  });
+
   it('replaces camera senders with screen video and restores the disabled camera state', async () => {
     const screenTrack = new FakeTrack('video');
     const displayStream = new FakeMediaStream([screenTrack]);
@@ -2832,7 +2879,7 @@ describe('RoomSession', () => {
     expect(harness.session.toggleVideo()).toBe(false);
     expect(harness.videoTrack.enabled).toBe(false);
 
-    await expect(harness.session.startScreenShare()).resolves.toBe(true);
+    await expect(harness.session.startScreenShare()).resolves.toBe('started');
 
     expect(getDisplayMedia).toHaveBeenCalledWith({ video: true, audio: false });
     expect(cameraSender.track).toBe(screenTrack as unknown as MediaStreamTrack);
@@ -2981,7 +3028,7 @@ describe('RoomSession', () => {
     expect(cameraSender.replaceTrackCalls).toEqual([
       harness.videoTrack as unknown as MediaStreamTrack,
     ]);
-    await expect(harness.session.startScreenShare()).resolves.toBe(false);
+    await expect(harness.session.startScreenShare()).resolves.toBe('cancelled');
     expect(harness.session.getSnapshot()).toMatchObject({
       screenSharing: false,
       localMedia: { videoSource: 'camera' },
@@ -3084,7 +3131,7 @@ describe('RoomSession', () => {
     expect(cameraSender.replaceTrackCalls).toEqual([]);
 
     pickerGate.resolve();
-    await expect(starting).resolves.toBe(false);
+    await expect(starting).resolves.toBe('cancelled');
     expect(screenTrack.stopped).toBe(true);
     expect(cameraSender.track).toBe(harness.videoTrack as unknown as MediaStreamTrack);
     expect(harness.session.getSnapshot().screenSharing).toBe(false);
@@ -3129,7 +3176,7 @@ describe('RoomSession', () => {
     });
 
     replaceGate.resolve();
-    await expect(starting).resolves.toBe(false);
+    await expect(starting).resolves.toBe('cancelled');
     expect(cameraSender.replaceTrackCalls).toEqual([
       screenTrack as unknown as MediaStreamTrack,
       harness.videoTrack as unknown as MediaStreamTrack,
@@ -3170,7 +3217,7 @@ describe('RoomSession', () => {
     await flushMicrotasks();
 
     replaceGate.resolve();
-    await expect(starting).resolves.toBe(false);
+    await expect(starting).resolves.toBe('cancelled');
     await flushMicrotasks();
 
     const replacementPeer = harness.peerConnections[1];
@@ -3204,9 +3251,9 @@ describe('RoomSession', () => {
     await harness.session.leave();
 
     expect(harness.session.getSnapshot().status).toBe('ended');
-    await expect(harness.session.startScreenShare()).resolves.toBe(false);
+    await expect(harness.session.startScreenShare()).resolves.toBe('cancelled');
     pickerGate.resolve();
-    await expect(starting).resolves.toBe(false);
+    await expect(starting).resolves.toBe('cancelled');
     expect(screenTrack.stopped).toBe(true);
     expect(harness.session.getLocalStream()).toBeNull();
     expect(harness.session.getSnapshot()).toMatchObject({
@@ -3240,7 +3287,7 @@ describe('RoomSession', () => {
     expect(disposedPeer.closed).toBe(true);
     expect(screenTrack.stopped).toBe(true);
     replaceGate.resolve();
-    await expect(starting).resolves.toBe(false);
+    await expect(starting).resolves.toBe('cancelled');
     expect(harness.peerConnections).toHaveLength(1);
     expect(harness.session.getSnapshot()).toMatchObject({
       status: 'ended',
@@ -3249,7 +3296,7 @@ describe('RoomSession', () => {
     });
   });
 
-  it('recreates a failed screen sender and reports a non-successful start', async () => {
+  it('recreates a failed screen sender and reports an active recovering share', async () => {
     const screenTrack = new FakeTrack('video');
     const harness = createHarness({
       getDisplayMedia: vi.fn(
@@ -3267,7 +3314,7 @@ describe('RoomSession', () => {
     const offersBeforeRecovery = harness.socket.messagesOfType('rtc.offer').length;
     cameraSender.replaceTrackErrors.push(new Error('screen sender failed'));
 
-    await expect(harness.session.startScreenShare()).resolves.toBe(false);
+    await expect(harness.session.startScreenShare()).resolves.toBe('recovering');
     await flushMicrotasks();
 
     const replacementPeer = harness.peerConnections[1];
@@ -3336,7 +3383,7 @@ describe('RoomSession', () => {
     }
     const offersBeforeShare = harness.socket.messagesOfType('rtc.offer').length;
 
-    await expect(harness.session.startScreenShare()).resolves.toBe(true);
+    await expect(harness.session.startScreenShare()).resolves.toBe('started');
     await flushMicrotasks();
 
     const screenSender = peer.senders.find(
@@ -3380,7 +3427,7 @@ describe('RoomSession', () => {
     expect(peer.signalingState).toBe('have-local-offer');
     expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(1);
 
-    await expect(harness.session.startScreenShare()).resolves.toBe(true);
+    await expect(harness.session.startScreenShare()).resolves.toBe('started');
     await flushMicrotasks();
 
     expect(peer.addedTracks).toContain(screenTrack as unknown as MediaStreamTrack);
@@ -5359,6 +5406,36 @@ describe('RoomSession', () => {
     expect(
       harness.session.getSnapshot().participants.some(({ peerId }) => peerId === 'peer-a'),
     ).toBe(false);
+  });
+
+  it('ends without reconnecting when a newer BATON participation session supersedes it', async () => {
+    let connectGuardCalls = 0;
+    const harness = createHarness({
+      beforeSignalingConnect: () => {
+        connectGuardCalls += 1;
+      },
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const peer = harness.peerConnections[0];
+
+    harness.socket.serverClose(4002, 'Participation session superseded');
+    await flushMicrotasks();
+
+    expect(connectGuardCalls).toBe(1);
+    expect(harness.sockets).toHaveLength(1);
+    expect(peer?.closed).toBe(true);
+    expect(harness.audioTrack.stopped).toBe(true);
+    expect(harness.videoTrack.stopped).toBe(true);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      status: 'error',
+      selfId: null,
+      participants: [],
+      warning: null,
+      error: {
+        code: 'connection-superseded',
+        message: 'Participation session superseded',
+      },
+    });
   });
 
   it('re-enters on a fresh socket while retaining local media and chat history', async () => {
