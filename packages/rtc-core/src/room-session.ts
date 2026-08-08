@@ -293,6 +293,14 @@ const MAX_PENDING_CHAT_BYTES_PER_PEER =
   MAX_PENDING_CHAT_MESSAGES_PER_PEER * MAX_DATA_CHANNEL_FRAME_BYTES;
 const MAX_RECEIVED_CHAT_IDS_PER_PEER = 128;
 const MAX_PENDING_ACK_IDS_PER_PEER = 128;
+// Mirror the peer ACK/dedup window for fully retired local IDs. A current
+// reliable, ordered channel cannot overtake this many newer acknowledgements,
+// and detached channels have their handlers removed. Visible or pending IDs
+// remain pinned outside this FIFO bound.
+const MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS = Math.max(
+  MAX_RECEIVED_CHAT_IDS_PER_PEER,
+  MAX_PENDING_ACK_IDS_PER_PEER,
+);
 const CHAT_ACK_TIMEOUT_MS = 45_000;
 const MAX_DATA_CHANNEL_BUFFERED_BYTES = 256 * 1024;
 const DATA_CHANNEL_BUFFERED_AMOUNT_LOW_BYTES = 64 * 1024;
@@ -525,7 +533,8 @@ export class RoomSession {
   readonly #peers = new Map<string, PeerContext>();
   readonly #remoteStreams = new Map<string, MediaStream>();
   readonly #remoteMediaStates = new Map<string, ParticipantMediaDataMessage>();
-  readonly #issuedLocalMessageIds = new Set<string>();
+  readonly #activeLocalMessageIds = new Set<string>();
+  readonly #recentlyRetiredLocalMessageIds = new Set<string>();
   readonly #staleSelfIds = new Set<string>();
   readonly #exhaustedPeerIds = new Set<string>();
   readonly #localTrackEndedListeners = new Map<MediaStreamTrack, EventListener>();
@@ -1205,7 +1214,10 @@ export class RoomSession {
     }
 
     const messageId = this.#createId();
-    if (this.#issuedLocalMessageIds.has(messageId)) {
+    if (
+      this.#activeLocalMessageIds.has(messageId) ||
+      this.#recentlyRetiredLocalMessageIds.has(messageId)
+    ) {
       throw new Error(`Chat message id ${messageId} is already in use`);
     }
     const wireMessage: ChatDataMessage = {
@@ -3292,6 +3304,7 @@ export class RoomSession {
     const deliveryState = this.#aggregateChatDeliveryState(recipientStates);
     if (deliveryState !== 'pending') {
       this.#localChatRecipientStates.delete(messageId);
+      this.#retireLocalMessageIdIfUnused(messageId);
     }
     if (index < 0 || message === undefined || message.deliveryState === deliveryState) {
       return false;
@@ -3333,13 +3346,37 @@ export class RoomSession {
 
   #rememberMessage(message: ChatMessage): void {
     if (message.isLocal) {
-      this.#issuedLocalMessageIds.add(message.id);
+      this.#activeLocalMessageIds.add(message.id);
     }
     this.#messages.push(message);
 
     const maxMessages = this.#options.maxChatMessages ?? 200;
     while (this.#messages.length > maxMessages) {
-      this.#messages.shift();
+      const removed = this.#messages.shift();
+      if (removed?.isLocal === true) {
+        this.#retireLocalMessageIdIfUnused(removed.id);
+      }
+    }
+  }
+
+  #retireLocalMessageIdIfUnused(messageId: string): void {
+    if (
+      !this.#activeLocalMessageIds.has(messageId) ||
+      this.#localChatRecipientStates.has(messageId) ||
+      this.#messages.some((message) => message.isLocal && message.id === messageId)
+    ) {
+      return;
+    }
+
+    this.#activeLocalMessageIds.delete(messageId);
+    this.#recentlyRetiredLocalMessageIds.add(messageId);
+    while (this.#recentlyRetiredLocalMessageIds.size > MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS) {
+      const oldest = this.#recentlyRetiredLocalMessageIds.values().next().value as
+        string | undefined;
+      if (oldest === undefined) {
+        return;
+      }
+      this.#recentlyRetiredLocalMessageIds.delete(oldest);
     }
   }
 

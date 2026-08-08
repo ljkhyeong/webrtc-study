@@ -3958,6 +3958,99 @@ describe('RoomSession', () => {
     await harness.session.leave();
   });
 
+  it('bounds retired local ids while pinning an evicted pending id through channel replacement', async () => {
+    const replayWindowSize = 128;
+    const generatedIds = [
+      'message-pinned',
+      ...Array.from({ length: replayWindowSize + 2 }, (_, index) => `message-retired-${index}`),
+      'message-pinned',
+      'message-pinned',
+      'message-retired-0',
+    ];
+    let idIndex = 0;
+    let now = 2_000;
+    const harness = createHarness({
+      createId: () => generatedIds[idIndex++] ?? 'unexpected-message-id',
+      maxChatMessages: 1,
+      now: () => now,
+    });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const peer = harness.peerConnections[0];
+    const originalChannel = peer?.channels[0];
+    if (peer === undefined || originalChannel === undefined) {
+      throw new Error('Expected an initial peer and DataChannel');
+    }
+
+    const pinned = harness.session.sendChat('stay pending beyond the replay window');
+    for (let index = 0; index < replayWindowSize + 2; index += 1) {
+      now += 10_001;
+      const completed = harness.session.sendChat(`completed ${index}`);
+      acknowledgeChat(originalChannel, completed.id);
+    }
+
+    expect(harness.session.getSnapshot().messages).toEqual([
+      expect.objectContaining({
+        id: `message-retired-${replayWindowSize + 1}`,
+        deliveryState: 'sent',
+      }),
+    ]);
+    const sentChatCount = originalChannel.sent
+      .map((raw) => JSON.parse(raw) as { type: string })
+      .filter((message) => message.type === 'chat.message').length;
+    expect(() => harness.session.sendChat('must not reuse the pending id')).toThrow(
+      'Chat message id message-pinned is already in use',
+    );
+    expect(
+      originalChannel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toHaveLength(sentChatCount);
+
+    const replacementChannel = new FakeDataChannel();
+    replacementChannel.readyState = 'connecting';
+    peer.ondatachannel?.({ channel: replacementChannel } as unknown as RTCDataChannelEvent);
+
+    acknowledgeChat(originalChannel, pinned.id);
+    replacementChannel.open();
+    expect(
+      replacementChannel.sent
+        .map((raw) => JSON.parse(raw) as { type: string; id?: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toEqual([expect.objectContaining({ id: pinned.id })]);
+
+    now += 10_001;
+    acknowledgeChat(replacementChannel, pinned.id);
+    expect(() => harness.session.sendChat('must not immediately reuse the late-acked id')).toThrow(
+      'Chat message id message-pinned is already in use',
+    );
+
+    const recycled = harness.session.sendChat('the oldest retired id is reusable');
+    expect(recycled.id).toBe('message-retired-0');
+    expect(harness.session.getSnapshot().messages).toEqual([
+      expect.objectContaining({
+        id: 'message-retired-0',
+        text: 'the oldest retired id is reusable',
+        isLocal: true,
+        deliveryState: 'pending',
+      }),
+    ]);
+    acknowledgeChat(originalChannel, recycled.id);
+    expect(harness.session.getSnapshot().messages).toEqual([
+      expect.objectContaining({
+        id: 'message-retired-0',
+        deliveryState: 'pending',
+      }),
+    ]);
+    acknowledgeChat(replacementChannel, recycled.id);
+    expect(harness.session.getSnapshot().messages).toEqual([
+      expect.objectContaining({
+        id: 'message-retired-0',
+        deliveryState: 'sent',
+      }),
+    ]);
+    await harness.session.leave();
+  });
+
   it('keeps received chat tombstones across visible history eviction and channel replacement', async () => {
     const harness = createHarness({ maxChatMessages: 1 });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
@@ -5230,8 +5323,11 @@ describe('RoomSession', () => {
   });
 
   it('marks queued local chat as failed when its peer leaves before delivery', async () => {
+    const generatedIds = ['message-peer-left', 'message-after-left', 'message-peer-left'];
+    let idIndex = 0;
     const harness = createHarness({
-      createId: () => 'message-peer-left',
+      createId: () => generatedIds[idIndex++] ?? 'unexpected-message-id',
+      maxChatMessages: 1,
       now: () => 3_800,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
@@ -5256,6 +5352,29 @@ describe('RoomSession', () => {
         deliveryState: 'failed',
       }),
     );
+
+    harness.session.sendChat('evict the failed message after the peer leaves');
+    expect(() => harness.session.sendChat('must not immediately reuse the retired id')).toThrow(
+      'Chat message id message-peer-left is already in use',
+    );
+
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'peer.joined',
+      roomId: ROOM_ID,
+      payload: {
+        participant: { peerId: 'peer-a', displayName: 'Ara' },
+      },
+    });
+    await flushMicrotasks();
+    const rejoinedPeer = harness.peerConnections[1];
+    const rejoinedChannel = new FakeDataChannel();
+    rejoinedPeer?.ondatachannel?.({ channel: rejoinedChannel } as unknown as RTCDataChannelEvent);
+    expect(
+      rejoinedChannel.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toEqual([]);
     await harness.session.leave();
   });
 
