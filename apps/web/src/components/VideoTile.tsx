@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { enterVideoFullscreen, exitVideoFullscreen } from '../lib/fullscreen';
 import { CameraOffIcon, FullscreenIcon, MicOffIcon } from './Icons';
 
@@ -45,6 +45,8 @@ export function VideoTile({
   onDisableVideo,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const fullscreenAttemptRef = useRef(0);
+  const [fullscreenError, setFullscreenError] = useState<string | null>(null);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -67,13 +69,38 @@ export function VideoTile({
 
   useEffect(() => {
     if (isRemoteScreenShare) {
-      return;
+      return () => {
+        fullscreenAttemptRef.current += 1;
+      };
     }
+    fullscreenAttemptRef.current += 1;
+    setFullscreenError(null);
     const video = videoRef.current;
     if (video !== null) {
       void exitVideoFullscreen(video);
     }
+    return undefined;
   }, [isRemoteScreenShare]);
+
+  async function openFullscreen() {
+    const video = videoRef.current;
+    if (video === null) {
+      return;
+    }
+
+    const attempt = fullscreenAttemptRef.current + 1;
+    fullscreenAttemptRef.current = attempt;
+    setFullscreenError(null);
+    const entered = await enterVideoFullscreen(video);
+    if (fullscreenAttemptRef.current !== attempt) {
+      return;
+    }
+    if (!entered) {
+      setFullscreenError(
+        '화면 공유를 전체 화면으로 열지 못했습니다. 브라우저의 전체 화면 기능을 사용해 주세요.',
+      );
+    }
+  }
 
   return (
     <article
@@ -127,16 +154,17 @@ export function VideoTile({
           className="video-tile__fullscreen"
           type="button"
           aria-label={`${participant.displayName}의 화면 공유 전체 화면으로 보기`}
-          onClick={() => {
-            const video = videoRef.current;
-            if (video !== null) {
-              void enterVideoFullscreen(video);
-            }
-          }}
+          onClick={() => void openFullscreen()}
         >
           <FullscreenIcon />
           <span>전체 화면</span>
         </button>
+      ) : null}
+
+      {isRemoteScreenShare && fullscreenError ? (
+        <p className="video-tile__fullscreen-error" role="alert">
+          {fullscreenError}
+        </p>
       ) : null}
 
       {canModerateMedia && !participant.isLocal && participant.role === 'participant' ? (

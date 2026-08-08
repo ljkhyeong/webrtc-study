@@ -26,16 +26,67 @@ describe('video fullscreen compatibility', () => {
     expect(webkitEnterFullscreen).toHaveBeenCalledOnce();
   });
 
-  it('reports unsupported or rejected fullscreen without throwing', async () => {
+  it('continues to a prefixed API when the standard request is rejected', async () => {
+    const requestFullscreen = vi.fn(async () => {
+      throw new DOMException('denied', 'NotAllowedError');
+    });
+    const webkitRequestFullscreen = vi.fn(async () => {});
+    const webkitEnterFullscreen = vi.fn();
+    const video = {
+      requestFullscreen,
+      webkitRequestFullscreen,
+      webkitEnterFullscreen,
+    } as unknown as HTMLVideoElement;
+
+    await expect(enterVideoFullscreen(video)).resolves.toBe(true);
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+    expect(webkitRequestFullscreen).toHaveBeenCalledOnce();
+    expect(webkitEnterFullscreen).not.toHaveBeenCalled();
+  });
+
+  it('continues to Safari native video fullscreen when both request APIs are rejected', async () => {
+    const requestFullscreen = vi.fn(async () => {
+      throw new DOMException('denied', 'NotAllowedError');
+    });
+    const webkitRequestFullscreen = vi.fn(async () => {
+      throw new DOMException('denied', 'NotAllowedError');
+    });
+    const webkitEnterFullscreen = vi.fn();
+    const video = {
+      requestFullscreen,
+      webkitRequestFullscreen,
+      webkitSupportsFullscreen: true,
+      webkitEnterFullscreen,
+    } as unknown as HTMLVideoElement;
+
+    await expect(enterVideoFullscreen(video)).resolves.toBe(true);
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+    expect(webkitRequestFullscreen).toHaveBeenCalledOnce();
+    expect(webkitEnterFullscreen).toHaveBeenCalledOnce();
+  });
+
+  it('reports unsupported or fully rejected fullscreen without throwing', async () => {
     const unsupported = {} as HTMLVideoElement;
+    const requestFullscreen = vi.fn(async () => {
+      throw new DOMException('denied', 'NotAllowedError');
+    });
+    const webkitRequestFullscreen = vi.fn(async () => {
+      throw new DOMException('denied', 'NotAllowedError');
+    });
+    const webkitEnterFullscreen = vi.fn(() => {
+      throw new DOMException('denied', 'NotAllowedError');
+    });
     const rejected = {
-      requestFullscreen: vi.fn(async () => {
-        throw new DOMException('denied', 'NotAllowedError');
-      }),
+      requestFullscreen,
+      webkitRequestFullscreen,
+      webkitEnterFullscreen,
     } as unknown as HTMLVideoElement;
 
     await expect(enterVideoFullscreen(unsupported)).resolves.toBe(false);
     await expect(enterVideoFullscreen(rejected)).resolves.toBe(false);
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+    expect(webkitRequestFullscreen).toHaveBeenCalledOnce();
+    expect(webkitEnterFullscreen).toHaveBeenCalledOnce();
   });
 
   it('exits standard fullscreen only when the target video owns it', async () => {
@@ -48,5 +99,23 @@ describe('video fullscreen compatibility', () => {
 
     await expect(exitVideoFullscreen(video, documentRef)).resolves.toBe(true);
     expect(exitFullscreen).toHaveBeenCalledOnce();
+  });
+
+  it('continues to the prefixed document exit API when standard exit is rejected', async () => {
+    const exitFullscreen = vi.fn(async () => {
+      throw new DOMException('denied', 'NotAllowedError');
+    });
+    const webkitExitFullscreen = vi.fn(async () => {});
+    const video = {} as HTMLVideoElement;
+    const documentRef = {
+      fullscreenElement: video,
+      exitFullscreen,
+      webkitFullscreenElement: video,
+      webkitExitFullscreen,
+    } as unknown as Document;
+
+    await expect(exitVideoFullscreen(video, documentRef)).resolves.toBe(true);
+    expect(exitFullscreen).toHaveBeenCalledOnce();
+    expect(webkitExitFullscreen).toHaveBeenCalledOnce();
   });
 });

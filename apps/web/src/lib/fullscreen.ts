@@ -21,24 +21,34 @@ function resolvedDocument(documentRef?: Document): Document | undefined {
 export async function enterVideoFullscreen(video: HTMLVideoElement): Promise<boolean> {
   const webkitVideo = video as WebkitFullscreenVideoElement;
 
-  try {
-    if (typeof video.requestFullscreen === 'function') {
+  if (typeof video.requestFullscreen === 'function') {
+    try {
       await video.requestFullscreen();
       return true;
+    } catch {
+      // A browser can expose the standard API while rejecting it at runtime.
     }
-    if (typeof webkitVideo.webkitRequestFullscreen === 'function') {
+  }
+
+  if (typeof webkitVideo.webkitRequestFullscreen === 'function') {
+    try {
       await webkitVideo.webkitRequestFullscreen();
       return true;
+    } catch {
+      // Some Safari versions still support only the native video fallback.
     }
-    if (
-      webkitVideo.webkitSupportsFullscreen !== false &&
-      typeof webkitVideo.webkitEnterFullscreen === 'function'
-    ) {
+  }
+
+  if (
+    webkitVideo.webkitSupportsFullscreen !== false &&
+    typeof webkitVideo.webkitEnterFullscreen === 'function'
+  ) {
+    try {
       webkitVideo.webkitEnterFullscreen();
       return true;
+    } catch {
+      // Report failure only after every compatible API has been attempted.
     }
-  } catch {
-    return false;
   }
 
   return false;
@@ -52,27 +62,37 @@ export async function exitVideoFullscreen(
   const webkitVideo = video as WebkitFullscreenVideoElement;
   const webkitDocument = activeDocument as WebkitFullscreenDocument | undefined;
 
-  try {
-    if (activeDocument?.fullscreenElement === video && activeDocument.exitFullscreen) {
+  if (activeDocument?.fullscreenElement === video && activeDocument.exitFullscreen) {
+    try {
       await activeDocument.exitFullscreen();
       return true;
+    } catch {
+      // Continue to prefixed APIs when the standard exit path is rejected.
     }
-    if (
-      webkitDocument?.webkitFullscreenElement === video &&
-      typeof webkitDocument.webkitExitFullscreen === 'function'
-    ) {
+  }
+
+  if (
+    webkitDocument?.webkitFullscreenElement === video &&
+    typeof webkitDocument.webkitExitFullscreen === 'function'
+  ) {
+    try {
       await webkitDocument.webkitExitFullscreen();
       return true;
+    } catch {
+      // Native video fullscreen may still own the active presentation.
     }
-    if (
-      webkitVideo.webkitDisplayingFullscreen === true &&
-      typeof webkitVideo.webkitExitFullscreen === 'function'
-    ) {
+  }
+
+  if (
+    webkitVideo.webkitDisplayingFullscreen === true &&
+    typeof webkitVideo.webkitExitFullscreen === 'function'
+  ) {
+    try {
       webkitVideo.webkitExitFullscreen();
       return true;
+    } catch {
+      // Report failure only after every compatible API has been attempted.
     }
-  } catch {
-    return false;
   }
 
   return false;
