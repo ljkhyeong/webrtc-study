@@ -1,0 +1,43 @@
+[Unit]
+Description=Reconcile and verify the TURN certificate loaded by coturn
+Documentation=file:/opt/round/docs/deployment.md
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+OnFailure=round-ops-failure@%n.service
+StartLimitIntervalSec=30m
+StartLimitBurst=3
+AssertPathExists=/opt/round/ops/linux/reload-turn-certificate.sh
+AssertPathExists=/opt/round/ops/linux/certbot/round-turn-certificate-reconcile
+AssertPathExists=/opt/round/ops/linux/certbot/round-turn-certificate-check
+AssertPathExists=/etc/round/production.env
+AssertPathExists=/var/lib/round/releases/current.env
+
+[Service]
+Type=oneshot
+Environment=ROUND_ENV_FILE=/etc/round/production.env
+Environment=ROUND_RELEASE_STATE_DIR=/var/lib/round/releases
+Environment=ROUND_CERTIFICATE_STATE_DIR=/var/lib/round/certificates
+Environment=ROUND_TURN_CERTIFICATE_CHECK_HOST=127.0.0.1
+Environment=ROUND_TURN_CERTIFICATE_CHECK_PORT=5349
+Environment=ROUND_TURN_CERTIFICATE_MINIMUM_VALIDITY_SECONDS=604800
+StateDirectory=round/certificates
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+Restart=on-failure
+RestartSec=5m
+TimeoutStartSec=180s
+ExecStart=/bin/bash /opt/round/ops/linux/certbot/round-turn-certificate-reconcile

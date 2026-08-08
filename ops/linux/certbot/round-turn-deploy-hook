@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Certbot runs every executable in /etc/letsencrypt/renewal-hooks/deploy only
+# after a lineage was renewed successfully. Unrelated lineage renewals are safe:
+# the reconciler treats an unchanged ROUND certificate fingerprint as a
+# listener-verified no-op.
+umask 077
+env_file=${ROUND_ENV_FILE:-/etc/round/production.env}
+release_state_dir=${ROUND_RELEASE_STATE_DIR:-/var/lib/round/releases}
+certificate_state_dir=${ROUND_CERTIFICATE_STATE_DIR:-/var/lib/round/certificates}
+reconcile_script=${ROUND_TURN_RECONCILE_SCRIPT:-/opt/round/ops/linux/certbot/round-turn-certificate-reconcile}
+
+fail() {
+  printf 'round-turn-deploy-hook: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ "$env_file" == /* ]] || fail 'ROUND_ENV_FILE must be an absolute path'
+[[ "$release_state_dir" == /* && "$release_state_dir" != / ]] ||
+  fail 'ROUND_RELEASE_STATE_DIR must be an absolute non-root path'
+[[ "$certificate_state_dir" == /* && "$certificate_state_dir" != / ]] ||
+  fail 'ROUND_CERTIFICATE_STATE_DIR must be an absolute non-root path'
+[[ "$reconcile_script" == /* ]] || fail 'ROUND_TURN_RECONCILE_SCRIPT must be an absolute path'
+[[ -f "$env_file" && -r "$env_file" ]] ||
+  fail "ROUND_ENV_FILE is not a readable regular file: $env_file"
+[[ -f "$reconcile_script" && -r "$reconcile_script" ]] ||
+  fail "certificate reconcile script is missing or unreadable: $reconcile_script"
+
+ROUND_ENV_FILE="$env_file" \
+ROUND_RELEASE_STATE_DIR="$release_state_dir" \
+ROUND_CERTIFICATE_STATE_DIR="$certificate_state_dir" \
+  exec /bin/bash "$reconcile_script"

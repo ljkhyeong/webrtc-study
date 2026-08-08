@@ -1,0 +1,90 @@
+name: External TURN availability monitor
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: external-turn-monitor-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe public UDP, TCP, and TLS relay availability
+    if: ${{ vars.ROUND_EXTERNAL_TURN_MONITOR_ENABLED == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: round-monitor
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out trusted monitor implementation
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Resolve code-reviewed public target
+        id: target
+        shell: bash
+        run: bash ops/turn/resolve-external-pilot-target.sh ops/turn/external-pilot-target.properties >>"$GITHUB_OUTPUT"
+
+      - name: Prepare optional private TURN CA
+        shell: bash
+        env:
+          TURN_PROBE_CA_PEM: ${{ secrets.TURN_PROBE_CA_PEM }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$TURN_PROBE_CA_PEM" ]]; then
+            exit 0
+          fi
+          ca_file="$RUNNER_TEMP/round-turn-monitor-ca.pem"
+          umask 077
+          printf '%s\n' "$TURN_PROBE_CA_PEM" >"$ca_file"
+          chmod 0600 "$ca_file"
+          printf 'TURN_PROBE_CA_FILE=%s\n' "$ca_file" >>"$GITHUB_ENV"
+
+      - name: Require three consecutive failed attempts before alerting
+        shell: bash
+        env:
+          ROUND_URL: ${{ steps.target.outputs.round_url }}
+          ROUND_ACCESS_USER: ${{ secrets.ROUND_ACCESS_USER }}
+          ROUND_ACCESS_PASSWORD: ${{ secrets.ROUND_ACCESS_PASSWORD }}
+          TURN_PROBE_HOST: ${{ steps.target.outputs.turn_host }}
+          TURN_PROBE_IMAGE: ${{ steps.target.outputs.probe_image }}
+          TURN_PROBE_TRANSPORTS: udp,tcp,tls
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if bash ops/turn/probe.sh; then
+              printf 'External TURN monitor passed on attempt %s.\n' "$attempt"
+              exit 0
+            fi
+            if [[ "$attempt" -lt 3 ]]; then
+              delay_seconds=$((attempt * 20))
+              printf 'Attempt %s failed; retrying in %s seconds.\n' "$attempt" "$delay_seconds" >&2
+              sleep "$delay_seconds"
+            fi
+          done
+          printf 'External TURN monitor failed three consecutive attempts.\n' >&2
+          exit 1
+
+      - name: Record monitor scope
+        if: ${{ always() }}
+        shell: bash
+        env:
+          ROUND_URL: ${{ steps.target.outputs.round_url }}
+          TURN_PROBE_HOST: ${{ steps.target.outputs.turn_host }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          {
+            printf '### External TURN availability monitor\n\n'
+            printf -- '- Workflow commit: `%s`\n' "$WORKFLOW_SHA"
+            printf -- '- Target: `%s` / `%s`\n' "$ROUND_URL" "$TURN_PROBE_HOST"
+            printf -- '- Transports: authenticated UDP, TCP, and TLS relay\n'
+            printf -- '- Alert threshold: three consecutive attempts in this run\n'
+            printf -- '- Scope: availability only; deployed release identity was not verified\n'
+          } >>"$GITHUB_STEP_SUMMARY"

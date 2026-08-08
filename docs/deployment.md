@@ -285,6 +285,64 @@ gate open until those checks pass in the deployment environment.
   obtains and renews the web certificate separately through ACME.
 - NAT port forwarding, if the Docker host does not own the public address.
 
+### Linux host bootstrap and preflight
+
+Use a dedicated, patched Linux host with systemd, NTP synchronization, at least
+5 GiB free on the deployment filesystem, Docker Engine, and Docker Compose
+2.24.4 or later. Install Docker from its operating-system-specific official
+repository rather than piping an unreviewed installer into a shell. Restrict
+SSH to the operator network. Install `jq`, OpenSSL, `age`, Certbot, util-linux
+(`flock`), and GNU coreutils (`timeout`) from the distribution repositories.
+The lifecycle scripts deliberately target only the rootful local Docker socket
+at `unix:///var/run/docker.sock`; remote contexts and rootless endpoints are not
+an accepted production topology. Expose only this ROUND data plane:
+
+| Port           | Protocol | Owner  |
+| -------------- | -------- | ------ |
+| `80`, `443`    | TCP      | Caddy  |
+| `443`          | UDP      | Caddy  |
+| `3478`, `5349` | TCP/UDP  | coturn |
+| `49160-49259`  | UDP      | coturn |
+
+Keep signaling port `8787` private to the Compose backend network. Apply the
+same relay range to the host firewall, upstream security group, and NAT/router;
+a mismatch in any one layer causes intermittent TURN allocation failures.
+
+The checked-in systemd templates assume this layout:
+
+```text
+/opt/round/                         reviewed ROUND checkout
+/etc/round/production.env          mode-0600 runtime configuration
+/etc/round/backup-recipients.txt   public age recipient(s), when backup is configured
+/var/lib/round/                     non-secret release/certificate state
+/var/backups/round/                 local encrypted backup staging only
+```
+
+Use absolute `TURN_TLS_CERT_FILE` and `TURN_TLS_KEY_FILE` paths in the host env.
+The preflight never sources that file as shell code and never renders Compose
+configuration to the terminal. It rejects mutable image tags, a non-Linux host,
+an unsynchronized clock, low disk on the checkout, Docker data root, or release
+state filesystem, non-`0600` env permissions, a TURN secret shorter than 64
+hexadecimal characters, an invalid single-replica topology, and a TURN
+certificate that mismatches its mode-`0400`/`0600` private key, hostname, or
+minimum remaining lifetime:
+
+```bash
+cd /opt/round
+sudo install -d -m 0700 \
+  /etc/round \
+  /var/lib/round \
+  /var/lib/round/releases \
+  /var/lib/round/certificates \
+  /var/backups/round
+sudo install -m 0600 ops/production.env /etc/round/production.env
+sudo ops/linux/preflight.sh /etc/round/production.env
+```
+
+`preflight.sh` cannot prove the public IPv4, router/NAT mappings, security-group
+rules, DNS propagation, or off-host relay path. Record those separately with
+the external probe and browser network matrix.
+
 ### Temporary macOS study pilot
 
 The Linux Compose topology remains the production contract. For a short-lived
@@ -643,12 +701,58 @@ ops/certs/privkey.pem
 The certificate directory is ignored by Git and the Docker build context.
 Compose mounts the files as read-only runtime secrets. Coturn starts only long
 enough to read those files, then drops to the image's `nobody` account with no
-effective capabilities. Arrange certificate renewal with the host's ACME client
-and recreate the TURN container after renewal:
+effective capabilities. The host ACME client owns issuance. ROUND's deploy hook
+only accepts the resulting files after checking the private key, TURN hostname,
+and seven-day lifetime floor, recreates only coturn from
+`/var/lib/round/releases/current.env`, and immediately proves the trusted
+hostname and leaf fingerprint actually served on `127.0.0.1:5349`:
 
 ```bash
-docker compose --env-file ops/production.env up -d --no-deps --force-recreate turn
+sudo /opt/round/ops/linux/reload-turn-certificate.sh /etc/round/production.env
 ```
+
+For unattended Linux renewal, use an ACME DNS plugin backed by a narrowly
+scoped Cloudflare API token stored outside the repository with mode `0600`.
+The currently used interactive manual DNS-01 challenge is not an unattended
+renewal method. Let the distribution-provided Certbot timer remain the single
+renewal scheduler. Install ROUND's persistent deploy hook, then prove the
+selected authenticator and the hook together; `--run-deploy-hooks` is required
+because a plain dry run skips deploy hooks:
+
+```bash
+sudo install -m 0755 \
+  ops/linux/certbot/round-turn-deploy-hook \
+  /etc/letsencrypt/renewal-hooks/deploy/round-turn
+sudo certbot renew --dry-run --run-deploy-hooks
+sudo install -m 0644 \
+  ops/linux/systemd/round-turn-certificate-reconcile.* \
+  ops/linux/systemd/round-ops-failure@.service \
+  /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now round-turn-certificate-reconcile.timer
+systemctl list-timers round-turn-certificate-reconcile.timer
+sudo systemctl start round-turn-certificate-reconcile.service
+```
+
+The hook stores only the listener-verified fingerprint under
+`/var/lib/round/certificates`; it does not copy the certificate or key. An
+unchanged fingerprint skips recreation but still verifies the live listener.
+Certbot does not make its overall renewal exit status a reliable assertion that
+every deploy hook applied successfully, so the independent reconciliation
+timer retries idempotently after a missed hook and then runs the same live
+listener check. The service allows the full Compose health budget, retries a
+failure after five minutes up to the unit start limit, then marks a persistent
+failure and emits a `daemon.crit` `round-ops` record through its `OnFailure`
+unit. Connect systemd unit failures or those records to the host's external
+alerting agent; the local journal alone is not an off-host notification. Once
+enabled, the external TURN monitor is an additional public-path alert.
+
+`certbot renew --dry-run --run-deploy-hooks` invokes the hook with the currently
+active certificate, so it proves hook permissions, locking, and the current
+listener check but does not prove that a newly issued certificate required a
+coturn recreation. Preserve the first real unattended renewal log and its
+successful reconciliation result as that evidence. Monitor both timers and
+public certificate expiry.
 
 ## Publish immutable release images
 
@@ -727,7 +831,7 @@ validation target and BATON web runtime because a stock Caddy binary cannot
 parse the rate-limit directive and a Dockerfile syntax check cannot verify the
 embedded auth flavor or `/round-ui/` asset base.
 
-Build the three target images and start the stack:
+For a local image-validation host, build the three targets and start the stack:
 
 ```bash
 docker compose --env-file ops/production.env build --pull
@@ -739,15 +843,45 @@ Do not run plain `docker compose config` in shared logs: its rendered output
 contains `TURN_SHARED_SECRET`.
 
 The tracked sample uses GHCR release tags so the same file remains usable for a
-local source build. For production, set `ROUND_EDGE_IMAGE`,
+local source build. `ops/linux/preflight.sh` intentionally rejects that sample.
+For production, set `ROUND_EDGE_IMAGE`,
 `ROUND_SIGNALING_IMAGE`, and `ROUND_TURN_IMAGE` to the manifest digests from the
 release workflow. Pin the optional base-image variables to digests as well. A
-digest-based host deployment can use:
+digest-based Linux deployment uses the guarded wrapper:
 
 ```bash
-docker compose --env-file ops/production.env pull
-docker compose --env-file ops/production.env up -d --no-build
+sudo ops/linux/deploy.sh /etc/round/production.env
 ```
+
+All mutating Linux lifecycle commands require the reviewed clean checkout;
+tracked, staged, or untracked repository changes make them fail before touching
+Docker. Ignored secret and certificate files remain outside that Git
+cleanliness check. The deploy command runs the read-only preflight, clears
+ambient Compose/build interpolation
+variables, pulls exactly the three configured digests, uses Compose's health
+wait, confirms `edge`, `signaling`, and `turn` are running, and only then records
+`/var/lib/round/releases/current.env`. The state records the three digests
+together with the checked-out source commit, `compose.yml` digest,
+runtime-config digest, Compose project, ROUND domain, and fixed local Docker
+endpoint. This is an auditable operator association, not proof that the images
+were built from that checkout; retain the release workflow's manifest evidence
+separately. Image lines are deliberately excluded from the runtime-config
+digest because the immutable image identities are stored as separate fields.
+On the next successful deployment, the old complete state moves to
+`previous.env`.
+
+Once pull/up begins, the candidate is retained as `in-progress.env` until the
+deployment succeeds. Any failure therefore blocks another deploy. Inspect the
+logs and run the explicit rollback: it detects the marker and redeploys
+`current.env`, rather than incorrectly skipping back two releases. If the very
+first deployment failed and no verified `current.env` exists, rollback instead
+runs Compose down, confirms that no project container remains, and clears the
+marker while leaving the host stopped. A rollback attempt also writes its own
+target/origin journal; failure blocks deploy, backup, and certificate reload
+until another rollback invocation restores a stable verified state. If Compose
+or non-image runtime configuration changed between releases, restore the saved
+checkout and matching secret-manager version before rollback; the command
+fails closed on either digest mismatch.
 
 ROUND does not negotiate the additive `chat.ack` DataChannel capability. After
 the new stack passes the checks below, require every participant with an active
@@ -837,11 +971,12 @@ the first run:
    `ops/turn/external-pilot-target.properties`, and
    `ops/ci/*external-turn-workflow*.mjs`. Where the repository plan supports
    them, prevent self-review and administrator bypass.
-2. Edit `ops/turn/external-pilot-target.properties` through that protected pull
-   request. The committed example hosts are intentionally rejected at runtime.
-   The file must contain the exact public ROUND origin, public TURN hostname,
-   and reviewed `coturn/coturn@sha256` image. Updating any destination or digest
-   therefore leaves a reviewable Git history entry.
+2. Review `ops/turn/external-pilot-target.properties` through that protected
+   pull request. It currently targets `round.b4ton.com` and `turn.b4ton.com`;
+   reserved example hosts are rejected at runtime. The file must contain the
+   exact public ROUND origin, public TURN hostname, and reviewed
+   `coturn/coturn@sha256` image. Updating any destination or digest therefore
+   leaves a reviewable Git history entry.
 3. Create a `round-pilot` environment restricted to the default branch. Add a
    required reviewer and prevent self-review where the repository plan supports
    those controls. Store only these environment secrets:
@@ -869,11 +1004,26 @@ Record the workflow run URL and that independent deployment-identity evidence.
 Until promotion is automated, operators must treat a nonzero probe result as a
 manual stop condition rather than claiming that GitHub blocked promotion.
 
-Keep this workflow manual until its first public-host run succeeds and the
-responsible maintainer confirms that GitHub Actions failure notifications are
-received. A later scheduled monitor can reuse the environment, but should alert
-only after an explicitly chosen number of consecutive failures. This standalone
-Basic Auth workflow is not evidence for the BATON participation-grant boundary,
+Keep this release-evidence workflow manual until its first public-host run
+succeeds and the responsible maintainer confirms that GitHub Actions failure
+notifications are received. After that gate, create a separate `round-monitor`
+environment restricted to the default branch and copy only the same three probe
+secrets. Scheduled jobs cannot wait for a human environment reviewer, so this
+environment relies on the protected default branch, code-owned workflow and
+target files, empty top-level permissions, pinned checkout action, and
+environment branch restriction. Enable the schedule only by setting the
+repository variable `ROUND_EXTERNAL_TURN_MONITOR_ENABLED=true`.
+
+`.github/workflows/external-turn-monitor.yml` then probes the reviewed
+`round.b4ton.com`/`turn.b4ton.com` target every six hours. One transient result
+does not alert: a run fails only after three consecutive full UDP/TCP/TLS probe
+attempts with 20- and 40-second backoff. Confirm that the repository owner
+receives that failed-workflow notification; setting the variable to any other
+value leaves scheduled runs secret-free and skipped. The threshold is within
+one run rather than persisted across runs, which avoids granting write
+permissions merely to store monitor state. The monitor is availability evidence
+only; the manual annotated-tag workflow remains the release evidence. Neither
+standalone Basic Auth workflow proves the BATON participation-grant boundary,
 and the coturn utility probe does not replace a browser UDP-blocked fallback
 test.
 
@@ -893,8 +1043,50 @@ no-credential rule. Caddy error logs omit request headers and URIs entirely.
 
 ## Operations
 
-- Caddy ACME state lives in the `caddy_data` and `caddy_config` named volumes;
-  include them in host backups.
+- Caddy ACME state lives in the `caddy_data` and `caddy_config` named volumes.
+  `ops/linux/backup-caddy.sh` locks the same lifecycle boundary as deploy and
+  rollback, stops `edge` only when it was already running, streams both volumes
+  through the immutable edge image recorded in `current.env`, encrypts the
+  archive directly with `age`, and restarts Caddy with a health wait. Plaintext
+  backup data is never written to the host filesystem. Create an age identity
+  on a separate trusted machine and place only its public recipient in
+  `/etc/round/backup-recipients.txt`. First make one manual snapshot:
+
+  ```bash
+  sudo ops/linux/backup-caddy.sh \
+    --recipient-file /etc/round/backup-recipients.txt \
+    --output-dir /var/backups/round \
+    /etc/round/production.env
+  ```
+
+  That local file is only a backup building block, not a completed backup
+  policy. Do not enable a local-only timer or claim an RPO until an off-host
+  backend, upload-success alert, retention policy, and restore rehearsal are
+  selected. Prefer an established encrypted backup tool such as restic for the
+  scheduled off-host transport instead of adding a custom uploader here. The
+  ROUND script deliberately does not upload or prune archives.
+
+  The restore command is destructive, requires the exact confirmation token,
+  takes the lifecycle lock before inspection, rejects a live or stopped Compose
+  container set, verifies the optional checksum and archive paths, creates
+  missing named volumes on a fresh host, and leaves ROUND stopped for
+  inspection:
+
+  ```bash
+  docker compose --env-file /etc/round/production.env down
+  sudo ops/linux/restore-caddy.sh \
+    --identity-file /secure/off-host/round-backup-identity.txt \
+    --confirm RESTORE_CADDY_VOLUMES \
+    /var/backups/round/round-caddy-YYYYMMDDTHHMMSSZ.tar.age \
+    /etc/round/production.env
+  sudo ops/linux/deploy.sh /etc/round/production.env
+  ```
+
+  Do not keep the age identity on the ROUND host. Back up
+  `/etc/round/production.env` through the host's encrypted secret-backup system
+  separately; it contains the TURN shared secret and cannot be reconstructed
+  from Caddy volumes.
+
 - Signaling and coturn runtime files are ephemeral. Restarting signaling drops
   active rooms and WebSocket sessions.
 - Rotate `TURN_SHARED_SECRET` by updating the env file and recreating signaling
@@ -906,10 +1098,22 @@ no-credential rule. Caddy error logs omit request headers and URIs entirely.
   plaintext out of band, and revoke the old credential immediately.
 - Keep the relay range consistent in the env file, coturn firewall, router
   forwarding, and cloud security group.
-- Roll back by restoring the previous edge, signaling, and TURN digest
-  references as one tested set, then run
-  `docker compose --env-file ops/production.env up -d --no-build`. Do not
-  substitute mutable release tags during rollback, and do not scale signaling
-  above one. After the rollback health checks pass, require every active ROUND
-  tab to reload and rejoin so no room mixes peer DataChannel capabilities from
-  the rolled-back and replaced web bundles.
+- Roll back the previous edge, signaling, and TURN digest references only as
+  one tested set. The explicit token makes an accidental paste fail closed:
+
+  ```bash
+  sudo ops/linux/rollback.sh \
+    --confirm ROLLBACK_ROUND \
+    /etc/round/production.env
+  ```
+
+  The command re-runs preflight, pulls the saved immutable set, waits for all
+  health checks, and swaps the complete `current.env`/`previous.env` states so a
+  roll-forward remains possible. When `in-progress.env` exists, it instead
+  redeploys the verified current state and clears the failed attempt only after
+  health checks pass. Never substitute mutable tags or scale signaling above
+  one. Record
+  start/end time, restored digests, `docker compose ps`, service logs, public
+  `/healthz`, TURN TLS verification, and the external relay result as rollback
+  evidence. After success, require every active ROUND tab to reload and rejoin
+  so no room mixes DataChannel capabilities from different web bundles.

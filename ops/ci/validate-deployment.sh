@@ -184,11 +184,25 @@ bash -n ops/turn/test-external-release.sh
 bash -n ops/turn/test-probe.sh
 bash -n ops/turn/verify-tls.sh
 bash -n ops/turn/test-tls-verification.sh
+bash -n ops/linux/common.sh
+bash -n ops/linux/preflight.sh
+bash -n ops/linux/deploy.sh
+bash -n ops/linux/rollback.sh
+bash -n ops/linux/reload-turn-certificate.sh
+bash -n ops/linux/backup-caddy.sh
+bash -n ops/linux/restore-caddy.sh
+bash -n ops/linux/test-linux-ops.sh
+bash -n ops/linux/test-systemd-units.sh
+bash -n ops/linux/certbot/round-turn-deploy-hook
+bash -n ops/linux/certbot/round-turn-certificate-check
+bash -n ops/linux/certbot/round-turn-certificate-reconcile
 bash ops/turn/probe.sh --help >/dev/null
 bash ops/turn/test-external-pilot-target.sh
 bash ops/turn/test-external-release.sh
 bash ops/turn/test-probe.sh
 bash ops/turn/test-tls-verification.sh
+bash ops/linux/test-linux-ops.sh
+bash ops/linux/test-systemd-units.sh
 
 tls_gate_line=$(
   grep -nF '    verify_tls_endpoint' ops/turn/probe.sh \
@@ -209,6 +223,8 @@ grep -Fq -- '-verify_return_error' ops/turn/verify-tls.sh
 printf 'Validating the external TURN workflow contract...\n'
 node ops/ci/validate-external-turn-workflow.mjs
 node ops/ci/test-validate-external-turn-workflow.mjs
+node ops/ci/validate-external-turn-monitor.mjs
+node ops/ci/test-validate-external-turn-monitor.mjs
 
 caddy_validation_image=round-caddy-validation:local
 printf 'Building the pinned custom Caddy runtime...\n'

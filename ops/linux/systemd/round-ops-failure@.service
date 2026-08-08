@@ -1,0 +1,11 @@
+[Unit]
+Description=Record a critical ROUND operations failure for %i
+
+[Service]
+Type=oneshot
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+CapabilityBoundingSet=
+ExecStart=/usr/bin/logger --stderr --priority daemon.crit --tag round-ops ROUND operation failed: %i

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+env_file=${ROUND_ENV_FILE:-/etc/round/production.env}
+release_state_dir=${ROUND_RELEASE_STATE_DIR:-/var/lib/round/releases}
+certificate_state_dir=${ROUND_CERTIFICATE_STATE_DIR:-/var/lib/round/certificates}
+check_host=${ROUND_TURN_CERTIFICATE_CHECK_HOST:-127.0.0.1}
+check_port=${ROUND_TURN_CERTIFICATE_CHECK_PORT:-5349}
+tls_ca_file=${ROUND_TURN_CERTIFICATE_CHECK_CA_FILE:-}
+reload_script=${ROUND_TURN_RELOAD_SCRIPT:-/opt/round/ops/linux/reload-turn-certificate.sh}
+check_script=${ROUND_TURN_CERTIFICATE_CHECK_SCRIPT:-/opt/round/ops/linux/certbot/round-turn-certificate-check}
+
+fail() {
+  printf 'round-turn-certificate-reconcile: %s\n' "$*" >&2
+  exit 1
+}
+
+for path_value in \
+  "$env_file" \
+  "$release_state_dir" \
+  "$certificate_state_dir" \
+  "$reload_script" \
+  "$check_script"; do
+  [[ "$path_value" == /* ]] || fail "required path is not absolute: $path_value"
+done
+[[ -f "$reload_script" && -r "$reload_script" ]] ||
+  fail "certificate reload script is missing or unreadable: $reload_script"
+[[ -f "$check_script" && -r "$check_script" ]] ||
+  fail "certificate check script is missing or unreadable: $check_script"
+
+reload_arguments=(
+  --release-state-dir "$release_state_dir"
+  --certificate-state-dir "$certificate_state_dir"
+  --check-host "$check_host"
+  --check-port "$check_port"
+)
+if [[ -n "$tls_ca_file" ]]; then
+  [[ "$tls_ca_file" == /* ]] || fail 'private CA path must be absolute'
+  reload_arguments+=(--tls-ca-file "$tls_ca_file")
+fi
+
+/bin/bash "$reload_script" "${reload_arguments[@]}" "$env_file"
+ROUND_ENV_FILE="$env_file" \
+ROUND_CERTIFICATE_STATE_DIR="$certificate_state_dir" \
+ROUND_TURN_CERTIFICATE_CHECK_HOST="$check_host" \
+ROUND_TURN_CERTIFICATE_CHECK_PORT="$check_port" \
+ROUND_TURN_CERTIFICATE_CHECK_CA_FILE="$tls_ca_file" \
+  /bin/bash "$check_script"
+
+printf 'TURN certificate reconciliation and live listener verification passed.\n'

@@ -35,9 +35,13 @@ assert_rejected() {
   fi
 }
 
-assert_rejected \
-  "$repo_root/ops/turn/external-pilot-target.properties" \
-  'committed example target was accepted'
+committed_actual=$(bash "$resolver" "$repo_root/ops/turn/external-pilot-target.properties")
+committed_expected=$(printf '%s\n' \
+  'round_url=https://round.b4ton.com' \
+  'turn_host=turn.b4ton.com' \
+  'probe_image=coturn/coturn@sha256:d3a11e8f6d9e1b0454531e307684a072bdd36c36b28daafb4f082aa1e5ebd2e4')
+[[ "$committed_actual" == "$committed_expected" ]] ||
+  fail 'committed b4ton target outputs were not exact'
 
 valid_target=$test_root/valid.properties
 write_target \

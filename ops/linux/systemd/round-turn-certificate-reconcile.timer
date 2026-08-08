@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically reconcile and verify the TURN certificate
+
+[Timer]
+OnBootSec=5m
+OnCalendar=*-*-* 00,06,12,18:17:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=round-turn-certificate-reconcile.service
+
+[Install]
+WantedBy=timers.target

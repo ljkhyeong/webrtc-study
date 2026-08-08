@@ -1,0 +1,12 @@
+# Deployment destinations, credential-using workflows, and host lifecycle
+# scripts require an explicit owner review before default-branch promotion.
+/.github/CODEOWNERS @ljkhyeong
+/.github/workflows/ @ljkhyeong
+/.github/workflows/external-turn-probe.yml @ljkhyeong
+/.github/workflows/external-turn-monitor.yml @ljkhyeong
+/ops/turn/probe.sh @ljkhyeong
+/ops/turn/verify-tls.sh @ljkhyeong
+/ops/turn/resolve-external-*.sh @ljkhyeong
+/ops/turn/external-pilot-target.properties @ljkhyeong
+/ops/ci/*external-turn*.mjs @ljkhyeong
+/ops/linux/ @ljkhyeong
