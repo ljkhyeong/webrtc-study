@@ -33,10 +33,13 @@ export interface PrejoinMediaSnapshot {
 
 export type PrejoinMediaListener = (snapshot: PrejoinMediaSnapshot) => void;
 
+type PrejoinMediaDevices = Pick<MediaDevices, 'enumerateDevices' | 'getUserMedia'> &
+  Partial<Pick<MediaDevices, 'addEventListener' | 'removeEventListener'>>;
+
 export interface PrejoinMediaOptions {
   readonly audioConstraints?: MediaTrackConstraints;
   readonly videoConstraints?: MediaTrackConstraints;
-  readonly mediaDevices?: Pick<MediaDevices, 'enumerateDevices' | 'getUserMedia'>;
+  readonly mediaDevices?: PrejoinMediaDevices;
   readonly mediaStreamFactory?: () => MediaStream;
 }
 
@@ -133,10 +136,14 @@ function hasEnded(track: MediaStreamTrack): boolean {
 export class PrejoinMedia {
   readonly #audioConstraints: MediaTrackConstraints;
   readonly #videoConstraints: MediaTrackConstraints;
-  readonly #mediaDevices: Pick<MediaDevices, 'enumerateDevices' | 'getUserMedia'> | undefined;
+  readonly #mediaDevices: PrejoinMediaDevices | undefined;
   readonly #mediaStreamFactory: () => MediaStream;
   readonly #listeners = new Set<PrejoinMediaListener>();
   readonly #trackEndedListeners = new Map<MediaStreamTrack, EventListener>();
+  readonly #deviceRefreshWaiters: {
+    readonly generation: number;
+    readonly resolve: () => void;
+  }[] = [];
 
   #stream: MediaStream | null = null;
   #status: PrejoinMediaStatus = 'idle';
@@ -150,6 +157,11 @@ export class PrejoinMedia {
   #desiredVideoEnabled = true;
   #snapshot: PrejoinMediaSnapshot;
   #disposed = false;
+  #deviceChangeListener: EventListener | null = null;
+  #deviceRefreshRequestedGeneration = 0;
+  #deviceRefreshCompletedGeneration = 0;
+  #deviceRefreshPromise: Promise<void> | null = null;
+  #deviceRefreshShouldEmit = false;
 
   constructor(options: PrejoinMediaOptions = {}) {
     this.#audioConstraints = options.audioConstraints ?? {};
@@ -159,6 +171,7 @@ export class PrejoinMedia {
       (typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined);
     this.#mediaStreamFactory = options.mediaStreamFactory ?? (() => new MediaStream());
     this.#snapshot = this.#buildSnapshot();
+    this.#attachDeviceChangeListener();
   }
 
   getSnapshot(): PrejoinMediaSnapshot {
@@ -237,10 +250,12 @@ export class PrejoinMedia {
     }
 
     const stream = this.#stream;
-    this.#detachAllTrackEndedListeners();
-    this.#stream = null;
     this.#disposed = true;
+    this.#detachAllTrackEndedListeners();
+    this.#detachDeviceChangeListener();
+    this.#stream = null;
     this.#listeners.clear();
+    this.#resolveDeviceRefreshWaiters(true);
     return stream !== null && stream.getTracks().length > 0 ? stream : null;
   }
 
@@ -251,11 +266,13 @@ export class PrejoinMedia {
 
     this.#disposed = true;
     this.#detachAllTrackEndedListeners();
+    this.#detachDeviceChangeListener();
     if (this.#stream !== null) {
       stopTracks(this.#stream);
       this.#stream = null;
     }
     this.#listeners.clear();
+    this.#resolveDeviceRefreshWaiters(true);
     this.#snapshot = this.#buildSnapshot();
   }
 
@@ -274,7 +291,7 @@ export class PrejoinMedia {
       }
     }
 
-    await this.#refreshDevices();
+    await this.#requestDeviceRefresh(false);
     if (!this.#disposed) {
       this.#status = 'ready';
       this.#emit();
@@ -416,45 +433,146 @@ export class PrejoinMedia {
     }
   }
 
-  async #refreshDevices(): Promise<void> {
-    if (this.#mediaDevices === undefined) {
-      this.#audioInputs = [];
-      this.#videoInputs = [];
+  #attachDeviceChangeListener(): void {
+    const mediaDevices = this.#mediaDevices;
+    if (
+      mediaDevices === undefined ||
+      typeof mediaDevices.addEventListener !== 'function' ||
+      typeof mediaDevices.removeEventListener !== 'function'
+    ) {
       return;
     }
 
-    try {
-      const devices = await this.#mediaDevices.enumerateDevices();
+    const listener: EventListener = () => {
+      void this.#requestDeviceRefresh(true);
+    };
+    this.#deviceChangeListener = listener;
+    mediaDevices.addEventListener('devicechange', listener);
+  }
+
+  #detachDeviceChangeListener(): void {
+    const listener = this.#deviceChangeListener;
+    const mediaDevices = this.#mediaDevices;
+    this.#deviceChangeListener = null;
+    if (
+      listener !== null &&
+      mediaDevices !== undefined &&
+      typeof mediaDevices.removeEventListener === 'function'
+    ) {
+      mediaDevices.removeEventListener('devicechange', listener);
+    }
+  }
+
+  #requestDeviceRefresh(emitSnapshot: boolean): Promise<void> {
+    if (this.#disposed) {
+      return Promise.resolve();
+    }
+
+    const generation = this.#deviceRefreshRequestedGeneration + 1;
+    this.#deviceRefreshRequestedGeneration = generation;
+    this.#deviceRefreshShouldEmit ||= emitSnapshot;
+    const completion = new Promise<void>((resolve) => {
+      this.#deviceRefreshWaiters.push({ generation, resolve });
+    });
+    this.#startDeviceRefresh();
+    return completion;
+  }
+
+  #startDeviceRefresh(): void {
+    if (this.#disposed || this.#deviceRefreshPromise !== null) {
+      return;
+    }
+
+    const operation = this.#drainDeviceRefreshes();
+    this.#deviceRefreshPromise = operation;
+    const settle = () => {
+      if (this.#deviceRefreshPromise === operation) {
+        this.#deviceRefreshPromise = null;
+      }
+      if (this.#disposed) {
+        this.#resolveDeviceRefreshWaiters(true);
+        return;
+      }
+      this.#resolveDeviceRefreshWaiters(false);
+      if (this.#deviceRefreshCompletedGeneration < this.#deviceRefreshRequestedGeneration) {
+        this.#startDeviceRefresh();
+      }
+    };
+    void operation.then(settle, settle);
+  }
+
+  async #drainDeviceRefreshes(): Promise<void> {
+    while (
+      !this.#disposed &&
+      this.#deviceRefreshCompletedGeneration < this.#deviceRefreshRequestedGeneration
+    ) {
+      const generation = this.#deviceRefreshRequestedGeneration;
+      const devices = await this.#enumerateDevices();
       if (this.#disposed) {
         return;
       }
+      if (generation !== this.#deviceRefreshRequestedGeneration) {
+        continue;
+      }
 
-      this.#audioInputs = devices
-        .filter((device) => device.kind === 'audioinput')
-        .map((device, index) => ({
-          deviceId: device.deviceId,
-          label: device.label || `마이크 ${index + 1}`,
-        }));
-      this.#videoInputs = devices
-        .filter((device) => device.kind === 'videoinput')
-        .map((device, index) => ({
-          deviceId: device.deviceId,
-          label: device.label || `카메라 ${index + 1}`,
-        }));
+      this.#applyDevices(devices);
+      this.#deviceRefreshCompletedGeneration = generation;
+      if (this.#deviceRefreshShouldEmit) {
+        this.#deviceRefreshShouldEmit = false;
+        this.#emit();
+      }
+      this.#resolveDeviceRefreshWaiters(false);
+    }
+  }
 
-      this.#selectedAudioInputId = this.#normalizeSelection(
-        this.#selectedAudioInputId,
-        this.#audioInputs,
-        this.#audioTracks()[0],
-      );
-      this.#selectedVideoInputId = this.#normalizeSelection(
-        this.#selectedVideoInputId,
-        this.#videoInputs,
-        this.#videoTracks()[0],
-      );
+  async #enumerateDevices(): Promise<readonly MediaDeviceInfo[]> {
+    if (this.#mediaDevices === undefined) {
+      return [];
+    }
+
+    try {
+      return await this.#mediaDevices.enumerateDevices();
     } catch {
-      this.#audioInputs = [];
-      this.#videoInputs = [];
+      return [];
+    }
+  }
+
+  #applyDevices(devices: readonly MediaDeviceInfo[]): void {
+    this.#audioInputs = devices
+      .filter((device) => device.kind === 'audioinput')
+      .map((device, index) => ({
+        deviceId: device.deviceId,
+        label: device.label || `마이크 ${index + 1}`,
+      }));
+    this.#videoInputs = devices
+      .filter((device) => device.kind === 'videoinput')
+      .map((device, index) => ({
+        deviceId: device.deviceId,
+        label: device.label || `카메라 ${index + 1}`,
+      }));
+
+    this.#selectedAudioInputId = this.#normalizeSelection(
+      this.#selectedAudioInputId,
+      this.#audioInputs,
+      this.#audioTracks()[0],
+    );
+    this.#selectedVideoInputId = this.#normalizeSelection(
+      this.#selectedVideoInputId,
+      this.#videoInputs,
+      this.#videoTracks()[0],
+    );
+  }
+
+  #resolveDeviceRefreshWaiters(force: boolean): void {
+    for (let index = this.#deviceRefreshWaiters.length - 1; index >= 0; index -= 1) {
+      const waiter = this.#deviceRefreshWaiters[index];
+      if (
+        waiter !== undefined &&
+        (force || waiter.generation <= this.#deviceRefreshCompletedGeneration)
+      ) {
+        this.#deviceRefreshWaiters.splice(index, 1);
+        waiter.resolve();
+      }
     }
   }
 

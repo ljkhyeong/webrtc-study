@@ -324,6 +324,14 @@ const DEFAULT_RECONNECT_INITIAL_DELAY_MS = 500;
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 4_000;
 const DEFAULT_PEER_DISCONNECTED_GRACE_MS = 3_000;
 const DEFAULT_PEER_RECOVERY_TIMEOUT_MS = 8_000;
+const SCREEN_SHARE_CONSTRAINTS: DisplayMediaStreamOptions = {
+  video: {
+    width: { ideal: 1280, max: 1280 },
+    height: { ideal: 720, max: 720 },
+    frameRate: { ideal: 15, max: 15 },
+  },
+  audio: false,
+};
 class RoomSessionFailure extends Error {
   constructor(
     readonly code: RoomIssueCode,
@@ -437,6 +445,17 @@ function isDisplayMediaCancellation(error: unknown): boolean {
     return false;
   }
   return error.name === 'NotAllowedError' || error.name === 'AbortError';
+}
+
+function preferDetailedScreenContent(track: MediaStreamTrack): void {
+  if (!('contentHint' in track)) {
+    return;
+  }
+  try {
+    track.contentHint = 'detail';
+  } catch {
+    // Some engines expose contentHint without accepting every standardized value.
+  }
 }
 
 function safeSignalingErrorMessage(code: SignalingErrorCode): string {
@@ -842,7 +861,7 @@ export class RoomSession {
 
     let displayStream: MediaStream;
     try {
-      displayStream = await mediaDevices.getDisplayMedia({ video: true, audio: false });
+      displayStream = await mediaDevices.getDisplayMedia(SCREEN_SHARE_CONSTRAINTS);
     } catch (error) {
       return isDisplayMediaCancellation(error) ? 'cancelled' : 'failed';
     }
@@ -854,6 +873,7 @@ export class RoomSession {
       }
     }
     if (screenTrack !== undefined) {
+      preferDetailedScreenContent(screenTrack);
       this.#pendingScreenTrack = screenTrack;
     }
     if (screenTrack === undefined) {

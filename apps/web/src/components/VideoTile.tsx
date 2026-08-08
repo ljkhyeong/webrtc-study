@@ -45,17 +45,26 @@ export function VideoTile({
   onDisableVideo,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const playbackAttemptRef = useRef(0);
   const fullscreenAttemptRef = useRef(0);
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
 
   useEffect(() => {
+    const attempt = playbackAttemptRef.current + 1;
+    playbackAttemptRef.current = attempt;
+    setPlaybackBlocked(false);
     const video = videoRef.current;
     if (!video) {
       return;
     }
 
     video.srcObject = participant.stream ?? null;
+    if (participant.stream !== undefined) {
+      void playVideo(video, attempt);
+    }
     return () => {
+      playbackAttemptRef.current += 1;
       video.srcObject = null;
     };
   }, [participant.stream]);
@@ -66,6 +75,29 @@ export function VideoTile({
     !participant.isLocal && participant.videoSource === 'screen' && hasVisibleVideo;
   const isConnected =
     participant.isLocal || ['connected', 'completed'].includes(participant.connectionState);
+
+  async function playVideo(video: HTMLVideoElement, attempt: number): Promise<void> {
+    try {
+      await video.play();
+      if (playbackAttemptRef.current === attempt) {
+        setPlaybackBlocked(false);
+      }
+    } catch {
+      if (playbackAttemptRef.current === attempt) {
+        setPlaybackBlocked(true);
+      }
+    }
+  }
+
+  function resumePlayback(): void {
+    const video = videoRef.current;
+    if (video === null) {
+      return;
+    }
+    const attempt = playbackAttemptRef.current + 1;
+    playbackAttemptRef.current = attempt;
+    void playVideo(video, attempt);
+  }
 
   useEffect(() => {
     if (isRemoteScreenShare) {
@@ -165,6 +197,19 @@ export function VideoTile({
         <p className="video-tile__fullscreen-error" role="alert">
           {fullscreenError}
         </p>
+      ) : null}
+
+      {hasStream && playbackBlocked ? (
+        <div className="video-tile__playback-recovery">
+          <span role="status">자동 재생이 차단되었습니다.</span>
+          <button
+            type="button"
+            aria-label={`${participant.displayName}의 소리와 영상 재생`}
+            onClick={resumePlayback}
+          >
+            소리와 영상 재생
+          </button>
+        </div>
       ) : null}
 
       {canModerateMedia && !participant.isLocal && participant.role === 'participant' ? (

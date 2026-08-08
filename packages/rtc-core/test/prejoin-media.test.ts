@@ -96,6 +96,23 @@ function device(kind: MediaDeviceKind, deviceId: string, label: string): MediaDe
   };
 }
 
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 12; index += 1) {
+    await Promise.resolve();
+  }
+}
+
 describe('PrejoinMedia', () => {
   it('waits for an explicit check and keeps audio when video is busy', async () => {
     const audioTrack = new FakeTrack('audio', 'mic-default');
@@ -294,5 +311,86 @@ describe('PrejoinMedia', () => {
     expect(audioTrack.endedListenerCount()).toBe(0);
     audioTrack.end();
     expect(controller.getSnapshot().localMedia.audioAvailable).toBe(true);
+  });
+
+  it('coalesces device changes, publishes only the newest list, and detaches on dispose', async () => {
+    const audioTrack = new FakeTrack('audio', 'mic-default');
+    const videoTrack = new FakeTrack('video', 'camera-default');
+    const staleEnumeration = deferred<MediaDeviceInfo[]>();
+    const deviceChangeListeners = new Set<EventListener>();
+    const enumerateDevices = vi
+      .fn<() => Promise<MediaDeviceInfo[]>>()
+      .mockResolvedValueOnce([
+        device('audioinput', 'mic-default', '내장 마이크'),
+        device('videoinput', 'camera-default', '내장 카메라'),
+      ])
+      .mockImplementationOnce(() => staleEnumeration.promise)
+      .mockResolvedValueOnce([
+        device('audioinput', 'mic-usb', 'USB 마이크'),
+        device('videoinput', 'camera-usb', 'USB 카메라'),
+      ]);
+    const addEventListener = vi.fn((type: string, listener: EventListener) => {
+      if (type === 'devicechange') {
+        deviceChangeListeners.add(listener);
+      }
+    });
+    const removeEventListener = vi.fn((type: string, listener: EventListener) => {
+      if (type === 'devicechange') {
+        deviceChangeListeners.delete(listener);
+      }
+    });
+    const mediaDevices = {
+      addEventListener,
+      enumerateDevices,
+      getUserMedia: vi.fn(async (constraints: MediaStreamConstraints) =>
+        constraints.audio === false
+          ? (new FakeMediaStream([videoTrack]) as unknown as MediaStream)
+          : (new FakeMediaStream([audioTrack]) as unknown as MediaStream),
+      ),
+      removeEventListener,
+    } as unknown as MediaDevices;
+    const controller = createPrejoinMedia({
+      mediaDevices,
+      mediaStreamFactory: () => new FakeMediaStream() as unknown as MediaStream,
+    });
+
+    await controller.checkDevices();
+    expect(addEventListener).toHaveBeenCalledWith('devicechange', expect.any(Function));
+    expect(deviceChangeListeners.size).toBe(1);
+
+    const publishedAudioInputs: string[][] = [];
+    controller.subscribe((snapshot) => {
+      publishedAudioInputs.push(snapshot.audioInputs.map((input) => input.deviceId));
+    });
+    const emitDeviceChange = () => {
+      for (const listener of [...deviceChangeListeners]) {
+        listener({ type: 'devicechange' } as Event);
+      }
+    };
+
+    emitDeviceChange();
+    await flushMicrotasks();
+    expect(enumerateDevices).toHaveBeenCalledTimes(2);
+    emitDeviceChange();
+    await flushMicrotasks();
+    expect(enumerateDevices).toHaveBeenCalledTimes(2);
+
+    staleEnumeration.resolve([device('audioinput', 'mic-stale', '이전 마이크')]);
+    await vi.waitFor(() => {
+      expect(enumerateDevices).toHaveBeenCalledTimes(3);
+      expect(controller.getSnapshot().audioInputs).toEqual([
+        { deviceId: 'mic-usb', label: 'USB 마이크' },
+      ]);
+    });
+    expect(publishedAudioInputs).not.toContainEqual(['mic-stale']);
+    expect(publishedAudioInputs.at(-1)).toEqual(['mic-usb']);
+
+    controller.dispose();
+    expect(removeEventListener).toHaveBeenCalledWith('devicechange', expect.any(Function));
+    expect(deviceChangeListeners.size).toBe(0);
+    const enumerationCountAfterDispose = enumerateDevices.mock.calls.length;
+    emitDeviceChange();
+    await flushMicrotasks();
+    expect(enumerateDevices).toHaveBeenCalledTimes(enumerationCountAfterDispose);
   });
 });

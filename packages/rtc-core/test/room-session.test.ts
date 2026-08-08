@@ -2857,7 +2857,7 @@ describe('RoomSession', () => {
   });
 
   it('replaces camera senders with screen video and restores the disabled camera state', async () => {
-    const screenTrack = new FakeTrack('video');
+    const screenTrack = Object.assign(new FakeTrack('video'), { contentHint: '' });
     const displayStream = new FakeMediaStream([screenTrack]);
     const getDisplayMedia = vi.fn(async () => displayStream as unknown as MediaStream);
     const harness = createHarness({ getDisplayMedia });
@@ -2881,7 +2881,15 @@ describe('RoomSession', () => {
 
     await expect(harness.session.startScreenShare()).resolves.toBe('started');
 
-    expect(getDisplayMedia).toHaveBeenCalledWith({ video: true, audio: false });
+    expect(getDisplayMedia).toHaveBeenCalledWith({
+      video: {
+        width: { ideal: 1280, max: 1280 },
+        height: { ideal: 720, max: 720 },
+        frameRate: { ideal: 15, max: 15 },
+      },
+      audio: false,
+    });
+    expect(screenTrack.contentHint).toBe('detail');
     expect(cameraSender.track).toBe(screenTrack as unknown as MediaStreamTrack);
     expect(harness.session.getLocalStream()?.getVideoTracks()).toEqual([
       screenTrack as unknown as MediaStreamTrack,
