@@ -489,7 +489,7 @@ interface ActiveRoomProps {
   onLeave: () => void;
 }
 
-function ActiveRoom({
+export function ActiveRoom({
   displayName,
   roomId,
   hostCapability,
