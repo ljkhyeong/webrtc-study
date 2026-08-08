@@ -17,6 +17,8 @@ import com.personal.round.net.ClientAddressKeyResolver;
 import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ProtocolParser;
 import com.personal.round.protocol.ServerMessageEncoder;
+import com.personal.round.protocol.ServerMessageEncoder.Participant;
+import com.personal.round.protocol.SignalingErrorCode;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetSocketAddress;
 import java.time.Clock;
@@ -1088,6 +1090,138 @@ class SignalingServiceTest {
 	}
 
 	@Test
+	void queuePressureDuringBatonSupersessionCannotLeaveADisconnectedReplacementInRoom()
+			throws Exception {
+		String fixturePeerId = "p".repeat(36);
+		int maxPeerQueueBytes = 64 * 1024;
+		int desiredReplacementBytes = maxPeerQueueBytes - 64;
+		int errorOverheadBytes = serverMessageEncoder.error(
+				SignalingErrorCode.INVALID_MESSAGE,
+				"",
+				null,
+				null).getPayloadLength();
+		int firstPayloadBytes = desiredReplacementBytes / 2;
+		int secondPayloadBytes = desiredReplacementBytes - firstPayloadBytes;
+		int firstDetailLength = firstPayloadBytes - errorOverheadBytes;
+		int secondDetailLength = secondPayloadBytes - errorOverheadBytes;
+		int leftBytes = serverMessageEncoder.peerLeft(ROOM_ID, fixturePeerId).getPayloadLength();
+		long globalQueueBytes = (long) desiredReplacementBytes + leftBytes - 1;
+		assertThat(firstDetailLength).isPositive();
+		assertThat(secondDetailLength).isPositive();
+		assertThat(globalQueueBytes).isGreaterThanOrEqualTo(maxPeerQueueBytes);
+
+		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
+				2,
+				100,
+				200,
+				400,
+				1_000_000,
+				2_000_000,
+				4_000_000,
+				maxPeerQueueBytes,
+				globalQueueBytes);
+		SimpleMeterRegistry batonRegistry = new SimpleMeterRegistry();
+		SignalingService batonService = newBatonService(properties, batonRegistry);
+		ConnectionAdmissionPolicy batonAdmissionPolicy = admissionPolicy(properties);
+		ParticipationGrant originalGrant = grantFor(
+				ROOM_ID,
+				"reconnecting-pressure-user",
+				"pressure-original-token",
+				clock.instant().plusSeconds(120));
+		ParticipationGrant observerGrant = grantFor(
+				ROOM_ID,
+				"pressure-observer-user",
+				"pressure-observer-token",
+				clock.instant().plusSeconds(120));
+		clock.advanceMillis(1);
+		ParticipationGrant replacementGrant = grantFor(
+				ROOM_ID,
+				"reconnecting-pressure-user",
+				"pressure-replacement-token",
+				clock.instant().plusSeconds(120));
+		CountDownLatch replacementSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseReplacementSend = new CountDownLatch(1);
+		batonService.start();
+		try {
+			TestPeer original = peer("pressure-original");
+			attachGrantReservation(
+					original,
+					batonAdmissionPolicy,
+					new InetSocketAddress("192.0.2.140", 41_140),
+					originalGrant);
+			assertThat(batonService.connect(original.session())).isTrue();
+			batonService.handle(original.session(), join("Original"));
+			original.nextJson();
+
+			TestPeer observer = peer("pressure-observer");
+			attachGrantReservation(
+					observer,
+					batonAdmissionPolicy,
+					new InetSocketAddress("192.0.2.141", 41_141),
+					observerGrant);
+			assertThat(batonService.connect(observer.session())).isTrue();
+			batonService.handle(observer.session(), join("Observer"));
+			JsonNode observerJoined = observer.nextJson();
+			String originalPeerId = observerJoined.at("/payload/participants/0/peerId").asString();
+			original.nextJson();
+			assertThat(TestPeer.await(
+					() -> batonRegistry.get("round.signaling.outbound.queue.bytes")
+							.gauge()
+							.value() == 0,
+					2_000)).isTrue();
+
+			TestPeer replacement = peer(
+					"pressure-replacement",
+					replacementSendEntered,
+					releaseReplacementSend);
+			attachGrantReservation(
+					replacement,
+					batonAdmissionPolicy,
+					new InetSocketAddress("192.0.2.142", 41_142),
+					replacementGrant);
+			assertThat(batonService.connect(replacement.session())).isTrue();
+			batonService.sendInvalidMessage(
+					replacement.session(),
+					"x".repeat(firstDetailLength));
+			assertThat(replacementSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+			batonService.sendInvalidMessage(
+					replacement.session(),
+					"y".repeat(secondDetailLength));
+			assertThat(batonRegistry.get("round.signaling.outbound.queue.bytes")
+					.gauge()
+					.value()).isEqualTo(desiredReplacementBytes);
+
+			batonService.handle(replacement.session(), join("Replacement"));
+			releaseReplacementSend.countDown();
+
+			JsonNode originalLeft = observer.nextJson();
+			assertThat(originalLeft.get("type").asString()).isEqualTo("peer.left");
+			assertThat(originalLeft.at("/payload/peerId").asString()).isEqualTo(originalPeerId);
+			original.awaitClosed();
+			replacement.awaitClosed();
+			assertThat(original.closeStatus().get())
+					.isEqualTo(new CloseStatus(4002, "Participation session superseded"));
+			assertThat(replacement.closeStatus().get())
+					.isEqualTo(new CloseStatus(1011, "Outbound queue overflow"));
+			assertThat(observer.hasNoTextMessageFor(100)).isTrue();
+			assertThat(batonService.roomCount()).isOne();
+			assertThat(batonService.participantCount(ROOM_ID)).isOne();
+			assertThat(batonService.connectedPeerCount()).isOne();
+			assertThat(batonRegistry.get("round.signaling.outbound.queue.global_overflows")
+					.counter()
+					.count()).isEqualTo(1);
+			assertThat(TestPeer.await(
+					() -> batonAdmissionPolicy.activeReservationCount() == 1,
+					2_000)).isTrue();
+		}
+		finally {
+			releaseReplacementSend.countDown();
+			batonService.stop();
+			assertThat(batonAdmissionPolicy.activeReservationCount()).isZero();
+		}
+	}
+
+	@Test
 	void delayedOlderBatonJoinCannotSupersedeTheNewerSession() throws Exception {
 		SignalingService batonService = newBatonService(new SimpleMeterRegistry());
 		ConnectionAdmissionPolicy batonAdmissionPolicy =
@@ -1451,7 +1585,7 @@ class SignalingServiceTest {
 		PingMessage responsivePing = responsive.awaitPing();
 		sleeping.awaitMessage(PingMessage.class::isInstance);
 		service.markAlive(responsive.session(), payloadBytes(responsivePing));
-		clock.advanceMillis(properties(6).heartbeatInterval().toMillis());
+		monotonicTicker.advanceMillis(properties(6).heartbeatInterval().toMillis());
 		service.heartbeatSweep();
 
 		sleeping.awaitClosed();
@@ -1465,6 +1599,27 @@ class SignalingServiceTest {
 
 		service.disconnect(sleeping.session());
 		assertThat(service.participantCount(ROOM_ID)).isOne();
+	}
+
+	@Test
+	void heartbeatDeadlineIgnoresWallClockJumpsAndUsesMonotonicElapsedTime()
+			throws Exception {
+		TestPeer peer = peer("heartbeat-wall-clock-jump");
+		connect(peer);
+		service.heartbeatSweep();
+		peer.awaitPing();
+
+		clock.advanceMillis(Duration.ofDays(365).toMillis());
+		service.heartbeatSweep();
+		assertThat(peer.closeStatus().get()).isNull();
+
+		clock.advanceMillis(-2 * Duration.ofDays(365).toMillis());
+		monotonicTicker.advanceMillis(properties(6).heartbeatInterval().toMillis());
+		service.heartbeatSweep();
+
+		peer.awaitClosed();
+		assertThat(peer.closeStatus().get())
+				.isEqualTo(new CloseStatus(4000, "Heartbeat timeout"));
 	}
 
 	@Test
@@ -1543,7 +1698,7 @@ class SignalingServiceTest {
 			assertThat(firstSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
 
 			service.heartbeatSweep();
-			clock.advanceMillis(properties(6).heartbeatInterval().toMillis());
+			monotonicTicker.advanceMillis(properties(6).heartbeatInterval().toMillis());
 			service.heartbeatSweep();
 
 			slow.awaitClosed();
@@ -1788,6 +1943,331 @@ class SignalingServiceTest {
 						.gauge()
 						.value() == 0,
 				2_000)).isTrue();
+	}
+
+	@Test
+	void globalQueuePressureDuringJoinSendsTheSnapshotBeforeTheInducedPeerLeft()
+			throws Exception {
+		service.stop();
+		String fixturePeerId = "p".repeat(36);
+		String slowName = "Slow member";
+		String newcomerName = "New member";
+		int maxPeerQueueBytes = 64 * 1024;
+		int slowJoinedBytes = serverMessageEncoder.roomJoined(
+				ROOM_ID,
+				null,
+				fixturePeerId,
+				ParticipationGrant.Role.PARTICIPANT,
+				List.of()).getPayloadLength();
+		int errorOverheadBytes = serverMessageEncoder.error(
+				SignalingErrorCode.INVALID_MESSAGE,
+				"",
+				ROOM_ID,
+				null).getPayloadLength();
+		int newcomerJoinedBytes = serverMessageEncoder.roomJoined(
+				ROOM_ID,
+				null,
+				fixturePeerId,
+				ParticipationGrant.Role.PARTICIPANT,
+				List.of(new Participant(
+						fixturePeerId,
+						slowName,
+						ParticipationGrant.Role.PARTICIPANT))).getPayloadLength();
+		int desiredSlowBytes = maxPeerQueueBytes - 64;
+		int queuedDetailLength = desiredSlowBytes - slowJoinedBytes - errorOverheadBytes;
+		long globalQueueBytes = (long) desiredSlowBytes + newcomerJoinedBytes - 1;
+		assertThat(queuedDetailLength).isPositive();
+		assertThat(globalQueueBytes).isGreaterThanOrEqualTo(maxPeerQueueBytes);
+
+		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
+				2,
+				100,
+				200,
+				400,
+				1_000_000,
+				2_000_000,
+				4_000_000,
+				maxPeerQueueBytes,
+				globalQueueBytes);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		CountDownLatch slowSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseSlowSend = new CountDownLatch(1);
+		TestPeer slow = peer("join-pressure-slow", slowSendEntered, releaseSlowSend);
+		TestPeer newcomer = peer("join-pressure-newcomer");
+		connect(slow, newcomer);
+
+		try {
+			service.handle(slow.session(), join(slowName));
+			assertThat(slowSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+			service.sendInvalidMessage(slow.session(), "x".repeat(queuedDetailLength));
+			assertThat(meterRegistry.get("round.signaling.outbound.queue.bytes")
+					.gauge()
+					.value()).isEqualTo(desiredSlowBytes);
+
+			service.handle(newcomer.session(), join(newcomerName));
+			releaseSlowSend.countDown();
+
+			JsonNode joined = newcomer.nextJson();
+			JsonNode left = newcomer.nextJson();
+			assertThat(joined.get("type").asString()).isEqualTo("room.joined");
+			assertThat(joined.at("/payload/participants").size()).isOne();
+			assertThat(left.get("type").asString()).isEqualTo("peer.left");
+			assertThat(left.at("/payload/peerId").asString())
+					.isEqualTo(joined.at("/payload/participants/0/peerId").asString());
+			slow.awaitClosed();
+			assertThat(slow.closeStatus().get())
+					.isEqualTo(new CloseStatus(1011, "Outbound queue overflow"));
+			assertThat(newcomer.closeStatus().get()).isNull();
+			assertThat(service.participantCount(ROOM_ID)).isOne();
+		}
+		finally {
+			releaseSlowSend.countDown();
+		}
+	}
+
+	@Test
+	void joinAbortsWhenAnInducedDepartureEvictsTheNewcomerAfterSnapshotAdmission()
+			throws Exception {
+		service.stop();
+		String fixturePeerId = "p".repeat(36);
+		String victimName = "Victim";
+		String observerName = "Observer";
+		String newcomerName = "Newcomer";
+		Participant victimParticipant = new Participant(
+				fixturePeerId,
+				victimName,
+				ParticipationGrant.Role.PARTICIPANT);
+		Participant observerParticipant = new Participant(
+				fixturePeerId,
+				observerName,
+				ParticipationGrant.Role.PARTICIPANT);
+		int maxPeerQueueBytes = 64 * 1024;
+		int desiredBallastBytes = maxPeerQueueBytes - 64;
+		int ballastOverheadBytes = serverMessageEncoder.error(
+				SignalingErrorCode.INVALID_MESSAGE,
+				"",
+				null,
+				null).getPayloadLength();
+		int ballastDetailLength = desiredBallastBytes - ballastOverheadBytes;
+		int victimJoinedBytes = serverMessageEncoder.roomJoined(
+				ROOM_ID,
+				null,
+				fixturePeerId,
+				ParticipationGrant.Role.PARTICIPANT,
+				List.of()).getPayloadLength();
+		int observerJoinedBytes = serverMessageEncoder.roomJoined(
+				ROOM_ID,
+				null,
+				fixturePeerId,
+				ParticipationGrant.Role.PARTICIPANT,
+				List.of(victimParticipant)).getPayloadLength();
+		int queuedPeerJoinedBytes = serverMessageEncoder.peerJoined(
+				ROOM_ID,
+				observerParticipant).getPayloadLength();
+		int newcomerJoinedBytes = serverMessageEncoder.roomJoined(
+				ROOM_ID,
+				null,
+				fixturePeerId,
+				ParticipationGrant.Role.PARTICIPANT,
+				List.of(victimParticipant, observerParticipant)).getPayloadLength();
+		int leftBytes = serverMessageEncoder.peerLeft(ROOM_ID, fixturePeerId).getPayloadLength();
+		long globalQueueBytes = (long) desiredBallastBytes
+				+ victimJoinedBytes
+				+ newcomerJoinedBytes
+				+ leftBytes
+				- 1;
+		assertThat(ballastDetailLength).isPositive();
+		assertThat(queuedPeerJoinedBytes).isGreaterThan(leftBytes);
+		assertThat(observerJoinedBytes + queuedPeerJoinedBytes)
+				.isLessThanOrEqualTo(newcomerJoinedBytes + leftBytes - 1);
+
+		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
+				3,
+				100,
+				200,
+				400,
+				1_000_000,
+				2_000_000,
+				4_000_000,
+				maxPeerQueueBytes,
+				globalQueueBytes);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		CountDownLatch ballastSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseBallastSend = new CountDownLatch(1);
+		CountDownLatch victimSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseVictimSend = new CountDownLatch(1);
+		TestPeer ballast = peer("join-eviction-ballast", ballastSendEntered, releaseBallastSend);
+		TestPeer victim = peer("join-eviction-victim", victimSendEntered, releaseVictimSend);
+		TestPeer observer = peer("join-eviction-observer");
+		TestPeer newcomer = peer("join-eviction-newcomer");
+		connect(ballast, victim, observer, newcomer);
+
+		try {
+			service.sendInvalidMessage(ballast.session(), "b".repeat(ballastDetailLength));
+			assertThat(ballastSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+			service.handle(victim.session(), join(victimName));
+			assertThat(victimSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+			service.handle(observer.session(), join(observerName));
+			JsonNode observerJoined = observer.nextJson();
+			String victimPeerId = observerJoined.at("/payload/participants/0/peerId").asString();
+			assertThat(TestPeer.await(
+					() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
+							.gauge()
+							.value()
+							== desiredBallastBytes + victimJoinedBytes + queuedPeerJoinedBytes,
+					2_000)).isTrue();
+
+			service.handle(newcomer.session(), join(newcomerName));
+			releaseBallastSend.countDown();
+			releaseVictimSend.countDown();
+
+			JsonNode victimLeft = observer.nextJson();
+			assertThat(victimLeft.get("type").asString()).isEqualTo("peer.left");
+			assertThat(victimLeft.at("/payload/peerId").asString()).isEqualTo(victimPeerId);
+			victim.awaitClosed();
+			newcomer.awaitClosed();
+			assertThat(victim.closeStatus().get())
+					.isEqualTo(new CloseStatus(1011, "Outbound queue overflow"));
+			assertThat(newcomer.closeStatus().get())
+					.isEqualTo(new CloseStatus(1011, "Outbound queue overflow"));
+			assertThat(observer.hasNoTextMessageFor(100)).isTrue();
+			assertThat(newcomer.hasNoTextMessageFor(100)).isTrue();
+			assertThat(service.participantCount(ROOM_ID)).isOne();
+			assertThat(service.connectedPeerCount()).isEqualTo(2);
+			assertThat(meterRegistry.get("round.signaling.outbound.queue.global_overflows")
+					.counter()
+					.count()).isEqualTo(2);
+			assertThat(TestPeer.await(
+					() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
+							.gauge()
+							.value() == 0,
+					2_000)).isTrue();
+		}
+		finally {
+			releaseBallastSend.countDown();
+			releaseVictimSend.countDown();
+		}
+	}
+
+	@Test
+	void globalQueuePressureDuringLeaveKeepsTheCausalPeerLeftOrder()
+			throws Exception {
+		service.stop();
+		String fixturePeerId = "p".repeat(36);
+		String leaverName = "Leaver";
+		String victimName = "Slow victim";
+		String observerName = "Observer";
+		Participant leaverParticipant = new Participant(
+				fixturePeerId,
+				leaverName,
+				ParticipationGrant.Role.PARTICIPANT);
+		Participant victimParticipant = new Participant(
+				fixturePeerId,
+				victimName,
+				ParticipationGrant.Role.PARTICIPANT);
+		Participant observerParticipant = new Participant(
+				fixturePeerId,
+				observerName,
+				ParticipationGrant.Role.PARTICIPANT);
+		int leaverBaseBytes = serverMessageEncoder.roomJoined(
+				ROOM_ID,
+				null,
+				fixturePeerId,
+				ParticipationGrant.Role.PARTICIPANT,
+				List.of()).getPayloadLength()
+				+ serverMessageEncoder.peerJoined(ROOM_ID, victimParticipant).getPayloadLength()
+				+ serverMessageEncoder.peerJoined(ROOM_ID, observerParticipant).getPayloadLength();
+		int victimBaseBytes = serverMessageEncoder.roomJoined(
+				ROOM_ID,
+				null,
+				fixturePeerId,
+				ParticipationGrant.Role.PARTICIPANT,
+				List.of(leaverParticipant)).getPayloadLength()
+				+ serverMessageEncoder.peerJoined(ROOM_ID, observerParticipant).getPayloadLength();
+		int errorOverheadBytes = serverMessageEncoder.error(
+				SignalingErrorCode.INVALID_MESSAGE,
+				"",
+				ROOM_ID,
+				null).getPayloadLength();
+		int leftBytes = serverMessageEncoder.peerLeft(ROOM_ID, fixturePeerId).getPayloadLength();
+		int maxPeerQueueBytes = 64 * 1024;
+		long globalQueueBytes = 92L * 1024;
+		int desiredLeaverBytes = 32 * 1024;
+		int desiredVictimBytes = Math.toIntExact(
+				globalQueueBytes - leftBytes + 1 - desiredLeaverBytes);
+		int leaverDetailLength = desiredLeaverBytes - leaverBaseBytes - errorOverheadBytes;
+		int victimDetailLength = desiredVictimBytes - victimBaseBytes - errorOverheadBytes;
+		assertThat(leaverDetailLength).isPositive();
+		assertThat(victimDetailLength).isPositive();
+		assertThat(desiredVictimBytes + leftBytes).isLessThanOrEqualTo(maxPeerQueueBytes);
+		assertThat(desiredVictimBytes).isGreaterThan(desiredLeaverBytes);
+
+		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
+				3,
+				100,
+				200,
+				400,
+				1_000_000,
+				2_000_000,
+				4_000_000,
+				maxPeerQueueBytes,
+				globalQueueBytes);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		CountDownLatch leaverSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseLeaverSend = new CountDownLatch(1);
+		CountDownLatch victimSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseVictimSend = new CountDownLatch(1);
+		TestPeer leaver = peer("leave-pressure-leaver", leaverSendEntered, releaseLeaverSend);
+		TestPeer victim = peer("leave-pressure-victim", victimSendEntered, releaseVictimSend);
+		TestPeer observer = peer("leave-pressure-observer");
+		connect(leaver, victim, observer);
+
+		try {
+			service.handle(leaver.session(), join(leaverName));
+			assertThat(leaverSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+			service.handle(victim.session(), join(victimName));
+			assertThat(victimSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+			service.handle(observer.session(), join(observerName));
+			JsonNode observerJoined = observer.nextJson();
+			String leaverPeerId = observerJoined.at("/payload/participants/0/peerId").asString();
+			String victimPeerId = observerJoined.at("/payload/participants/1/peerId").asString();
+			service.sendInvalidMessage(leaver.session(), "x".repeat(leaverDetailLength));
+			service.sendInvalidMessage(victim.session(), "y".repeat(victimDetailLength));
+			assertThat(TestPeer.await(
+					() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
+							.gauge()
+							.value() == desiredLeaverBytes + desiredVictimBytes,
+					2_000)).isTrue();
+
+			service.handle(leaver.session(), new ClientMessage.Leave(ROOM_ID, null));
+			releaseLeaverSend.countDown();
+			releaseVictimSend.countDown();
+
+			JsonNode leaverLeft = observer.nextJson();
+			JsonNode victimLeft = observer.nextJson();
+			assertThat(leaverLeft.get("type").asString()).isEqualTo("peer.left");
+			assertThat(leaverLeft.at("/payload/peerId").asString()).isEqualTo(leaverPeerId);
+			assertThat(victimLeft.get("type").asString()).isEqualTo("peer.left");
+			assertThat(victimLeft.at("/payload/peerId").asString()).isEqualTo(victimPeerId);
+			victim.awaitClosed();
+			assertThat(victim.closeStatus().get())
+					.isEqualTo(new CloseStatus(1011, "Outbound queue overflow"));
+			assertThat(leaver.closeStatus().get()).isNull();
+			assertThat(service.participantCount(ROOM_ID)).isOne();
+			assertThat(meterRegistry.get("round.signaling.outbound.queue.global_overflows")
+					.counter()
+					.count()).isEqualTo(1);
+			assertThat(meterRegistry.get("round.signaling.outbound.queue.bytes")
+					.gauge()
+					.value()).isLessThanOrEqualTo(globalQueueBytes);
+		}
+		finally {
+			releaseLeaverSend.countDown();
+			releaseVictimSend.countDown();
+		}
 	}
 
 	@Test
@@ -2060,17 +2540,37 @@ class SignalingServiceTest {
 		service.handle(joined.session(), join("Grace"));
 		joined.nextJson();
 
-		long connectedAt = clock.millis();
-		service.expireUnjoinedSessions(connectedAt + 14_999);
+		monotonicTicker.advanceMillis(14_999);
+		service.expireUnjoinedSessions();
 		assertThat(idle.closeStatus().get()).isNull();
 		assertThat(joined.closeStatus().get()).isNull();
 
-		service.expireUnjoinedSessions(connectedAt + 15_000);
+		monotonicTicker.advanceMillis(1);
+		service.expireUnjoinedSessions();
 		idle.awaitClosed();
 		assertThat(idle.closeStatus().get())
 				.isEqualTo(new CloseStatus(1008, "Room join timeout"));
 		assertThat(joined.closeStatus().get()).isNull();
 		assertThat(service.participantCount(ROOM_ID)).isOne();
+	}
+
+	@Test
+	void unjoinedDeadlineIgnoresWallClockJumpsAndUsesMonotonicElapsedTime()
+			throws Exception {
+		TestPeer idle = peer("unjoined-wall-clock-jump");
+		connect(idle);
+
+		clock.advanceMillis(Duration.ofDays(365).toMillis());
+		service.expireUnjoinedSessions();
+		assertThat(idle.closeStatus().get()).isNull();
+
+		clock.advanceMillis(-2 * Duration.ofDays(365).toMillis());
+		monotonicTicker.advanceMillis(properties(6).unjoinedTimeout().toMillis());
+		service.expireUnjoinedSessions();
+
+		idle.awaitClosed();
+		assertThat(idle.closeStatus().get())
+				.isEqualTo(new CloseStatus(1008, "Room join timeout"));
 	}
 
 	@Test
@@ -2107,7 +2607,26 @@ class SignalingServiceTest {
 	}
 
 	@Test
-	void backwardClockMovementDoesNotResetAnInboundQuotaWindow() throws Exception {
+	void forwardWallClockMovementDoesNotResetAnInboundQuotaWindow() throws Exception {
+		service.stop();
+		SignalingProperties properties =
+				TestProperties.signalingWithFrameLimits(1, 1, 2, 4);
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+		TestPeer peer = peer("clock-forward");
+		connect(peer);
+
+		assertThat(service.acceptInboundFrame(peer.session())).isTrue();
+		clock.advanceMillis(Duration.ofDays(365).toMillis());
+		assertThat(service.acceptInboundFrame(peer.session())).isFalse();
+
+		peer.awaitClosed();
+		assertThat(peer.closeStatus().get())
+				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
+	}
+
+	@Test
+	void monotonicElapsedWindowResetsAfterTheWallClockRollsBack() throws Exception {
 		service.stop();
 		SignalingProperties properties =
 				TestProperties.signalingWithFrameLimits(1, 1, 2, 4);
@@ -2115,14 +2634,13 @@ class SignalingServiceTest {
 		service = service(properties, meterRegistry);
 		TestPeer peer = peer("clock-rollback");
 		connect(peer);
-		long windowStart = clock.millis();
 
-		assertThat(service.acceptInboundFrame(peer.session(), windowStart)).isTrue();
-		assertThat(service.acceptInboundFrame(peer.session(), windowStart - 1)).isFalse();
+		assertThat(service.acceptInboundFrame(peer.session())).isTrue();
+		clock.advanceMillis(-Duration.ofDays(365).toMillis());
+		monotonicTicker.advanceMillis(properties.abuseWindow().toMillis());
 
-		peer.awaitClosed();
-		assertThat(peer.closeStatus().get())
-				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
+		assertThat(service.acceptInboundFrame(peer.session())).isTrue();
+		assertThat(peer.closeStatus().get()).isNull();
 	}
 
 	@Test
@@ -2235,19 +2753,43 @@ class SignalingServiceTest {
 		service.disconnect(first.session());
 		assertThat(service.trackedInboundClientCount()).isOne();
 
-		clock.advanceMillis(properties.abuseWindow().toMillis());
+		monotonicTicker.advanceMillis(properties.abuseWindow().toMillis());
 		TestPeer second = peer("expired-on-sweep");
 		connectFrom(policy, "192.0.2.22", second);
 		assertThat(service.trackedInboundClientCount()).isOne();
 		assertThat(service.acceptInboundFrame(second.session())).isTrue();
 		service.disconnect(second.session());
 
-		clock.advanceMillis(properties.abuseWindow().toMillis() - 1);
+		monotonicTicker.advanceMillis(properties.abuseWindow().toMillis() - 1);
 		service.expireUnjoinedSessions();
 		assertThat(service.trackedInboundClientCount()).isOne();
 
-		clock.advanceMillis(1);
+		monotonicTicker.advanceMillis(1);
 		service.expireUnjoinedSessions();
+		assertThat(service.trackedInboundClientCount()).isZero();
+	}
+
+	@Test
+	void inactiveClientCleanupIgnoresWallClockJumpsAndUsesMonotonicElapsedTime()
+			throws Exception {
+		SignalingProperties properties = properties(6);
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
+		TestPeer first = peer("cleanup-wall-clock-first");
+		connectFrom(policy, "192.0.2.81", first);
+		assertThat(service.acceptInboundFrame(first.session())).isTrue();
+		service.disconnect(first.session());
+
+		clock.advanceMillis(Duration.ofDays(365).toMillis());
+		TestPeer second = peer("cleanup-wall-clock-second");
+		connectFrom(policy, "192.0.2.82", second);
+		assertThat(service.trackedInboundClientCount()).isEqualTo(2);
+		assertThat(service.acceptInboundFrame(second.session())).isTrue();
+		service.disconnect(second.session());
+
+		clock.advanceMillis(-2 * Duration.ofDays(365).toMillis());
+		monotonicTicker.advanceMillis(properties.abuseWindow().toMillis());
+		service.expireUnjoinedSessions();
+
 		assertThat(service.trackedInboundClientCount()).isZero();
 	}
 
@@ -2332,9 +2874,8 @@ class SignalingServiceTest {
 		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
 				.counter()
 				.count()).isEqualTo(1);
-		assertThat(service.acceptInboundFrame(
-				third.session(),
-				clock.millis() + properties.abuseWindow().toMillis())).isTrue();
+		monotonicTicker.advanceMillis(properties.abuseWindow().toMillis());
+		assertThat(service.acceptInboundFrame(third.session())).isTrue();
 	}
 
 	@Test
@@ -2464,7 +3005,7 @@ class SignalingServiceTest {
 		handler.handleMessage(
 				responsive.session(),
 				new PongMessage(responsivePing.getPayload().asReadOnlyBuffer()));
-		clock.advanceMillis(properties(6).heartbeatInterval().toMillis());
+		monotonicTicker.advanceMillis(properties(6).heartbeatInterval().toMillis());
 		service.heartbeatSweep();
 
 		responsive.awaitFrameCount(2);
@@ -2493,7 +3034,7 @@ class SignalingServiceTest {
 			service.markAlive(
 					slow.session(),
 					"forged-heartbeat-response".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-			clock.advanceMillis(properties(6).heartbeatInterval().toMillis());
+			monotonicTicker.advanceMillis(properties(6).heartbeatInterval().toMillis());
 			service.heartbeatSweep();
 
 			slow.awaitClosed();

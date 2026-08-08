@@ -16,6 +16,7 @@ import java.security.MessageDigest;
 import java.time.Clock;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,7 +30,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -67,6 +67,7 @@ public class SignalingService implements SmartLifecycle {
 			new CloseStatus(4001, "Participation grant expired");
 	private static final CloseStatus PARTICIPATION_SESSION_SUPERSEDED =
 			new CloseStatus(4002, "Participation session superseded");
+	private static final long UNSET_NANOS = Long.MIN_VALUE;
 	static final int MAX_OUTBOUND_QUEUE_SIZE = 256;
 
 	private final Object monitor = new Object();
@@ -85,9 +86,9 @@ public class SignalingService implements SmartLifecycle {
 	private final MonotonicTicker monotonicTicker;
 	private final int maxRoomSize;
 	private final int maxConnections;
-	private final long heartbeatIntervalMs;
-	private final long unjoinedTimeoutMs;
-	private final long abuseWindowMs;
+	private final long heartbeatIntervalNanos;
+	private final long unjoinedTimeoutNanos;
+	private final long abuseWindowNanos;
 	private final int maxFramesPerSessionWindow;
 	private final int maxFramesPerClientWindow;
 	private final int maxFramesGlobalWindow;
@@ -120,9 +121,9 @@ public class SignalingService implements SmartLifecycle {
 		this.monotonicTicker = monotonicTicker;
 		this.maxRoomSize = properties.maxRoomSize();
 		this.maxConnections = properties.maxConnections();
-		this.heartbeatIntervalMs = properties.heartbeatInterval().toMillis();
-		this.unjoinedTimeoutMs = properties.unjoinedTimeout().toMillis();
-		this.abuseWindowMs = properties.abuseWindow().toMillis();
+		this.heartbeatIntervalNanos = properties.heartbeatInterval().toNanos();
+		this.unjoinedTimeoutNanos = properties.unjoinedTimeout().toNanos();
+		this.abuseWindowNanos = properties.abuseWindow().toNanos();
 		this.maxFramesPerSessionWindow = properties.maxFramesPerSessionWindow();
 		this.maxFramesPerClientWindow = properties.maxFramesPerClientWindow();
 		this.maxFramesGlobalWindow = properties.maxFramesGlobalWindow();
@@ -166,7 +167,7 @@ public class SignalingService implements SmartLifecycle {
 				long nowMillis = clock.millis();
 				long nowNanos = monotonicTicker.readNanos();
 				RoomAccess.Lease accessLease = roomAccess.openLease(nowMillis, nowNanos);
-				removeExpiredInactiveClientStatesLocked(nowMillis);
+				removeExpiredInactiveClientStatesLocked(nowNanos);
 				if (accessLease.isExpired(nowMillis, nowNanos)) {
 					metrics.recordAuthorizationClose();
 					workPlan.close(session, PARTICIPATION_GRANT_EXPIRED);
@@ -199,7 +200,7 @@ public class SignalingService implements SmartLifecycle {
 									new Peer(
 											UUID.randomUUID().toString(),
 											session,
-											nowMillis,
+											nowNanos,
 											nextConnectionSequence++,
 											reservation,
 											roomAccess,
@@ -243,31 +244,21 @@ public class SignalingService implements SmartLifecycle {
 		return acceptInboundFrame(session, 0);
 	}
 
-	boolean acceptInboundFrame(WebSocketSession session, long nowMillis) {
-		return acceptInboundFrame(session, 0, () -> nowMillis);
-	}
-
 	public boolean acceptInboundFrame(WebSocketSession session, int payloadBytes) {
-		return acceptInboundFrame(session, payloadBytes, clock::millis);
-	}
-
-	private boolean acceptInboundFrame(
-			WebSocketSession session,
-			int payloadBytes,
-			LongSupplier nowMillisSupplier) {
 		if (payloadBytes < 0) {
 			throw new IllegalArgumentException("payloadBytes must not be negative");
 		}
 		WorkPlan workPlan = new WorkPlan();
 		boolean accepted = false;
 		synchronized (monitor) {
-			long nowMillis = nowMillisSupplier.getAsLong();
+			long nowMillis = clock.millis();
+			long nowNanos = monotonicTicker.readNanos();
 			Peer peer = connectedPeers.get(session.getId());
 			if (peer != null && peer.connected) {
 				if (closeForExpiredAuthorizationLocked(
 						peer,
 						nowMillis,
-						monotonicTicker.readNanos(),
+						nowNanos,
 						workPlan)) {
 					peer = null;
 				}
@@ -275,8 +266,8 @@ public class SignalingService implements SmartLifecycle {
 			if (peer != null && peer.connected) {
 				touchClientInboundStateLocked(peer);
 				WindowDecision sessionDecision = peer.inboundWindow.tryAcquire(
-						nowMillis,
-						abuseWindowMs,
+						nowNanos,
+						abuseWindowNanos,
 						maxFramesPerSessionWindow,
 						maxBytesPerSessionWindow,
 						payloadBytes);
@@ -292,8 +283,8 @@ public class SignalingService implements SmartLifecycle {
 				else {
 					WindowDecision clientDecision =
 							peer.clientInboundState.inboundWindow.tryAcquire(
-									nowMillis,
-									abuseWindowMs,
+									nowNanos,
+									abuseWindowNanos,
 									maxFramesPerClientWindow,
 									maxBytesPerClientWindow,
 									payloadBytes);
@@ -307,8 +298,8 @@ public class SignalingService implements SmartLifecycle {
 					}
 					else {
 						WindowDecision globalDecision = globalInboundWindow.tryAcquire(
-								nowMillis,
-								abuseWindowMs,
+								nowNanos,
+								abuseWindowNanos,
 								maxFramesGlobalWindow,
 								maxBytesGlobalWindow,
 								payloadBytes);
@@ -398,8 +389,8 @@ public class SignalingService implements SmartLifecycle {
 							|| peer.heartbeatState == HeartbeatState.AWAITING_PONG)
 					&& MessageDigest.isEqual(peer.expectedPongPayload, pongPayload)) {
 				peer.heartbeatState = HeartbeatState.READY;
-				peer.pingQueuedAtMillis = Long.MIN_VALUE;
-				peer.pingSentAtMillis = Long.MIN_VALUE;
+				peer.pingQueuedAtNanos = UNSET_NANOS;
+				peer.pingSentAtNanos = UNSET_NANOS;
 				peer.expectedPongPayload = null;
 			}
 		}
@@ -430,24 +421,24 @@ public class SignalingService implements SmartLifecycle {
 								new PingMessage(ByteBuffer.wrap(challenge)),
 								workPlan)) {
 							peer.heartbeatState = HeartbeatState.PING_QUEUED;
-							peer.pingQueuedAtMillis = nowMillis;
-							peer.pingSentAtMillis = Long.MIN_VALUE;
+							peer.pingQueuedAtNanos = nowNanos;
+							peer.pingSentAtNanos = UNSET_NANOS;
 							peer.expectedPongPayload = challenge;
 						}
 					}
 					case PING_QUEUED -> {
-						if (nowMillis < peer.pingQueuedAtMillis) {
-							peer.pingQueuedAtMillis = nowMillis;
-						}
-						else if (nowMillis - peer.pingQueuedAtMillis >= heartbeatIntervalMs) {
+						if (elapsedAtLeast(
+								nowNanos,
+								peer.pingQueuedAtNanos,
+								heartbeatIntervalNanos)) {
 							closeForHeartbeatTimeoutLocked(peer, workPlan);
 						}
 					}
 					case AWAITING_PONG -> {
-						if (nowMillis < peer.pingSentAtMillis) {
-							peer.pingSentAtMillis = nowMillis;
-						}
-						else if (nowMillis - peer.pingSentAtMillis >= heartbeatIntervalMs) {
+						if (elapsedAtLeast(
+								nowNanos,
+								peer.pingSentAtNanos,
+								heartbeatIntervalNanos)) {
 							closeForHeartbeatTimeoutLocked(peer, workPlan);
 						}
 					}
@@ -463,17 +454,9 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	public void expireUnjoinedSessions() {
-		expireUnjoinedSessions(clock::millis);
-	}
-
-	void expireUnjoinedSessions(long nowMillis) {
-		expireUnjoinedSessions(() -> nowMillis);
-	}
-
-	private void expireUnjoinedSessions(LongSupplier nowMillisSupplier) {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
-			long nowMillis = nowMillisSupplier.getAsLong();
+			long nowMillis = clock.millis();
 			long nowNanos = monotonicTicker.readNanos();
 			for (Peer peer : new ArrayList<>(connectedPeers.values())) {
 				if (!peer.connected) {
@@ -486,15 +469,17 @@ public class SignalingService implements SmartLifecycle {
 						workPlan)) {
 					continue;
 				}
-				if (peer.unjoinedSinceMillis < 0
-						|| nowMillis < peer.unjoinedSinceMillis) {
+				if (peer.unjoinedSinceNanos == UNSET_NANOS) {
 					continue;
 				}
-				if (nowMillis - peer.unjoinedSinceMillis >= unjoinedTimeoutMs) {
+				if (elapsedAtLeast(
+						nowNanos,
+						peer.unjoinedSinceNanos,
+						unjoinedTimeoutNanos)) {
 					disconnectAndCloseLocked(peer, JOIN_TIMEOUT, workPlan);
 				}
 			}
-			removeExpiredInactiveClientStatesLocked(nowMillis);
+			removeExpiredInactiveClientStatesLocked(nowNanos);
 		}
 		execute(workPlan);
 	}
@@ -604,6 +589,12 @@ public class SignalingService implements SmartLifecycle {
 					workPlan);
 			rooms.putIfAbsent(message.roomId(), room);
 		}
+		if (!peer.connected) {
+			if (room.isEmpty()) {
+				rooms.remove(message.roomId(), room);
+			}
+			return;
+		}
 		if (room.size() >= maxRoomSize) {
 			metrics.recordJoinRejectedRoomFull();
 			sendError(
@@ -622,7 +613,7 @@ public class SignalingService implements SmartLifecycle {
 		peer.roomId = message.roomId();
 		peer.displayName = message.displayName();
 		peer.role = resolvedRole.orElseThrow();
-		peer.unjoinedSinceMillis = -1;
+		peer.unjoinedSinceNanos = UNSET_NANOS;
 		room.put(peer.peerId, peer);
 		refreshMetricsLocked();
 
@@ -827,7 +818,8 @@ public class SignalingService implements SmartLifecycle {
 				peer,
 				clock.millis(),
 				monotonicTicker.readNanos(),
-				workPlan);
+				workPlan,
+				null);
 	}
 
 	private boolean closeForExpiredAuthorizationLocked(
@@ -835,10 +827,28 @@ public class SignalingService implements SmartLifecycle {
 			long currentEpochMillis,
 			long currentMonotonicNanos,
 			WorkPlan workPlan) {
+		return closeForExpiredAuthorizationLocked(
+				peer,
+				currentEpochMillis,
+				currentMonotonicNanos,
+				workPlan,
+				null);
+	}
+
+	private boolean closeForExpiredAuthorizationLocked(
+			Peer peer,
+			long currentEpochMillis,
+			long currentMonotonicNanos,
+			WorkPlan workPlan,
+			ArrayDeque<PendingOutbound> pendingOutbound) {
 		if (!peer.accessLease.isExpired(currentEpochMillis, currentMonotonicNanos)) {
 			return false;
 		}
-		if (disconnectAndCloseLocked(peer, PARTICIPATION_GRANT_EXPIRED, workPlan)) {
+		if (disconnectAndCloseLocked(
+				peer,
+				PARTICIPATION_GRANT_EXPIRED,
+				workPlan,
+				pendingOutbound)) {
 			metrics.recordAuthorizationClose();
 		}
 		return true;
@@ -852,6 +862,14 @@ public class SignalingService implements SmartLifecycle {
 			String sessionId,
 			WorkPlan workPlan,
 			boolean releaseReservation) {
+		return disconnectLocked(sessionId, workPlan, releaseReservation, null);
+	}
+
+	private boolean disconnectLocked(
+			String sessionId,
+			WorkPlan workPlan,
+			boolean releaseReservation,
+			ArrayDeque<PendingOutbound> pendingOutbound) {
 		Peer peer = connectedPeers.remove(sessionId);
 		if (peer != null && peer.connected) {
 			peer.connected = false;
@@ -863,7 +881,7 @@ public class SignalingService implements SmartLifecycle {
 			}
 			releaseClientInboundStateLocked(peer);
 			clearOutboundLocked(peer);
-			removePeerFromRoom(peer, workPlan);
+			removePeerFromRoom(peer, workPlan, pendingOutbound);
 			refreshMetricsLocked();
 			return true;
 		}
@@ -874,6 +892,14 @@ public class SignalingService implements SmartLifecycle {
 			Peer peer,
 			CloseStatus requestedStatus,
 			WorkPlan workPlan) {
+		return disconnectAndCloseLocked(peer, requestedStatus, workPlan, null);
+	}
+
+	private boolean disconnectAndCloseLocked(
+			Peer peer,
+			CloseStatus requestedStatus,
+			WorkPlan workPlan,
+			ArrayDeque<PendingOutbound> pendingOutbound) {
 		boolean terminalSupersession = PARTICIPATION_SESSION_SUPERSEDED.equals(requestedStatus);
 		if (terminalSupersession) {
 			peer.closeDecision.terminalStatus = PARTICIPATION_SESSION_SUPERSEDED;
@@ -881,7 +907,8 @@ public class SignalingService implements SmartLifecycle {
 		boolean disconnected = disconnectLocked(
 				peer.session.getId(),
 				workPlan,
-				!terminalSupersession);
+				!terminalSupersession,
+				pendingOutbound);
 		scheduleCloseLocked(peer.session, requestedStatus, workPlan);
 		return disconnected;
 	}
@@ -944,15 +971,22 @@ public class SignalingService implements SmartLifecycle {
 		}
 	}
 
-	private void removeExpiredInactiveClientStatesLocked(long nowMillis) {
+	private void removeExpiredInactiveClientStatesLocked(long nowNanos) {
 		inboundClients.entrySet().removeIf(entry -> {
 			ClientInboundState state = entry.getValue();
 			return state.activeConnections == 0
-					&& state.inboundWindow.isExpired(nowMillis, abuseWindowMs);
+					&& state.inboundWindow.isExpired(nowNanos, abuseWindowNanos);
 		});
 	}
 
 	private void removePeerFromRoom(Peer peer, WorkPlan workPlan) {
+		removePeerFromRoom(peer, workPlan, null);
+	}
+
+	private void removePeerFromRoom(
+			Peer peer,
+			WorkPlan workPlan,
+			ArrayDeque<PendingOutbound> pendingOutbound) {
 		if (peer.roomId == null) {
 			return;
 		}
@@ -964,7 +998,7 @@ public class SignalingService implements SmartLifecycle {
 		peer.role = null;
 		peer.announced = false;
 		if (peer.connected) {
-			peer.unjoinedSinceMillis = clock.millis();
+			peer.unjoinedSinceNanos = monotonicTicker.readNanos();
 		}
 		LinkedHashMap<String, Peer> room = rooms.get(roomId);
 		if (room == null || room.remove(peer.peerId) == null) {
@@ -982,7 +1016,12 @@ public class SignalingService implements SmartLifecycle {
 		}
 
 		TextMessage left = serverMessageEncoder.peerLeft(roomId, peer.peerId);
-		broadcast(room, left, null, workPlan);
+		if (pendingOutbound == null) {
+			broadcast(room, left, null, workPlan);
+		}
+		else {
+			appendBroadcast(room, left, null, pendingOutbound);
+		}
 	}
 
 	private void broadcast(
@@ -990,9 +1029,19 @@ public class SignalingService implements SmartLifecycle {
 			TextMessage message,
 			String excludedPeerId,
 			WorkPlan workPlan) {
+		ArrayDeque<PendingOutbound> pendingOutbound = new ArrayDeque<>();
+		appendBroadcast(room, message, excludedPeerId, pendingOutbound);
+		enqueueAllLocked(pendingOutbound, workPlan);
+	}
+
+	private static void appendBroadcast(
+			Map<String, Peer> room,
+			WebSocketMessage<?> message,
+			String excludedPeerId,
+			ArrayDeque<PendingOutbound> pendingOutbound) {
 		for (Peer target : List.copyOf(room.values())) {
 			if (!target.peerId.equals(excludedPeerId)) {
-				enqueue(target, message, workPlan);
+				pendingOutbound.addLast(new PendingOutbound(target, message));
 			}
 		}
 	}
@@ -1011,7 +1060,40 @@ public class SignalingService implements SmartLifecycle {
 			Peer peer,
 			WebSocketMessage<?> message,
 			WorkPlan workPlan) {
-		if (!peer.connected || closeForExpiredAuthorizationLocked(peer, workPlan)) {
+		PendingOutbound outbound = new PendingOutbound(peer, message);
+		ArrayDeque<PendingOutbound> pendingOutbound = new ArrayDeque<>();
+		pendingOutbound.addLast(outbound);
+		enqueueAllLocked(pendingOutbound, workPlan);
+		return outbound.accepted && peer.connected;
+	}
+
+	private void enqueueAllLocked(
+			ArrayDeque<PendingOutbound> pendingOutbound,
+			WorkPlan workPlan) {
+		// Pressure-induced departure frames are appended behind the triggering batch. Keeping
+		// this loop breadth-first prevents recursive eviction and preserves causal event order.
+		while (!pendingOutbound.isEmpty()) {
+			PendingOutbound outbound = pendingOutbound.removeFirst();
+			outbound.accepted = enqueueOneLocked(
+					outbound.peer,
+					outbound.message,
+					workPlan,
+					pendingOutbound);
+		}
+	}
+
+	private boolean enqueueOneLocked(
+			Peer peer,
+			WebSocketMessage<?> message,
+			WorkPlan workPlan,
+			ArrayDeque<PendingOutbound> pendingOutbound) {
+		if (!peer.connected
+				|| closeForExpiredAuthorizationLocked(
+						peer,
+						clock.millis(),
+						monotonicTicker.readNanos(),
+						workPlan,
+						pendingOutbound)) {
 			return false;
 		}
 
@@ -1020,22 +1102,32 @@ public class SignalingService implements SmartLifecycle {
 				|| messageBytes > maxOutboundQueueBytes - peer.outboundBytes;
 		if (peerOverflow) {
 			metrics.recordQueueOverflow();
-			disconnectAndCloseLocked(peer, OUTBOUND_QUEUE_OVERFLOW, workPlan);
+			disconnectAndCloseLocked(
+					peer,
+					OUTBOUND_QUEUE_OVERFLOW,
+					workPlan,
+					pendingOutbound);
 			return false;
 		}
 		if (messageBytes > maxOutboundQueueBytesGlobal - globalOutboundBytes) {
 			metrics.recordQueueOverflow();
 			metrics.recordGlobalQueueOverflow();
-			Peer victim;
-			while (messageBytes > maxOutboundQueueBytesGlobal - globalOutboundBytes
-					&& (victim = largestReleasableOutboundPeerLocked()) != null) {
-				disconnectAndCloseLocked(victim, OUTBOUND_QUEUE_OVERFLOW, workPlan);
+			for (Peer victim : globalPressureVictimsLocked(messageBytes)) {
+				disconnectAndCloseLocked(
+						victim,
+						OUTBOUND_QUEUE_OVERFLOW,
+						workPlan,
+						pendingOutbound);
 				if (!peer.connected) {
 					return false;
 				}
 			}
 			if (messageBytes > maxOutboundQueueBytesGlobal - globalOutboundBytes) {
-				disconnectAndCloseLocked(peer, OUTBOUND_QUEUE_OVERFLOW, workPlan);
+				disconnectAndCloseLocked(
+						peer,
+						OUTBOUND_QUEUE_OVERFLOW,
+						workPlan,
+						pendingOutbound);
 				return false;
 			}
 		}
@@ -1119,7 +1211,7 @@ public class SignalingService implements SmartLifecycle {
 				if (frame.message() instanceof PingMessage
 						&& peer.heartbeatState == HeartbeatState.PING_QUEUED) {
 					peer.heartbeatState = HeartbeatState.AWAITING_PONG;
-					peer.pingSentAtMillis = clock.millis();
+					peer.pingSentAtNanos = monotonicTicker.readNanos();
 				}
 			}
 
@@ -1284,13 +1376,13 @@ public class SignalingService implements SmartLifecycle {
 		private boolean connected = true;
 		private boolean draining;
 		private HeartbeatState heartbeatState = HeartbeatState.READY;
-		private long pingQueuedAtMillis = Long.MIN_VALUE;
-		private long pingSentAtMillis = Long.MIN_VALUE;
+		private long pingQueuedAtNanos = UNSET_NANOS;
+		private long pingSentAtNanos = UNSET_NANOS;
 		private byte[] expectedPongPayload;
 		private String roomId;
 		private String displayName;
 		private ParticipationGrant.Role role;
-		private long unjoinedSinceMillis;
+		private long unjoinedSinceNanos;
 		private final UsageWindow inboundWindow = new UsageWindow();
 		private final ConnectionAdmissionPolicy.Reservation reservation;
 		private final RoomAccess roomAccess;
@@ -1302,7 +1394,7 @@ public class SignalingService implements SmartLifecycle {
 		private Peer(
 				String peerId,
 				WebSocketSession session,
-				long connectedAtMillis,
+				long connectedAtNanos,
 				long connectionSequence,
 				ConnectionAdmissionPolicy.Reservation reservation,
 				RoomAccess roomAccess,
@@ -1313,7 +1405,7 @@ public class SignalingService implements SmartLifecycle {
 			this.peerId = peerId;
 			this.session = session;
 			this.connectionSequence = connectionSequence;
-			this.unjoinedSinceMillis = connectedAtMillis;
+			this.unjoinedSinceNanos = connectedAtNanos;
 			this.reservation = reservation;
 			this.roomAccess = roomAccess;
 			this.accessLease = accessLease;
@@ -1347,20 +1439,19 @@ public class SignalingService implements SmartLifecycle {
 
 	private static final class UsageWindow {
 
-		private long startedAtMillis = Long.MIN_VALUE;
+		private long startedAtNanos = UNSET_NANOS;
 		private int frameCount;
 		private long payloadBytes;
 
 		private WindowDecision tryAcquire(
-				long nowMillis,
-				long windowMillis,
+				long nowNanos,
+				long windowNanos,
 				int maximumFrames,
 				long maximumBytes,
 				int nextPayloadBytes) {
-			if (startedAtMillis == Long.MIN_VALUE
-					|| (nowMillis >= startedAtMillis
-							&& nowMillis - startedAtMillis >= windowMillis)) {
-				startedAtMillis = nowMillis;
+			if (startedAtNanos == UNSET_NANOS
+					|| elapsedAtLeast(nowNanos, startedAtNanos, windowNanos)) {
+				startedAtNanos = nowNanos;
 				frameCount = 0;
 				payloadBytes = 0;
 			}
@@ -1377,14 +1468,13 @@ public class SignalingService implements SmartLifecycle {
 			return WindowDecision.ACCEPTED;
 		}
 
-		private boolean isExpired(long nowMillis, long windowMillis) {
-			return startedAtMillis == Long.MIN_VALUE
-					|| (nowMillis >= startedAtMillis
-							&& nowMillis - startedAtMillis >= windowMillis);
+		private boolean isExpired(long nowNanos, long windowNanos) {
+			return startedAtNanos == UNSET_NANOS
+					|| elapsedAtLeast(nowNanos, startedAtNanos, windowNanos);
 		}
 
 		private void reset() {
-			startedAtMillis = Long.MIN_VALUE;
+			startedAtNanos = UNSET_NANOS;
 			frameCount = 0;
 			payloadBytes = 0;
 		}
@@ -1392,6 +1482,14 @@ public class SignalingService implements SmartLifecycle {
 
 	private static int payloadSizeBytes(WebSocketMessage<?> message) {
 		return message.getPayloadLength();
+	}
+
+	private static boolean elapsedAtLeast(
+			long nowNanos,
+			long startedAtNanos,
+			long durationNanos) {
+		return startedAtNanos != UNSET_NANOS
+				&& nowNanos - startedAtNanos >= durationNanos;
 	}
 
 	private static byte[] heartbeatChallenge() {
@@ -1476,24 +1574,33 @@ public class SignalingService implements SmartLifecycle {
 		metrics.updateOutboundQueuedBytes(globalOutboundBytes);
 	}
 
-	private Peer largestReleasableOutboundPeerLocked() {
-		Peer victim = null;
-		long largestQueuedBytes = 0;
-		long largestTotalBytes = 0;
-		for (Peer candidate : connectedPeers.values()) {
-			long queuedBytes = candidate.outboundBytes - candidate.inFlightBytes;
-			if (queuedBytes <= 0) {
-				continue;
-			}
-			if (queuedBytes > largestQueuedBytes
-					|| (queuedBytes == largestQueuedBytes
-							&& candidate.outboundBytes > largestTotalBytes)) {
-				victim = candidate;
-				largestQueuedBytes = queuedBytes;
-				largestTotalBytes = candidate.outboundBytes;
+	private List<Peer> globalPressureVictimsLocked(int messageBytes) {
+		long bytesToRelease = messageBytes
+				- (maxOutboundQueueBytesGlobal - globalOutboundBytes);
+		// connectionSequence makes otherwise equal queue-pressure decisions repeatable.
+		List<Peer> candidates = connectedPeers.values().stream()
+				.filter(candidate -> releasableOutboundBytes(candidate) > 0)
+				.sorted(Comparator
+						.<Peer>comparingLong(this::releasableOutboundBytes)
+						.reversed()
+						.thenComparing(
+								Comparator.comparingLong((Peer peer) -> peer.outboundBytes)
+										.reversed())
+						.thenComparingLong(peer -> peer.connectionSequence))
+				.toList();
+		List<Peer> victims = new ArrayList<>();
+		for (Peer candidate : candidates) {
+			victims.add(candidate);
+			bytesToRelease -= releasableOutboundBytes(candidate);
+			if (bytesToRelease <= 0) {
+				break;
 			}
 		}
-		return victim;
+		return victims;
+	}
+
+	private long releasableOutboundBytes(Peer peer) {
+		return peer.outboundBytes - peer.inFlightBytes;
 	}
 
 	private static final class WorkPlan {
@@ -1521,6 +1628,18 @@ public class SignalingService implements SmartLifecycle {
 
 		private CloseStatus terminalStatus;
 		private boolean closeInProgress;
+	}
+
+	private static final class PendingOutbound {
+
+		private final Peer peer;
+		private final WebSocketMessage<?> message;
+		private boolean accepted;
+
+		private PendingOutbound(Peer peer, WebSocketMessage<?> message) {
+			this.peer = peer;
+			this.message = message;
+		}
 	}
 
 	private record CloseAction(
