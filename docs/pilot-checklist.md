@@ -5,11 +5,19 @@ owner, a date, and a passing result. Automated browser media stubs are useful
 for regression testing, but they do not replace the real-device checks in this
 document.
 
-This checklist validates the tracked standalone Compose and its shared Basic
-Auth boundary. `compose.yml` is intentionally fixed to
-`ROUND_AUTH_MODE=standalone`; do not mark these checks as evidence for a BATON
-deployment. A BATON-backed study must also pass the separate integration gate
-at the end of this document.
+This checklist validates the tracked standalone Compose. `compose.yml` is
+intentionally fixed to `ROUND_AUTH_MODE=standalone`; do not mark these checks as
+evidence for a BATON deployment. A BATON-backed study must also pass the
+separate integration gate at the end of this document.
+
+Record which standalone edge policy is under test. The Linux production
+`compose.yml` keeps the static app, `/signal`, and `/api/turn-credentials` behind
+one shared Basic Auth boundary. The temporary macOS Docker Desktop override uses
+`Caddyfile.macos-pilot`: only the UI and static assets remain behind Basic Auth,
+while the two browser transport routes deliberately bypass it for mobile
+compatibility. Items explicitly labelled **Linux standalone** or **macOS
+pilot** apply only to that topology; never copy evidence from one policy to the
+other.
 
 ## Release candidate
 
@@ -29,17 +37,25 @@ at the end of this document.
 - [ ] HTTP redirects to HTTPS.
 - [ ] HTTP Basic Auth is never accepted over plaintext HTTP; the web app loads
       over HTTPS without mixed-content warnings.
-- [ ] Missing or incorrect shared credentials receive `401` for the static app,
-      `/signal`, and `/api/turn-credentials`, while `/healthz` remains public.
+- [ ] **Both topologies:** missing or incorrect shared credentials receive `401`
+      for the UI and static assets, while `/healthz` remains public.
+- [ ] **Linux standalone only:** missing or incorrect shared credentials also
+      receive `401` for `/signal` and `/api/turn-credentials`.
+- [ ] **macOS pilot only:** `/signal` and `/api/turn-credentials` are confirmed
+      to bypass Basic Auth by policy. Do not require or record `401` from these
+      routes. Record acceptance of this short-lived exposure and confirm that
+      the application still rejects foreign, missing, wildcard, and non-HTTPS
+      Origins.
 - [ ] More than 96 credential-bearing requests from one client network within
       five minutes receive `429`, while headerless challenges and `/healthz` do
       not consume that expensive-authentication budget.
 - [ ] On the actual pilot host with at least two logical CPUs, send 96
       simultaneous, syntactically valid Basic requests whose usernames are all
       distinct and confirmed absent from the Caddy user map, and whose passwords
-      are also distinct. This guarantees the cost-14 unknown-user fake-hash path
-      instead of the cheaper configured-user cost-12 path. Run the burst while
-      six physical participants maintain the representative peak session,
+      are also distinct, targeting a UI/static path that requires Basic Auth in
+      the selected topology. This guarantees the cost-14 unknown-user fake-hash
+      path instead of the cheaper configured-user cost-12 path. Run the burst
+      while six physical participants maintain the representative peak session,
       preferably with the relay-only image so TURN and signaling carry their
       pilot peak together. Record edge and host CPU, memory, container restarts,
       direct signaling `/healthz`, public `/healthz`, and a correctly
@@ -51,9 +67,15 @@ at the end of this document.
       Record that the attacking network remains intentionally limited for the
       remainder of its five-minute window. Accept this standalone-pilot residual
       risk explicitly before exposure.
-- [ ] Authenticated `wss://<domain>/signal` accepts the exact production Origin,
-      and the authenticated TURN credential POST succeeds.
-- [ ] A foreign, missing, wildcard, or non-HTTPS Origin is rejected.
+- [ ] **Linux standalone only:** Basic-authenticated
+      `wss://<domain>/signal` accepts the exact production Origin, and the
+      Basic-authenticated TURN credential POST succeeds.
+- [ ] **macOS pilot only:** `wss://<domain>/signal` and the TURN credential POST
+      accept the exact production Origin without depending on an Authorization
+      header. Supplying the shared credential from a probe does not prove that
+      these bypassed routes authenticated it.
+- [ ] A foreign, missing, wildcard, or non-HTTPS Origin is rejected at the
+      signaling application boundary.
 - [ ] The signaling container port is not reachable directly from the public
       internet.
 - [ ] Only the bcrypt cost-12 password hash is stored in the deployment env; the
@@ -61,7 +83,9 @@ at the end of this document.
       logs, and `Authorization` is removed before proxying to signaling.
 - [ ] The shared credential was delivered out of band, its leak-and-rotation
       procedure was rehearsed, and the team accepts that it is temporary until
-      BATON identity and study-membership authorization replace it.
+      BATON identity and study-membership authorization replace it. The macOS
+      pilot also records that this credential protects only UI/static delivery,
+      not its two transport routes.
 - [ ] TURN shared secrets are absent from Git, image history, browser bundles,
       access logs, and application logs.
 - [ ] Visiting an invite path leaves no room code in Caddy access logs, while
@@ -105,6 +129,10 @@ should use home Wi-Fi and the other cellular tethering or another ISP.
 - [ ] The user can retry device setup or intentionally join without media.
 - [ ] Permission, missing-device, and busy-device errors give a Korean next
       action instead of a raw browser exception.
+- [ ] Acoustic echo is tested with only one active microphone/speaker pair per
+      physical space, or with headphones. Browser echo cancellation being
+      enabled is not accepted as proof: mute or disconnect a second nearby
+      device and confirm the audible echo disappears.
 
 ## Host moderation behavior
 
@@ -170,9 +198,15 @@ errors.
 
 - [ ] `docker compose up -d --wait --wait-timeout 120` passes the local
       signaling, edge, and TURN-listener startup gates.
-- [ ] The external authenticated TURN probe passes UDP, TCP, and TLS from a
-      network outside the TURN host and its NAT using monitor credentials from
-      a secret store.
+- [ ] The external TURN probe passes UDP, TCP, and TLS from a network outside
+      the TURN host and its NAT using monitor inputs from a secret store and a
+      freshly issued short-lived TURN credential.
+- [ ] **Linux standalone only:** the probe's HTTPS credential fetch is recorded
+      as evidence that the shared Basic Auth gate accepted the monitor account.
+- [ ] **macOS pilot only:** the same probe is recorded as exact-Origin credential
+      issuance plus coturn authentication and relay evidence—not as shared Basic
+      Auth evidence. The static UI `401` and transport Origin rejection are
+      verified separately.
 - [ ] Default-branch rules require pull-request and code-owner review for the
       external TURN workflow, target properties, probe, TLS verification and
       resolver scripts, and workflow contract validator/tests; self-review and

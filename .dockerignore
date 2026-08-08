@@ -19,6 +19,8 @@ output
 **/.env
 **/.env.*
 ops/production.env
+ops/macos-pilot.env
+ops/macos-pilot.credentials
 ops/certs
 **/*.pem
 **/*.key

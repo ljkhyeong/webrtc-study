@@ -294,9 +294,41 @@ its relay range explicitly on Docker Desktop, gives coturn a fixed bridge
 address, and binds Caddy to alternate Mac host ports so another local service
 can keep port 80.
 
+The override uses the Compose-specific `!override` and `!reset` merge tags, so
+Docker Compose **2.24.4 or later** is required. The deployment validator rejects
+an older or unparseable version before it renders the override. Docker documents
+the version requirement in its
+[Compose merge reference](https://docs.docker.com/reference/compose-file/merge/#replace-value).
+
 ```bash
+docker compose version --short
 cp ops/macos-pilot.env.example ops/macos-pilot.env
 chmod 0600 ops/macos-pilot.env
+docker run --rm -it caddy:2.11.4-alpine \
+  caddy hash-password --algorithm bcrypt --bcrypt-cost 12
+```
+
+The Caddy command prompts without echoing the plaintext. Paste the complete
+`$2a$12$...` or `$2b$12$...` output between the single quotes in
+`ROUND_ACCESS_PASSWORD_HASH=''`, then fill every other blank value. Before
+rendering Compose, run this prefix check. It returns success only when exactly
+one assignment has a single-quoted cost-12 bcrypt prefix, and it never prints
+the hash or plaintext:
+
+```bash
+if awk -F "'" '
+  /^ROUND_ACCESS_PASSWORD_HASH=/ {
+    seen += 1
+    if (NF == 3 && $2 ~ /^\$2[ab]\$12\$/) valid += 1
+  }
+  END { exit !(seen == 1 && valid == 1) }
+' ops/macos-pilot.env; then
+  printf 'macOS pilot bcrypt cost is 12\n'
+else
+  printf 'macOS pilot bcrypt hash is missing, malformed, or not cost 12\n' >&2
+  exit 1
+fi
+
 docker compose \
   -f compose.yml \
   -f compose.macos-pilot.yml \
@@ -308,14 +340,14 @@ Before starting the stack, reserve the Mac's LAN address in DHCP and configure
 the router with these mappings. The left side is the public port and the right
 side is the Mac destination:
 
-| Public port     | Protocol | Mac destination |
-| --------------- | -------- | --------------- |
-| `80`            | TCP      | `ROUND_HTTP_BIND_PORT` (default `8080`)  |
-| `443`           | TCP      | `ROUND_HTTPS_BIND_PORT` (default `8443`) |
-| `443`           | UDP      | `ROUND_HTTPS_BIND_PORT` (default `8443`) |
-| `3478`          | TCP/UDP  | `3478`          |
-| `5349`          | TCP/UDP  | `5349`          |
-| `49160-49259`   | UDP      | same range      |
+| Public port   | Protocol | Mac destination                          |
+| ------------- | -------- | ---------------------------------------- |
+| `80`          | TCP      | `ROUND_HTTP_BIND_PORT` (default `8080`)  |
+| `443`         | TCP      | `ROUND_HTTPS_BIND_PORT` (default `8443`) |
+| `443`         | UDP      | `ROUND_HTTPS_BIND_PORT` (default `8443`) |
+| `3478`        | TCP/UDP  | `3478`                                   |
+| `5349`        | TCP/UDP  | `5349`                                   |
+| `49160-49259` | UDP      | same range                               |
 
 The HTTP and HTTPS translations still deliver the public ACME ports to Caddy's
 container ports 80 and 443. `turn.b4ton.com` must remain DNS-only at Cloudflare,
@@ -335,12 +367,93 @@ limits, and TURN issuance quotas. This is a short-lived compatibility tradeoff:
 non-browser clients can forge an Origin header, so do not copy the exception to
 the Linux production Caddyfile or treat it as user authentication.
 
+For the same reason, a TURN probe that happens to send the shared Basic Auth
+credential through this macOS edge does **not** prove that the credential was
+checked for `/api/turn-credentials`; that route deliberately bypasses the edge
+gate. Such a probe proves only that an exact-origin-shaped request obtained a
+short-lived credential and that coturn authenticated that credential while
+relaying traffic. Record the static UI's `401`, the transport Origin rejection,
+and the TURN relay result as three separate pieces of evidence.
+
 If either default host port is already occupied, set a free value in
 `ops/macos-pilot.env` and change the router destination to the same value. Do
 not stop an unrelated local service merely to preserve the example port.
 
 The included coturn configuration is IPv4-only. Do not publish an `AAAA` record
 for the TURN hostname without adding and testing an IPv6 relay configuration.
+
+#### Build, start, inspect, and stop the macOS pilot
+
+Run every Compose operation with the same base file, macOS override, and env
+file. Omitting any one of them changes the topology or project identity.
+
+Build the three local images from the current checkout, then start the stack and
+wait for every Compose health check:
+
+```bash
+docker compose \
+  -f compose.yml \
+  -f compose.macos-pilot.yml \
+  --env-file ops/macos-pilot.env \
+  build --pull
+
+docker compose \
+  -f compose.yml \
+  -f compose.macos-pilot.yml \
+  --env-file ops/macos-pilot.env \
+  up -d --wait --wait-timeout 120
+```
+
+Inspect container state and both the internal signaling health endpoint and the
+public HTTPS edge. Replace the example origin if the env uses another domain:
+
+```bash
+docker compose \
+  -f compose.yml \
+  -f compose.macos-pilot.yml \
+  --env-file ops/macos-pilot.env \
+  ps
+
+docker compose \
+  -f compose.yml \
+  -f compose.macos-pilot.yml \
+  --env-file ops/macos-pilot.env \
+  exec -T signaling wget -q -T 2 -O - http://127.0.0.1:8787/healthz
+
+ROUND_PILOT_ORIGIN=https://round.b4ton.com
+curl --fail --silent --show-error "$ROUND_PILOT_ORIGIN/healthz"
+```
+
+Show a bounded diagnostic snapshot, or follow logs during the study. Pressing
+Ctrl-C exits only the `logs --follow` command; it does not stop the containers.
+
+```bash
+docker compose \
+  -f compose.yml \
+  -f compose.macos-pilot.yml \
+  --env-file ops/macos-pilot.env \
+  logs --tail=200 edge signaling turn
+
+docker compose \
+  -f compose.yml \
+  -f compose.macos-pilot.yml \
+  --env-file ops/macos-pilot.env \
+  logs --follow --tail=100 edge signaling turn
+```
+
+After the study, stop and remove the pilot containers and network:
+
+```bash
+docker compose \
+  -f compose.yml \
+  -f compose.macos-pilot.yml \
+  --env-file ops/macos-pilot.env \
+  down --remove-orphans
+```
+
+This deliberately preserves the `caddy_data` and `caddy_config` named volumes,
+including Caddy's ACME state. Do not add `--volumes` unless permanent certificate
+state removal is explicitly intended.
 
 ### Firewall
 

@@ -49,7 +49,45 @@ require_command docker
 require_command jq
 require_command node
 require_command openssl
-docker compose version >/dev/null
+
+minimum_compose_version=2.24.4
+compose_version=$(docker compose version --short 2>/dev/null) || {
+  printf 'deployment validation: Docker Compose is unavailable\n' >&2
+  exit 1
+}
+compose_version=${compose_version#v}
+if [[ ! "$compose_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+  printf 'deployment validation: could not parse Docker Compose version: %s\n' \
+    "$compose_version" >&2
+  exit 1
+fi
+
+compose_major=${BASH_REMATCH[1]}
+compose_minor=${BASH_REMATCH[2]}
+compose_patch=${BASH_REMATCH[3]}
+IFS=. read -r minimum_compose_major minimum_compose_minor minimum_compose_patch \
+  <<<"$minimum_compose_version"
+
+if (( compose_major < minimum_compose_major \
+  || (compose_major == minimum_compose_major && compose_minor < minimum_compose_minor) \
+  || (compose_major == minimum_compose_major \
+    && compose_minor == minimum_compose_minor \
+    && compose_patch < minimum_compose_patch) )); then
+  printf \
+    'deployment validation: Docker Compose %s or later is required for !override/!reset (found %s)\n' \
+    "$minimum_compose_version" "$compose_version" >&2
+  exit 1
+fi
+
+printf 'Verifying local pilot secrets are excluded from the Docker build context...\n'
+grep -Fxq 'ops/macos-pilot.env' .dockerignore || {
+  printf 'deployment validation: ops/macos-pilot.env must be listed in .dockerignore\n' >&2
+  exit 1
+}
+grep -Fxq 'ops/macos-pilot.credentials' .dockerignore || {
+  printf 'deployment validation: ops/macos-pilot.credentials must be listed in .dockerignore\n' >&2
+  exit 1
+}
 
 fixture_dir=$(mktemp -d)
 baton_web_container=
