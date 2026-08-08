@@ -37,11 +37,16 @@ final class BatonParticipationTokenValidator implements OAuth2TokenValidator<Jwt
 	public OAuth2TokenValidatorResult validate(Jwt token) {
 		ParticipationGrant grant = ParticipationGrantResolver.resolve(token).orElse(null);
 		if (grant == null
+				|| isExpired(grant)
 				|| issuedTooFarInTheFuture(grant)
 				|| exceedsMaximumLifetime(grant)) {
 			return OAuth2TokenValidatorResult.failure(INVALID_GRANT);
 		}
 		return OAuth2TokenValidatorResult.success();
+	}
+
+	private boolean isExpired(ParticipationGrant grant) {
+		return !grant.expiresAt().isAfter(clock.instant());
 	}
 
 	private boolean issuedTooFarInTheFuture(ParticipationGrant grant) {

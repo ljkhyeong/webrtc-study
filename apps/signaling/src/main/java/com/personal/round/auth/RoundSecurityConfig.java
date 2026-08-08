@@ -8,16 +8,20 @@ import static org.springframework.security.config.Customizer.withDefaults;
 import static org.springframework.security.config.http.SessionCreationPolicy.STATELESS;
 
 import jakarta.servlet.DispatcherType;
+import java.time.Clock;
+import java.time.Duration;
+import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtAudienceValidator;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
@@ -104,15 +108,20 @@ public class RoundSecurityConfig {
 
 	@Bean
 	@ConditionalOnProperty(name = "round.auth.mode", havingValue = "baton")
-	JwtDecoder batonJwtDecoder(RoundAuthProperties properties) {
+	JwtDecoder batonJwtDecoder(RoundAuthProperties properties, Clock clock) {
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.jwkSetUri())
 				.jwsAlgorithm(SignatureAlgorithm.RS256)
 				.build();
-		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-				JwtValidators.createDefaultWithIssuer(properties.issuer()),
+		JwtTimestampValidator timestampValidator =
+				new JwtTimestampValidator(Duration.ZERO);
+		timestampValidator.setClock(clock);
+		decoder.setJwtValidator(JwtValidators.createDefaultWithValidators(List.of(
+				timestampValidator,
+				new JwtIssuerValidator(properties.issuer()),
 				new JwtAudienceValidator(properties.audience()),
 				new BatonParticipationTokenValidator(
-						properties.maxGrantLifetime())));
+						properties.maxGrantLifetime(),
+						clock))));
 		return decoder;
 	}
 

@@ -17,8 +17,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -33,6 +35,7 @@ class RoundJwtDecoderIntegrationTest {
 
 	private static final String KEY_ID = "round-test-key";
 	private static final String ROOM_ID = "abcd-efgh-jkmp";
+	private static final Instant NOW = Instant.parse("2030-01-01T00:00:00Z");
 
 	private HttpServer jwkServer;
 	private KeyPair trustedKeyPair;
@@ -71,7 +74,9 @@ class RoundJwtDecoderIntegrationTest {
 				baseUrl + "/jwks",
 				null,
 				Duration.ofMinutes(5));
-		decoder = new RoundSecurityConfig().batonJwtDecoder(properties);
+		decoder = new RoundSecurityConfig().batonJwtDecoder(
+				properties,
+				Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 
 	@AfterEach
@@ -90,6 +95,36 @@ class RoundJwtDecoderIntegrationTest {
 		assertThat(jwt.getIssuer().toString()).isEqualTo(issuer);
 		assertThat(jwt.getAudience()).containsExactly("round");
 		assertThat(jwt.getClaimAsString("room_id")).isEqualTo(ROOM_ID);
+	}
+
+	@Test
+	void acceptsNotBeforeAtTheExactSharedClockBoundary() throws Exception {
+		Jwt jwt = decoder.decode(token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				claims -> claims.notBeforeTime(Date.from(NOW))).serialize());
+
+		assertThat(jwt.getNotBefore()).isEqualTo(NOW);
+	}
+
+	@Test
+	void rejectsAGrantThatExpiredOneSecondBeforeTheSharedClock() throws Exception {
+		assertInvalid(token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				claims -> claims
+						.issueTime(Date.from(NOW.minusSeconds(120)))
+						.expirationTime(Date.from(NOW.minusSeconds(1)))));
+	}
+
+	@Test
+	void rejectsAGrantAtTheExactSharedClockExpiryBoundary() throws Exception {
+		assertInvalid(token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				claims -> claims
+						.issueTime(Date.from(NOW.minusSeconds(120)))
+						.expirationTime(Date.from(NOW))));
 	}
 
 	@Test
@@ -118,19 +153,19 @@ class RoundJwtDecoderIntegrationTest {
 				trustedKeyPair,
 				JWSAlgorithm.RS256,
 				claims -> claims
-						.issueTime(Date.from(Instant.now().minusSeconds(300)))
-						.expirationTime(Date.from(Instant.now().minusSeconds(120)))));
+						.issueTime(Date.from(NOW.minusSeconds(300)))
+						.expirationTime(Date.from(NOW.minusSeconds(120)))));
 		assertInvalid(token(
 				trustedKeyPair,
 				JWSAlgorithm.RS256,
 				claims -> claims
-						.issueTime(Date.from(Instant.now().plusSeconds(120)))
-						.expirationTime(Date.from(Instant.now().plusSeconds(240)))));
+						.issueTime(Date.from(NOW.plusSeconds(120)))
+						.expirationTime(Date.from(NOW.plusSeconds(240)))));
 		assertInvalid(token(
 				trustedKeyPair,
 				JWSAlgorithm.RS256,
 				claims -> {
-					Instant issuedAt = Instant.now();
+					Instant issuedAt = NOW;
 					claims.issueTime(Date.from(issuedAt))
 							.expirationTime(Date.from(issuedAt.plusSeconds(301)));
 				}));
@@ -146,13 +181,12 @@ class RoundJwtDecoderIntegrationTest {
 			JWSAlgorithm algorithm,
 			Consumer<JWTClaimsSet.Builder> customizer)
 			throws Exception {
-		Instant now = Instant.now();
 		JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
 				.issuer(issuer)
 				.subject("member-42")
 				.audience("round")
-				.issueTime(Date.from(now.minusSeconds(10)))
-				.expirationTime(Date.from(now.plusSeconds(240)))
+				.issueTime(Date.from(NOW.minusSeconds(10)))
+				.expirationTime(Date.from(NOW.plusSeconds(240)))
 				.jwtID(UUID.randomUUID().toString())
 				.claim("study_id", "study-7")
 				.claim("room_id", ROOM_ID)

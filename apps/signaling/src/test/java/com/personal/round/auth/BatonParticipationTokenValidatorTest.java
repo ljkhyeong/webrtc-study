@@ -32,6 +32,22 @@ class BatonParticipationTokenValidatorTest {
 	}
 
 	@Test
+	void rejectsGrantsAtOrBeforeTheExactExpiryBoundary() {
+		assertThat(validator.validate(jwtWithLifetime(
+				ISSUED_AT.minusSeconds(120),
+				ISSUED_AT.minusSeconds(1))).hasErrors())
+				.isTrue();
+		assertThat(validator.validate(jwtWithLifetime(
+				ISSUED_AT.minusSeconds(120),
+				ISSUED_AT)).hasErrors())
+				.isTrue();
+		assertThat(validator.validate(jwtWithLifetime(
+				ISSUED_AT.minusSeconds(120),
+				ISSUED_AT.plusSeconds(1))).hasErrors())
+				.isFalse();
+	}
+
+	@Test
 	void rejectsFutureIssueTimesAndGrantLifetimesAboveTheConfiguredMaximum() {
 		assertThat(validator.validate(jwtWithLifetime(
 				ISSUED_AT.plusSeconds(61),
