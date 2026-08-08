@@ -92,6 +92,11 @@ cookie path is scoped to `/round/rooms/{roomId}` so grants for multiple rooms do
 required claims are `iss`, `aud=round`, `sub`, `exp`, `iat`, `jti`, `room_id`, `study_id`,
 and `role=host|participant`.
 
+`sub` is the canonical, non-reassigned BATON `Account.id` UUID. It is never a Google OIDC
+subject, Naver profile ID, email address, display name, or shared workspace key. Linking another
+login identity to an existing BATON account therefore preserves the same ROUND participant and
+TURN-quota identity without exposing provider or profile claims to ROUND.
+
 The browser and internal routing contracts are:
 
 | Purpose                     | Public same-origin path                             | Processing boundary                    |

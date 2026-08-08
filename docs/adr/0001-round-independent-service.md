@@ -99,7 +99,7 @@ ROUND에는 개인키를 배포하지 않으며, JWK Set cache가 갱신될 수 
 | ---------- | --------------------------------- |
 | `iss`      | 신뢰하도록 설정한 BATON issuer    |
 | `aud`      | 고정값 `round`                    |
-| `sub`      | BATON 사용자 식별자               |
+| `sub`      | 불변 canonical BATON `Account.id` |
 | `exp`      | 참여권 만료 시각                  |
 | `iat`      | 참여권 발급 시각                  |
 | `jti`      | 참여권 고유 식별자                |
@@ -114,6 +114,11 @@ skew를 허용하지 않는다. 60초 허용치는 미래 `iat`에만 적용하�
 다르면 WebSocket upgrade 및 TURN credential 요청을 거부한다. WebSocket 연결 후에는
 검증된 참여권 정보를 세션에 보존하고 `room.join`의 방 식별자도 경로 및 `room_id`와
 일치할 때만 입장을 허용한다.
+
+`sub`는 로그인 공급자와 무관한 BATON 내부 계정 UUID다. Google OIDC `sub`, Naver 프로필
+`response.id`, 이메일 주소와 표시 이름은 BATON identity의 입력일 수 있지만 ROUND 참여자
+식별자가 아니다. 여러 로그인 수단을 한 계정에 명시적으로 연결한 뒤에도 같은
+`Account.id`를 발급해야 `(room_id, sub)` 재연결·TURN quota 경계가 유지된다.
 
 검증된 참여권은 WebSocket 연결 당시의 immutable active lease가 된다. ROUND는 연결 직후,
 inbound quota 차감 전, outbound enqueue 전, heartbeat와 1초 주기 sweep에서 이를 확인한다.

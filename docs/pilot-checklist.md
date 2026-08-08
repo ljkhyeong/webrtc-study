@@ -276,7 +276,9 @@ instance. Do not change the bundled standalone Compose to perform them.
 - [x] The local safety suite rejects unsafe/symlinked/forged state, Compose
       2.24.3, stale volumes/networks, ambient Compose overrides, and failed
       cleanup; SIGINT/SIGTERM return 130/143.
-- [ ] This local evidence does not cover real Google OIDC, public DNS/ACME,
+- [ ] This local evidence does not cover real Google OIDC, Naver OAuth 2.0,
+      local verified-email login, identity linking that preserves one BATON
+      `Account.id`, public DNS/ACME,
       physical media devices, public TURN/NAT/firewall behavior, TCP/TLS relay
       fallback, external networks, key rotation, two full grant lifetimes,
       long-session stability, or six-person load.
@@ -284,8 +286,13 @@ instance. Do not change the bundled standalone Compose to perform them.
 The unchecked production gate below remains authoritative.
 
 - [ ] BATON has a real authenticated user identity and current study-membership
-      authorization. A shared access key, display name, or other client claim is
-      not used as `sub`; without this boundary the BATON gate cannot pass.
+      authorization. The grant `sub` is the canonical, non-reassigned BATON
+      `Account.id`; Google OIDC `sub`, Naver profile ID, email, a shared access
+      key, display name, or other client claim is not used as `sub`.
+- [ ] Real Google, Naver, and verified local-email accounts each complete grant
+      refresh, TURN issuance, and WSS entry. Explicitly linking those identities
+      to one BATON account preserves the same JWT `sub`; changing an email or
+      linked login provider does not create a new ROUND participant.
 - [ ] The ROUND deployment uses `ROUND_AUTH_MODE=baton`, the exact BATON
       issuer, `aud=round`, the production HTTPS JWK Set URI, a maximum grant
       lifetime of at most five minutes, and BATON's exact HTTPS origin. Removing

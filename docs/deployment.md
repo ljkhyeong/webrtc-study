@@ -29,8 +29,9 @@ The BATON integration branches now implement the authenticated identity,
 active study-membership, refresh, edge, and JWK boundaries described here and
 have passed the local production-like rehearsal below. That rehearsal is not a
 public production deployment approval. Continue deriving `sub` only from the
-verified BATON account; never derive it from a shared access key, client-supplied
-display name, or another self-asserted value.
+verified, canonical BATON `Account.id`; never derive it from Google OIDC `sub`,
+Naver profile ID, email, a shared access key, client-supplied display name, or
+another provider-specific or self-asserted value.
 
 The BATON-owned ROUND signaling manifest must configure all of these values:
 
@@ -264,7 +265,9 @@ the random TURN secret was absent from signaling/coturn argv, environment, and
 logs. The managed cleanup removed its containers, networks, volumes, keys, and
 fixture data only after verifying the Compose project was empty.
 
-This rehearsal does **not** prove real Google OIDC, public DNS or ACME, physical
+This rehearsal does **not** prove real Google OIDC, Naver OAuth 2.0, local
+verified-email login, identity linking that preserves one BATON `Account.id`,
+public DNS or ACME, physical
 camera/microphone devices, a public TURN address through NAT/firewalls,
 UDP-blocked TCP/TLS fallback, an external network, dual-key rotation, two full
 grant lifetimes, long-session stability, or six-person load. Keep the production

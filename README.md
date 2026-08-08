@@ -223,6 +223,8 @@ BATON의 Caddy 설정에서는 카메라·마이크·화면 캡처 `Permissions-
 본체에는 인증된 사용자 신원·스터디 멤버십 경계가 아직 없으므로, 실제 참여권 발급·갱신
 E2E는 완료된 것으로 보지 않습니다. ROUND의 Java 통합 테스트는 로컬 JWK endpoint와 실제
 `RS256` 참여권으로 TURN·WebSocket·방 경계를 검증하지만, 이는 BATON의 실사용 발급기와
-edge를 통과했다는 증거를 대신하지 않습니다. 공유 접근 키나 브라우저 display name으로
-`sub`를 만들어서는 안 됩니다. 전체 결정과 JWT claim 계약은
+edge를 통과했다는 증거를 대신하지 않습니다. `sub`는 Google OIDC `sub`, Naver 프로필
+ID, 이메일과 로그인 공급자 변경에 영향받지 않는 canonical BATON `Account.id`여야 합니다.
+공유 접근 키나 브라우저 display name으로 `sub`를 만들어서는 안 됩니다. 전체 결정과 JWT
+claim 계약은
 [ADR 0001](docs/adr/0001-round-independent-service.md)을 참고하세요.
