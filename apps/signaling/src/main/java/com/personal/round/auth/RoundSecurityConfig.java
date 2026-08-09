@@ -25,6 +25,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.JwtAudienceValidator;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -135,11 +136,11 @@ public class RoundSecurityConfig {
 		decoder.setJwtValidator(JwtValidators.createDefaultWithValidators(List.of(
 				timestampValidator,
 				new JwtIssuerValidator(properties.issuer()),
+				new JwtAudienceValidator(properties.audience()),
 				new JwtClaimValidator<Collection<String>>(
 						JwtClaimNames.AUD,
 						audiences -> audiences != null
-								&& audiences.size() == 1
-								&& audiences.contains(properties.audience())),
+								&& audiences.size() == 1),
 				new BatonParticipationTokenValidator(
 						properties.maxGrantLifetime(),
 						clock))));
