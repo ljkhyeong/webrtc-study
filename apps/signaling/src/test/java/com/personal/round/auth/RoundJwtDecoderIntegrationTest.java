@@ -34,6 +34,7 @@ import org.springframework.security.oauth2.jwt.JwtException;
 
 class RoundJwtDecoderIntegrationTest {
 
+	private static final String ACCOUNT_ID = "4c1e30a9-6d44-4f05-8f31-0f8a0f490042";
 	private static final String KEY_ID = "round-test-key";
 	private static final String ROOM_ID = "abcd-efgh-jkmp";
 	private static final Instant NOW = Instant.parse("2030-01-01T00:00:00Z");
@@ -94,8 +95,21 @@ class RoundJwtDecoderIntegrationTest {
 				}).serialize());
 
 		assertThat(jwt.getIssuer().toString()).isEqualTo(issuer);
+		assertThat(jwt.getSubject()).isEqualTo(ACCOUNT_ID);
 		assertThat(jwt.getAudience()).containsExactly("round");
 		assertThat(jwt.getClaimAsString("room_id")).isEqualTo(ROOM_ID);
+	}
+
+	@Test
+	void rejectsSubjectsThatAreNotCanonicalBatonAccountUuids() throws Exception {
+		assertInvalid(token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				claims -> claims.subject("member-42")));
+		assertInvalid(token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				claims -> claims.subject("1-1-1-1-1")));
 	}
 
 	@Test
@@ -237,7 +251,7 @@ class RoundJwtDecoderIntegrationTest {
 			throws Exception {
 		JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
 				.issuer(issuer)
-				.subject("member-42")
+				.subject(ACCOUNT_ID)
 				.audience("round")
 				.issueTime(Date.from(NOW.minusSeconds(10)))
 				.expirationTime(Date.from(NOW.plusSeconds(240)))

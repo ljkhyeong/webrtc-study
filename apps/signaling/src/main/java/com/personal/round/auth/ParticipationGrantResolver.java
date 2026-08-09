@@ -4,6 +4,7 @@ import com.personal.round.protocol.RoomIdFormat;
 import java.security.Principal;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
@@ -24,7 +25,7 @@ public final class ParticipationGrantResolver {
 
 	static Optional<ParticipationGrant> resolve(Jwt jwt) {
 		try {
-			String subject = boundedClaim(jwt.getSubject(), MAX_SUBJECT_LENGTH);
+			String subject = canonicalAccountId(jwt.getSubject());
 			String studyId = boundedClaim(jwt.getClaimAsString("study_id"), MAX_STUDY_ID_LENGTH);
 			String roomId = jwt.getClaimAsString("room_id");
 			String tokenId = boundedClaim(jwt.getId(), MAX_TOKEN_ID_LENGTH);
@@ -56,6 +57,15 @@ public final class ParticipationGrantResolver {
 		catch (IllegalArgumentException | ClassCastException exception) {
 			return Optional.empty();
 		}
+	}
+
+	private static String canonicalAccountId(String value) {
+		String subject = boundedClaim(value, MAX_SUBJECT_LENGTH);
+		UUID accountId = UUID.fromString(subject);
+		if (!accountId.toString().equals(subject)) {
+			throw new IllegalArgumentException("JWT subject is not a canonical Account UUID");
+		}
+		return subject;
 	}
 
 	private static String boundedClaim(String value, int maximumLength) {

@@ -32,6 +32,16 @@ class BatonParticipationTokenValidatorTest {
 	}
 
 	@Test
+	void rejectsSubjectsThatAreNotCanonicalBatonAccountUuids() {
+		assertThat(validator.validate(
+				jwt(claims -> claims.put("sub", "member-42"))).hasErrors())
+				.isTrue();
+		assertThat(validator.validate(
+				jwt(claims -> claims.put("sub", "1-1-1-1-1"))).hasErrors())
+				.isTrue();
+	}
+
+	@Test
 	void rejectsGrantsAtOrBeforeTheExactExpiryBoundary() {
 		assertThat(validator.validate(jwtWithLifetime(
 				ISSUED_AT.minusSeconds(120),

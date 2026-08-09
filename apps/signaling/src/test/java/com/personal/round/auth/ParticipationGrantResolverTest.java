@@ -1,5 +1,6 @@
 package com.personal.round.auth;
 
+import static com.personal.round.auth.ParticipationGrantTestFixtures.ACCOUNT_ID;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.EXPIRES_AT;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.ISSUED_AT;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.ROOM_ID;
@@ -22,7 +23,7 @@ class ParticipationGrantResolverTest {
 	void mapsAValidJwtAuthenticationToAnImmutableParticipationGrant() {
 		ParticipationGrant grant = resolver.resolve(authentication()).orElseThrow();
 
-		assertThat(grant.subject()).isEqualTo("member-42");
+		assertThat(grant.subject()).isEqualTo(ACCOUNT_ID);
 		assertThat(grant.studyId()).isEqualTo("study-7");
 		assertThat(grant.roomId()).isEqualTo(ROOM_ID);
 		assertThat(grant.role()).isEqualTo(ParticipationGrant.Role.PARTICIPANT);
@@ -91,7 +92,24 @@ class ParticipationGrantResolverTest {
 				jwt(claims -> claims.put("study_id", "s".repeat(257)))))
 				.isEmpty();
 		assertThat(ParticipationGrantResolver.resolve(
-				jwt(claims -> claims.put("sub", " member-42 "))))
+				jwt(claims -> claims.put("sub", " " + ACCOUNT_ID + " "))))
+				.isEmpty();
+	}
+
+	@Test
+	void rejectsNonUuidAndNonCanonicalUuidSubjects() {
+		assertThat(ParticipationGrantResolver.resolve(
+				jwt(claims -> claims.put("sub", "member-42"))))
+				.isEmpty();
+		assertThat(ParticipationGrantResolver.resolve(
+				jwt(claims -> claims.put("sub", "1-1-1-1-1"))))
+				.as("UUID.fromString accepts shortened groups, but BATON emits canonical UUIDs")
+				.isEmpty();
+		assertThat(ParticipationGrantResolver.resolve(
+				jwt(claims -> claims.put(
+						"sub",
+						ACCOUNT_ID.toUpperCase()))))
+				.as("canonical BATON account identifiers use UUID.toString form")
 				.isEmpty();
 	}
 
