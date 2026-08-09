@@ -74,6 +74,7 @@ import tools.jackson.databind.ObjectMapper;
 		})
 @Execution(ExecutionMode.SAME_THREAD)
 class BatonAuthBoundaryIntegrationTest {
+	private static final String ACCOUNT_ID = "4c1e30a9-6d44-4f05-8f31-0f8a0f490042";
 
 	private static final TestBatonIssuer BATON_ISSUER = TestBatonIssuer.start();
 	private static final String COOKIE_NAME = "__Secure-round_access";
@@ -88,6 +89,14 @@ class BatonAuthBoundaryIntegrationTest {
 			BATON_ISSUER.issueParticipationGrant(ROOM_ID, "ticket-3");
 	private static final String OTHER_ROOM_TOKEN =
 			BATON_ISSUER.issueParticipationGrant(OTHER_ROOM_ID, "ticket-other-room");
+	private static final String UNKNOWN_KEY_TOKEN = BATON_ISSUER.issueParticipationGrant(
+			ROOM_ID,
+			"ticket-unknown-key",
+			"retired-baton-key");
+	private static final String MALFORMED_KEY_TOKEN = BATON_ISSUER.issueParticipationGrant(
+			ROOM_ID,
+			"ticket-malformed-key",
+			"../baton-key");
 	private static final String INVALID_TOKEN = "not-a-jwt";
 
 	private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -204,6 +213,29 @@ class BatonAuthBoundaryIntegrationTest {
 	}
 
 	@Test
+	void rejectsUnsupportedAndMalformedKeyIdentifiersAsUnauthorized() throws Exception {
+		String path = "/api/rooms/" + ROOM_ID + "/turn-credentials";
+
+		HttpResponse<String> unknownKey = post(
+				path,
+				UNKNOWN_KEY_TOKEN,
+				origin(),
+				"same-origin");
+		HttpResponse<String> malformedKey = post(
+				path,
+				MALFORMED_KEY_TOKEN,
+				origin(),
+				"same-origin");
+
+		assertThat(unknownKey.statusCode()).isEqualTo(401);
+		assertThat(unknownKey.headers().firstValue("cache-control"))
+				.contains("no-store");
+		assertThat(malformedKey.statusCode()).isEqualTo(401);
+		assertThat(malformedKey.headers().firstValue("cache-control"))
+				.contains("no-store");
+	}
+
+	@Test
 	void admitsOnlyTheTicketRoomAtTheWebSocketAndJoinBoundaries() throws Exception {
 		CompletableFuture<String> responseMessage = new CompletableFuture<>();
 		TextWebSocketHandler handler = new TextWebSocketHandler() {
@@ -237,9 +269,9 @@ class BatonAuthBoundaryIntegrationTest {
 			assertThat(nativeSession.getUserPrincipal())
 					.isNotInstanceOf(JwtAuthenticationToken.class)
 					.extracting(java.security.Principal::getName)
-					.isEqualTo("member-42");
+					.isEqualTo(ACCOUNT_ID);
 			assertThat(nativeSession.getUserPrincipal().toString())
-					.doesNotContain(MATCHING_TOKEN, "member-42");
+					.doesNotContain(MATCHING_TOKEN, ACCOUNT_ID);
 
 			session.sendMessage(new TextMessage("""
 					{"v":3,"type":"room.join","roomId":"%s","requestId":"join-1","payload":{"displayName":"스터디원"}}
@@ -513,11 +545,15 @@ class BatonAuthBoundaryIntegrationTest {
 		}
 
 		String issueParticipationGrant(String roomId, String tokenId) {
+			return issueParticipationGrant(roomId, tokenId, KEY_ID);
+		}
+
+		String issueParticipationGrant(String roomId, String tokenId, String keyId) {
 			try {
 				Instant now = Instant.now();
 				JWTClaimsSet claims = new JWTClaimsSet.Builder()
 						.issuer(issuer)
-						.subject("member-42")
+						.subject(ACCOUNT_ID)
 						.audience("round")
 						.issueTime(Date.from(now.minusSeconds(30)))
 						.expirationTime(Date.from(now.plusSeconds(240)))
@@ -529,7 +565,7 @@ class BatonAuthBoundaryIntegrationTest {
 				SignedJWT token = new SignedJWT(
 						new JWSHeader.Builder(JWSAlgorithm.RS256)
 								.type(JOSEObjectType.JWT)
-								.keyID(KEY_ID)
+								.keyID(keyId)
 								.build(),
 						claims);
 				token.sign(new RSASSASigner(signingKey.getPrivate()));

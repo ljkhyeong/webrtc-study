@@ -27,15 +27,9 @@ final class BatonJwsKeySelector implements JWSKeySelector<SecurityContext> {
 			throws KeySourceException {
 		String keyId = header.getKeyID();
 		if (keyId == null || !KEY_ID_PATTERN.matcher(keyId).matches()) {
-			throw new KeySourceException(
-					"The BATON participation JWT has an invalid key identifier");
+			return List.of();
 		}
 
-		List<? extends Key> keys = delegate.selectJWSKeys(header, context);
-		if (keys.isEmpty()) {
-			throw new KeySourceException(
-					"No supported BATON signing key matches the JWT header");
-		}
-		return keys;
+		return delegate.selectJWSKeys(header, context);
 	}
 }

@@ -1,7 +1,6 @@
 package com.personal.round.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -10,7 +9,6 @@ import static org.mockito.Mockito.when;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.KeySourceException;
 import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import java.security.Key;
@@ -30,10 +28,8 @@ class BatonJwsKeySelectorTest {
 	@NullSource
 	@ValueSource(strings = {"", " ", "\t"})
 	@DisplayName("kid가 없거나 공백이면 공개키를 조회하지 않고 거부한다")
-	void rejectsMissingOrBlankKeyIdsBeforeKeyLookup(String keyId) {
-		assertThatThrownBy(() -> selector.selectJWSKeys(header(keyId), null))
-				.isInstanceOf(KeySourceException.class)
-				.hasMessageContaining("invalid key identifier");
+	void rejectsMissingOrBlankKeyIdsBeforeKeyLookup(String keyId) throws Exception {
+		assertThat(selector.selectJWSKeys(header(keyId), null)).isEmpty();
 
 		verifyNoInteractions(delegate);
 	}
@@ -47,10 +43,8 @@ class BatonJwsKeySelectorTest {
 				+ "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	})
 	@DisplayName("kid가 안전한 BATON 식별자 형식이 아니면 공개키를 조회하지 않고 거부한다")
-	void rejectsMalformedKeyIdsBeforeKeyLookup(String keyId) {
-		assertThatThrownBy(() -> selector.selectJWSKeys(header(keyId), null))
-				.isInstanceOf(KeySourceException.class)
-				.hasMessageContaining("invalid key identifier");
+	void rejectsMalformedKeyIdsBeforeKeyLookup(String keyId) throws Exception {
+		assertThat(selector.selectJWSKeys(header(keyId), null)).isEmpty();
 
 		verifyNoInteractions(delegate);
 	}
@@ -60,11 +54,10 @@ class BatonJwsKeySelectorTest {
 	void rejectsAnUnsupportedKeyId() throws Exception {
 		when(delegate.selectJWSKeys(any(), isNull())).thenReturn(List.of());
 
-		assertThatThrownBy(() -> selector.selectJWSKeys(
+		assertThat(selector.selectJWSKeys(
 				header("retired-baton-key"),
 				null))
-				.isInstanceOf(KeySourceException.class)
-				.hasMessageContaining("No supported BATON signing key");
+				.isEmpty();
 	}
 
 	@Test
