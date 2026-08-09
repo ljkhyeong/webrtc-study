@@ -156,8 +156,12 @@ Health and metrics have a narrower trust boundary than room traffic:
   mode. Participation-grant refresh remains in BATON. Do not proxy standalone
   `/signal` or `/api/turn-credentials`.
 
-The BATON web flow is participation-grant refresh, TURN issuance, then
-WebSocket creation. The grant manager uses BATON's relative
+The BATON web flow is Account-session lookup, participation-grant refresh, explicit prejoin media
+consent, TURN issuance, then WebSocket creation. Prejoin is not mounted until the first two checks
+succeed, so an unauthenticated or unauthorized browser cannot trigger a camera or microphone prompt.
+`401` navigates through BATON login with a canonical `/room/{roomId}` return; `403` returns to BATON
+without retrying login. The preflight grant manager transfers into the active room so mounting
+`ActiveRoom` does not immediately consume a second signing or rate-limit quota. The manager uses BATON's relative
 `refreshAfterSeconds` on a monotonic browser clock, rejects values outside
 `1..300` seconds, and refreshes before TURN renewal and every initial or
 reconnect WebSocket creation. ROUND's TURN response has its own server-derived
@@ -165,6 +169,11 @@ reconnect WebSocket creation. ROUND's TURN response has its own server-derived
 deadline and never subtracts its wall clock from the TURN `expiresAt` epoch.
 Grant refresh rotates only the cookie and does not force an early socket
 reconnect.
+
+The dedicated BATON web runtime applies the one-year immutable cache policy only to hashed
+`/round-ui/assets/*`. It serves `/room/*` HTML with `Cache-Control: no-store`, keeps the unhashed
+favicon revalidated, and returns a no-store 404 from `/round-ui/` instead of exposing standalone
+create/join controls.
 
 ROUND binds each socket to the grant used at its handshake. It checks expiry
 before inbound quota use and outbound enqueue, during heartbeat, and in a

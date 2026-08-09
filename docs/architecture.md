@@ -197,9 +197,13 @@ to `RoomSession`, which keeps local tracks alive across a bounded signaling reco
 discarding stale remote peer connections and the old server-owned peer ID. A local leave or
 exhausted recovery stops every owned track and timer.
 
-BATON mode starts with participation-grant refresh, then TURN issuance, then WebSocket creation.
-The participation-grant refresh manager is single-flight and schedules its next refresh from
-BATON's relative `refreshAfterSeconds` using a monotonic browser clock. TURN issuance independently
+BATON mode gates the room route with Account-session lookup and participation-grant refresh before
+mounting prejoin, then performs TURN issuance and WebSocket creation after explicit media consent.
+An unauthenticated response uses a canonical same-origin `/room/{roomId}` login return, while a
+membership denial returns to BATON without a login loop. The participation-grant refresh manager is
+single-flight, transfers from the entry gate into the active room instead of issuing an immediate
+second grant, and schedules its next refresh from BATON's relative `refreshAfterSeconds` using a
+monotonic browser clock. TURN issuance independently
 returns a server-derived `refreshAfterSeconds`; the browser records its monotonic receipt deadline
 instead of comparing the TURN `expiresAt` epoch with `Date.now()`. TURN refresh and every initial or
 reconnect WebSocket creation call the same participation-grant `ensureFresh()` guard first. A
@@ -207,6 +211,10 @@ successful grant refresh rotates only the `HttpOnly` cookie; it does not proacti
 current socket. At the old socket's original grant expiry, ROUND closes it and the existing bounded
 reconnect path creates a fresh socket with the new cookie while preserving local media and chat
 history.
+
+The BATON web runtime serves only hashed `/round-ui/assets/*` with a one-year immutable policy.
+Room HTML is `no-store`, and `/round-ui/` returns a no-store 404 rather than exposing standalone
+room creation or invite-code entry from the embedded artifact root.
 
 ICE recovery uses one deterministic offer initiator per peer pair to avoid glare. A disconnected
 peer gets a short grace period, then an ICE restart, followed by peer-connection recreation if the

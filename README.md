@@ -201,7 +201,9 @@ override가 있거나 모드 값이 올바르지 않으면 standalone으로 강�
 거부합니다. 릴리스는 이 번들을 `/round-ui/` asset base의
 `round-baton-web` 이미지로 별도 발행하며 `round-edge`와 교체해서 사용할 수 없습니다.
 이 Vite 값과 이미지 flavor 표식은 공개 설정일 뿐 참여권이나 다른 비밀을 포함하지
-않습니다.
+않습니다. BATON 전용 edge는 해시가 붙은 `/round-ui/assets/*`만 장기 immutable cache하고,
+`/room/*` HTML은 `no-store`로 전달합니다. `/round-ui/` 자체는 독립 방 생성 화면을 열지
+않고 404를 반환하므로 사용자는 BATON의 권한 있는 스터디 화면에서 방을 열어야 합니다.
 
 BATON은 참여권 갱신 경로에서 인증된 사용자와 현재 스터디 멤버십을 다시 확인하고, 새
 `jti`의 방별 쿠키를 회전합니다. 응답은 JWT 없이 `expiresAt`과
@@ -211,7 +213,12 @@ BATON은 참여권 갱신 경로에서 인증된 사용자와 현재 스터디 �
 `/api/turn-credentials`와 Caddy 공유 접근 credential은 소규모 파일럿을 위해 유지하지만,
 BATON 모드는 유효한 참여권이 없으면 fail-closed로 요청을 거부합니다.
 
-브라우저는 입장, TURN 갱신, 모든 WebSocket 최초 연결·재연결 전에 참여권을 확인합니다.
+브라우저는 BATON 방 URL을 열면 먼저 Account session과 방 참여권을 확인하며, 성공하기
+전에는 입장 전 화면을 렌더링하거나 카메라·마이크 권한을 요청하지 않습니다. `401`은
+canonical `/room/{roomId}` 복귀 경로를 가진 BATON 로그인으로 안내하고, `403`은 로그인
+반복 없이 BATON 홈으로 돌아가 권한을 확인하게 합니다. 이 선행 확인에 사용한 single-flight
+manager를 실제 입장까지 재사용하므로 즉시 두 번째 참여권 발급을 만들지 않습니다.
+이후 입장, TURN 갱신, 모든 WebSocket 최초 연결·재연결 전에도 참여권을 확인합니다.
 기존 socket은 연결 당시 참여권의 `exp`에서 `4001 / Participation grant expired`로
 종료되고, 제한된 자동 재연결이 미리 회전된 쿠키를 사용합니다. standalone 연결에는 이
 시간 제한과 갱신 흐름을 적용하지 않습니다.

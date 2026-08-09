@@ -314,9 +314,20 @@ The unchecked production gate below remains authoritative.
       `/round/rooms/{roomId}/participation-grant/refresh` in BATON and never
       proxies that path to ROUND.
 - [ ] The BATON-owned web bundle is built with `VITE_ROUND_AUTH_MODE=baton`
-      and no signaling or TURN endpoint override. A direct invite remains at
-      prejoin without a protected request; explicit entry uses only the three
-      room-scoped public paths and never the standalone endpoints.
+      and no signaling or TURN endpoint override. A direct invite completes
+      Account-session and room-participation preflight before rendering prejoin
+      or allowing any media request; explicit entry uses only the three room-scoped
+      public paths and never the standalone endpoints.
+- [ ] A preflight `401` offers BATON login with only canonical
+      `/room/{roomId}` as `returnTo`; a `403` returns to BATON without a login
+      loop. Neither response body, CSRF token, participation cookie, nor JWT is
+      rendered or put in a URL.
+- [ ] Preflight and active-room startup reuse one single-flight grant manager.
+      Mounting the active room before `refreshAfterSeconds` does not issue a
+      second refresh, signing operation, or quota debit.
+- [ ] Only hashed `/round-ui/assets/*` is cached immutable. `/room/*` HTML is
+      `no-store`, and `/round-ui/` returns a no-store 404 without standalone
+      room creation or invite-code controls.
 - [ ] The edge discards client-supplied forwarding headers, sets the canonical
       HTTPS host and client address itself, and applies a bounded pre-auth rate
       limit to all three room-scoped public paths.
