@@ -251,6 +251,10 @@ docker run --rm \
   -e ROUND_DOMAIN=round.invalid \
   "$caddy_validation_image" \
   caddy validate --config /etc/caddy/Caddyfile.macos-pilot
+docker run --rm \
+  -v "$repo_root/ops/caddy/BatonWebCaddyfile:/etc/caddy/BatonWebCaddyfile:ro" \
+  "$caddy_validation_image" \
+  caddy validate --config /etc/caddy/BatonWebCaddyfile --adapter caddyfile
 
 printf 'Verifying the adapted rate-limit policy and handler order...\n'
 docker run --rm \
@@ -296,6 +300,43 @@ docker run --rm \
           "/signal",
           "/api/turn-credentials"
         ]]
+    ' >/dev/null
+
+printf 'Verifying the BATON browser cache and entry-route boundary...\n'
+docker run --rm \
+  -v "$repo_root/ops/caddy/BatonWebCaddyfile:/etc/caddy/BatonWebCaddyfile:ro" \
+  "$caddy_validation_image" \
+  caddy adapt --config /etc/caddy/BatonWebCaddyfile --adapter caddyfile \
+  | jq -e '
+      def route($path):
+        .apps.http.servers.srv0.routes[]
+        | select(.match[0].path? == [$path]);
+      (route("/round-ui/assets/*")) as $assets
+      | (route("/round-ui/favicon.svg")) as $favicon
+      | (route("/round-ui/*")) as $asset_root
+      | (route("/room/*")) as $room
+      | ([$assets | .. | objects
+          | select(.handler? == "headers")
+          | .response.set["Cache-Control"][0]][0]
+          == "public, max-age=31536000, immutable")
+        and ([$assets | .. | objects
+          | select(.handler? == "rewrite")
+          | .strip_path_prefix][0] == "/round-ui")
+        and ([$favicon | .. | objects
+          | select(.handler? == "headers")
+          | .response.set["Cache-Control"][0]][0] == "no-cache")
+        and ([$asset_root | .. | objects
+          | select(.handler? == "headers")
+          | .response.set["Cache-Control"][0]][0] == "no-store")
+        and ([$asset_root | .. | objects
+          | select(.handler? == "static_response")
+          | .status_code][0] == 404)
+        and ([$room | .. | objects
+          | select(.handler? == "headers")
+          | .response.set["Cache-Control"][0]][0] == "no-store")
+        and ([$room | .. | objects
+          | select(has("try_files"))
+          | .try_files][0] == ["{http.request.uri.path}", "/index.html"])
     ' >/dev/null
 
 printf 'Checking Dockerfile runtime targets...\n'
