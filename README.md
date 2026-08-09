@@ -183,7 +183,10 @@ BATON은 권한 확인 후 `kid`를 포함한 `RS256`으로 짧은 수명의 JWT
 `room.join`의 방 식별자와 일치해야 합니다.
 `aud`는 정확히 하나여야 하며 설정한 값(기본 `round`) 외 audience가 함께 있으면
 거부합니다. ROUND JVM의 JWK Set cache는 60초 뒤 만료하고, 아직 cache에 없는 정상 형식의
-새 `kid`를 만나면 즉시 JWK Set을 다시 조회해 key 선게시 회전을 수용합니다.
+새 `kid`를 만나면 JWK Set을 다시 조회해 key 선게시 회전을 수용합니다. Nimbus source는
+cold load와 cache-miss retry를 수용하면서 원격 source 접근을 JVM별 30초 window에서 최대
+두 번으로 제한하며, 제한 중인 unknown `kid`는 추가 원격 조회 없이 `401`로 거부합니다.
+따라서 새 공개키는 발급 전 60초보다 길게 선게시해야 합니다.
 
 BATON 연동 시 브라우저가 사용하는 공개 경로는 다음과 같습니다.
 

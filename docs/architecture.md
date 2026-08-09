@@ -108,7 +108,12 @@ The browser and internal routing contracts are:
 ROUND accepts only `RS256` and verifies the signature from BATON's JWK Set, issuer, audience,
 expiry, and every required claim locally. The audience list must contain exactly the configured
 value (`round` by default); an additional audience is rejected. ROUND keeps the fetched JWK Set in
-a 60-second JVM cache and immediately refreshes it when a well-formed, uncached `kid` is encountered.
+a 60-second JVM cache and refreshes it when a well-formed, uncached `kid` is encountered. To allow a
+cold load and cache-miss retry, the Nimbus source permits a burst of at most two outbound source
+accesses per 30-second window per JVM; rate-limited unknown keys fail with HTTP 401 without another
+JWK fetch.
+BATON must therefore prepublish a new public key for longer than the cache TTL before switching
+issuance to its `kid`.
 The default maximum grant lifetime is five minutes, with
 only 60 seconds of clock skew allowed for a future `iat`; longer grants are rejected even when
 their signature and `exp` are otherwise valid. The path `roomId` must match `room_id` for the

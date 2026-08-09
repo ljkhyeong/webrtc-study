@@ -92,7 +92,10 @@ BATON은 개인키로 짧은 수명의 JWT 참여권을 `RS256`으로 서명하�
 기존 공개키는 이전 키로 발급한 참여권의 최대 수명과 clock skew가 모두 지난 뒤 제거한다.
 ROUND에는 개인키를 배포하지 않으며, JWK Set cache가 갱신될 수 있도록 두 공개키의
 중첩 기간을 실제 배포에서 리허설한다. ROUND JVM cache는 60초 뒤 만료하며 정상 형식의
-새 `kid`가 cache에 없으면 JWK Set을 즉시 다시 조회한다.
+새 `kid`가 cache에 없으면 JWK Set을 다시 조회한다. Nimbus source는 cold load와 cache-miss
+retry를 수용하면서 원격 source 접근을 JVM별 30초 window에서 최대 두 번으로 제한하고,
+제한 중인 unknown `kid`는 추가 조회 없이 `401`로 거부한다. 따라서 새 공개키는 발급 전
+cache TTL보다 길게 선게시한다.
 
 참여권에는 다음 claim이 반드시 있어야 한다.
 
