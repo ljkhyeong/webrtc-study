@@ -23,15 +23,19 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
 class RoundJwtDecoderIntegrationTest {
 
@@ -44,6 +48,7 @@ class RoundJwtDecoderIntegrationTest {
 	private KeyPair trustedKeyPair;
 	private String issuer;
 	private JwtDecoder decoder;
+	private AtomicBoolean jwkUnavailable;
 	private AtomicInteger jwkRequestCount;
 
 	@BeforeEach
@@ -58,10 +63,16 @@ class RoundJwtDecoderIntegrationTest {
 				.toString()
 				.getBytes(StandardCharsets.UTF_8);
 
+		jwkUnavailable = new AtomicBoolean();
 		jwkRequestCount = new AtomicInteger();
 		jwkServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		jwkServer.createContext("/jwks", exchange -> {
 			jwkRequestCount.incrementAndGet();
+			if (jwkUnavailable.get()) {
+				exchange.sendResponseHeaders(503, -1);
+				exchange.close();
+				return;
+			}
 			exchange.getResponseHeaders().set("Content-Type", "application/json");
 			exchange.sendResponseHeaders(200, jwkSet.length);
 			try (var responseBody = exchange.getResponseBody()) {
@@ -87,7 +98,26 @@ class RoundJwtDecoderIntegrationTest {
 
 	@AfterEach
 	void tearDown() {
-		jwkServer.stop(0);
+		if (jwkServer != null) {
+			jwkServer.stop(0);
+		}
+	}
+
+	@Test
+	void exposesAnUnavailableJwkEndpointAsAuthenticationInfrastructureFailure()
+			throws Exception {
+		jwkUnavailable.set(true);
+		String serialized = token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				claims -> {
+				}).serialize();
+		JwtAuthenticationProvider provider = new JwtAuthenticationProvider(decoder);
+
+		assertThatThrownBy(() -> provider.authenticate(
+				new BearerTokenAuthenticationToken(serialized)))
+				.isInstanceOf(AuthenticationServiceException.class)
+				.hasMessageContaining("decode the Jwt");
 	}
 
 	@Test

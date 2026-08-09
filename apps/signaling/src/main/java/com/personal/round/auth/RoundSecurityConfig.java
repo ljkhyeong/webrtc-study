@@ -23,6 +23,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtAudienceValidator;
@@ -161,10 +163,16 @@ public class RoundSecurityConfig {
 				.build();
 	}
 
-	private static AuthenticationEntryPoint noStoreBearerEntryPoint() {
+	static AuthenticationEntryPoint noStoreBearerEntryPoint() {
 		BearerTokenAuthenticationEntryPoint delegate =
 				new BearerTokenAuthenticationEntryPoint();
 		return (request, response, exception) -> {
+			if (exception instanceof AuthenticationServiceException) {
+				response.setStatus(HttpStatus.SERVICE_UNAVAILABLE.value());
+				response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+				response.setContentLength(0);
+				return;
+			}
 			delegate.commence(request, response, exception);
 			response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
 		};
