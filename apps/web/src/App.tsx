@@ -408,7 +408,7 @@ function storeDisplayName(displayName: string) {
 
 interface LoadedRtcConfiguration {
   readonly configuration: RTCConfiguration;
-  readonly turnExpiresAt: number | null;
+  readonly turnRefreshDueAtMs: number | null;
 }
 
 async function loadRtcConfiguration(
@@ -454,7 +454,7 @@ async function loadRtcConfiguration(
       iceCandidatePoolSize: 1,
       iceTransportPolicy: configuredPolicy,
     },
-    turnExpiresAt: credentials?.expiresAt ?? null,
+    turnRefreshDueAtMs: credentials?.refreshDueAtMs ?? null,
   };
 }
 
@@ -603,7 +603,7 @@ export function ActiveRoom({
       }
     };
 
-    const scheduleTurnRefresh = (expiresAt: number) => {
+    const scheduleTurnRefresh = (refreshDueAtMs: number) => {
       if (!canRefresh()) {
         return;
       }
@@ -612,7 +612,7 @@ export function ActiveRoom({
         () => {
           void refreshTurnConfiguration();
         },
-        turnCredentialRefreshDelayMs(expiresAt),
+        turnCredentialRefreshDelayMs(refreshDueAtMs),
       );
     };
 
@@ -658,8 +658,8 @@ export function ActiveRoom({
           restartIce: true,
         });
         setTurnRefreshWarning('');
-        if (loaded.turnExpiresAt !== null) {
-          scheduleTurnRefresh(loaded.turnExpiresAt);
+        if (loaded.turnRefreshDueAtMs !== null) {
+          scheduleTurnRefresh(loaded.turnRefreshDueAtMs);
         }
       } catch {
         if (!canRefresh()) {
@@ -762,8 +762,8 @@ export function ActiveRoom({
             unsubscribe = session.subscribe(handleSessionSnapshot);
 
             await session.join();
-            if (loaded.turnExpiresAt !== null) {
-              scheduleTurnRefresh(loaded.turnExpiresAt);
+            if (loaded.turnRefreshDueAtMs !== null) {
+              scheduleTurnRefresh(loaded.turnRefreshDueAtMs);
             }
           },
           {

@@ -64,6 +64,7 @@ class TurnCredentialServiceTest {
 				"turn:turn.example.com:3478?transport=udp",
 				"turns:turn.example.com:5349?transport=tcp");
 		assertThat(first.expiresAt()).isEqualTo(1_800_000_600L);
+		assertThat(first.refreshAfterSeconds()).isEqualTo(480);
 		assertThat(first.username()).startsWith(first.expiresAt() + ":");
 		assertThat(first.credential()).isEqualTo(hmac(first.username(), SHARED_SECRET));
 		assertThat(sameNatClient.credential())
@@ -89,6 +90,7 @@ class TurnCredentialServiceTest {
 						Instant.ofEpochSecond(1_800_000_120))));
 
 		assertThat(credentials.expiresAt()).isEqualTo(1_800_000_120);
+		assertThat(credentials.refreshAfterSeconds()).isEqualTo(90);
 		assertThat(service.issueFor(
 				"192.0.2.10",
 				grant(

@@ -208,6 +208,8 @@ class BatonAuthBoundaryIntegrationTest {
 				.doesNotContain("integration-shared-secret");
 		assertThat(credentials.get("expiresAt").asLong())
 				.isLessThanOrEqualTo(Instant.now().plusSeconds(250).getEpochSecond());
+		assertThat(credentials.get("refreshAfterSeconds").asLong())
+				.isBetween(1L, 220L);
 		assertThat(refreshed.statusCode()).isEqualTo(200);
 		assertThat(participantLimited.statusCode()).isEqualTo(429);
 		assertThat(participantLimited.headers().firstValue("cache-control"))

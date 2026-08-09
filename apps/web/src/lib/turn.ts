@@ -1,6 +1,7 @@
 export interface TurnCredentials {
   readonly iceServer: RTCIceServer;
   readonly expiresAt: number;
+  readonly refreshDueAtMs: number;
 }
 
 export interface LoadTurnCredentialsOptions {
@@ -16,23 +17,19 @@ interface TurnCredentialsPayload {
   readonly username: string;
   readonly credential: string;
   readonly expiresAt: number;
+  readonly refreshAfterSeconds: number;
 }
 
 const DEFAULT_ENDPOINT = '/api/turn-credentials';
 const DEFAULT_TIMEOUT_MS = 5_000;
-const MINIMUM_REMAINING_LIFETIME_SECONDS = 60;
-const MAXIMUM_REFRESH_SKEW_MS = 5 * 60 * 1_000;
-const MINIMUM_REFRESH_SKEW_MS = 30 * 1_000;
+const MAXIMUM_REFRESH_AFTER_SECONDS = 7 * 24 * 60 * 60;
 const MAX_TURN_URLS = 8;
 
-export function turnCredentialRefreshDelayMs(expiresAt: number, nowMs = Date.now()): number {
-  const remainingMs = Math.max(0, expiresAt * 1_000 - nowMs);
-  const refreshSkewMs = Math.min(
-    MAXIMUM_REFRESH_SKEW_MS,
-    Math.max(MINIMUM_REFRESH_SKEW_MS, Math.floor(remainingMs / 5)),
-  );
-
-  return Math.max(1_000, remainingMs - refreshSkewMs);
+export function turnCredentialRefreshDelayMs(
+  refreshDueAtMs: number,
+  nowMs = globalThis.performance.now(),
+): number {
+  return Math.max(1_000, refreshDueAtMs - nowMs);
 }
 
 export async function loadTurnCredentials(
@@ -78,7 +75,11 @@ export async function loadTurnCredentials(
       throw new Error(`TURN credential request failed with status ${response.status}`);
     }
 
-    const payload = validatePayload(await response.json(), (options.now ?? Date.now)());
+    const payload = validatePayload(await response.json());
+    const receivedAtMs = (options.now ?? (() => globalThis.performance.now()))();
+    if (!Number.isFinite(receivedAtMs)) {
+      throw new Error('TURN credential refresh clock must be finite');
+    }
     return {
       iceServer: {
         urls: payload.urls,
@@ -86,6 +87,7 @@ export async function loadTurnCredentials(
         credential: payload.credential,
       },
       expiresAt: payload.expiresAt,
+      refreshDueAtMs: receivedAtMs + payload.refreshAfterSeconds * 1_000,
     };
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
@@ -101,15 +103,19 @@ export async function loadTurnCredentials(
   }
 }
 
-function validatePayload(input: unknown, nowMs: number): TurnCredentialsPayload {
-  if (!isRecord(input)) {
-    throw new Error('TURN credential response must be an object');
+function validatePayload(input: unknown): TurnCredentialsPayload {
+  if (
+    !isRecord(input) ||
+    !hasExactKeys(input, ['urls', 'username', 'credential', 'expiresAt', 'refreshAfterSeconds'])
+  ) {
+    throw new Error('TURN credential response must contain only credential lease metadata');
   }
 
   const urls = input.urls;
   const username = input.username;
   const credential = input.credential;
   const expiresAt = input.expiresAt;
+  const refreshAfterSeconds = input.refreshAfterSeconds;
 
   if (
     !Array.isArray(urls) ||
@@ -128,13 +134,16 @@ function validatePayload(input: unknown, nowMs: number): TurnCredentialsPayload 
   if (typeof credential !== 'string' || credential.length === 0 || credential.length > 512) {
     throw new Error('TURN credential response contains an invalid credential');
   }
-  if (typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt)) {
+  if (typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt) || expiresAt < 1) {
     throw new Error('TURN credential response contains an invalid expiry');
   }
-
-  const minimumExpiry = Math.floor(nowMs / 1_000) + MINIMUM_REMAINING_LIFETIME_SECONDS;
-  if (expiresAt < minimumExpiry) {
-    throw new Error('TURN credential expires too soon');
+  if (
+    typeof refreshAfterSeconds !== 'number' ||
+    !Number.isSafeInteger(refreshAfterSeconds) ||
+    refreshAfterSeconds < 1 ||
+    refreshAfterSeconds > MAXIMUM_REFRESH_AFTER_SECONDS
+  ) {
+    throw new Error('TURN credential response contains an invalid refresh interval');
   }
 
   return {
@@ -142,9 +151,15 @@ function validatePayload(input: unknown, nowMs: number): TurnCredentialsPayload 
     username,
     credential,
     expiresAt,
+    refreshAfterSeconds,
   };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === expected.length && expected.every((key) => Object.hasOwn(value, key));
 }

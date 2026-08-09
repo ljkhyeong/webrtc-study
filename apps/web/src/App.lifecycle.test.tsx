@@ -184,7 +184,8 @@ describe('ActiveRoom mounted lifecycle', () => {
             urls: ['turns:turn.example.test:5349'],
             username: 'round-user',
             credential: 'round-credential',
-            expiresAt: Math.floor(Date.now() / 1_000) + 600,
+            expiresAt: 4_000_000_000,
+            refreshAfterSeconds: 480,
           }),
         );
       }

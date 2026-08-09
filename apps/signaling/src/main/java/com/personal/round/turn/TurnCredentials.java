@@ -6,7 +6,8 @@ public record TurnCredentials(
 		List<String> urls,
 		String username,
 		String credential,
-		long expiresAt) {
+		long expiresAt,
+		long refreshAfterSeconds) {
 
 	public TurnCredentials {
 		urls = List.copyOf(urls);

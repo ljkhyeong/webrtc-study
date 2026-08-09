@@ -11,16 +11,12 @@ function response(status: number, body?: unknown): Response {
 }
 
 describe('TURN credential loading', () => {
-  it('refreshes long credentials five minutes before expiry', () => {
-    expect(turnCredentialRefreshDelayMs(4_600, 1_000_000)).toBe(3_300_000);
+  it('uses the server-derived monotonic refresh deadline', () => {
+    expect(turnCredentialRefreshDelayMs(4_300_000, 1_000_000)).toBe(3_300_000);
   });
 
-  it('uses a proportional refresh window for the minimum supported TTL', () => {
-    expect(turnCredentialRefreshDelayMs(1_300, 1_000_000)).toBe(240_000);
-  });
-
-  it('retries an already expired credential without a tight loop', () => {
-    expect(turnCredentialRefreshDelayMs(900, 1_000_000)).toBe(1_000);
+  it('retries an overdue monotonic deadline without a tight loop', () => {
+    expect(turnCredentialRefreshDelayMs(900_000, 1_000_000)).toBe(1_000);
   });
 
   it('maps a short-lived server response to an RTCIceServer', async () => {
@@ -33,6 +29,7 @@ describe('TURN credential loading', () => {
         username: '7200:random-user',
         credential: 'signed-credential',
         expiresAt: 7_200,
+        refreshAfterSeconds: 240,
       }),
     );
 
@@ -51,6 +48,7 @@ describe('TURN credential loading', () => {
         credential: 'signed-credential',
       },
       expiresAt: 7_200,
+      refreshDueAtMs: 1_240_000,
     });
 
     expect(fetcher).toHaveBeenCalledWith('/api/turn-credentials', {
@@ -99,18 +97,21 @@ describe('TURN credential loading', () => {
       username: 'user',
       credential: 'credential',
       expiresAt: 7_200,
+      refreshAfterSeconds: 240,
     },
     {
       urls: ['turn:round.example.com:3478'],
       username: '',
       credential: 'credential',
       expiresAt: 7_200,
+      refreshAfterSeconds: 240,
     },
     {
       urls: ['turn:round.example.com:3478'],
       username: 'user',
       credential: 'credential',
-      expiresAt: 1_001,
+      expiresAt: 7_200,
+      refreshAfterSeconds: 0,
     },
   ])('rejects an unsafe or stale response %#', async (payload) => {
     await expect(
@@ -119,6 +120,28 @@ describe('TURN credential loading', () => {
         now: () => 1_000_000,
       }),
     ).rejects.toThrow();
+  });
+
+  it('does not compare the server expiry epoch with the browser wall clock', async () => {
+    const now = vi.fn(() => 25_000);
+
+    await expect(
+      loadTurnCredentials({
+        fetcher: vi.fn(async () =>
+          response(200, {
+            urls: ['turn:round.example.com:3478'],
+            username: '1:short-lived',
+            credential: 'credential',
+            expiresAt: 1,
+            refreshAfterSeconds: 1,
+          }),
+        ) as typeof fetch,
+        now,
+      }),
+    ).resolves.toMatchObject({
+      expiresAt: 1,
+      refreshDueAtMs: 26_000,
+    });
   });
 
   it('does not expose an unexpected response body in the HTTP error', async () => {

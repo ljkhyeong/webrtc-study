@@ -143,11 +143,16 @@ The credential endpoint returns a no-store response:
   "urls": ["turn:turn.example.com:3478?transport=udp"],
   "username": "1780000000:base64url-random.sequence",
   "credential": "base64-hmac-sha1",
-  "expiresAt": 1780000000
+  "expiresAt": 1780000000,
+  "refreshAfterSeconds": 480
 }
 ```
 
-`expiresAt` is Unix epoch seconds. Every successful request receives a new
+`expiresAt` is Unix epoch seconds for coturn and operational inspection.
+`refreshAfterSeconds` is calculated from the effective server-side lifetime,
+including a shorter BATON participation-grant boundary. The browser schedules
+renewal from that relative value with its monotonic clock and never subtracts
+its local wall clock from `expiresAt`. Every successful request receives a new
 username and credential, including separate browsers behind the same NAT. The
 endpoint accepts only POST requests with an exact same-origin `Origin`; when
 Fetch Metadata is present, `Sec-Fetch-Site` must also be `same-origin`. Once a

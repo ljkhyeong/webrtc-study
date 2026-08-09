@@ -17,6 +17,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class TurnCredentialService {
+	private static final long MINIMUM_REFRESH_SKEW_SECONDS = 30;
+	private static final long MAXIMUM_REFRESH_SKEW_SECONDS = 5 * 60;
 
 	private static final String HMAC_ALGORITHM = "HmacSHA1";
 	private static final int USERNAME_RANDOM_BYTES = 12;
@@ -88,10 +90,24 @@ public class TurnCredentialService {
 
 		String username = expiresAt + ":" + randomToken();
 		String credential = sign(username);
+		long refreshAfterSeconds = refreshAfterSeconds(expiresAt - nowEpochSecond);
 		TurnCredentials credentials = new TurnCredentials(
-				properties.urls(), username, credential, expiresAt);
+				properties.urls(),
+				username,
+				credential,
+				expiresAt,
+				refreshAfterSeconds);
 		metrics.recordIssued();
 		return new Issued(credentials);
+	}
+
+	private static long refreshAfterSeconds(long lifetimeSeconds) {
+		long refreshSkewSeconds = Math.min(
+				MAXIMUM_REFRESH_SKEW_SECONDS,
+				Math.max(
+						MINIMUM_REFRESH_SKEW_SECONDS,
+						Math.floorDiv(lifetimeSeconds, 5)));
+		return Math.max(1, lifetimeSeconds - refreshSkewSeconds);
 	}
 
 	int trackedClientCount() {

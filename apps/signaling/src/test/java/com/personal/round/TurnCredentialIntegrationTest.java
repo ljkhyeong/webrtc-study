@@ -68,6 +68,8 @@ class TurnCredentialIntegrationTest {
 				.isEqualTo("turns:turn.example.com:5349?transport=tcp");
 		assertThat(firstCredentials.get("username").asString())
 				.startsWith(firstCredentials.get("expiresAt").asLong() + ":");
+		assertThat(firstCredentials.get("refreshAfterSeconds").asLong())
+				.isEqualTo(3_300);
 		assertThat(firstCredentials.get("credential").asString())
 				.isNotBlank()
 				.doesNotContain("integration-shared-secret");
