@@ -160,6 +160,93 @@ textarea:focus-visible {
   box-shadow: 0 0 0 4px rgb(44 128 105 / 12%);
 }
 
+.baton-entry-shell {
+  display: grid;
+  min-height: 100svh;
+  grid-template-rows: auto 1fr;
+  background:
+    radial-gradient(circle at 76% 22%, rgb(73 181 142 / 16%), transparent 34%), var(--fog);
+}
+
+.baton-entry-header {
+  display: flex;
+  width: min(100% - 64px, 1120px);
+  height: 84px;
+  margin-inline: auto;
+  align-items: center;
+  border-bottom: 1px solid rgb(23 32 42 / 13%);
+}
+
+.baton-entry-header .wordmark {
+  text-decoration: none;
+}
+
+.baton-entry-main {
+  display: grid;
+  width: min(100% - 64px, 680px);
+  margin: auto;
+  padding: 72px 0 120px;
+  justify-items: start;
+}
+
+.baton-entry-main h1 {
+  max-width: 620px;
+  margin: 12px 0 20px;
+  font-size: clamp(2.25rem, 6vw, 4.6rem);
+  letter-spacing: -0.07em;
+  line-height: 0.98;
+}
+
+.baton-entry-main > p:not(.eyebrow) {
+  max-width: 570px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.baton-entry-main > .connecting-ring {
+  width: 42px;
+  height: 42px;
+  margin-top: 36px;
+  border-color: rgb(44 128 105 / 22%);
+  border-top-color: var(--mint);
+}
+
+.baton-entry-actions {
+  display: flex;
+  margin-top: 36px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.baton-entry-action {
+  display: inline-flex;
+  min-height: 48px;
+  padding: 0 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.baton-entry-action--primary {
+  border-color: var(--mint);
+  background: var(--mint);
+  color: white;
+}
+
+.baton-entry-action:focus-visible,
+.baton-entry-header .wordmark:focus-visible {
+  outline: 3px solid rgb(44 128 105 / 35%);
+  outline-offset: 3px;
+}
+
 .landing-main {
   z-index: 1;
   display: grid;
@@ -1930,6 +2017,24 @@ textarea:focus-visible {
 }
 
 @media (max-width: 760px) {
+  .baton-entry-header,
+  .baton-entry-main {
+    width: min(100% - 36px, 560px);
+  }
+
+  .baton-entry-header {
+    height: 70px;
+  }
+
+  .baton-entry-main {
+    padding: 56px 0 88px;
+  }
+
+  .baton-entry-actions,
+  .baton-entry-action {
+    width: 100%;
+  }
+
   .landing-shell {
     overflow: auto;
     background: var(--fog);

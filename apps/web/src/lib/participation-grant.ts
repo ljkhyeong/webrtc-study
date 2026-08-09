@@ -5,6 +5,15 @@ export interface ParticipationGrantLease {
   readonly refreshAfterSeconds: number;
 }
 
+export type ParticipationGrantAccessFailure = 'unauthenticated' | 'forbidden';
+
+export class ParticipationGrantAccessError extends Error {
+  constructor(readonly failure: ParticipationGrantAccessFailure) {
+    super(`BATON room access ${failure}`);
+    this.name = 'ParticipationGrantAccessError';
+  }
+}
+
 export interface BatonRoundEntryContext {
   readonly version: 1;
   readonly teamId: string;
@@ -162,6 +171,12 @@ export class ParticipationGrantLeaseManager {
       });
       this.#assertOpen();
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new ParticipationGrantAccessError('unauthenticated');
+        }
+        if (response.status === 403) {
+          throw new ParticipationGrantAccessError('forbidden');
+        }
         throw new Error(`Participation grant refresh failed with status ${response.status}`);
       }
 
@@ -290,12 +305,18 @@ async function loadBatonCsrfCredential(
     signal,
   });
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new ParticipationGrantAccessError('unauthenticated');
+    }
+    if (response.status === 403) {
+      throw new ParticipationGrantAccessError('forbidden');
+    }
     throw new Error(`BATON session lookup failed with status ${response.status}`);
   }
 
   const input: unknown = await response.json();
   if (!isRecord(input) || input.authenticated !== true) {
-    throw new Error('BATON session is not authenticated');
+    throw new ParticipationGrantAccessError('unauthenticated');
   }
   if (typeof input.accountId !== 'string' || !CANONICAL_UUID_PATTERN.test(input.accountId)) {
     throw new Error('BATON session account is invalid');

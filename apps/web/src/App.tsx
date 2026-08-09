@@ -11,6 +11,7 @@ import {
 } from '@round/rtc-core';
 import { LandingScreen } from './components/LandingScreen';
 import { PrejoinScreen } from './components/PrejoinScreen';
+import { BatonRoomEntryBoundary, BatonRuntimeRoot } from './components/BatonRoomEntryBoundary';
 import { RoomView, type ChatMessageView, type RoomSystemNoticeView } from './components/RoomView';
 import type { ParticipantView } from './components/VideoTile';
 import {
@@ -496,6 +497,7 @@ interface ActiveRoomProps {
   displayName: string;
   roomId: string;
   hostCapability?: string | undefined;
+  participationGrantLeaseManager?: ParticipationGrantLeaseManager | undefined;
   releasePreparedMediaStream: () => void;
   takePreparedMediaStream: () => MediaStream | null;
   onReconnect: () => void;
@@ -506,6 +508,7 @@ export function ActiveRoom({
   displayName,
   roomId,
   hostCapability,
+  participationGrantLeaseManager: preflightParticipationGrantLeaseManager,
   releasePreparedMediaStream,
   takePreparedMediaStream,
   onReconnect,
@@ -526,7 +529,7 @@ export function ActiveRoom({
     let isCurrentSession = true;
     let unsubscribe = () => {};
     let endpoints: RoomEndpoints | null = null;
-    let participationGrantLeaseManager: ParticipationGrantLeaseManager | null = null;
+    let participationGrantLeaseManager = preflightParticipationGrantLeaseManager ?? null;
     const refreshLifetime = new RoomRefreshLifetime();
     const turnRequestController = new AbortController();
 
@@ -699,7 +702,7 @@ export function ActiveRoom({
 
             if (resolvedEndpoints.participationGrantRefreshUrl !== null) {
               try {
-                participationGrantLeaseManager = new ParticipationGrantLeaseManager({
+                participationGrantLeaseManager ??= new ParticipationGrantLeaseManager({
                   endpoint: resolvedEndpoints.participationGrantRefreshUrl,
                   roomId,
                 });
@@ -820,7 +823,14 @@ export function ActiveRoom({
         void session.leave();
       });
     };
-  }, [displayName, hostCapability, releasePreparedMediaStream, roomId, takePreparedMediaStream]);
+  }, [
+    displayName,
+    hostCapability,
+    preflightParticipationGrantLeaseManager,
+    releasePreparedMediaStream,
+    roomId,
+    takePreparedMediaStream,
+  ]);
 
   const participants = useMemo<ParticipantView[]>(() => {
     const session = sessionRef.current;
@@ -1001,10 +1011,12 @@ export function ActiveRoom({
 export function App() {
   const { pathname, navigate } = usePathname();
   const roomId = roomIdFromPath(pathname);
+  const authMode = import.meta.env.VITE_ROUND_AUTH_MODE;
   const [displayName, setDisplayName] = useState(readStoredDisplayName);
   const [approvedRoomKey, setApprovedRoomKey] = useState<string | null>(null);
   const [activeRoomKey, setActiveRoomKey] = useState<string | null>(null);
   const [activeHostCapability, setActiveHostCapability] = useState<string | undefined>();
+  const [batonEntryGeneration, setBatonEntryGeneration] = useState(0);
   const preparedMediaStreamRef = useRef<MediaStream | null>(null);
 
   const stopUnclaimedPreparedMedia = useCallback(() => {
@@ -1041,13 +1053,16 @@ export function App() {
     setActiveRoomKey(null);
     setActiveHostCapability(undefined);
     setApprovedRoomKey(null);
-    navigateToOwningHome(import.meta.env.VITE_ROUND_AUTH_MODE, navigate);
+    navigateToOwningHome(authMode, navigate);
   };
 
   const retryCurrentRoom = () => {
     stopUnclaimedPreparedMedia();
     setActiveRoomKey(null);
     setActiveHostCapability(undefined);
+    if (authMode === 'baton') {
+      setBatonEntryGeneration((generation) => generation + 1);
+    }
   };
 
   const enterRoom = (nextDisplayName: string, nextRoomId: string) => {
@@ -1062,50 +1077,67 @@ export function App() {
     }
   };
 
-  if (!roomId) {
-    return <LandingScreen initialDisplayName={displayName} onEnter={enterRoom} onGoHome={goHome} />;
-  }
+  const renderRoomEntry = (participationGrantLeaseManager?: ParticipationGrantLeaseManager) => {
+    if (roomId === null) {
+      return (
+        <LandingScreen initialDisplayName={displayName} onEnter={enterRoom} onGoHome={goHome} />
+      );
+    }
 
-  if (!displayName || approvedRoomKey !== `${roomId}:${displayName}`) {
-    return (
-      <LandingScreen
-        initialDisplayName={displayName}
-        invitedRoomId={roomId}
-        onEnter={enterRoom}
-        onGoHome={goHome}
-      />
-    );
-  }
+    if (!displayName || approvedRoomKey !== `${roomId}:${displayName}`) {
+      return (
+        <LandingScreen
+          initialDisplayName={displayName}
+          invitedRoomId={roomId}
+          onEnter={enterRoom}
+          onGoHome={goHome}
+        />
+      );
+    }
 
-  const roomKey = `${roomId}:${displayName}`;
-  if (activeRoomKey !== roomKey) {
+    const roomKey = `${roomId}:${displayName}`;
+    if (activeRoomKey !== roomKey) {
+      return (
+        <PrejoinScreen
+          key={roomKey}
+          displayName={displayName}
+          roomId={roomId}
+          showHostCapabilityInput={authMode !== 'baton'}
+          onBack={goHome}
+          onJoin={(preparedMediaStream, hostCapability) => {
+            stopUnclaimedPreparedMedia();
+            preparedMediaStreamRef.current = preparedMediaStream;
+            setActiveHostCapability(hostCapability);
+            setActiveRoomKey(roomKey);
+          }}
+        />
+      );
+    }
+
     return (
-      <PrejoinScreen
+      <ActiveRoom
         key={roomKey}
         displayName={displayName}
         roomId={roomId}
-        showHostCapabilityInput={import.meta.env.VITE_ROUND_AUTH_MODE !== 'baton'}
-        onBack={goHome}
-        onJoin={(preparedMediaStream, hostCapability) => {
-          stopUnclaimedPreparedMedia();
-          preparedMediaStreamRef.current = preparedMediaStream;
-          setActiveHostCapability(hostCapability);
-          setActiveRoomKey(roomKey);
-        }}
+        hostCapability={activeHostCapability}
+        participationGrantLeaseManager={participationGrantLeaseManager}
+        releasePreparedMediaStream={stopUnclaimedPreparedMedia}
+        takePreparedMediaStream={takePreparedMediaStream}
+        onReconnect={retryCurrentRoom}
+        onLeave={goHome}
       />
     );
-  }
+  };
 
+  if (authMode !== 'baton') {
+    return renderRoomEntry();
+  }
+  if (roomId === null) {
+    return <BatonRuntimeRoot />;
+  }
   return (
-    <ActiveRoom
-      key={roomKey}
-      displayName={displayName}
-      roomId={roomId}
-      hostCapability={activeHostCapability}
-      releasePreparedMediaStream={stopUnclaimedPreparedMedia}
-      takePreparedMediaStream={takePreparedMediaStream}
-      onReconnect={retryCurrentRoom}
-      onLeave={goHome}
-    />
+    <BatonRoomEntryBoundary key={`${roomId}:${batonEntryGeneration}`} roomId={roomId}>
+      {renderRoomEntry}
+    </BatonRoomEntryBoundary>
   );
 }

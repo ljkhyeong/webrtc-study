@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ParticipationGrantLeaseManager } from './participation-grant';
+import {
+  ParticipationGrantAccessError,
+  ParticipationGrantLeaseManager,
+} from './participation-grant';
 
 const ROOM_ID = 'abcd-efgh-jkmp';
 const ENDPOINT = `/round/rooms/${ROOM_ID}/participation-grant/refresh`;
@@ -306,8 +309,53 @@ describe('BATON participation grant lease manager', () => {
     ).toThrow('same-origin path');
   });
 
-  it('reports only an HTTP status when refresh fails', async () => {
-    const fetcher = authenticatedFetcher(async () => response(403, { secret: 'do-not-log' }));
+  it.each([
+    { failure: 'unauthenticated', status: 401 },
+    { failure: 'forbidden', status: 403 },
+  ] as const)(
+    'classifies a $status refresh without reading or exposing its body',
+    async ({ failure, status }) => {
+      const body = { secret: 'do-not-log' };
+      const failedResponse = response(status, body);
+      const fetcher = authenticatedFetcher(async () => failedResponse);
+      const manager = new ParticipationGrantLeaseManager({
+        endpoint: ENDPOINT,
+        fetcher: fetcher as typeof fetch,
+        roomId: ROOM_ID,
+        storage: null,
+      });
+
+      const accessFailure = await manager.ensureFresh().catch((error: unknown) => error);
+
+      expect(accessFailure).toBeInstanceOf(ParticipationGrantAccessError);
+      expect((accessFailure as ParticipationGrantAccessError).failure).toBe(failure);
+      expect((accessFailure as Error).message).not.toContain('secret');
+      expect(failedResponse.json).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { failure: 'unauthenticated', response: response(401) },
+    { failure: 'forbidden', response: response(403) },
+    { failure: 'unauthenticated', response: response(200, { authenticated: false }) },
+  ] as const)('classifies a session access failure as $failure', async ({ failure, response }) => {
+    const fetcher = vi.fn(async () => response);
+    const manager = new ParticipationGrantLeaseManager({
+      endpoint: ENDPOINT,
+      fetcher: fetcher as typeof fetch,
+      roomId: ROOM_ID,
+      storage: null,
+    });
+
+    const accessFailure = await manager.ensureFresh().catch((error: unknown) => error);
+
+    expect(accessFailure).toBeInstanceOf(ParticipationGrantAccessError);
+    expect((accessFailure as ParticipationGrantAccessError).failure).toBe(failure);
+    expect(refreshCallCount(fetcher)).toBe(0);
+  });
+
+  it('reports only an HTTP status for a non-access refresh failure', async () => {
+    const fetcher = authenticatedFetcher(async () => response(429, { secret: 'do-not-log' }));
     const manager = new ParticipationGrantLeaseManager({
       endpoint: ENDPOINT,
       fetcher: fetcher as typeof fetch,
@@ -316,7 +364,7 @@ describe('BATON participation grant lease manager', () => {
     });
 
     await expect(manager.ensureFresh()).rejects.toThrow(
-      'Participation grant refresh failed with status 403',
+      'Participation grant refresh failed with status 429',
     );
   });
 
