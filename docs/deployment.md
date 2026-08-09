@@ -157,10 +157,14 @@ Health and metrics have a narrower trust boundary than room traffic:
   `/signal` or `/api/turn-credentials`.
 
 The BATON web flow is participation-grant refresh, TURN issuance, then
-WebSocket creation. It uses the server's relative `refreshAfterSeconds` on a
-monotonic browser clock, rejects values outside `1..300` seconds, and refreshes
-before TURN renewal and every initial or reconnect WebSocket creation. Refresh
-rotates only the cookie and does not force an early socket reconnect.
+WebSocket creation. The grant manager uses BATON's relative
+`refreshAfterSeconds` on a monotonic browser clock, rejects values outside
+`1..300` seconds, and refreshes before TURN renewal and every initial or
+reconnect WebSocket creation. ROUND's TURN response has its own server-derived
+`refreshAfterSeconds` in `1..604800`; the browser records a monotonic receipt
+deadline and never subtracts its wall clock from the TURN `expiresAt` epoch.
+Grant refresh rotates only the cookie and does not force an early socket
+reconnect.
 
 ROUND binds each socket to the grant used at its handshake. It checks expiry
 before inbound quota use and outbound enqueue, during heartbeat, and in a
@@ -174,6 +178,12 @@ still capped at the participation grant's `exp` even when the configured TURN
 TTL is longer. Key rotation needs an overlap window in which the JWK Set
 publishes both the retiring and new public key until every short-lived grant
 signed by the retiring key has expired.
+
+Invalid, expired, unknown-key, or wrong-claim participation grants return a
+no-store `401`. If the configured JWK source itself is unavailable during a
+cold load or required refresh, ROUND returns an empty no-store `503`; alerting
+must classify that as an authentication-infrastructure outage rather than a
+credential rejection.
 
 ROUND counts both in-progress handshakes and active sockets in BATON mode. The
 same `jti` may own one reservation, and the same
@@ -1030,9 +1040,11 @@ standalone Basic Auth workflow proves the BATON participation-grant boundary,
 and the coturn utility probe does not replace a browser UDP-blocked fallback
 test.
 
-The credential response contains `urls`, `username`, `credential`, and
-`expiresAt` (epoch seconds), but never the shared secret. Confirm separately in
-two browser/network combinations that WebSocket signaling connects and that
+The credential response contains `urls`, `username`, `credential`, `expiresAt`
+(epoch seconds), and the server-derived relative `refreshAfterSeconds`, but
+never the shared secret. The browser must schedule renewal from that relative
+field with a monotonic clock; `expiresAt` is not compared with the browser wall
+clock. Confirm separately in two browser/network combinations that WebSocket signaling connects and that
 `chrome://webrtc-internals` or the equivalent browser diagnostics shows a
 `relay` ICE candidate.
 

@@ -81,6 +81,11 @@ JWT는 응답 본문이나 JavaScript에 반환하지 않는다. BATON은 정확
 사용하며, 로컬 wall clock과 `expiresAt`의 차이로 갱신 시점을 다시 계산하지 않는다.
 중복 타이머와 TURN·WebSocket의 동시 선행 확인은 single-flight 갱신 하나로 합친다.
 
+ROUND의 TURN credential 응답도 `expiresAt`과 함께 서버가 유효 수명에서 계산한
+`refreshAfterSeconds`를 반환한다. 브라우저는 이 값을 응답 수신 시점의 monotonic clock에
+더해 갱신 deadline을 만들고, 로컬 wall clock과 TURN `expiresAt`을 빼서 수명을 추정하지
+않는다. `expiresAt`은 coturn username 계약과 운영 관측용 절대 시각으로만 유지한다.
+
 ### 참여권 계약
 
 BATON은 개인키로 짧은 수명의 JWT 참여권을 `RS256`으로 서명하고 JOSE header에 공개키를
@@ -95,7 +100,9 @@ ROUND에는 개인키를 배포하지 않으며, JWK Set cache가 갱신될 수 
 새 `kid`가 cache에 없으면 JWK Set을 다시 조회한다. Nimbus source는 cold load와 cache-miss
 retry를 수용하면서 원격 source 접근을 JVM별 30초 window에서 최대 두 번으로 제한하고,
 제한 중인 unknown `kid`는 추가 조회 없이 `401`로 거부한다. 따라서 새 공개키는 발급 전
-cache TTL보다 길게 선게시한다.
+cache TTL보다 길게 선게시한다. 형식 오류·만료·서명 불일치 참여권은 `401`로 유지하되,
+실제 JWK source 또는 검증 인프라 장애는 빈 본문과 `Cache-Control: no-store`를 가진
+`503`으로 구분한다.
 
 참여권에는 다음 claim이 반드시 있어야 한다.
 

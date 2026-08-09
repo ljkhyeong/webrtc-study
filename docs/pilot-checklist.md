@@ -329,9 +329,15 @@ The unchecked production gate below remains authoritative.
 - [ ] Concurrent grant checks share one refresh request. The browser schedules
       `refreshAfterSeconds` from a monotonic relative clock rather than
       subtracting its wall clock from `expiresAt`.
+- [ ] TURN issuance returns a numeric server-derived `refreshAfterSeconds` and
+      the browser schedules it from a monotonic receipt deadline; changing the
+      browser wall clock does not reject a fresh credential or postpone renewal.
 - [ ] Missing, malformed, expired, wrong-signature, wrong-issuer,
       wrong-audience, and wrong-room grants are rejected for both WebSocket
       upgrade and TURN credential issuance.
+- [ ] Invalid grants return no-store `401`, while a cold-cache JWK endpoint
+      outage returns an empty no-store `503` and is counted as infrastructure
+      unavailability rather than a credential failure.
 - [ ] A grant with `iat` more than 60 seconds in the future or with
       `exp - iat` above `ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS` is rejected.
 - [ ] A valid grant cannot join a different room by changing the public path,

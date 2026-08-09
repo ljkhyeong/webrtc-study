@@ -111,7 +111,9 @@ value (`round` by default); an additional audience is rejected. ROUND keeps the 
 a 60-second JVM cache and refreshes it when a well-formed, uncached `kid` is encountered. To allow a
 cold load and cache-miss retry, the Nimbus source permits a burst of at most two outbound source
 accesses per 30-second window per JVM; rate-limited unknown keys fail with HTTP 401 without another
-JWK fetch.
+JWK fetch. A malformed, expired, or unverifiable token remains HTTP 401, while an actual JWK source
+or verification-infrastructure outage returns an empty no-store HTTP 503 so clients and metrics do
+not misclassify server availability as bad credentials.
 BATON must therefore prepublish a new public key for longer than the cache TTL before switching
 issuance to its `kid`.
 The default maximum grant lifetime is five minutes, with
@@ -196,12 +198,15 @@ discarding stale remote peer connections and the old server-owned peer ID. A loc
 exhausted recovery stops every owned track and timer.
 
 BATON mode starts with participation-grant refresh, then TURN issuance, then WebSocket creation.
-The browser refresh manager is single-flight and schedules the next refresh from the server's
-relative `refreshAfterSeconds` using a monotonic browser clock. TURN refresh and every initial or
-reconnect WebSocket creation call the same `ensureFresh()` guard first. A successful refresh rotates
-only the `HttpOnly` cookie; it does not proactively disconnect the current socket. At the old
-socket's original grant expiry, ROUND closes it and the existing bounded reconnect path creates a
-fresh socket with the new cookie while preserving local media and chat history.
+The participation-grant refresh manager is single-flight and schedules its next refresh from
+BATON's relative `refreshAfterSeconds` using a monotonic browser clock. TURN issuance independently
+returns a server-derived `refreshAfterSeconds`; the browser records its monotonic receipt deadline
+instead of comparing the TURN `expiresAt` epoch with `Date.now()`. TURN refresh and every initial or
+reconnect WebSocket creation call the same participation-grant `ensureFresh()` guard first. A
+successful grant refresh rotates only the `HttpOnly` cookie; it does not proactively disconnect the
+current socket. At the old socket's original grant expiry, ROUND closes it and the existing bounded
+reconnect path creates a fresh socket with the new cookie while preserving local media and chat
+history.
 
 ICE recovery uses one deterministic offer initiator per peer pair to avoid glare. A disconnected
 peer gets a short grace period, then an ICE restart, followed by peer-connection recreation if the
