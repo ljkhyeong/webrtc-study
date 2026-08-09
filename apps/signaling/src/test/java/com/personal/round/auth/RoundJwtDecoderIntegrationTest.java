@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +44,7 @@ class RoundJwtDecoderIntegrationTest {
 	private KeyPair trustedKeyPair;
 	private String issuer;
 	private JwtDecoder decoder;
+	private AtomicInteger jwkRequestCount;
 
 	@BeforeEach
 	void setUp() throws Exception {
@@ -56,8 +58,10 @@ class RoundJwtDecoderIntegrationTest {
 				.toString()
 				.getBytes(StandardCharsets.UTF_8);
 
+		jwkRequestCount = new AtomicInteger();
 		jwkServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		jwkServer.createContext("/jwks", exchange -> {
+			jwkRequestCount.incrementAndGet();
 			exchange.getResponseHeaders().set("Content-Type", "application/json");
 			exchange.sendResponseHeaders(200, jwkSet.length);
 			try (var responseBody = exchange.getResponseBody()) {
@@ -228,6 +232,37 @@ class RoundJwtDecoderIntegrationTest {
 				"retired-baton-key",
 				claims -> {
 				}));
+	}
+
+	@Test
+	@DisplayName("서로 다른 unknown kid 반복은 JWK 재조회를 증폭하지 않고 모두 거부한다")
+	void rateLimitsRepeatedUnknownKeyIds() throws Exception {
+		SignedJWT validToken = token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				claims -> {
+				});
+		SignedJWT firstUnknownToken = token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				"unknown-baton-key-1",
+				claims -> {
+				});
+		SignedJWT secondUnknownToken = token(
+				trustedKeyPair,
+				JWSAlgorithm.RS256,
+				"unknown-baton-key-2",
+				claims -> {
+				});
+
+		decoder.decode(validToken.serialize());
+		assertThat(jwkRequestCount).hasValue(1);
+
+		assertInvalid(firstUnknownToken);
+		assertThat(jwkRequestCount).hasValue(2);
+
+		assertInvalid(secondUnknownToken);
+		assertThat(jwkRequestCount).hasValue(2);
 	}
 
 	private void assertInvalid(SignedJWT token) {

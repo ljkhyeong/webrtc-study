@@ -7,18 +7,18 @@ import static com.personal.round.config.RoundRoutes.STANDALONE_TURN_CREDENTIALS;
 import static org.springframework.security.config.Customizer.withDefaults;
 import static org.springframework.security.config.http.SessionCreationPolicy.STATELESS;
 
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.Ticker;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import jakarta.servlet.DispatcherType;
+import java.net.MalformedURLException;
+import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.cache.Cache;
-import org.springframework.cache.caffeine.CaffeineCache;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -42,7 +42,7 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 @Configuration(proxyBeanMethods = false)
 public class RoundSecurityConfig {
 	private static final Duration JWK_CACHE_TTL = Duration.ofSeconds(60);
-	private static final String JWK_CACHE_NAME = "round-participation-jwks";
+	private static final Duration JWK_REFRESH_MIN_INTERVAL = Duration.ofSeconds(30);
 
 	@Bean
 	@Order(1)
@@ -119,10 +119,13 @@ public class RoundSecurityConfig {
 
 	@Bean
 	@ConditionalOnProperty(name = "round.auth.mode", havingValue = "baton")
-	JwtDecoder batonJwtDecoder(RoundAuthProperties properties, Clock clock) {
-		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.jwkSetUri())
+	JwtDecoder batonJwtDecoder(RoundAuthProperties properties, Clock clock)
+			throws MalformedURLException {
+		JWKSource<SecurityContext> jwkSource = buildJwkSource(
+				JWKSourceBuilder.<SecurityContext>create(
+						URI.create(properties.jwkSetUri()).toURL()));
+		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSource(jwkSource)
 				.jwsAlgorithm(SignatureAlgorithm.RS256)
-				.cache(jwkSetCache(Ticker.systemTicker()))
 				.jwtProcessorCustomizer(processor -> {
 					JWSKeySelector<SecurityContext> keySelector =
 							processor.getJWSKeySelector();
@@ -147,14 +150,15 @@ public class RoundSecurityConfig {
 		return decoder;
 	}
 
-	static Cache jwkSetCache(Ticker ticker) {
-		return new CaffeineCache(
-				JWK_CACHE_NAME,
-				Caffeine.newBuilder()
-						.maximumSize(1)
-						.expireAfterWrite(JWK_CACHE_TTL)
-						.ticker(ticker)
-						.build());
+	static JWKSource<SecurityContext> buildJwkSource(
+			JWKSourceBuilder<SecurityContext> sourceBuilder) {
+		return sourceBuilder
+				.cache(
+						JWK_CACHE_TTL.toMillis(),
+						JWKSourceBuilder.DEFAULT_CACHE_REFRESH_TIMEOUT)
+				.refreshAheadCache(false)
+				.rateLimited(JWK_REFRESH_MIN_INTERVAL.toMillis())
+				.build();
 	}
 
 	private static AuthenticationEntryPoint noStoreBearerEntryPoint() {

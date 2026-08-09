@@ -1,6 +1,7 @@
 package com.personal.round.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -9,6 +10,8 @@ import static org.mockito.Mockito.when;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.KeySourceException;
+import com.nimbusds.jose.jwk.source.RateLimitReachedException;
 import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import java.security.Key;
@@ -58,6 +61,30 @@ class BatonJwsKeySelectorTest {
 				header("retired-baton-key"),
 				null))
 				.isEmpty();
+	}
+
+	@Test
+	@DisplayName("JWK 재조회 제한에 도달하면 지원하지 않는 kid로 거부한다")
+	void rejectsAKeyIdWhenTheJwkRefreshRateLimitIsReached() throws Exception {
+		when(delegate.selectJWSKeys(any(), isNull()))
+				.thenThrow(new RateLimitReachedException());
+
+		assertThat(selector.selectJWSKeys(
+				header("unknown-baton-key"),
+				null))
+				.isEmpty();
+	}
+
+	@Test
+	@DisplayName("JWK 원격 조회 장애는 인증 실패로 숨기지 않고 전달한다")
+	void propagatesOtherKeySourceFailures() throws Exception {
+		KeySourceException failure = new KeySourceException("JWK endpoint unavailable");
+		when(delegate.selectJWSKeys(any(), isNull())).thenThrow(failure);
+
+		assertThatThrownBy(() -> selector.selectJWSKeys(
+				header("baton-key-2026-08"),
+				null))
+				.isSameAs(failure);
 	}
 
 	@Test

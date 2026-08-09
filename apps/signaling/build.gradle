@@ -23,8 +23,6 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
-	implementation 'org.springframework:spring-context-support'
-	implementation 'com.github.ben-manes.caffeine:caffeine'
 	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 	annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
 

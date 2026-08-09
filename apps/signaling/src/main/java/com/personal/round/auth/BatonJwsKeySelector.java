@@ -2,6 +2,7 @@ package com.personal.round.auth;
 
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.KeySourceException;
+import com.nimbusds.jose.jwk.source.RateLimitReachedException;
 import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import java.security.Key;
@@ -30,6 +31,11 @@ final class BatonJwsKeySelector implements JWSKeySelector<SecurityContext> {
 			return List.of();
 		}
 
-		return delegate.selectJWSKeys(header, context);
+		try {
+			return delegate.selectJWSKeys(header, context);
+		}
+		catch (RateLimitReachedException exception) {
+			return List.of();
+		}
 	}
 }
