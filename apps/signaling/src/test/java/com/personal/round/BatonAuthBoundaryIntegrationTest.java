@@ -29,6 +29,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -97,6 +98,11 @@ class BatonAuthBoundaryIntegrationTest {
 			ROOM_ID,
 			"ticket-malformed-key",
 			"../baton-key");
+	private static final String EXTRA_AUDIENCE_TOKEN =
+			BATON_ISSUER.issueParticipationGrant(
+					ROOM_ID,
+					"ticket-extra-audience",
+					List.of("round", "other-service"));
 	private static final String INVALID_TOKEN = "not-a-jwt";
 
 	private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -233,6 +239,25 @@ class BatonAuthBoundaryIntegrationTest {
 		assertThat(malformedKey.statusCode()).isEqualTo(401);
 		assertThat(malformedKey.headers().firstValue("cache-control"))
 				.contains("no-store");
+	}
+
+	@Test
+	void rejectsAnAdditionalAudienceAtTurnAndWebSocketBoundaries() throws Exception {
+		String turnPath = "/api/rooms/" + ROOM_ID + "/turn-credentials";
+		HttpResponse<String> turnResponse = post(
+				turnPath,
+				EXTRA_AUDIENCE_TOKEN,
+				origin(),
+				"same-origin");
+
+		assertThat(turnResponse.statusCode()).isEqualTo(401);
+		assertThat(turnResponse.headers().firstValue("cache-control"))
+				.contains("no-store");
+		assertWebSocketRejected(
+				"/rooms/" + ROOM_ID + "/signal",
+				EXTRA_AUDIENCE_TOKEN,
+				ALLOWED_ORIGIN,
+				"401");
 	}
 
 	@Test
@@ -548,13 +573,28 @@ class BatonAuthBoundaryIntegrationTest {
 			return issueParticipationGrant(roomId, tokenId, KEY_ID);
 		}
 
+		String issueParticipationGrant(
+				String roomId,
+				String tokenId,
+				List<String> audiences) {
+			return issueParticipationGrant(roomId, tokenId, KEY_ID, audiences);
+		}
+
 		String issueParticipationGrant(String roomId, String tokenId, String keyId) {
+			return issueParticipationGrant(roomId, tokenId, keyId, List.of("round"));
+		}
+
+		String issueParticipationGrant(
+				String roomId,
+				String tokenId,
+				String keyId,
+				List<String> audiences) {
 			try {
 				Instant now = Instant.now();
 				JWTClaimsSet claims = new JWTClaimsSet.Builder()
 						.issuer(issuer)
 						.subject(ACCOUNT_ID)
-						.audience("round")
+						.audience(audiences)
 						.issueTime(Date.from(now.minusSeconds(30)))
 						.expirationTime(Date.from(now.plusSeconds(240)))
 						.jwtID(tokenId)

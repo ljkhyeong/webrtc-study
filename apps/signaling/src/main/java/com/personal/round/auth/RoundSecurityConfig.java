@@ -7,20 +7,26 @@ import static com.personal.round.config.RoundRoutes.STANDALONE_TURN_CREDENTIALS;
 import static org.springframework.security.config.Customizer.withDefaults;
 import static org.springframework.security.config.http.SessionCreationPolicy.STATELESS;
 
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Ticker;
 import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import jakarta.servlet.DispatcherType;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.cache.Cache;
+import org.springframework.cache.caffeine.CaffeineCache;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
-import org.springframework.security.oauth2.jwt.JwtAudienceValidator;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
@@ -34,6 +40,8 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 
 @Configuration(proxyBeanMethods = false)
 public class RoundSecurityConfig {
+	private static final Duration JWK_CACHE_TTL = Duration.ofSeconds(60);
+	private static final String JWK_CACHE_NAME = "round-participation-jwks";
 
 	@Bean
 	@Order(1)
@@ -113,6 +121,7 @@ public class RoundSecurityConfig {
 	JwtDecoder batonJwtDecoder(RoundAuthProperties properties, Clock clock) {
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.jwkSetUri())
 				.jwsAlgorithm(SignatureAlgorithm.RS256)
+				.cache(jwkSetCache(Ticker.systemTicker()))
 				.jwtProcessorCustomizer(processor -> {
 					JWSKeySelector<SecurityContext> keySelector =
 							processor.getJWSKeySelector();
@@ -126,11 +135,25 @@ public class RoundSecurityConfig {
 		decoder.setJwtValidator(JwtValidators.createDefaultWithValidators(List.of(
 				timestampValidator,
 				new JwtIssuerValidator(properties.issuer()),
-				new JwtAudienceValidator(properties.audience()),
+				new JwtClaimValidator<Collection<String>>(
+						JwtClaimNames.AUD,
+						audiences -> audiences != null
+								&& audiences.size() == 1
+								&& audiences.contains(properties.audience())),
 				new BatonParticipationTokenValidator(
 						properties.maxGrantLifetime(),
 						clock))));
 		return decoder;
+	}
+
+	static Cache jwkSetCache(Ticker ticker) {
+		return new CaffeineCache(
+				JWK_CACHE_NAME,
+				Caffeine.newBuilder()
+						.maximumSize(1)
+						.expireAfterWrite(JWK_CACHE_TTL)
+						.ticker(ticker)
+						.build());
 	}
 
 	private static AuthenticationEntryPoint noStoreBearerEntryPoint() {
