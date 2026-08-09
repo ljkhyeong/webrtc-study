@@ -479,6 +479,19 @@ function usePathname() {
   return { pathname, navigate };
 }
 
+export function navigateToOwningHome(
+  authMode: ImportMetaEnv['VITE_ROUND_AUTH_MODE'],
+  navigate: (path: string) => void,
+  navigateDocument: (path: string) => void = (path) => window.location.assign(path),
+) {
+  if (authMode === 'baton') {
+    navigateDocument('/');
+    return;
+  }
+
+  navigate('/');
+}
+
 interface ActiveRoomProps {
   displayName: string;
   roomId: string;
@@ -1028,7 +1041,7 @@ export function App() {
     setActiveRoomKey(null);
     setActiveHostCapability(undefined);
     setApprovedRoomKey(null);
-    navigate('/');
+    navigateToOwningHome(import.meta.env.VITE_ROUND_AUTH_MODE, navigate);
   };
 
   const retryCurrentRoom = () => {

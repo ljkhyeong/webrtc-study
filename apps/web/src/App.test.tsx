@@ -5,6 +5,7 @@ import {
   App,
   buildRoomSystemNotices,
   chatErrorMessage,
+  navigateToOwningHome,
   resolveActiveRoomTerminalState,
   roomErrorMessage,
   roomStartupErrorMessage,
@@ -15,6 +16,31 @@ import {
 } from './App';
 
 describe('App pre-join boundary', () => {
+  it('returns BATON-owned rooms with a document navigation', () => {
+    const navigate = vi.fn();
+    const navigateDocument = vi.fn();
+
+    navigateToOwningHome('baton', navigate, navigateDocument);
+
+    expect(navigateDocument).toHaveBeenCalledOnce();
+    expect(navigateDocument).toHaveBeenCalledWith('/');
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'standalone'] as const)(
+    'keeps %s rooms on the standalone client-side landing route',
+    (authMode) => {
+      const navigate = vi.fn();
+      const navigateDocument = vi.fn();
+
+      navigateToOwningHome(authMode, navigate, navigateDocument);
+
+      expect(navigate).toHaveBeenCalledOnce();
+      expect(navigate).toHaveBeenCalledWith('/');
+      expect(navigateDocument).not.toHaveBeenCalled();
+    },
+  );
+
   it('opens a direct invite link without requesting media or creating a WebSocket', () => {
     const getUserMedia = vi.fn();
     const webSocket = vi.fn();
