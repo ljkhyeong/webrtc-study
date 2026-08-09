@@ -76,7 +76,7 @@ npm run test:e2e
 | `ROUND_STANDALONE_HOST_TOKEN_SHA256`                  | 없음                    | standalone 방장 키 SHA-256      |
 | `ROUND_AUTH_COOKIE_NAME`                              | `__Secure-round_access` | BATON 참여권 cookie 이름        |
 | `ROUND_AUTH_ISSUER`                                   | 없음                    | 신뢰할 BATON JWT issuer         |
-| `ROUND_AUTH_AUDIENCE`                                 | `round`                 | 참여권의 필수 audience          |
+| `ROUND_AUTH_AUDIENCE`                                 | `round`                 | 참여권의 유일한 audience        |
 | `ROUND_AUTH_JWK_SET_URI`                              | 없음                    | BATON 공개 JWK Set HTTPS URI    |
 | `ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS`               | `300`                   | 참여권 최대 허용 수명(초)       |
 | `MAX_ROOM_SIZE`                                       | `6`                     | 방 최대 참가자 수               |
@@ -181,6 +181,9 @@ BATON은 권한 확인 후 `kid`를 포함한 `RS256`으로 짧은 수명의 JWT
 `Path=/round/rooms/{roomId}` 쿠키로 전달하고, ROUND는 BATON JWK Set의 공개키로
 서명·issuer·audience와 필수 claim을 검증합니다. `room_id`는 URL 경로 및
 `room.join`의 방 식별자와 일치해야 합니다.
+`aud`는 정확히 하나여야 하며 설정한 값(기본 `round`) 외 audience가 함께 있으면
+거부합니다. ROUND JVM의 JWK Set cache는 60초 뒤 만료하고, 아직 cache에 없는 정상 형식의
+새 `kid`를 만나면 즉시 JWK Set을 다시 조회해 key 선게시 회전을 수용합니다.
 
 BATON 연동 시 브라우저가 사용하는 공개 경로는 다음과 같습니다.
 
@@ -219,11 +222,11 @@ BATON 모드는 유효한 참여권이 없으면 fail-closed로 요청을 거부
 밀어내지 않습니다.
 
 BATON의 Caddy 설정에서는 카메라·마이크·화면 캡처 `Permissions-Policy`, WebSocket `connect-src`,
-두 ROUND proxy 경로, BATON 갱신 경로와 cookie path를 함께 구성해야 합니다. 현재 BATON
-본체에는 인증된 사용자 신원·스터디 멤버십 경계가 아직 없으므로, 실제 참여권 발급·갱신
-E2E는 완료된 것으로 보지 않습니다. ROUND의 Java 통합 테스트는 로컬 JWK endpoint와 실제
-`RS256` 참여권으로 TURN·WebSocket·방 경계를 검증하지만, 이는 BATON의 실사용 발급기와
-edge를 통과했다는 증거를 대신하지 않습니다. `sub`는 Google OIDC `sub`, Naver 프로필
+두 ROUND proxy 경로, BATON 갱신 경로와 cookie path를 함께 구성해야 합니다. BATON에는
+Account session·AccountMembership·room mapping·참여권 signer와 JWK가 구현되어 있고, 선택
+실행 교차서비스 테스트는 실제 BATON signer와 ROUND bootJar 사이의 TURN·WebSocket·key
+회전을 검증합니다. 다만 실제 브라우저 session과 public HTTPS edge를 함께 통과하는 E2E는
+완료된 것으로 보지 않습니다. `sub`는 Google OIDC `sub`, Naver 프로필
 ID, 이메일과 로그인 공급자 변경에 영향받지 않는 canonical BATON `Account.id`여야 합니다.
 공유 접근 키나 브라우저 display name으로 `sub`를 만들어서는 안 됩니다. 전체 결정과 JWT
 claim 계약은

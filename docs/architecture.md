@@ -106,7 +106,10 @@ The browser and internal routing contracts are:
 | TURN credential             | `/round/rooms/{roomId}/turn-credentials`            | `/api/rooms/{roomId}/turn-credentials` |
 
 ROUND accepts only `RS256` and verifies the signature from BATON's JWK Set, issuer, audience,
-expiry, and every required claim locally. The default maximum grant lifetime is five minutes, with
+expiry, and every required claim locally. The audience list must contain exactly the configured
+value (`round` by default); an additional audience is rejected. ROUND keeps the fetched JWK Set in
+a 60-second JVM cache and immediately refreshes it when a well-formed, uncached `kid` is encountered.
+The default maximum grant lifetime is five minutes, with
 only 60 seconds of clock skew allowed for a future `iat`; longer grants are rejected even when
 their signature and `exp` are otherwise valid. The path `roomId` must match `room_id` for the
 WebSocket upgrade and TURN request. The verified grant is carried into the WebSocket session, and

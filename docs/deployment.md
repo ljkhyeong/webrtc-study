@@ -41,7 +41,7 @@ ROUND_AUTH_MODE=baton
 ROUND_AUTH_COOKIE_NAME=__Secure-round_access
 ROUND_AUTH_ISSUER=https://baton.example.com
 ROUND_AUTH_AUDIENCE=round
-ROUND_AUTH_JWK_SET_URI=https://baton.example.com/.well-known/jwks.json
+ROUND_AUTH_JWK_SET_URI=https://baton.example.com/.well-known/round-participation-jwks.json
 ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS=300
 ALLOWED_ORIGINS=https://baton.example.com
 ```

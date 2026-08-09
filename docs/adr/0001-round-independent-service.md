@@ -91,14 +91,15 @@ BATON은 개인키로 짧은 수명의 JWT 참여권을 `RS256`으로 서명하�
 키를 교체할 때 BATON은 새 공개키를 JWK Set에 먼저 추가한 뒤 새 `kid`로 발급을 전환한다.
 기존 공개키는 이전 키로 발급한 참여권의 최대 수명과 clock skew가 모두 지난 뒤 제거한다.
 ROUND에는 개인키를 배포하지 않으며, JWK Set cache가 갱신될 수 있도록 두 공개키의
-중첩 기간을 실제 배포에서 리허설한다.
+중첩 기간을 실제 배포에서 리허설한다. ROUND JVM cache는 60초 뒤 만료하며 정상 형식의
+새 `kid`가 cache에 없으면 JWK Set을 즉시 다시 조회한다.
 
 참여권에는 다음 claim이 반드시 있어야 한다.
 
 | claim      | 의미                              |
 | ---------- | --------------------------------- |
 | `iss`      | 신뢰하도록 설정한 BATON issuer    |
-| `aud`      | 고정값 `round`                    |
+| `aud`      | 정확히 하나인 고정값 `round`      |
 | `sub`      | 불변 canonical BATON `Account.id` |
 | `exp`      | 참여권 만료 시각                  |
 | `iat`      | 참여권 발급 시각                  |
@@ -108,7 +109,8 @@ ROUND에는 개인키를 배포하지 않으며, JWK Set cache가 갱신될 수 
 | `role`     | `host` 또는 `participant`         |
 
 ROUND는 `RS256` 서명과 JWK 공개키, `iss`, `aud`, 만료 시각, 필수 claim의 존재와 형식을
-모두 검증한다. HTTP 검증과 WebSocket lease는 같은 `Clock`을 사용하며 `exp`에는 clock
+모두 검증한다. `aud`에 `round` 외 값을 함께 넣어도 거부한다. HTTP 검증과 WebSocket
+lease는 같은 `Clock`을 사용하며 `exp`에는 clock
 skew를 허용하지 않는다. 60초 허용치는 미래 `iat`에만 적용하고, 기본 5분인 최대 참여권
 수명보다 긴 `exp - iat`도 거부한다. URL 경로의 `roomId`와 `room_id`가
 다르면 WebSocket upgrade 및 TURN credential 요청을 거부한다. WebSocket 연결 후에는
