@@ -24,6 +24,7 @@ const MAX_CANDIDATE_LENGTH = 8 * 1024;
 const MAX_ERROR_MESSAGE_LENGTH = 1_024;
 const PARTICIPANT_ROLES = ['host', 'participant'] as const;
 const MODERATED_MEDIA_KINDS = ['audio', 'video'] as const;
+const UTF8_ENCODER = new TextEncoder();
 
 export const MAX_SIGNALING_FRAME_BYTES = 64 * 1024;
 export const MAX_SDP_BYTES = 48 * 1024;
@@ -160,28 +161,7 @@ export function serializeClientMessage(input: unknown): string {
 }
 
 export function utf8ByteLength(value: string): number {
-  let bytes = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
-    if (codeUnit <= 0x7f) {
-      bytes += 1;
-    } else if (codeUnit <= 0x7ff) {
-      bytes += 2;
-    } else if (
-      codeUnit >= 0xd800 &&
-      codeUnit <= 0xdbff &&
-      index + 1 < value.length &&
-      value.charCodeAt(index + 1) >= 0xdc00 &&
-      value.charCodeAt(index + 1) <= 0xdfff
-    ) {
-      bytes += 4;
-      index += 1;
-    } else {
-      // TextEncoder replaces an unpaired surrogate with U+FFFD.
-      bytes += 3;
-    }
-  }
-  return bytes;
+  return UTF8_ENCODER.encode(value).byteLength;
 }
 
 function relayEnvelope(message: UnknownRecord): void {

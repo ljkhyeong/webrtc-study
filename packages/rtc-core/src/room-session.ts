@@ -429,11 +429,7 @@ function cloneRtcConfiguration(
 }
 
 function defaultCreateId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return globalThis.crypto.randomUUID();
 }
 
 function getErrorMessage(error: unknown): string {
@@ -488,18 +484,6 @@ function isDateSafeTimestamp(value: unknown): value is number {
     value >= 0 &&
     value <= MAX_DATE_TIMESTAMP_MS
   );
-}
-
-function toPeerConnectionStatus(state: RTCPeerConnectionState): PeerConnectionStatus {
-  switch (state) {
-    case 'new':
-    case 'connecting':
-    case 'connected':
-    case 'disconnected':
-    case 'failed':
-    case 'closed':
-      return state;
-  }
 }
 
 function serializeCandidate(candidate: RTCIceCandidate | null): SerializedIceCandidate | null {
@@ -2369,7 +2353,7 @@ export class RoomSession {
       if (!this.#isCurrentPeer(peer)) {
         return;
       }
-      const status = toPeerConnectionStatus(connection.connectionState);
+      const status = connection.connectionState;
       this.#setPeerConnectionStatus(peerId, status);
       switch (status) {
         case 'connected':
