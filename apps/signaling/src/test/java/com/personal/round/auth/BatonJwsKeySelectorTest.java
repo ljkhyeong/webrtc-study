@@ -25,7 +25,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 class BatonJwsKeySelectorTest {
 
 	private final JWSKeySelector<SecurityContext> delegate = mock();
-	private final BatonJwsKeySelector selector = new BatonJwsKeySelector(delegate);
+	private final BatonJwsKeySelector selector =
+			new BatonJwsKeySelector(delegate, () -> false);
 
 	@ParameterizedTest
 	@NullSource
@@ -76,6 +77,21 @@ class BatonJwsKeySelectorTest {
 	}
 
 	@Test
+	@DisplayName("최근 JWK 원격 조회가 실패했으면 재조회 제한도 인프라 장애로 전달한다")
+	void propagatesTheRateLimitAfterAJwkSourceFailure() throws Exception {
+		RateLimitReachedException failure = new RateLimitReachedException();
+		when(delegate.selectJWSKeys(any(), isNull())).thenThrow(failure);
+		BatonJwsKeySelector unavailableSelector = new BatonJwsKeySelector(
+				delegate,
+				() -> true);
+
+		assertThatThrownBy(() -> unavailableSelector.selectJWSKeys(
+				header("baton-key-during-outage"),
+				null))
+				.isSameAs(failure);
+	}
+
+	@Test
 	@DisplayName("JWK 원격 조회 장애는 인증 실패로 숨기지 않고 전달한다")
 	void propagatesOtherKeySourceFailures() throws Exception {
 		KeySourceException failure = new KeySourceException("JWK endpoint unavailable");
@@ -93,7 +109,8 @@ class BatonJwsKeySelectorTest {
 		Key key = mock(Key.class);
 		List<Key> selectedKeys = List.of(key);
 		BatonJwsKeySelector acceptingSelector = new BatonJwsKeySelector(
-				(header, context) -> selectedKeys);
+				(header, context) -> selectedKeys,
+				() -> false);
 
 		assertThat(acceptingSelector.selectJWSKeys(
 				header("baton-key-2026-08"),

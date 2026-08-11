@@ -11,6 +11,7 @@ import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jose.util.health.HealthStatus;
 import jakarta.servlet.DispatcherType;
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -18,6 +19,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,6 +27,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtAudienceValidator;
@@ -37,9 +40,11 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.oauth2.server.resource.web.access.BearerTokenAccessDeniedHandler;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
 
 @Configuration(proxyBeanMethods = false)
 public class RoundSecurityConfig {
@@ -53,6 +58,8 @@ public class RoundSecurityConfig {
 			HttpSecurity http,
 			RoundAuthProperties properties)
 			throws Exception {
+		AuthenticationEntryPoint authenticationEntryPoint =
+				noStoreBearerEntryPoint();
 		http.securityMatcher(
 						BATON_SIGNAL_SECURITY_PATTERN,
 						BATON_TURN_CREDENTIALS_SECURITY_PATTERN)
@@ -60,7 +67,10 @@ public class RoundSecurityConfig {
 				.oauth2ResourceServer(oauth2 -> oauth2
 						.bearerTokenResolver(new CookieBearerTokenResolver(properties.cookieName()))
 						.jwt(withDefaults())
-						.authenticationEntryPoint(noStoreBearerEntryPoint()))
+						.authenticationEntryPoint(authenticationEntryPoint)
+						.withObjectPostProcessor(
+								handleAuthenticationServiceFailures(
+										authenticationEntryPoint)))
 				.exceptionHandling(exceptions -> exceptions
 						.accessDeniedHandler(noStoreBearerAccessDeniedHandler()))
 				.sessionManagement(session -> session.sessionCreationPolicy(STATELESS))
@@ -123,16 +133,23 @@ public class RoundSecurityConfig {
 	@ConditionalOnProperty(name = "round.auth.mode", havingValue = "baton")
 	JwtDecoder batonJwtDecoder(RoundAuthProperties properties, Clock clock)
 			throws MalformedURLException {
+		AtomicReference<HealthStatus> lastJwkSourceHealth =
+				new AtomicReference<>(HealthStatus.HEALTHY);
 		JWKSource<SecurityContext> jwkSource = buildJwkSource(
 				JWKSourceBuilder.<SecurityContext>create(
-						URI.create(properties.jwkSetUri()).toURL()));
+						URI.create(properties.jwkSetUri()).toURL())
+						.healthReporting(report -> lastJwkSourceHealth.set(
+								report.getHealthStatus())));
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSource(jwkSource)
 				.jwsAlgorithm(SignatureAlgorithm.RS256)
 				.jwtProcessorCustomizer(processor -> {
 					JWSKeySelector<SecurityContext> keySelector =
 							processor.getJWSKeySelector();
 					processor.setJWSKeySelector(
-							new BatonJwsKeySelector(keySelector));
+							new BatonJwsKeySelector(
+									keySelector,
+									() -> lastJwkSourceHealth.get()
+											== HealthStatus.NOT_HEALTHY));
 				})
 				.build();
 		JwtTimestampValidator timestampValidator =
@@ -175,6 +192,22 @@ public class RoundSecurityConfig {
 			}
 			delegate.commence(request, response, exception);
 			response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+		};
+	}
+
+	private static ObjectPostProcessor<BearerTokenAuthenticationFilter>
+			handleAuthenticationServiceFailures(
+					AuthenticationEntryPoint authenticationEntryPoint) {
+		return new ObjectPostProcessor<>() {
+			@Override
+			public <O extends BearerTokenAuthenticationFilter> O postProcess(O filter) {
+				AuthenticationEntryPointFailureHandler failureHandler =
+						new AuthenticationEntryPointFailureHandler(
+								authenticationEntryPoint);
+				failureHandler.setRethrowAuthenticationServiceException(false);
+				filter.setAuthenticationFailureHandler(failureHandler);
+				return filter;
+			}
 		};
 	}
 
