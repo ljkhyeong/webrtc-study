@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 const ROOM_ID = 'abcd-efgh-jkmp';
 const ROOM_PATH = `/room/${ROOM_ID}`;
 const GRANT_ENDPOINT = `/round/rooms/${ROOM_ID}/participation-grant/refresh`;
+const isProductionEdge = process.env.ROUND_BATON_E2E_EDGE === 'true';
 
 test.beforeEach(async ({ context }) => {
   await context.addInitScript(() => {
@@ -98,6 +99,37 @@ test('BATON 401 keeps media closed and offers only the canonical room login retu
   await expect(page.locator('body')).not.toContainText('browser-test-csrf');
 });
 
+test('production BATON edge owns room HTML, asset caching, and closed artifact-root routes', async ({
+  request,
+}) => {
+  test.skip(!isProductionEdge, 'requires the production baton-web-runtime image');
+
+  const roomResponse = await request.get(ROOM_PATH);
+  expect(roomResponse.status()).toBe(200);
+  expect(roomResponse.headers()['cache-control']).toBe('no-store');
+  const roomHtml = await roomResponse.text();
+  const assetPath = roomHtml.match(/(?:src|href)="(\/round-ui\/assets\/[^"]+)"/)?.[1];
+  expect(assetPath).toMatch(
+    /^\/round-ui\/assets\/(?:[^/]+\/)*[^/]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9.]+$/,
+  );
+
+  const assetResponse = await request.get(assetPath!);
+  expect(assetResponse.status()).toBe(200);
+  expect(assetResponse.headers()['cache-control']).toBe('public, max-age=31536000, immutable');
+
+  const missingAssetResponse = await request.get('/round-ui/assets/missing-AAAAAAAA.js');
+  expect(missingAssetResponse.status()).toBe(404);
+  expect(missingAssetResponse.headers()['cache-control']).toBe('no-store');
+
+  const nonHashedAssetResponse = await request.get('/round-ui/assets/index.js');
+  expect(nonHashedAssetResponse.status()).toBe(404);
+  expect(nonHashedAssetResponse.headers()['cache-control']).toBe('no-store');
+
+  const artifactRootResponse = await request.get('/round-ui/');
+  expect(artifactRootResponse.status()).toBe(404);
+  expect(artifactRootResponse.headers()['cache-control']).toBe('no-store');
+});
+
 async function mediaRequestCount(page: import('@playwright/test').Page): Promise<number> {
   return page.evaluate(
     () => (window as Window & { __roundGetUserMediaCalls: number }).__roundGetUserMediaCalls,
@@ -105,6 +137,11 @@ async function mediaRequestCount(page: import('@playwright/test').Page): Promise
 }
 
 async function openBatonRoom(page: import('@playwright/test').Page): Promise<void> {
+  if (isProductionEdge) {
+    await page.goto(ROOM_PATH);
+    return;
+  }
+
   await page.goto('/round-ui/');
   await page.evaluate((roomPath) => {
     window.history.replaceState(null, '', roomPath);

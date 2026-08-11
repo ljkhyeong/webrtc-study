@@ -46,7 +46,7 @@ jobs:
         run: npm run check
 
   browser-e2e:
-    name: Chromium WebRTC smoke test
+    name: Chromium WebRTC and BATON edge smoke tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -77,6 +77,9 @@ jobs:
 
       - name: Run Chromium full-media smoke test
         run: npx playwright test --project=chromium-full-media
+
+      - name: Run BATON production-edge authorization test
+        run: npm run test:e2e:baton-edge
 
       - name: Upload browser diagnostics
         if: failure()

@@ -23,6 +23,7 @@
     "test": "npm run test -w @round/protocol && npm run test -w @round/rtc-core && npm run test -w @round/web && ./gradlew --no-daemon :apps:signaling:test",
     "test:e2e": "playwright test",
     "test:e2e:baton": "playwright test --config playwright.baton.config.ts",
+    "test:e2e:baton-edge": "bash ops/ci/run-baton-edge-e2e.sh",
     "check": "npm run typecheck && npm run test && npm run build",
     "format": "prettier --write --ignore-unknown .",
     "format:check": "prettier --check --ignore-unknown ."

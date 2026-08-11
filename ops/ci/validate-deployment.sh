@@ -91,9 +91,13 @@ grep -Fxq 'ops/macos-pilot.credentials' .dockerignore || {
 
 fixture_dir=$(mktemp -d)
 baton_web_container=
+baton_web_runtime_container=
 cleanup() {
   if [[ -n "$baton_web_container" ]]; then
     docker rm -f "$baton_web_container" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$baton_web_runtime_container" ]]; then
+    docker rm -f "$baton_web_runtime_container" >/dev/null 2>&1 || true
   fi
   rm -rf -- "$fixture_dir"
 }
@@ -193,6 +197,8 @@ bash -n ops/linux/backup-caddy.sh
 bash -n ops/linux/restore-caddy.sh
 bash -n ops/linux/test-linux-ops.sh
 bash -n ops/linux/test-systemd-units.sh
+bash -n ops/ci/run-baton-edge-e2e.sh
+bash -n ops/ci/verify-baton-web-runtime.sh
 bash -n ops/linux/certbot/round-turn-deploy-hook
 bash -n ops/linux/certbot/round-turn-certificate-check
 bash -n ops/linux/certbot/round-turn-certificate-reconcile
@@ -317,11 +323,26 @@ docker run --rm \
       | (route("/room/*")) as $room
       | ([$assets | .. | objects
           | select(.handler? == "headers")
-          | .response.set["Cache-Control"][0]][0]
-          == "public, max-age=31536000, immutable")
+          | .response.set["Cache-Control"][0]]) as $asset_cache_controls
+      | ([$assets | .. | objects
+          | select(
+              has("file")
+              and .path_regexp?.name == "vite_asset"
+            )
+          | .path_regexp.pattern][0]
+          == "^/assets/(?:[^/]+/)*[^/]+-[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9.]+$")
+        and ($asset_cache_controls | length == 2)
+        and ($asset_cache_controls
+          | contains([
+              "public, max-age=31536000, immutable",
+              "no-store"
+            ]))
         and ([$assets | .. | objects
           | select(.handler? == "rewrite")
           | .strip_path_prefix][0] == "/round-ui")
+        and ([$assets | .. | objects
+          | select(.handler? == "static_response")
+          | .status_code][0] == 404)
         and ([$favicon | .. | objects
           | select(.handler? == "headers")
           | .response.set["Cache-Control"][0]][0] == "no-cache")
@@ -361,6 +382,31 @@ test -d "$fixture_dir/baton-web/assets"
 grep -Fq '/round-ui/assets/' "$fixture_dir/baton-web/index.html"
 grep -R -Fq '/api/v1/auth/session' "$fixture_dir/baton-web/assets"
 grep -R -Fq 'round/rooms' "$fixture_dir/baton-web/assets"
+
+printf 'Verifying the BATON browser runtime over HTTP...\n'
+baton_web_runtime_container=$(
+  docker run --detach --publish 127.0.0.1::8080 "$baton_web_image"
+)
+baton_web_runtime_port=$(
+  docker inspect \
+    --format '{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostPort}}' \
+    "$baton_web_runtime_container"
+)
+baton_web_runtime_origin="http://127.0.0.1:$baton_web_runtime_port"
+curl \
+  --fail \
+  --silent \
+  --show-error \
+  --retry 30 \
+  --retry-all-errors \
+  --retry-delay 1 \
+  --connect-timeout 1 \
+  --max-time 2 \
+  "$baton_web_runtime_origin/healthz" \
+  >/dev/null
+bash ops/ci/verify-baton-web-runtime.sh "$baton_web_runtime_origin"
+docker rm -f "$baton_web_runtime_container" >/dev/null
+baton_web_runtime_container=
 
 if "$check_only"; then
   printf 'Deployment checks passed; image builds skipped by --check-only.\n'
