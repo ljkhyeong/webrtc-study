@@ -45,26 +45,22 @@ export async function loadTurnCredentials(
     throw new Error('TURN credential timeout must be a positive number');
   }
 
-  const controller = new AbortController();
-  const abortFromCaller = () => controller.abort();
-  if (options.signal?.aborted) {
-    controller.abort();
-  } else {
-    options.signal?.addEventListener('abort', abortFromCaller, { once: true });
-  }
-  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = options.signal === undefined
+    ? timeoutSignal
+    : AbortSignal.any([options.signal, timeoutSignal]);
 
   try {
-    if (controller.signal.aborted) {
+    if (signal.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
     const response = await fetcher(options.endpoint ?? DEFAULT_ENDPOINT, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
       method: 'POST',
-      signal: controller.signal,
+      signal,
     });
-    if (controller.signal.aborted) {
+    if (signal.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
 
@@ -90,16 +86,16 @@ export async function loadTurnCredentials(
       refreshDueAtMs: receivedAtMs + payload.refreshAfterSeconds * 1_000,
     };
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (
+      error instanceof DOMException
+      && (error.name === 'AbortError' || error.name === 'TimeoutError')
+    ) {
       if (options.signal?.aborted) {
         throw new Error('TURN credential request was cancelled', { cause: error });
       }
       throw new Error('TURN credential request timed out', { cause: error });
     }
     throw error;
-  } finally {
-    globalThis.clearTimeout(timeout);
-    options.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 

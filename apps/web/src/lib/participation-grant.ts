@@ -138,11 +138,14 @@ export class ParticipationGrantLeaseManager {
   async #requestRefresh(): Promise<ParticipationGrantLease> {
     const controller = new AbortController();
     this.#refreshController = controller;
-    const timeout = globalThis.setTimeout(() => controller.abort(), this.#timeoutMs);
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(this.#timeoutMs),
+    ]);
 
     try {
       const entryContext = readEntryContext(this.#roomId, this.#storage);
-      const csrfCredential = await loadBatonCsrfCredential(this.#fetcher, controller.signal);
+      const csrfCredential = await loadBatonCsrfCredential(this.#fetcher, signal);
       this.#assertOpen();
       const headers: Record<string, string> = {
         Accept: 'application/json',
@@ -166,7 +169,7 @@ export class ParticipationGrantLeaseManager {
         headers,
         method: 'POST',
         redirect: 'error',
-        signal: controller.signal,
+        signal,
         ...(requestBody === undefined ? {} : { body: requestBody }),
       });
       this.#assertOpen();
@@ -192,7 +195,10 @@ export class ParticipationGrantLeaseManager {
       };
       return lease;
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (
+        error instanceof DOMException
+        && (error.name === 'AbortError' || error.name === 'TimeoutError')
+      ) {
         if (this.#closed) {
           throw new Error('Participation grant refresh was cancelled', { cause: error });
         }
@@ -200,7 +206,6 @@ export class ParticipationGrantLeaseManager {
       }
       throw error;
     } finally {
-      globalThis.clearTimeout(timeout);
       if (this.#refreshController === controller) {
         this.#refreshController = null;
       }
