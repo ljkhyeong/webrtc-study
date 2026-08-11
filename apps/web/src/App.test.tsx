@@ -82,6 +82,39 @@ describe('App pre-join boundary', () => {
     }
   });
 
+  it('fails closed before prejoin or media access for an unsupported authentication mode', () => {
+    const getUserMedia = vi.fn();
+    const webSocket = vi.fn();
+    vi.stubEnv('VITE_ROUND_AUTH_MODE', 'unsupported');
+    vi.stubGlobal('window', {
+      location: {
+        host: 'localhost:5173',
+        pathname: '/room/abcd-efgh-jkmp',
+        protocol: 'http:',
+      },
+    });
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia,
+        enumerateDevices: vi.fn(),
+      },
+    });
+    vi.stubGlobal('WebSocket', webSocket);
+
+    try {
+      const markup = renderToStaticMarkup(<App />);
+
+      expect(markup).toContain('브라우저 인증 모드 설정을 확인');
+      expect(markup).not.toContain('입장 준비');
+      expect(markup).not.toContain('장치 확인');
+      expect(getUserMedia).not.toHaveBeenCalled();
+      expect(webSocket).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('describes signaling reconnect without claiming remote calls are preserved', () => {
     const warning = roomWarningMessage({
       code: 'signaling-reconnecting',

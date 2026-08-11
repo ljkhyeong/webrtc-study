@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { RoomSession, RoomSessionOptions, RoomSessionSnapshot } from '@round/rtc-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,6 +50,22 @@ function buttonWithText(container: HTMLElement, text: string): HTMLButtonElement
       button.textContent?.includes(text),
     ) ?? null
   );
+}
+
+async function enterPrejoin(container: HTMLElement, displayName = '림'): Promise<void> {
+  const input = container.querySelector<HTMLInputElement>('#display-name');
+  expect(input).not.toBeNull();
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set;
+    valueSetter?.call(input, displayName);
+    input?.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushMicrotasks();
+    buttonWithText(container, '입장 준비')?.click();
+    await flushMicrotasks();
+  });
 }
 
 function activeRoomSnapshot(): RoomSessionSnapshot {
@@ -200,12 +216,9 @@ describe('BATON room entry boundary', () => {
       await flushMicrotasks();
     });
 
-    const prepareButton = buttonWithText(container, '입장 준비');
-    expect(prepareButton).not.toBeNull();
-    await act(async () => {
-      prepareButton?.click();
-      await flushMicrotasks();
-    });
+    expect(container.querySelector<HTMLInputElement>('#display-name')?.value).toBe('');
+    await enterPrejoin(container);
+    expect(localStorage.setItem).not.toHaveBeenCalled();
 
     expect(container.textContent).toContain('입장 전에 장치를 확인해 주세요.');
     expect(getUserMedia).not.toHaveBeenCalled();
@@ -225,11 +238,176 @@ describe('BATON room entry boundary', () => {
       await flushMicrotasks(32);
     });
 
+    expect(fetcher.mock.calls.filter(([input]) => input === TURN_ENDPOINT)).toHaveLength(1);
+    expect(container.textContent).not.toContain('TURN 서버 정보를 받지 못했습니다.');
+    expect(container.textContent).not.toContain('스터디 참여 권한을 확인하지 못했습니다.');
     expect(rtcCoreMock.createRoomSession).toHaveBeenCalledOnce();
     expect(fetcher.mock.calls.filter(([input]) => input === GRANT_ENDPOINT)).toHaveLength(1);
     expect(fetcher.mock.calls.filter(([input]) => input === '/api/v1/auth/session')).toHaveLength(
       1,
     );
+  });
+
+  it('keeps the boundary-owned lease manager alive through the StrictMode active-room handoff', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (input === '/api/v1/auth/session') {
+        return authenticatedSession();
+      }
+      if (input === GRANT_ENDPOINT) {
+        return response(200, {
+          expiresAt: 1_800_000_000,
+          refreshAfterSeconds: 240,
+        });
+      }
+      if (input === TURN_ENDPOINT) {
+        return response(200, {
+          urls: ['turns:turn.example.test:5349'],
+          username: 'round-user',
+          credential: 'round-credential',
+          expiresAt: 1_800_000_000,
+          refreshAfterSeconds: 480,
+        });
+      }
+      return Promise.reject(new Error(`Unexpected request: ${String(input)}`));
+    });
+    vi.stubGlobal('fetch', fetcher);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(
+        <StrictMode>
+          <App />
+        </StrictMode>,
+      );
+      await flushMicrotasks(32);
+    });
+    await enterPrejoin(container);
+    expect(container.textContent).toContain('입장 전에 장치를 확인해 주세요.');
+    await act(async () => {
+      const joinButton = buttonWithText(container, '미디어 없이 입장');
+      expect(joinButton).not.toBeNull();
+      joinButton?.click();
+      await flushMicrotasks(64);
+    });
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      await flushMicrotasks(32);
+    });
+
+    expect(rtcCoreMock.createRoomSession).toHaveBeenCalledOnce();
+    const session = rtcCoreMock.createRoomSession.mock.results[0]?.value as RoomSession;
+    expect(session.join).toHaveBeenCalled();
+  });
+
+  it('rechecks an expired entry lease before requesting camera or microphone access', async () => {
+    let nowMs = 0;
+    let grantRequests = 0;
+    vi.stubGlobal('performance', { now: () => nowMs });
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (input === '/api/v1/auth/session') {
+        return authenticatedSession();
+      }
+      if (input === GRANT_ENDPOINT) {
+        grantRequests += 1;
+        return grantRequests === 1
+          ? response(200, {
+              expiresAt: 1_800_000_000,
+              refreshAfterSeconds: 1,
+            })
+          : response(403, { internal: 'revoked membership' });
+      }
+      return Promise.reject(new Error(`Unexpected request: ${String(input)}`));
+    });
+    vi.stubGlobal('fetch', fetcher);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+      await flushMicrotasks();
+    });
+    await enterPrejoin(container);
+
+    nowMs = 1_001;
+    await act(async () => {
+      buttonWithText(container, '장치 확인')?.click();
+      await flushMicrotasks(24);
+    });
+
+    expect(grantRequests).toBe(2);
+    expect(container.textContent).toContain('이 스터디룸에 참여할 수 없습니다.');
+    expect(container.textContent).not.toContain('revoked membership');
+    expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it('stops active-room retries and returns to login when a scheduled refresh loses its session', async () => {
+    vi.useFakeTimers();
+    let grantRequests = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (input === '/api/v1/auth/session') {
+        return authenticatedSession();
+      }
+      if (input === GRANT_ENDPOINT) {
+        grantRequests += 1;
+        return grantRequests === 1
+          ? response(200, {
+              expiresAt: 1_800_000_000,
+              refreshAfterSeconds: 1,
+            })
+          : response(401, { internal: 'expired provider detail' });
+      }
+      if (input === TURN_ENDPOINT) {
+        return response(200, {
+          urls: ['turns:turn.example.test:5349'],
+          username: 'round-user',
+          credential: 'round-credential',
+          expiresAt: 1_800_000_000,
+          refreshAfterSeconds: 480,
+        });
+      }
+      return Promise.reject(new Error(`Unexpected request: ${String(input)}`));
+    });
+    vi.stubGlobal('fetch', fetcher);
+
+    try {
+      await act(async () => {
+        root = createRoot(container);
+        root.render(<App />);
+        await flushMicrotasks();
+      });
+      await enterPrejoin(container);
+      await act(async () => {
+        buttonWithText(container, '미디어 없이 입장')?.click();
+        await flushMicrotasks(32);
+      });
+
+      expect(rtcCoreMock.createRoomSession).toHaveBeenCalledOnce();
+      expect(grantRequests).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+        await flushMicrotasks(24);
+      });
+
+      expect(grantRequests).toBe(2);
+      expect(container.textContent).toContain('BATON 로그인이 필요합니다.');
+      expect(container.textContent).not.toContain('expired provider detail');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flushMicrotasks();
+      });
+      expect(grantRequests).toBe(2);
+    } finally {
+      if (root !== null) {
+        await act(async () => {
+          root?.unmount();
+          root = null;
+          await flushMicrotasks();
+        });
+      }
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it('offers a canonical full-document login return on 401 without exposing credentials', async () => {
@@ -273,6 +451,27 @@ describe('BATON room entry boundary', () => {
     expect(container.textContent).not.toContain('membership detail');
     expect(container.querySelector('a[href^="/login?"]')).toBeNull();
     expect(container.querySelector('a[href="/"]')).not.toBeNull();
+    expect(buttonWithText(container, '장치 확인')).toBeNull();
+    expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it('treats a missing authoritative room as terminal before prejoin', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (input === '/api/v1/auth/session') {
+        return authenticatedSession();
+      }
+      return response(404, { internal: 'room mapping detail' });
+    });
+    vi.stubGlobal('fetch', fetcher);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+      await flushMicrotasks();
+    });
+
+    expect(container.textContent).toContain('이 스터디룸을 더 이상 찾을 수 없습니다.');
+    expect(container.textContent).not.toContain('room mapping detail');
     expect(buttonWithText(container, '장치 확인')).toBeNull();
     expect(getUserMedia).not.toHaveBeenCalled();
   });

@@ -19,7 +19,7 @@ export interface RoomEndpoints {
   readonly participationGrantRefreshUrl: string | null;
 }
 
-type RoundAuthMode = 'standalone' | 'baton';
+export type RoundAuthMode = 'standalone' | 'baton';
 
 const DEFAULT_SIGNALING_PATH = '/signal';
 const DEFAULT_TURN_CREDENTIALS_PATH = '/api/turn-credentials';
@@ -29,7 +29,7 @@ export function resolveRoomEndpoints(options: ResolveRoomEndpointsOptions): Room
     throw new Error('방 식별자가 올바르지 않습니다.');
   }
 
-  const authMode = resolveAuthMode(options.authMode);
+  const authMode = resolveRoundAuthMode(options.authMode);
   const signalingOverride = nonBlank(options.signalingUrl);
   const turnCredentialsOverride = nonBlank(options.turnCredentialsUrl);
 
@@ -58,7 +58,7 @@ export function resolveRoomEndpoints(options: ResolveRoomEndpointsOptions): Room
   };
 }
 
-function resolveAuthMode(value: string | undefined): RoundAuthMode {
+export function resolveRoundAuthMode(value: string | undefined): RoundAuthMode {
   const normalized = value?.trim() ?? '';
   if (normalized === '' || normalized === 'standalone') {
     return 'standalone';

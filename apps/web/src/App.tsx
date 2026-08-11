@@ -11,7 +11,11 @@ import {
 } from '@round/rtc-core';
 import { LandingScreen } from './components/LandingScreen';
 import { PrejoinScreen } from './components/PrejoinScreen';
-import { BatonRoomEntryBoundary, BatonRuntimeRoot } from './components/BatonRoomEntryBoundary';
+import {
+  BatonRoomEntryBoundary,
+  BatonRuntimeRoot,
+  RoundRuntimeConfigurationError,
+} from './components/BatonRoomEntryBoundary';
 import { RoomView, type ChatMessageView, type RoomSystemNoticeView } from './components/RoomView';
 import type { ParticipantView } from './components/VideoTile';
 import {
@@ -19,9 +23,17 @@ import {
   stopMediaStreamTracks,
   withPreparedMediaFailureCleanup,
 } from './lib/prepared-media';
-import { ParticipationGrantLeaseManager } from './lib/participation-grant';
+import {
+  ParticipationGrantAccessError,
+  ParticipationGrantLeaseManager,
+} from './lib/participation-grant';
 import { pathForRoom, roomIdFromPath, sanitizeDisplayName } from './lib/room';
-import { resolveRoomEndpoints, type RoomEndpoints } from './lib/room-endpoints';
+import {
+  resolveRoomEndpoints,
+  resolveRoundAuthMode,
+  type RoomEndpoints,
+  type RoundAuthMode,
+} from './lib/room-endpoints';
 import { RoomRefreshLifetime } from './lib/room-refresh-lifetime';
 import { loadTurnCredentials, turnCredentialRefreshDelayMs } from './lib/turn';
 
@@ -498,6 +510,9 @@ interface ActiveRoomProps {
   roomId: string;
   hostCapability?: string | undefined;
   participationGrantLeaseManager?: ParticipationGrantLeaseManager | undefined;
+  onParticipationGrantAccessFailure?:
+    | ((error: ParticipationGrantAccessError) => void)
+    | undefined;
   releasePreparedMediaStream: () => void;
   takePreparedMediaStream: () => MediaStream | null;
   onReconnect: () => void;
@@ -509,6 +524,7 @@ export function ActiveRoom({
   roomId,
   hostCapability,
   participationGrantLeaseManager: preflightParticipationGrantLeaseManager,
+  onParticipationGrantAccessFailure,
   releasePreparedMediaStream,
   takePreparedMediaStream,
   onReconnect,
@@ -530,6 +546,7 @@ export function ActiveRoom({
     let unsubscribe = () => {};
     let endpoints: RoomEndpoints | null = null;
     let participationGrantLeaseManager = preflightParticipationGrantLeaseManager ?? null;
+    let ownsParticipationGrantLeaseManager = participationGrantLeaseManager === null;
     const refreshLifetime = new RoomRefreshLifetime();
     const turnRequestController = new AbortController();
 
@@ -538,7 +555,9 @@ export function ActiveRoom({
 
     const stopBackgroundRefreshes = () => {
       refreshLifetime.stop();
-      participationGrantLeaseManager?.close();
+      if (ownsParticipationGrantLeaseManager) {
+        participationGrantLeaseManager?.close();
+      }
       turnRequestController.abort();
     };
 
@@ -581,6 +600,12 @@ export function ActiveRoom({
       try {
         await manager.ensureFresh();
       } catch (error) {
+        if (error instanceof ParticipationGrantAccessError) {
+          stopBackgroundRefreshes();
+          setParticipationGrantRefreshWarning('');
+          onParticipationGrantAccessFailure?.(error);
+          throw error;
+        }
         if (canRefresh()) {
           setParticipationGrantRefreshWarning(
             '스터디 참여 권한을 갱신하지 못했습니다. 현재 통화는 유지하며 곧 다시 시도합니다.',
@@ -702,10 +727,13 @@ export function ActiveRoom({
 
             if (resolvedEndpoints.participationGrantRefreshUrl !== null) {
               try {
-                participationGrantLeaseManager ??= new ParticipationGrantLeaseManager({
-                  endpoint: resolvedEndpoints.participationGrantRefreshUrl,
-                  roomId,
-                });
+                if (participationGrantLeaseManager === null) {
+                  participationGrantLeaseManager = new ParticipationGrantLeaseManager({
+                    endpoint: resolvedEndpoints.participationGrantRefreshUrl,
+                    roomId,
+                  });
+                  ownsParticipationGrantLeaseManager = true;
+                }
                 await ensureFreshParticipationGrant();
               } catch (error) {
                 throw new RoomStartupFailure('participation-grant', error);
@@ -826,6 +854,7 @@ export function ActiveRoom({
   }, [
     displayName,
     hostCapability,
+    onParticipationGrantAccessFailure,
     preflightParticipationGrantLeaseManager,
     releasePreparedMediaStream,
     roomId,
@@ -1009,10 +1038,21 @@ export function ActiveRoom({
 }
 
 export function App() {
+  let authMode: RoundAuthMode;
+  try {
+    authMode = resolveRoundAuthMode(import.meta.env.VITE_ROUND_AUTH_MODE);
+  } catch {
+    return <RoundRuntimeConfigurationError />;
+  }
+  return <ConfiguredApp authMode={authMode} />;
+}
+
+function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
   const { pathname, navigate } = usePathname();
   const roomId = roomIdFromPath(pathname);
-  const authMode = import.meta.env.VITE_ROUND_AUTH_MODE;
-  const [displayName, setDisplayName] = useState(readStoredDisplayName);
+  const [displayName, setDisplayName] = useState(() =>
+    authMode === 'standalone' ? readStoredDisplayName() : '',
+  );
   const [approvedRoomKey, setApprovedRoomKey] = useState<string | null>(null);
   const [activeRoomKey, setActiveRoomKey] = useState<string | null>(null);
   const [activeHostCapability, setActiveHostCapability] = useState<string | undefined>();
@@ -1066,7 +1106,9 @@ export function App() {
   };
 
   const enterRoom = (nextDisplayName: string, nextRoomId: string) => {
-    storeDisplayName(nextDisplayName);
+    if (authMode === 'standalone') {
+      storeDisplayName(nextDisplayName);
+    }
     setDisplayName(nextDisplayName);
     stopUnclaimedPreparedMedia();
     setActiveRoomKey(null);
@@ -1077,7 +1119,11 @@ export function App() {
     }
   };
 
-  const renderRoomEntry = (participationGrantLeaseManager?: ParticipationGrantLeaseManager) => {
+  const renderRoomEntry = (
+    participationGrantLeaseManager?: ParticipationGrantLeaseManager,
+    authorizeBeforeEntryAction?: () => Promise<boolean>,
+    onParticipationGrantAccessFailure?: (error: ParticipationGrantAccessError) => void,
+  ) => {
     if (roomId === null) {
       return (
         <LandingScreen initialDisplayName={displayName} onEnter={enterRoom} onGoHome={goHome} />
@@ -1103,6 +1149,7 @@ export function App() {
           displayName={displayName}
           roomId={roomId}
           showHostCapabilityInput={authMode !== 'baton'}
+          authorizeBeforeEntryAction={authorizeBeforeEntryAction}
           onBack={goHome}
           onJoin={(preparedMediaStream, hostCapability) => {
             stopUnclaimedPreparedMedia();
@@ -1121,6 +1168,7 @@ export function App() {
         roomId={roomId}
         hostCapability={activeHostCapability}
         participationGrantLeaseManager={participationGrantLeaseManager}
+        onParticipationGrantAccessFailure={onParticipationGrantAccessFailure}
         releasePreparedMediaStream={stopUnclaimedPreparedMedia}
         takePreparedMediaStream={takePreparedMediaStream}
         onReconnect={retryCurrentRoom}

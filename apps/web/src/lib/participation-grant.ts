@@ -5,7 +5,7 @@ export interface ParticipationGrantLease {
   readonly refreshAfterSeconds: number;
 }
 
-export type ParticipationGrantAccessFailure = 'unauthenticated' | 'forbidden';
+export type ParticipationGrantAccessFailure = 'unauthenticated' | 'forbidden' | 'not-found';
 
 export class ParticipationGrantAccessError extends Error {
   constructor(readonly failure: ParticipationGrantAccessFailure) {
@@ -176,6 +176,9 @@ export class ParticipationGrantLeaseManager {
         }
         if (response.status === 403) {
           throw new ParticipationGrantAccessError('forbidden');
+        }
+        if (response.status === 404) {
+          throw new ParticipationGrantAccessError('not-found');
         }
         throw new Error(`Participation grant refresh failed with status ${response.status}`);
       }

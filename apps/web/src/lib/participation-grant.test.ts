@@ -312,6 +312,7 @@ describe('BATON participation grant lease manager', () => {
   it.each([
     { failure: 'unauthenticated', status: 401 },
     { failure: 'forbidden', status: 403 },
+    { failure: 'not-found', status: 404 },
   ] as const)(
     'classifies a $status refresh without reading or exposing its body',
     async ({ failure, status }) => {

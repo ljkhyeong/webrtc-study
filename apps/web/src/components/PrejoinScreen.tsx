@@ -6,6 +6,7 @@ interface PrejoinScreenProps {
   displayName: string;
   roomId: string;
   showHostCapabilityInput: boolean;
+  authorizeBeforeEntryAction?: (() => Promise<boolean>) | undefined;
   onBack: () => void;
   onJoin: (preparedMediaStream: MediaStream | null, hostCapability?: string) => void;
 }
@@ -34,14 +35,18 @@ export function PrejoinScreen({
   displayName,
   roomId,
   showHostCapabilityInput,
+  authorizeBeforeEntryAction,
   onBack,
   onJoin,
 }: PrejoinScreenProps) {
   const controllerRef = useRef<PrejoinMedia | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const previewRef = useRef<HTMLVideoElement>(null);
+  const actionLifetimeRef = useRef(true);
+  const actionInFlightRef = useRef(false);
   const [snapshot, setSnapshot] = useState<PrejoinMediaSnapshot>(initialSnapshot);
   const [actionError, setActionError] = useState('');
+  const [authorizationPending, setAuthorizationPending] = useState(false);
   const [hostCapability, setHostCapability] = useState('');
 
   const normalizedHostCapability = hostCapability.trim() || undefined;
@@ -74,7 +79,9 @@ export function PrejoinScreen({
   };
 
   useEffect(() => {
+    actionLifetimeRef.current = true;
     return () => {
+      actionLifetimeRef.current = false;
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
       controllerRef.current?.dispose();
@@ -94,16 +101,39 @@ export function PrejoinScreen({
     }
   }, [snapshot]);
 
-  const run = (operation: () => Promise<PrejoinMediaSnapshot>) => {
+  const runAuthorized = (operation: () => Promise<unknown>) => {
+    if (!actionLifetimeRef.current || actionInFlightRef.current) {
+      return;
+    }
+    actionInFlightRef.current = true;
     setActionError('');
-    void operation().catch((error: unknown) => {
-      setActionError(errorMessage(error));
-    });
+    setAuthorizationPending(true);
+    void (async () => {
+      try {
+        if (authorizeBeforeEntryAction !== undefined && !(await authorizeBeforeEntryAction())) {
+          return;
+        }
+        if (!actionLifetimeRef.current) {
+          return;
+        }
+        await operation();
+      } catch (error) {
+        if (actionLifetimeRef.current) {
+          setActionError(errorMessage(error));
+        }
+      } finally {
+        actionInFlightRef.current = false;
+        if (actionLifetimeRef.current) {
+          setAuthorizationPending(false);
+        }
+      }
+    })();
   };
 
   const handleCheckDevices = () => {
-    const controller = ensureController();
-    run(() => controller.checkDevices());
+    runAuthorized(async () => {
+      await ensureController().checkDevices();
+    });
   };
 
   const handleJoinWithMedia = () => {
@@ -111,21 +141,24 @@ export function PrejoinScreen({
       return;
     }
 
-    try {
+    runAuthorized(async () => {
       const stream = controllerRef.current?.takeStream() ?? null;
       onJoin(stream, normalizedHostCapability);
-    } catch (error) {
-      setActionError(errorMessage(error));
-    }
+      actionLifetimeRef.current = false;
+    });
   };
 
   const handleJoinWithoutMedia = () => {
-    controllerRef.current?.dispose();
-    controllerRef.current = null;
-    onJoin(null, normalizedHostCapability);
+    runAuthorized(async () => {
+      controllerRef.current?.dispose();
+      controllerRef.current = null;
+      onJoin(null, normalizedHostCapability);
+      actionLifetimeRef.current = false;
+    });
   };
 
   const handleBack = () => {
+    actionLifetimeRef.current = false;
     controllerRef.current?.dispose();
     controllerRef.current = null;
     onBack();
@@ -170,7 +203,7 @@ export function PrejoinScreen({
               <button
                 className={snapshot.localMedia.audioEnabled ? '' : 'is-off'}
                 type="button"
-                disabled={!snapshot.localMedia.audioAvailable || isChecking}
+                disabled={!snapshot.localMedia.audioAvailable || isChecking || authorizationPending}
                 aria-label={
                   snapshot.localMedia.audioEnabled ? '입장 전 마이크 끄기' : '입장 전 마이크 켜기'
                 }
@@ -185,7 +218,7 @@ export function PrejoinScreen({
               <button
                 className={snapshot.localMedia.videoEnabled ? '' : 'is-off'}
                 type="button"
-                disabled={!snapshot.localMedia.videoAvailable || isChecking}
+                disabled={!snapshot.localMedia.videoAvailable || isChecking || authorizationPending}
                 aria-label={
                   snapshot.localMedia.videoEnabled ? '입장 전 카메라 끄기' : '입장 전 카메라 켜기'
                 }
@@ -240,14 +273,19 @@ export function PrejoinScreen({
 
           {isIdle ? (
             <div className="prejoin-idle-actions">
-              <button className="prejoin-primary-action" type="button" onClick={handleCheckDevices}>
+              <button
+                className="prejoin-primary-action"
+                type="button"
+                disabled={authorizationPending}
+                onClick={handleCheckDevices}
+              >
                 장치 확인
                 <CameraIcon />
               </button>
               <button
                 className="prejoin-text-action"
                 type="button"
-                disabled={hostCapabilityInvalid}
+                disabled={hostCapabilityInvalid || authorizationPending}
                 onClick={handleJoinWithoutMedia}
               >
                 미디어 없이 입장
@@ -260,11 +298,13 @@ export function PrejoinScreen({
                   <span>마이크</span>
                   <select
                     value={snapshot.selectedAudioInputId ?? ''}
-                    disabled={isChecking || snapshot.audioInputs.length === 0}
+                    disabled={
+                      isChecking || authorizationPending || snapshot.audioInputs.length === 0
+                    }
                     onChange={(event) => {
                       const controller = controllerRef.current;
                       if (controller !== null) {
-                        run(() => controller.selectAudioInput(event.target.value));
+                        runAuthorized(() => controller.selectAudioInput(event.target.value));
                       }
                     }}
                   >
@@ -284,11 +324,13 @@ export function PrejoinScreen({
                   <span>카메라</span>
                   <select
                     value={snapshot.selectedVideoInputId ?? ''}
-                    disabled={isChecking || snapshot.videoInputs.length === 0}
+                    disabled={
+                      isChecking || authorizationPending || snapshot.videoInputs.length === 0
+                    }
                     onChange={(event) => {
                       const controller = controllerRef.current;
                       if (controller !== null) {
-                        run(() => controller.selectVideoInput(event.target.value));
+                        runAuthorized(() => controller.selectVideoInput(event.target.value));
                       }
                     }}
                   >
@@ -324,11 +366,11 @@ export function PrejoinScreen({
               <button
                 className="prejoin-retry-action"
                 type="button"
-                disabled={isChecking}
+                disabled={isChecking || authorizationPending}
                 onClick={() => {
                   const controller = controllerRef.current;
                   if (controller !== null) {
-                    run(() => controller.retryUnavailable());
+                    runAuthorized(() => controller.retryUnavailable());
                   }
                 }}
               >
@@ -339,7 +381,7 @@ export function PrejoinScreen({
                 <button
                   className="prejoin-primary-action"
                   type="button"
-                  disabled={isChecking || hostCapabilityInvalid}
+                  disabled={isChecking || hostCapabilityInvalid || authorizationPending}
                   onClick={handleJoinWithMedia}
                 >
                   {hasAnyMedia ? '이 설정으로 입장' : '미디어 없이 입장'}
@@ -349,7 +391,7 @@ export function PrejoinScreen({
                   <button
                     className="prejoin-text-action"
                     type="button"
-                    disabled={isChecking || hostCapabilityInvalid}
+                    disabled={isChecking || hostCapabilityInvalid || authorizationPending}
                     onClick={handleJoinWithoutMedia}
                   >
                     미디어 없이 입장

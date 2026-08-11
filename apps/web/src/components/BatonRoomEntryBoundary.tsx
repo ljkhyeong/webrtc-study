@@ -8,13 +8,22 @@ import { resolveRoomEndpoints } from '../lib/room-endpoints';
 
 interface BatonRoomEntryBoundaryProps {
   readonly roomId: string;
-  readonly children: (manager: ParticipationGrantLeaseManager) => ReactNode;
+  readonly children: (
+    manager: ParticipationGrantLeaseManager,
+    authorizeBeforeEntryAction: () => Promise<boolean>,
+    onAccessFailure: (error: ParticipationGrantAccessError) => void,
+  ) => ReactNode;
 }
 
 type BatonRoomEntryState =
   | { readonly status: 'checking' }
-  | { readonly status: 'ready'; readonly manager: ParticipationGrantLeaseManager }
-  | { readonly status: 'unauthenticated' | 'forbidden' | 'unavailable' };
+  | {
+      readonly status: 'ready';
+      readonly manager: ParticipationGrantLeaseManager;
+      readonly authorizeBeforeEntryAction: () => Promise<boolean>;
+      readonly onAccessFailure: (error: ParticipationGrantAccessError) => void;
+    }
+  | { readonly status: 'unauthenticated' | 'forbidden' | 'not-found' | 'unavailable' };
 
 export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBoundaryProps) {
   const [attempt, setAttempt] = useState(0);
@@ -46,24 +55,39 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
     }
 
     const activeManager = manager;
-    void activeManager.ensureFresh().then(
-      () => {
-        if (active) {
-          setState({ status: 'ready', manager: activeManager });
-        }
-      },
-      (error: unknown) => {
+    const onAccessFailure = (error: ParticipationGrantAccessError) => {
+      activeManager.close();
+      if (active) {
+        setState({ status: error.failure });
+      }
+    };
+    const authorize = async () => {
+      try {
+        await activeManager.ensureFresh();
+        return true;
+      } catch (error) {
         activeManager.close();
         if (!active) {
-          return;
+          return false;
         }
         if (error instanceof ParticipationGrantAccessError) {
-          setState({ status: error.failure });
-          return;
+          onAccessFailure(error);
+        } else {
+          setState({ status: 'unavailable' });
         }
-        setState({ status: 'unavailable' });
-      },
-    );
+        return false;
+      }
+    };
+    void authorize().then((authorized) => {
+      if (active && authorized) {
+        setState({
+          status: 'ready',
+          manager: activeManager,
+          authorizeBeforeEntryAction: authorize,
+          onAccessFailure,
+        });
+      }
+    });
 
     return () => {
       active = false;
@@ -72,7 +96,11 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
   }, [attempt, roomId]);
 
   if (state.status === 'ready') {
-    return children(state.manager);
+    return children(
+      state.manager,
+      state.authorizeBeforeEntryAction,
+      state.onAccessFailure,
+    );
   }
 
   if (state.status === 'checking') {
@@ -111,6 +139,17 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
     );
   }
 
+  if (state.status === 'not-found') {
+    return (
+      <BatonEntryPanel
+        eyebrow="종료된 스터디룸"
+        title="이 스터디룸을 더 이상 찾을 수 없습니다."
+        description="방이 종료되었거나 BATON에서 새 스터디룸으로 교체되었습니다."
+        primaryAction={{ href: '/', label: 'BATON으로 돌아가기' }}
+      />
+    );
+  }
+
   return (
     <BatonEntryPanel
       eyebrow="연결 확인 실패"
@@ -129,6 +168,17 @@ export function BatonRuntimeRoot() {
       title="BATON에서 스터디룸을 열어 주세요."
       description="이 ROUND 번들은 독립 방 생성이나 초대 코드 입장을 제공하지 않습니다."
       primaryAction={{ href: '/', label: 'BATON으로 돌아가기' }}
+    />
+  );
+}
+
+export function RoundRuntimeConfigurationError() {
+  return (
+    <BatonEntryPanel
+      eyebrow="ROUND 설정 오류"
+      title="스터디룸을 안전하게 시작할 수 없습니다."
+      description="브라우저 인증 모드 설정을 확인한 뒤 ROUND를 다시 배포해 주세요."
+      status
     />
   );
 }
