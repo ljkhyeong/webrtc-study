@@ -163,8 +163,11 @@ succeed, so an unauthenticated or unauthorized browser cannot trigger a camera o
 without retrying login. The preflight grant manager transfers into the active room so mounting
 `ActiveRoom` does not immediately consume a second signing or rate-limit quota. The manager uses BATON's relative
 `refreshAfterSeconds` on a monotonic browser clock, rejects values outside
-`1..300` seconds, and refreshes before TURN renewal and every initial or
-reconnect WebSocket creation. ROUND's TURN response has its own server-derived
+`1..300` seconds, and refreshes before a stale prejoin may request media, before either join action,
+before TURN renewal, and before every initial or reconnect WebSocket creation. Active-room `401`,
+`403`, and `404` refresh failures stop the refresh loop and render their terminal BATON-owned
+recovery path. Unsupported auth modes fail before landing or prejoin, and the BATON alias is not
+persisted in account-agnostic local storage. ROUND's TURN response has its own server-derived
 `refreshAfterSeconds` in `1..604800`; the browser records a monotonic receipt
 deadline and never subtracts its wall clock from the TURN `expiresAt` epoch.
 Grant refresh rotates only the cookie and does not force an early socket

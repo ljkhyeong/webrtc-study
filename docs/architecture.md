@@ -203,7 +203,12 @@ An unauthenticated response uses a canonical same-origin `/room/{roomId}` login 
 membership denial returns to BATON without a login loop. The participation-grant refresh manager is
 single-flight, transfers from the entry gate into the active room instead of issuing an immediate
 second grant, and schedules its next refresh from BATON's relative `refreshAfterSeconds` using a
-monotonic browser clock. TURN issuance independently
+monotonic browser clock. If that deadline passes while prejoin remains open, device access and both
+media and media-less join actions call the same guard before continuing. An active-room refresh
+`401`, `403`, or `404` is terminal and returns to login, permission guidance, or the ended-room
+screen without scheduling another refresh. Unsupported auth-mode configuration fails at the app
+root before landing or prejoin can mount, and BATON aliases remain document-memory-only rather than
+cross-account local storage. TURN issuance independently
 returns a server-derived `refreshAfterSeconds`; the browser records its monotonic receipt deadline
 instead of comparing the TURN `expiresAt` epoch with `Date.now()`. TURN refresh and every initial or
 reconnect WebSocket creation call the same participation-grant `ensureFresh()` guard first. A

@@ -325,6 +325,12 @@ The unchecked production gate below remains authoritative.
 - [ ] Preflight and active-room startup reuse one single-flight grant manager.
       Mounting the active room before `refreshAfterSeconds` does not issue a
       second refresh, signing operation, or quota debit.
+- [ ] Waiting in prejoin past `refreshAfterSeconds` triggers authorization again
+      before camera, microphone, or media-less join. A later `401`, `403`, or
+      `404` leaves the active room without a 30-second refresh loop, and an
+      unsupported auth mode cannot render landing or prejoin.
+- [ ] A BATON alias entered by one account is not prefilled for the next account
+      from account-agnostic browser storage.
 - [ ] Only hashed `/round-ui/assets/*` is cached immutable. `/room/*` HTML is
       `no-store`, and `/round-ui/` returns a no-store 404 without standalone
       room creation or invite-code controls.
