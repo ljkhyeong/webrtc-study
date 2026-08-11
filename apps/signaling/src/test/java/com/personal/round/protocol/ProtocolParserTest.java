@@ -224,6 +224,13 @@ class ProtocolParserTest {
 				 "payload":{"candidate":{"candidate":"candidate:1","sdpMLineIndex":65536}}}
 				""", "$.payload.candidate.sdpMLineIndex");
 		assertInvalid("""
+				{"v":3,"type":"rtc.ice","roomId":"abcd-efgh-jkmp","to":"peer",
+				 "payload":{"candidate":{"candidate":"candidate:1","sdpMLineIndex":0.5}}}
+				""", "$.payload.candidate.sdpMLineIndex");
+		assertInvalid("""
+				{"v":3.5,"type":"room.leave","roomId":"abcd-efgh-jkmp"}
+				""", "$.v");
+		assertInvalid("""
 				{"v":1,"type":"room.leave","roomId":"abcd-efgh-jkmp"}
 				""", "$.v");
 	}

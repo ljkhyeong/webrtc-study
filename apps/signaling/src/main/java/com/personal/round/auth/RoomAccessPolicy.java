@@ -1,6 +1,5 @@
 package com.personal.round.auth;
 
-import java.util.Map;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketSession;
@@ -21,11 +20,7 @@ public final class RoomAccessPolicy {
 		if (!properties.batonMode()) {
 			return Optional.of(standaloneRoomAccess);
 		}
-		Map<String, Object> attributes = session.getAttributes();
-		if (attributes == null) {
-			return Optional.empty();
-		}
-		Object candidate = attributes.get(ParticipationGrant.SESSION_ATTRIBUTE);
+		Object candidate = session.getAttributes().get(ParticipationGrant.SESSION_ATTRIBUTE);
 		return candidate instanceof ParticipationGrant grant
 				? Optional.of(grant)
 				: Optional.empty();

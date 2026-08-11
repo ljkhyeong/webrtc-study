@@ -6,6 +6,7 @@ import static com.personal.round.config.RoundRoutes.STANDALONE_SIGNAL;
 import com.personal.round.auth.ParticipationGrantHandshakeInterceptor;
 import com.personal.round.auth.ParticipationGrantResolver;
 import com.personal.round.auth.RoundAuthProperties;
+import com.personal.round.protocol.ProtocolParser;
 import com.personal.round.signaling.ConnectionAdmissionPolicy;
 import com.personal.round.signaling.SignalingService;
 import com.personal.round.signaling.SignalingWebSocketHandler;
@@ -62,10 +63,10 @@ public class WebSocketConfig implements WebSocketConfigurer {
 	}
 
 	@Bean
-	ServletServerContainerFactoryBean webSocketContainer(SignalingProperties properties) {
+	ServletServerContainerFactoryBean webSocketContainer() {
 		ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
-		container.setMaxTextMessageBufferSize(properties.maxTextPayloadBytes());
-		container.setMaxBinaryMessageBufferSize(properties.maxTextPayloadBytes());
+		container.setMaxTextMessageBufferSize(ProtocolParser.MAX_SIGNALING_FRAME_BYTES);
+		container.setMaxBinaryMessageBufferSize(ProtocolParser.MAX_SIGNALING_FRAME_BYTES);
 		return container;
 	}
 }

@@ -1471,8 +1471,7 @@ class SignalingServiceTest {
 					new ClientMessage.Leave(ROOM_ID, "late-leave"));
 			SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
 					new ProtocolParser(objectMapper),
-					batonService,
-					properties(6));
+					batonService);
 			handler.handleTransportError(
 					original.session(),
 					new java.io.IOException("late transport failure"));
@@ -2986,8 +2985,7 @@ class SignalingServiceTest {
 		service = service(properties, meterRegistry);
 		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
 				new ProtocolParser(objectMapper),
-				service,
-				properties);
+				service);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
 		TestPeer firstLoad = peer("pong-global-load-first");
 		TestPeer secondLoad = peer("pong-global-load-second");
@@ -3055,8 +3053,7 @@ class SignalingServiceTest {
 		service = service(properties, meterRegistry);
 		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
 				new ProtocolParser(objectMapper),
-				service,
-				properties);
+				service);
 		TestPeer offender = peer("pong-session-offender");
 		connect(offender);
 
@@ -3389,6 +3386,7 @@ class SignalingServiceTest {
 		AtomicBoolean failNextSend = new AtomicBoolean(false);
 		AtomicReference<CloseStatus> closeStatus = new AtomicReference<>();
 		when(session.getId()).thenReturn(id);
+		when(session.getAttributes()).thenReturn(new HashMap<>());
 		when(session.isOpen()).thenAnswer(ignored -> open.get());
 		doAnswer(invocation -> {
 			if (failNextSend.compareAndSet(true, false)) {

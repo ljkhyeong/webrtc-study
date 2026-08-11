@@ -1,6 +1,5 @@
 package com.personal.round.protocol;
 
-import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.Set;
 import org.springframework.stereotype.Component;
@@ -331,27 +330,17 @@ public class ProtocolParser {
 			return;
 		}
 		JsonNode input = parent.get(key);
-		if (!input.isNumber()) {
+		if (!input.canConvertToInt()) {
 			throw fail(path, "must be null or an integer between " + minimum + " and " + maximum);
 		}
-		BigDecimal number = input.decimalValue().stripTrailingZeros();
-		if (number.scale() > 0) {
-			throw fail(path, "must be null or an integer between " + minimum + " and " + maximum);
-		}
-		try {
-			int value = number.intValueExact();
-			if (value < minimum || value > maximum) {
-				throw fail(path, "must be null or an integer between " + minimum + " and " + maximum);
-			}
-		}
-		catch (ArithmeticException exception) {
+		int value = input.intValue();
+		if (value < minimum || value > maximum) {
 			throw fail(path, "must be null or an integer between " + minimum + " and " + maximum);
 		}
 	}
 
 	private static void numericLiteral(JsonNode input, int expected, String path) {
-		if (input == null || !input.isNumber()
-				|| input.decimalValue().compareTo(BigDecimal.valueOf(expected)) != 0) {
+		if (input == null || !input.canConvertToInt() || input.intValue() != expected) {
 			throw fail(path, "must equal " + expected);
 		}
 	}

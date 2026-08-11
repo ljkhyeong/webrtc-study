@@ -928,11 +928,7 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	private static SessionCloseDecision closeDecision(WebSocketSession session) {
-		Map<String, Object> attributes = session.getAttributes();
-		if (attributes == null) {
-			return null;
-		}
-		Object candidate = attributes.get(CLOSE_DECISION_ATTRIBUTE);
+		Object candidate = session.getAttributes().get(CLOSE_DECISION_ATTRIBUTE);
 		return candidate instanceof SessionCloseDecision closeDecision
 				? closeDecision
 				: null;
@@ -1352,9 +1348,6 @@ public class SignalingService implements SmartLifecycle {
 	private static ConnectionAdmissionPolicy.Reservation takeReservation(
 			WebSocketSession session) {
 		Map<String, Object> attributes = session.getAttributes();
-		if (attributes == null) {
-			return null;
-		}
 		Object candidate = attributes.get(ConnectionAdmissionPolicy.RESERVATION_ATTRIBUTE);
 		if (!(candidate instanceof ConnectionAdmissionPolicy.Reservation reservation)) {
 			return null;

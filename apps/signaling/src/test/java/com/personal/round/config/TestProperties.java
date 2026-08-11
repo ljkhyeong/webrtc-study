@@ -24,8 +24,6 @@ public final class TestProperties {
 	private static final long DEFAULT_MAX_BYTES_GLOBAL_WINDOW = 24L * 1024 * 1024;
 	private static final long DEFAULT_MAX_OUTBOUND_QUEUE_BYTES = 2L * 1024 * 1024;
 	private static final long DEFAULT_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL = 64L * 1024 * 1024;
-	private static final int DEFAULT_MAX_TEXT_PAYLOAD_BYTES = 64 * 1024;
-
 	private static final Duration DEFAULT_TURN_CREDENTIAL_TTL = Duration.ofMinutes(10);
 	private static final Duration DEFAULT_TURN_RATE_LIMIT_WINDOW = Duration.ofMinutes(10);
 	private static final int DEFAULT_TURN_RATE_LIMIT_MAX_REQUESTS = 12;
@@ -67,8 +65,7 @@ public final class TestProperties {
 				defaults.maxBytesPerClientWindow(),
 				defaults.maxBytesGlobalWindow(),
 				defaults.maxOutboundQueueBytes(),
-				defaults.maxOutboundQueueBytesGlobal(),
-				defaults.maxTextPayloadBytes());
+				defaults.maxOutboundQueueBytesGlobal());
 	}
 
 	public static SignalingProperties signalingWithConnectionLimits(
@@ -134,8 +131,7 @@ public final class TestProperties {
 				maxBytesPerClientWindow,
 				maxBytesGlobalWindow,
 				maxOutboundQueueBytes,
-				maxOutboundQueueBytesGlobal,
-				DEFAULT_MAX_TEXT_PAYLOAD_BYTES);
+				maxOutboundQueueBytesGlobal);
 	}
 
 	public static SignalingProperties signalingWithFrameLimits(

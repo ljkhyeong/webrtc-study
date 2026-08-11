@@ -1,5 +1,6 @@
 package com.personal.round.config;
 
+import com.personal.round.protocol.ProtocolParser;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -115,14 +116,7 @@ public record SignalingProperties(
 				value = 134_217_728,
 				message =
 						"round.signaling.max-outbound-queue-bytes-global must be at most 134217728")
-		long maxOutboundQueueBytesGlobal,
-		@Min(
-				value = 65_536,
-				message = "round.signaling.max-text-payload-bytes must be exactly 65536")
-		@Max(
-				value = 65_536,
-				message = "round.signaling.max-text-payload-bytes must be exactly 65536")
-		int maxTextPayloadBytes) {
+		long maxOutboundQueueBytesGlobal) {
 
 	public static final int MAX_SUPPORTED_ROOM_SIZE = 6;
 
@@ -187,9 +181,9 @@ public record SignalingProperties(
 	@AssertTrue(
 			message =
 					"round.signaling.max-outbound-queue-bytes must not be lower than "
-							+ "max-text-payload-bytes")
+							+ "the 65536-byte signaling frame limit")
 	public boolean isOutboundQueueLargeEnoughForOneFrame() {
-		return maxOutboundQueueBytes >= maxTextPayloadBytes;
+		return maxOutboundQueueBytes >= ProtocolParser.MAX_SIGNALING_FRAME_BYTES;
 	}
 
 	@AssertTrue(

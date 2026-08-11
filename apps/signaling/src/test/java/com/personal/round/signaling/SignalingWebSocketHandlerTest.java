@@ -4,14 +4,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.AdditionalMatchers.aryEq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.personal.round.config.TestProperties;
 import com.personal.round.protocol.ProtocolParser;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -33,7 +31,7 @@ class SignalingWebSocketHandlerTest {
 	void setUp() {
 		service = mock(SignalingService.class);
 		handler = new SignalingWebSocketHandler(
-				new ProtocolParser(new ObjectMapper()), service, TestProperties.signaling());
+				new ProtocolParser(new ObjectMapper()), service);
 		session = mock(WebSocketSession.class);
 		when(session.getId()).thenReturn("session");
 		when(service.acceptInboundFrame(any(WebSocketSession.class), anyInt())).thenReturn(true);
@@ -133,15 +131,13 @@ class SignalingWebSocketHandlerTest {
 	}
 
 	@Test
-	void releasesAnUnclaimedReservationWhenSessionInitializationFails() {
-		doThrow(new IllegalStateException("container rejected message limit"))
-				.when(session)
-				.setTextMessageSizeLimit(anyInt());
+	void releasesAnUnclaimedReservationWhenConnectFails() {
+		when(service.connect(session)).thenThrow(new IllegalStateException("connect failed"));
 
 		assertThatThrownBy(() -> handler.afterConnectionEstablished(session))
 				.isInstanceOf(IllegalStateException.class);
 
 		verify(service).releaseUnclaimedReservation(session);
-		verify(service, never()).connect(session);
+		verify(service).connect(session);
 	}
 }

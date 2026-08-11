@@ -57,7 +57,6 @@ round:
     max-bytes-global-window: ${SIGNALING_MAX_BYTES_GLOBAL:25165824}
     max-outbound-queue-bytes: ${SIGNALING_MAX_OUTBOUND_QUEUE_BYTES:2097152}
     max-outbound-queue-bytes-global: ${SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL:67108864}
-    max-text-payload-bytes: 65536
   turn:
     urls: ${TURN_URLS:}
     shared-secret: ${TURN_SHARED_SECRET:}

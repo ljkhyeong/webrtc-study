@@ -1,6 +1,5 @@
 package com.personal.round.signaling;
 
-import com.personal.round.config.SignalingProperties;
 import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.MalformedJsonException;
 import com.personal.round.protocol.ProtocolParser;
@@ -24,22 +23,17 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 
 	private final ProtocolParser parser;
 	private final SignalingService signalingService;
-	private final int maxTextPayloadBytes;
 
 	public SignalingWebSocketHandler(
 			ProtocolParser parser,
-			SignalingService signalingService,
-			SignalingProperties properties) {
+			SignalingService signalingService) {
 		this.parser = parser;
 		this.signalingService = signalingService;
-		this.maxTextPayloadBytes = properties.maxTextPayloadBytes();
 	}
 
 	@Override
 	public void afterConnectionEstablished(WebSocketSession session) {
 		try {
-			session.setTextMessageSizeLimit(maxTextPayloadBytes);
-			session.setBinaryMessageSizeLimit(maxTextPayloadBytes);
 			signalingService.connect(session);
 		}
 		finally {
@@ -50,7 +44,7 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 	@Override
 	protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
 		int payloadBytes = message.getPayloadLength();
-		if (payloadBytes > maxTextPayloadBytes) {
+		if (payloadBytes > ProtocolParser.MAX_SIGNALING_FRAME_BYTES) {
 			signalingService.recordInvalidFrame();
 			signalingService.disconnectAndClose(session, MESSAGE_TOO_BIG);
 			return;

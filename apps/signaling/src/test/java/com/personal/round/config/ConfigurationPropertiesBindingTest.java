@@ -40,7 +40,6 @@ class ConfigurationPropertiesBindingTest {
 					"round.signaling.max-bytes-global-window=25165824",
 					"round.signaling.max-outbound-queue-bytes=2097152",
 					"round.signaling.max-outbound-queue-bytes-global=67108864",
-					"round.signaling.max-text-payload-bytes=65536",
 					"round.turn.credential-ttl=10m",
 					"round.turn.rate-limit-window=600s",
 					"round.turn.rate-limit-max-requests=12",
@@ -124,8 +123,7 @@ class ConfigurationPropertiesBindingTest {
 				defaults.maxBytesPerClientWindow(),
 				defaults.maxBytesGlobalWindow(),
 				defaults.maxOutboundQueueBytes(),
-				defaults.maxOutboundQueueBytesGlobal(),
-				defaults.maxTextPayloadBytes());
+				defaults.maxOutboundQueueBytesGlobal());
 		TurnProperties turn = new TurnProperties(
 				urls,
 				"shared-secret",
@@ -288,7 +286,7 @@ class ConfigurationPropertiesBindingTest {
 											+ "max-bytes-per-client-window")
 							.hasStackTraceContaining(
 									"round.signaling.max-outbound-queue-bytes must not be lower than "
-											+ "max-text-payload-bytes")
+											+ "the 65536-byte signaling frame limit")
 							.hasStackTraceContaining(
 									"round.signaling.max-outbound-queue-bytes-global must not be lower "
 											+ "than max-outbound-queue-bytes");
@@ -296,12 +294,11 @@ class ConfigurationPropertiesBindingTest {
 	}
 
 	@Test
-	void keepsPayloadAndOutboundBudgetsInsideTheContainerHeapPolicy() {
+	void keepsOutboundBudgetsInsideTheContainerHeapPolicy() {
 		contextRunner
 				.withPropertyValues(
 						"round.signaling.max-outbound-queue-bytes=16777217",
-						"round.signaling.max-outbound-queue-bytes-global=134217729",
-						"round.signaling.max-text-payload-bytes=65537")
+						"round.signaling.max-outbound-queue-bytes-global=134217729")
 				.run(context -> {
 					Throwable failure = context.getStartupFailure();
 
@@ -311,9 +308,7 @@ class ConfigurationPropertiesBindingTest {
 									"round.signaling.max-outbound-queue-bytes must be at most 16777216")
 							.hasStackTraceContaining(
 									"round.signaling.max-outbound-queue-bytes-global must be at most "
-											+ "134217728")
-							.hasStackTraceContaining(
-									"round.signaling.max-text-payload-bytes must be exactly 65536");
+											+ "134217728");
 				});
 	}
 

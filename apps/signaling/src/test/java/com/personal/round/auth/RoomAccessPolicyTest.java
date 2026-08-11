@@ -27,7 +27,6 @@ class RoomAccessPolicyTest {
 	void standaloneModeAllowsAnyRoomWithoutSessionAuthenticationAttributes() {
 		RoomAccessPolicy policy = new RoomAccessPolicy(standaloneProperties());
 		WebSocketSession session = mock(WebSocketSession.class);
-		when(session.getAttributes()).thenReturn(null);
 
 		RoomAccess access = policy.resolve(session).orElseThrow();
 
@@ -56,10 +55,6 @@ class RoomAccessPolicyTest {
 		assertThat(policy.resolve(sessionWith(Map.of(
 				ParticipationGrant.SESSION_ATTRIBUTE,
 				"unverified")))).isEmpty();
-
-		WebSocketSession nullAttributes = mock(WebSocketSession.class);
-		when(nullAttributes.getAttributes()).thenReturn(null);
-		assertThat(policy.resolve(nullAttributes)).isEmpty();
 	}
 
 	@Test
