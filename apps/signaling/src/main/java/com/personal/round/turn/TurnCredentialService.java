@@ -5,14 +5,14 @@ import com.personal.round.config.TurnProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicLong;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import org.springframework.security.crypto.keygen.Base64StringKeyGenerator;
+import org.springframework.security.crypto.keygen.StringKeyGenerator;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -28,8 +28,10 @@ public class TurnCredentialService {
 	private final TurnCredentialMetrics metrics;
 	private final ClientAddressKeyResolver clientAddressKeyResolver;
 	private final TurnIssuanceLimiter issuanceLimiter;
-	private final SecureRandom secureRandom = new SecureRandom();
-	private final AtomicLong issuanceSequence = new AtomicLong();
+	private final StringKeyGenerator usernameTokenGenerator =
+			new Base64StringKeyGenerator(
+					Base64.getUrlEncoder().withoutPadding(),
+					USERNAME_RANDOM_BYTES);
 
 	public TurnCredentialService(
 			TurnProperties properties,
@@ -61,9 +63,6 @@ public class TurnCredentialService {
 			String clientAddress,
 			Instant authorizationExpiresAt,
 			ParticipantRoomKey participantKey) {
-		Objects.requireNonNull(
-				authorizationExpiresAt,
-				"authorizationExpiresAt must not be null");
 		if (!properties.enabled()) {
 			return Disabled.INSTANCE;
 		}
@@ -88,7 +87,7 @@ public class TurnCredentialService {
 			return new RateLimited(rejected.retryAfterSeconds());
 		}
 
-		String username = expiresAt + ":" + randomToken();
+		String username = expiresAt + ":" + usernameTokenGenerator.generateKey();
 		String credential = sign(username);
 		long refreshAfterSeconds = refreshAfterSeconds(expiresAt - nowEpochSecond);
 		TurnCredentials credentials = new TurnCredentials(
@@ -102,11 +101,10 @@ public class TurnCredentialService {
 	}
 
 	private static long refreshAfterSeconds(long lifetimeSeconds) {
-		long refreshSkewSeconds = Math.min(
-				MAXIMUM_REFRESH_SKEW_SECONDS,
-				Math.max(
-						MINIMUM_REFRESH_SKEW_SECONDS,
-						Math.floorDiv(lifetimeSeconds, 5)));
+		long refreshSkewSeconds = Math.clamp(
+				Math.floorDiv(lifetimeSeconds, 5),
+				MINIMUM_REFRESH_SKEW_SECONDS,
+				MAXIMUM_REFRESH_SKEW_SECONDS);
 		return Math.max(1, lifetimeSeconds - refreshSkewSeconds);
 	}
 
@@ -116,14 +114,6 @@ public class TurnCredentialService {
 
 	int trackedParticipantCount() {
 		return issuanceLimiter.trackedParticipantCount();
-	}
-
-	private String randomToken() {
-		byte[] random = new byte[USERNAME_RANDOM_BYTES];
-		secureRandom.nextBytes(random);
-		return Base64.getUrlEncoder().withoutPadding().encodeToString(random)
-				+ "."
-				+ Long.toUnsignedString(issuanceSequence.incrementAndGet(), 36);
 	}
 
 	private String sign(String username) {

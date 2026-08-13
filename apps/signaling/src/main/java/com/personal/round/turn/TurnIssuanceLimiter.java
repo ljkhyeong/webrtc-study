@@ -3,7 +3,6 @@ package com.personal.round.turn;
 import com.personal.round.config.TurnProperties;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 
 final class TurnIssuanceLimiter {
 
@@ -32,7 +31,6 @@ final class TurnIssuanceLimiter {
 			String clientKey,
 			ParticipantRoomKey participantKey,
 			long nowMillis) {
-		Objects.requireNonNull(clientKey, "clientKey must not be null");
 		removeExpiredWindows(clientWindows, nowMillis);
 		removeExpiredWindows(participantWindows, nowMillis);
 		if (globalWindow != null && globalWindow.isExpired(nowMillis, windowMillis)) {
@@ -148,13 +146,6 @@ final class TurnIssuanceLimiter {
 			long retryAfterMillis,
 			TurnCredentialRateLimitScope scope)
 			implements Acquisition {
-
-		Rejected {
-			if (retryAfterMillis < 1) {
-				throw new IllegalArgumentException("retryAfterMillis must be positive");
-			}
-			Objects.requireNonNull(scope, "scope must not be null");
-		}
 
 		long retryAfterSeconds() {
 			return Math.max(1, Math.ceilDiv(retryAfterMillis, 1_000));

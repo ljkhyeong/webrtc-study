@@ -11,6 +11,7 @@ import java.util.Locale;
 import org.hibernate.validator.constraints.time.DurationMax;
 import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
 
 @Validated
@@ -56,12 +57,13 @@ public record RoundAuthProperties(
 
 	@AssertTrue(message = "BATON auth mode requires issuer and jwk-set-uri")
 	public boolean isBatonConfigurationComplete() {
-		return !batonMode() || (hasText(issuer) && hasText(jwkSetUri));
+		return !batonMode() || (StringUtils.hasText(issuer) && StringUtils.hasText(jwkSetUri));
 	}
 
 	@AssertTrue(message = "BATON auth mode requires an __Secure- cookie name")
 	public boolean isBatonCookieNameSecure() {
-		return !batonMode() || (hasText(cookieName) && cookieName.startsWith("__Secure-"));
+		return !batonMode()
+				|| (StringUtils.hasText(cookieName) && cookieName.startsWith("__Secure-"));
 	}
 
 	@AssertTrue(message = "BATON auth issuer and jwk-set-uri must use HTTPS or loopback HTTP")
@@ -72,7 +74,7 @@ public record RoundAuthProperties(
 
 	@AssertTrue(message = "BATON auth mode must not configure a standalone host token")
 	public boolean isStandaloneHostTokenModeSafe() {
-		return !batonMode() || !hasText(standaloneHostTokenSha256);
+		return !batonMode() || !StringUtils.hasText(standaloneHostTokenSha256);
 	}
 
 	@Override
@@ -88,15 +90,11 @@ public record RoundAuthProperties(
 
 	private static String normalizeOptional(String value) {
 		String normalized = normalize(value);
-		return hasText(normalized) ? normalized : null;
-	}
-
-	private static boolean hasText(String value) {
-		return value != null && !value.isBlank();
+		return StringUtils.hasText(normalized) ? normalized : null;
 	}
 
 	private static boolean isSecureServiceUri(String value) {
-		if (!hasText(value)) {
+		if (!StringUtils.hasText(value)) {
 			return true;
 		}
 		try {
