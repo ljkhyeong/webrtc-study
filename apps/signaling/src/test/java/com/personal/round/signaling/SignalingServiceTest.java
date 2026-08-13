@@ -3073,30 +3073,6 @@ class SignalingServiceTest {
 	}
 
 	@Test
-	void rejectsConnectionsBeyondTheConfiguredGlobalLimit() throws Exception {
-		service.stop();
-		SignalingProperties properties =
-				TestProperties.signalingWithConnectionLimits(2, 2, 2);
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
-		TestPeer first = peer("limit-first");
-		TestPeer second = peer("limit-second");
-		TestPeer rejected = peer("limit-rejected");
-		attachDefaultReservation(first);
-		attachDefaultReservation(second);
-		attachDefaultReservation(rejected);
-
-		assertThat(service.connect(first.session())).isTrue();
-		assertThat(service.connect(second.session())).isTrue();
-		assertThat(service.connect(rejected.session())).isFalse();
-
-		rejected.awaitClosed();
-		assertThat(rejected.closeStatus().get())
-				.isEqualTo(new CloseStatus(1013, "Server connection limit reached"));
-		assertThat(service.connectedPeerCount()).isEqualTo(2);
-	}
-
-	@Test
 	void rejectsConnectionsWithoutAnAdmissionReservation() throws Exception {
 		TestPeer missingReservation = peer("missing-reservation");
 

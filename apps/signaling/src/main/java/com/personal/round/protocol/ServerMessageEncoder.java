@@ -49,7 +49,7 @@ public final class ServerMessageEncoder {
 	public TextMessage relay(String type, String roomId, String from, ObjectNode payload) {
 		ObjectNode message = base(type, roomId);
 		message.put("from", from);
-		message.set("payload", payload.deepCopy());
+		message.set("payload", payload);
 		return textMessage(message);
 	}
 

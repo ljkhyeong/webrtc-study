@@ -185,6 +185,7 @@ class ConnectionAdmissionHandshakeHandlerTest {
 		when(request.getHeaders()).thenReturn(originalHeaders);
 		when(delegate.doHandshake(any(), any(), any(), any())).thenReturn(true);
 		Map<String, Object> attributes = new HashMap<>();
+		attributes.put(ParticipationGrant.SESSION_ATTRIBUTE, grant());
 
 		assertThat(handler.doHandshake(
 				request,
@@ -195,13 +196,19 @@ class ConnectionAdmissionHandshakeHandlerTest {
 		ArgumentCaptor<ServerHttpRequest> requestCaptor =
 				ArgumentCaptor.forClass(ServerHttpRequest.class);
 		verify(delegate).doHandshake(requestCaptor.capture(), any(), any(), any());
-		HttpHeaders upgradeHeaders = requestCaptor.getValue().getHeaders();
+		ServerHttpRequest upgradeRequest = requestCaptor.getValue();
+		HttpHeaders upgradeHeaders = upgradeRequest.getHeaders();
 		assertThat(upgradeHeaders.containsHeader(HttpHeaders.COOKIE)).isFalse();
 		assertThat(upgradeHeaders.containsHeader(HttpHeaders.AUTHORIZATION)).isFalse();
 		assertThat(upgradeHeaders.containsHeader(HttpHeaders.PROXY_AUTHORIZATION)).isFalse();
 		assertThat(upgradeHeaders.get(HttpHeaders.ORIGIN))
 				.containsExactly("https://study.example.com");
 		assertThat(originalHeaders.containsHeader(HttpHeaders.COOKIE)).isTrue();
+		assertThat(upgradeRequest.getPrincipal().getName()).isEqualTo("member-42");
+		assertThat(upgradeRequest.getPrincipal())
+				.asString()
+				.isEqualTo("VerifiedParticipantPrincipal")
+				.doesNotContain("member-42", "raw-jwt");
 		release(attributes);
 	}
 

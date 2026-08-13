@@ -25,9 +25,6 @@ public class ProtocolParser {
 	public static final int MAX_SDP_BYTES = 48 * 1024;
 	public static final int MAX_CANDIDATE_LENGTH = 8 * 1024;
 
-	private static final Set<String> CLIENT_TYPES = Set.of(
-			"room.join", "room.leave", "rtc.offer", "rtc.answer", "rtc.ice",
-			"moderation.media.disable");
 	private final ObjectReader objectReader;
 
 	public ProtocolParser(ObjectMapper objectMapper) {
@@ -60,10 +57,6 @@ public class ProtocolParser {
 		ObjectNode message = object(parsed, "$");
 		numericLiteral(message.get("v"), PROTOCOL_VERSION, "$.v");
 		String type = requiredText(message.get("type"), "$.type");
-		if (!CLIENT_TYPES.contains(type)) {
-			throw fail("$.type", "must be a supported client message type");
-		}
-
 		return switch (type) {
 			case "room.join" -> parseJoin(message);
 			case "room.leave" -> parseLeave(message);
@@ -71,7 +64,7 @@ public class ProtocolParser {
 			case "rtc.answer" -> parseDescriptionRelay(message, "answer");
 			case "rtc.ice" -> parseIceRelay(message);
 			case "moderation.media.disable" -> parseModeration(message);
-			default -> throw fail("$.type", "is not supported");
+			default -> throw fail("$.type", "must be a supported client message type");
 		};
 	}
 
@@ -138,7 +131,7 @@ public class ProtocolParser {
 				envelope.roomId(),
 				envelope.requestId(),
 				envelope.to(),
-				payload.deepCopy());
+				payload);
 	}
 
 	private ClientMessage.Relay parseIceRelay(ObjectNode message) {
@@ -160,7 +153,7 @@ public class ProtocolParser {
 				envelope.roomId(),
 				envelope.requestId(),
 				envelope.to(),
-				payload.deepCopy());
+				payload);
 	}
 
 	private RelayEnvelope relayEnvelope(ObjectNode message) {

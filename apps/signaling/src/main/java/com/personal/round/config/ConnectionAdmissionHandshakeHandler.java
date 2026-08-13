@@ -19,6 +19,7 @@ import org.springframework.web.context.ServletContextAware;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeFailureException;
 import org.springframework.web.socket.server.HandshakeHandler;
+import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 
 public final class ConnectionAdmissionHandshakeHandler
 		implements HandshakeHandler, Lifecycle, ServletContextAware {
@@ -31,7 +32,7 @@ public final class ConnectionAdmissionHandshakeHandler
 	public ConnectionAdmissionHandshakeHandler(
 			SignalingService signalingService,
 			ConnectionAdmissionPolicy admissionPolicy) {
-		this(signalingService, admissionPolicy, new RoomPrincipalHandshakeHandler());
+		this(signalingService, admissionPolicy, new DefaultHandshakeHandler());
 	}
 
 	ConnectionAdmissionHandshakeHandler(
@@ -93,8 +94,7 @@ public final class ConnectionAdmissionHandshakeHandler
 			}
 			Principal principal = servletRequest.getPrincipal();
 			if (participationGrant != null) {
-				principal = RoomPrincipalHandshakeHandler.verifiedParticipantPrincipal(
-						participationGrant);
+				principal = verifiedParticipantPrincipal(participationGrant);
 			}
 			ServerHttpRequest sanitizedRequest =
 					new SensitiveHeaderRedactingServletServerHttpRequest(
@@ -121,6 +121,29 @@ public final class ConnectionAdmissionHandshakeHandler
 			Map<String, Object> attributes) {
 		Object candidate = attributes.get(ParticipationGrant.SESSION_ATTRIBUTE);
 		return candidate instanceof ParticipationGrant grant ? grant : null;
+	}
+
+	private static Principal verifiedParticipantPrincipal(ParticipationGrant grant) {
+		return new VerifiedParticipantPrincipal(grant.subject());
+	}
+
+	private static final class VerifiedParticipantPrincipal implements Principal {
+
+		private final String name;
+
+		private VerifiedParticipantPrincipal(String name) {
+			this.name = name;
+		}
+
+		@Override
+		public String getName() {
+			return name;
+		}
+
+		@Override
+		public String toString() {
+			return "VerifiedParticipantPrincipal";
+		}
 	}
 
 	@Override

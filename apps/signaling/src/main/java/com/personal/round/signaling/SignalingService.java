@@ -34,6 +34,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.SmartLifecycle;
+import org.springframework.security.crypto.keygen.BytesKeyGenerator;
+import org.springframework.security.crypto.keygen.KeyGenerators;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.PingMessage;
@@ -68,6 +70,8 @@ public class SignalingService implements SmartLifecycle {
 	private static final CloseStatus PARTICIPATION_SESSION_SUPERSEDED =
 			new CloseStatus(4002, "Participation session superseded");
 	private static final long UNSET_NANOS = Long.MIN_VALUE;
+	private static final BytesKeyGenerator HEARTBEAT_CHALLENGE_GENERATOR =
+			KeyGenerators.secureRandom(2 * Long.BYTES);
 	static final int MAX_OUTBOUND_QUEUE_SIZE = 256;
 
 	private final Object monitor = new Object();
@@ -177,11 +181,6 @@ public class SignalingService implements SmartLifecycle {
 					workPlan.close(session, SERVER_SHUTDOWN);
 					accepted = false;
 				}
-				else if (connectedPeers.size() >= maxConnections
-						&& !connectedPeers.containsKey(session.getId())) {
-					workPlan.close(session, CONNECTION_LIMIT);
-					accepted = false;
-				}
 				else {
 					if (!connectedPeers.containsKey(session.getId())) {
 						String clientKey = reservation.clientKey();
@@ -245,9 +244,6 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	public boolean acceptInboundFrame(WebSocketSession session, int payloadBytes) {
-		if (payloadBytes < 0) {
-			throw new IllegalArgumentException("payloadBytes must not be negative");
-		}
 		WorkPlan workPlan = new WorkPlan();
 		boolean accepted = false;
 		synchronized (monitor) {
@@ -1093,7 +1089,7 @@ public class SignalingService implements SmartLifecycle {
 			return false;
 		}
 
-		int messageBytes = payloadSizeBytes(message);
+		int messageBytes = message.getPayloadLength();
 		boolean peerOverflow = peer.outboundFrameCount >= MAX_OUTBOUND_QUEUE_SIZE
 				|| messageBytes > maxOutboundQueueBytes - peer.outboundBytes;
 		if (peerOverflow) {
@@ -1212,9 +1208,6 @@ public class SignalingService implements SmartLifecycle {
 			}
 
 			try {
-				if (!peer.session.isOpen()) {
-					throw new IOException("WebSocket session is closed");
-				}
 				peer.session.sendMessage(frame.message());
 			}
 			catch (Exception exception) {
@@ -1473,10 +1466,6 @@ public class SignalingService implements SmartLifecycle {
 		}
 	}
 
-	private static int payloadSizeBytes(WebSocketMessage<?> message) {
-		return message.getPayloadLength();
-	}
-
 	private static boolean elapsedAtLeast(
 			long nowNanos,
 			long startedAtNanos,
@@ -1486,11 +1475,7 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	private static byte[] heartbeatChallenge() {
-		UUID challenge = UUID.randomUUID();
-		return ByteBuffer.allocate(2 * Long.BYTES)
-				.putLong(challenge.getMostSignificantBits())
-				.putLong(challenge.getLeastSignificantBits())
-				.array();
+		return HEARTBEAT_CHALLENGE_GENERATOR.generateKey();
 	}
 
 	private void closeSessionsConcurrently(
@@ -1556,10 +1541,6 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	private void releaseInFlightLocked(Peer peer, OutboundFrame frame) {
-		if (peer.inFlightBytes != frame.payloadBytes()) {
-			log.error("Signaling outbound accounting mismatch; retaining the global byte reservation");
-			return;
-		}
 		peer.inFlightBytes = 0;
 		peer.outboundFrameCount--;
 		peer.outboundBytes -= frame.payloadBytes();

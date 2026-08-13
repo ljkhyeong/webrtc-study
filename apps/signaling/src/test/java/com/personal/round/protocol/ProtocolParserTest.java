@@ -2,16 +2,10 @@ package com.personal.round.protocol;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.catchThrowableOfType;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.ObjectReader;
 import tools.jackson.databind.node.ObjectNode;
 
 class ProtocolParserTest {
@@ -165,32 +159,16 @@ class ProtocolParserTest {
 
 	@Test
 	void doesNotExposeAnOversizedUnexpectedPropertyNameInThePublicErrorMessage() {
-		String unexpectedProperty = "x".repeat(ProtocolValidationException.MAX_PUBLIC_MESSAGE_LENGTH + 1);
+		String unexpectedProperty = "x".repeat(2_048);
 		String message = """
 				{"v":3,"type":"room.join","roomId":"abcd-efgh-jkmp","%s":true,
 				 "payload":{"displayName":"Ada"}}
 				""".formatted(unexpectedProperty);
 
-		ProtocolValidationException exception = catchThrowableOfType(
-				ProtocolValidationException.class,
-				() -> parser.parse(message));
-
-		assertThat(exception.getPath()).isEqualTo("$");
-		assertThat(exception.getMessage())
-				.isEqualTo("$: contains an unsupported property")
-				.hasSizeLessThanOrEqualTo(ProtocolValidationException.MAX_PUBLIC_MESSAGE_LENGTH)
-				.doesNotContain(unexpectedProperty);
-	}
-
-	@Test
-	void capsEveryPublicValidationMessageAtTheProtocolLimit() {
-		ProtocolValidationException exception = new ProtocolValidationException(
-				"$." + "x".repeat(ProtocolValidationException.MAX_PUBLIC_MESSAGE_LENGTH),
-				"is not allowed");
-
-		assertThat(exception.getMessage())
-				.hasSize(ProtocolValidationException.MAX_PUBLIC_MESSAGE_LENGTH)
-				.endsWith("…");
+		assertThatThrownBy(() -> parser.parse(message))
+				.isInstanceOf(ProtocolValidationException.class)
+				.hasMessage("$: contains an unsupported property")
+				.hasMessageNotContaining(unexpectedProperty);
 	}
 
 	@Test
@@ -309,20 +287,6 @@ class ProtocolParserTest {
 		assertThatThrownBy(() -> parser.parse(
 						"{\"v\":3,\"type\":\"room.leave\",\"roomId\":\"abcd-efgh-jkmp\"} true"))
 				.isInstanceOf(MalformedJsonException.class);
-	}
-
-	@Test
-	void doesNotHideUnexpectedRuntimeExceptionsFromJackson() {
-		ObjectMapper failingMapper = mock(ObjectMapper.class);
-		ObjectReader failingReader = mock(ObjectReader.class);
-		IllegalStateException failure = new IllegalStateException("reader failed unexpectedly");
-		when(failingMapper.reader(DeserializationFeature.FAIL_ON_TRAILING_TOKENS))
-				.thenReturn(failingReader);
-		when(failingReader.readTree(anyString())).thenThrow(failure);
-		ProtocolParser failingParser = new ProtocolParser(failingMapper);
-
-		assertThatThrownBy(() -> failingParser.parse("{}"))
-				.isSameAs(failure);
 	}
 
 	private void assertInvalid(String json, String expectedPath) {

@@ -20,10 +20,6 @@ final class BatonParticipationTokenValidator implements OAuth2TokenValidator<Jwt
 	private final Duration maxGrantLifetime;
 	private final Clock clock;
 
-	BatonParticipationTokenValidator(Duration maxGrantLifetime) {
-		this(maxGrantLifetime, Clock.systemUTC());
-	}
-
 	BatonParticipationTokenValidator(
 			Duration maxGrantLifetime,
 			Clock clock) {
