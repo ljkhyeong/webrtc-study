@@ -1,9 +1,6 @@
 import { isValidRoomId } from './room';
 
-export interface RoomEndpointLocation {
-  readonly protocol: string;
-  readonly host: string;
-}
+export type RoomEndpointLocation = Pick<Location, 'host' | 'protocol'>;
 
 export interface ResolveRoomEndpointsOptions {
   readonly roomId: string;

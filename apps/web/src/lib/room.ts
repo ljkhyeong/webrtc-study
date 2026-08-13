@@ -1,7 +1,11 @@
-const ROOM_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
-const ROOM_SEGMENT_LENGTH = 4;
-const ROOM_SEGMENT_COUNT = 3;
-const ROOM_ID_LENGTH = ROOM_SEGMENT_LENGTH * ROOM_SEGMENT_COUNT;
+import {
+  ROOM_ID_ALPHABET,
+  ROOM_ID_PATTERN,
+  ROOM_ID_SEGMENT_COUNT,
+  ROOM_ID_SEGMENT_LENGTH,
+} from '@round/protocol';
+
+const ROOM_ID_LENGTH = ROOM_ID_SEGMENT_LENGTH * ROOM_ID_SEGMENT_COUNT;
 
 export const DISPLAY_NAME_MAX_LENGTH = 24;
 
@@ -10,11 +14,12 @@ export function createRoomId(
 ) {
   const characters = Array.from(
     { length: ROOM_ID_LENGTH },
-    (_, index) => ROOM_ALPHABET[randomValues[index % randomValues.length]! % ROOM_ALPHABET.length],
+    (_, index) =>
+      ROOM_ID_ALPHABET[randomValues[index % randomValues.length]! % ROOM_ID_ALPHABET.length],
   );
 
-  return Array.from({ length: ROOM_SEGMENT_COUNT }, (_, index) =>
-    characters.slice(index * ROOM_SEGMENT_LENGTH, (index + 1) * ROOM_SEGMENT_LENGTH).join(''),
+  return Array.from({ length: ROOM_ID_SEGMENT_COUNT }, (_, index) =>
+    characters.slice(index * ROOM_ID_SEGMENT_LENGTH, (index + 1) * ROOM_ID_SEGMENT_LENGTH).join(''),
   ).join('-');
 }
 
@@ -22,23 +27,19 @@ export function normalizeRoomId(value: string) {
   const compact = value
     .toLowerCase()
     .split('')
-    .filter((character) => ROOM_ALPHABET.includes(character))
+    .filter((character) => ROOM_ID_ALPHABET.includes(character))
     .slice(0, ROOM_ID_LENGTH)
     .join('');
 
-  return Array.from({ length: ROOM_SEGMENT_COUNT }, (_, index) =>
-    compact.slice(index * ROOM_SEGMENT_LENGTH, (index + 1) * ROOM_SEGMENT_LENGTH),
+  return Array.from({ length: ROOM_ID_SEGMENT_COUNT }, (_, index) =>
+    compact.slice(index * ROOM_ID_SEGMENT_LENGTH, (index + 1) * ROOM_ID_SEGMENT_LENGTH),
   )
     .filter(Boolean)
     .join('-');
 }
 
 export function isValidRoomId(value: string) {
-  return new RegExp(
-    `^[${ROOM_ALPHABET}]{${ROOM_SEGMENT_LENGTH}}(?:-[${ROOM_ALPHABET}]{${ROOM_SEGMENT_LENGTH}}){${
-      ROOM_SEGMENT_COUNT - 1
-    }}$`,
-  ).test(value);
+  return ROOM_ID_PATTERN.test(value);
 }
 
 export function sanitizeDisplayName(value: string) {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  MAX_HOST_CAPABILITY_LENGTH,
+  MIN_HOST_CAPABILITY_LENGTH,
   MAX_SDP_BYTES,
   MAX_SIGNALING_FRAME_BYTES,
   PROTOCOL_VERSION,
@@ -15,8 +17,6 @@ import {
 
 const MAX_NEGOTIATION_ID_LENGTH = 128;
 const MAX_PEER_ID_LENGTH = 128;
-const MAX_HOST_CAPABILITY_LENGTH = 256;
-const MIN_HOST_CAPABILITY_LENGTH = 32;
 const RELAY_PAYLOAD_CASES = [
   {
     type: 'rtc.offer',

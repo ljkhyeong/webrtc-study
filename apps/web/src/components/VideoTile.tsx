@@ -1,18 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ParticipantSnapshot, PeerConnectionStatus } from '@round/rtc-core';
 import { enterVideoFullscreen, exitVideoFullscreen } from '../lib/fullscreen';
 import { CameraOffIcon, FullscreenIcon, MicOffIcon } from './Icons';
 
-export interface ParticipantView {
-  peerId: string;
-  displayName: string;
-  role: 'host' | 'participant';
-  isLocal: boolean;
-  audioEnabled: boolean;
-  videoEnabled: boolean;
-  videoSource: 'camera' | 'screen';
-  connectionState: string;
-  stream?: MediaStream | undefined;
-}
+export type ParticipantView = ParticipantSnapshot & {
+  readonly stream?: MediaStream | undefined;
+};
 
 interface VideoTileProps {
   participant: ParticipantView;
@@ -25,7 +18,7 @@ function initials(name: string) {
   return Array.from(name.trim()).slice(0, 2).join('').toUpperCase() || '?';
 }
 
-function connectionLabel(connectionState: string) {
+function connectionLabel(connectionState: PeerConnectionStatus) {
   switch (connectionState) {
     case 'disconnected':
       return '재연결 중';
@@ -73,8 +66,7 @@ export function VideoTile({
   const hasVisibleVideo = participant.videoEnabled && hasStream;
   const isRemoteScreenShare =
     !participant.isLocal && participant.videoSource === 'screen' && hasVisibleVideo;
-  const isConnected =
-    participant.isLocal || ['connected', 'completed'].includes(participant.connectionState);
+  const isConnected = participant.isLocal || participant.connectionState === 'connected';
 
   async function playVideo(video: HTMLVideoElement, attempt: number): Promise<void> {
     try {

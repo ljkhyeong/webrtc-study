@@ -96,6 +96,13 @@ function device(kind: MediaDeviceKind, deviceId: string, label: string): MediaDe
   };
 }
 
+function mediaDeviceEventTarget(): Pick<MediaDevices, 'addEventListener' | 'removeEventListener'> {
+  return {
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  };
+}
+
 function deferred<T>(): {
   readonly promise: Promise<T>;
   readonly resolve: (value: T) => void;
@@ -124,6 +131,7 @@ describe('PrejoinMedia', () => {
     });
     const controller = createPrejoinMedia({
       mediaDevices: {
+        ...mediaDeviceEventTarget(),
         getUserMedia,
         enumerateDevices: vi.fn(async () => [
           device('audioinput', 'mic-default', '내장 마이크'),
@@ -162,6 +170,7 @@ describe('PrejoinMedia', () => {
     });
     const controller = createPrejoinMedia({
       mediaDevices: {
+        ...mediaDeviceEventTarget(),
         getUserMedia,
         enumerateDevices: vi.fn(async () => []),
       },
@@ -202,6 +211,7 @@ describe('PrejoinMedia', () => {
     });
     const controller = createPrejoinMedia({
       mediaDevices: {
+        ...mediaDeviceEventTarget(),
         getUserMedia,
         enumerateDevices: vi.fn(async () => [
           device('audioinput', 'mic-default', '내장 마이크'),
@@ -246,6 +256,7 @@ describe('PrejoinMedia', () => {
     });
     const controller = createPrejoinMedia({
       mediaDevices: {
+        ...mediaDeviceEventTarget(),
         getUserMedia,
         enumerateDevices: vi.fn(async () => [
           device('audioinput', 'mic-default', '내장 마이크'),
@@ -291,6 +302,7 @@ describe('PrejoinMedia', () => {
     const audioTrack = new FakeTrack('audio', 'mic-default');
     const controller = createPrejoinMedia({
       mediaDevices: {
+        ...mediaDeviceEventTarget(),
         getUserMedia: vi.fn(async (constraints: MediaStreamConstraints) => {
           if (constraints.audio !== false) {
             return new FakeMediaStream([audioTrack]) as unknown as MediaStream;

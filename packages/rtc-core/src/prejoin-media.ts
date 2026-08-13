@@ -33,8 +33,10 @@ export interface PrejoinMediaSnapshot {
 
 export type PrejoinMediaListener = (snapshot: PrejoinMediaSnapshot) => void;
 
-type PrejoinMediaDevices = Pick<MediaDevices, 'enumerateDevices' | 'getUserMedia'> &
-  Partial<Pick<MediaDevices, 'addEventListener' | 'removeEventListener'>>;
+type PrejoinMediaDevices = Pick<
+  MediaDevices,
+  'addEventListener' | 'enumerateDevices' | 'getUserMedia' | 'removeEventListener'
+>;
 
 export interface PrejoinMediaOptions {
   readonly audioConstraints?: MediaTrackConstraints;
@@ -435,11 +437,7 @@ export class PrejoinMedia {
 
   #attachDeviceChangeListener(): void {
     const mediaDevices = this.#mediaDevices;
-    if (
-      mediaDevices === undefined ||
-      typeof mediaDevices.addEventListener !== 'function' ||
-      typeof mediaDevices.removeEventListener !== 'function'
-    ) {
+    if (mediaDevices === undefined) {
       return;
     }
 
@@ -454,11 +452,7 @@ export class PrejoinMedia {
     const listener = this.#deviceChangeListener;
     const mediaDevices = this.#mediaDevices;
     this.#deviceChangeListener = null;
-    if (
-      listener !== null &&
-      mediaDevices !== undefined &&
-      typeof mediaDevices.removeEventListener === 'function'
-    ) {
+    if (listener !== null && mediaDevices !== undefined) {
       mediaDevices.removeEventListener('devicechange', listener);
     }
   }
@@ -565,11 +559,8 @@ export class PrejoinMedia {
 
   #resolveDeviceRefreshWaiters(force: boolean): void {
     for (let index = this.#deviceRefreshWaiters.length - 1; index >= 0; index -= 1) {
-      const waiter = this.#deviceRefreshWaiters[index];
-      if (
-        waiter !== undefined &&
-        (force || waiter.generation <= this.#deviceRefreshCompletedGeneration)
-      ) {
+      const waiter = this.#deviceRefreshWaiters[index]!;
+      if (force || waiter.generation <= this.#deviceRefreshCompletedGeneration) {
         this.#deviceRefreshWaiters.splice(index, 1);
         waiter.resolve();
       }

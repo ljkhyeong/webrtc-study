@@ -1,4 +1,5 @@
 import { createPrejoinMedia, type PrejoinMedia, type PrejoinMediaSnapshot } from '@round/rtc-core';
+import { MAX_HOST_CAPABILITY_LENGTH, MIN_HOST_CAPABILITY_LENGTH } from '@round/protocol';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowIcon, CameraIcon, CameraOffIcon, MicIcon, MicOffIcon } from './Icons';
 
@@ -51,7 +52,8 @@ export function PrejoinScreen({
 
   const normalizedHostCapability = hostCapability.trim() || undefined;
   const hostCapabilityInvalid =
-    normalizedHostCapability !== undefined && normalizedHostCapability.length < 32;
+    normalizedHostCapability !== undefined &&
+    normalizedHostCapability.length < MIN_HOST_CAPABILITY_LENGTH;
 
   const ensureController = () => {
     const existing = controllerRef.current;
@@ -255,8 +257,8 @@ export function PrejoinScreen({
               <input
                 type="password"
                 value={hostCapability}
-                minLength={32}
-                maxLength={256}
+                minLength={MIN_HOST_CAPABILITY_LENGTH}
+                maxLength={MAX_HOST_CAPABILITY_LENGTH}
                 autoComplete="off"
                 placeholder="방장일 때만 입력"
                 aria-describedby="prejoin-host-capability-help"
@@ -265,8 +267,8 @@ export function PrejoinScreen({
               />
               <small id="prejoin-host-capability-help">
                 {hostCapabilityInvalid
-                  ? '방장 키는 32자 이상이어야 합니다.'
-                  : '일반 참가자는 비워 두세요. 32자 이상의 무작위 키만 사용하며 화면에 표시되지 않습니다.'}
+                  ? `방장 키는 ${MIN_HOST_CAPABILITY_LENGTH}자 이상이어야 합니다.`
+                  : `일반 참가자는 비워 두세요. ${MIN_HOST_CAPABILITY_LENGTH}자 이상의 무작위 키만 사용하며 화면에 표시되지 않습니다.`}
               </small>
             </label>
           ) : null}

@@ -21,7 +21,11 @@ type Listener = {
 };
 
 class FakeWebSocket {
-  readyState = 0;
+  readonly CONNECTING = 0;
+  readonly OPEN = 1;
+  readonly CLOSING = 2;
+  readonly CLOSED = 3;
+  readyState = this.CONNECTING;
   readonly sent: string[] = [];
   readonly closeCalls: { code?: number; reason?: string }[] = [];
   readonly #listeners = new Map<string, Listener[]>();
@@ -54,11 +58,11 @@ class FakeWebSocket {
       ...(code === undefined ? {} : { code }),
       ...(reason === undefined ? {} : { reason }),
     });
-    this.readyState = 3;
+    this.readyState = this.CLOSED;
   }
 
   open(): void {
-    this.readyState = 1;
+    this.readyState = this.OPEN;
     this.#dispatch('open', {});
   }
 
@@ -115,7 +119,7 @@ class FakeWebSocket {
   }
 
   serverClose(code = 1006, reason = ''): void {
-    this.readyState = 3;
+    this.readyState = this.CLOSED;
     this.#dispatch('close', { code, reason });
   }
 

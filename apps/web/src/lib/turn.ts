@@ -46,23 +46,16 @@ export async function loadTurnCredentials(
   }
 
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const signal = options.signal === undefined
-    ? timeoutSignal
-    : AbortSignal.any([options.signal, timeoutSignal]);
+  const signal =
+    options.signal === undefined ? timeoutSignal : AbortSignal.any([options.signal, timeoutSignal]);
 
   try {
-    if (signal.aborted) {
-      throw new DOMException('Aborted', 'AbortError');
-    }
     const response = await fetcher(options.endpoint ?? DEFAULT_ENDPOINT, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
       method: 'POST',
       signal,
     });
-    if (signal.aborted) {
-      throw new DOMException('Aborted', 'AbortError');
-    }
 
     if (response.status === 204 || response.status === 404) {
       return null;
@@ -87,8 +80,8 @@ export async function loadTurnCredentials(
     };
   } catch (error) {
     if (
-      error instanceof DOMException
-      && (error.name === 'AbortError' || error.name === 'TimeoutError')
+      error instanceof DOMException &&
+      (error.name === 'AbortError' || error.name === 'TimeoutError')
     ) {
       if (options.signal?.aborted) {
         throw new Error('TURN credential request was cancelled', { cause: error });

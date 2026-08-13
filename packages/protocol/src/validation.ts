@@ -11,13 +11,18 @@ import {
   type ServerMessage,
 } from './types.js';
 
-const ROOM_ID_PATTERN =
-  /^[abcdefghjkmnpqrstuvwxyz23456789]{4}(?:-[abcdefghjkmnpqrstuvwxyz23456789]{4}){2}$/;
-const MAX_ROOM_ID_LENGTH = 14;
+export const ROOM_ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+export const ROOM_ID_SEGMENT_LENGTH = 4;
+export const ROOM_ID_SEGMENT_COUNT = 3;
+export const ROOM_ID_PATTERN = new RegExp(
+  `^[${ROOM_ID_ALPHABET}]{${ROOM_ID_SEGMENT_LENGTH}}(?:-[${ROOM_ID_ALPHABET}]{${ROOM_ID_SEGMENT_LENGTH}}){${ROOM_ID_SEGMENT_COUNT - 1}}$`,
+);
+export const MAX_ROOM_ID_LENGTH =
+  ROOM_ID_SEGMENT_LENGTH * ROOM_ID_SEGMENT_COUNT + ROOM_ID_SEGMENT_COUNT - 1;
 const MAX_PEER_ID_LENGTH = 128;
 const MAX_DISPLAY_NAME_LENGTH = 64;
-const MIN_HOST_CAPABILITY_LENGTH = 32;
-const MAX_HOST_CAPABILITY_LENGTH = 256;
+export const MIN_HOST_CAPABILITY_LENGTH = 32;
+export const MAX_HOST_CAPABILITY_LENGTH = 256;
 const MAX_REQUEST_ID_LENGTH = 128;
 const MAX_NEGOTIATION_ID_LENGTH = MAX_REQUEST_ID_LENGTH;
 const MAX_CANDIDATE_LENGTH = 8 * 1024;

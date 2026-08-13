@@ -81,11 +81,7 @@ export class ParticipationGrantLeaseManager {
   constructor(options: ParticipationGrantLeaseManagerOptions) {
     this.#endpoint = requireSameOriginPath(options.endpoint);
     this.#roomId = requireRoomId(options.roomId);
-    const configuredFetcher = options.fetcher ?? globalThis.fetch;
-    this.#fetcher =
-      typeof configuredFetcher === 'function' && configuredFetcher === globalThis.fetch
-        ? configuredFetcher.bind(globalThis)
-        : configuredFetcher;
+    this.#fetcher = options.fetcher ?? globalThis.fetch;
     this.#now = options.now ?? (() => globalThis.performance.now());
     this.#storage = options.storage;
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -138,10 +134,7 @@ export class ParticipationGrantLeaseManager {
   async #requestRefresh(): Promise<ParticipationGrantLease> {
     const controller = new AbortController();
     this.#refreshController = controller;
-    const signal = AbortSignal.any([
-      controller.signal,
-      AbortSignal.timeout(this.#timeoutMs),
-    ]);
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.#timeoutMs)]);
 
     try {
       const entryContext = readEntryContext(this.#roomId, this.#storage);
@@ -196,8 +189,8 @@ export class ParticipationGrantLeaseManager {
       return lease;
     } catch (error) {
       if (
-        error instanceof DOMException
-        && (error.name === 'AbortError' || error.name === 'TimeoutError')
+        error instanceof DOMException &&
+        (error.name === 'AbortError' || error.name === 'TimeoutError')
       ) {
         if (this.#closed) {
           throw new Error('Participation grant refresh was cancelled', { cause: error });

@@ -108,20 +108,12 @@ function ChatMessageTime({
 }) {
   const deliveryLabel = chatDeliveryLabels[deliveryState];
   const date = new Date(sentAt);
-  if (!Number.isFinite(sentAt) || Number.isNaN(date.getTime())) {
-    return <time>{`시간 미상${deliveryLabel}`}</time>;
-  }
-
-  try {
-    return (
-      <time dateTime={date.toISOString()}>
-        {messageTime.format(date)}
-        {deliveryLabel}
-      </time>
-    );
-  } catch {
-    return <time>{`시간 미상${deliveryLabel}`}</time>;
-  }
+  return (
+    <time dateTime={date.toISOString()}>
+      {messageTime.format(date)}
+      {deliveryLabel}
+    </time>
+  );
 }
 
 export function countNewRemoteMessages(
@@ -170,19 +162,7 @@ export function countNewLocalDeliveryIssues(
 
 async function copyInviteLink(roomId: string) {
   const inviteUrl = canonicalRoomUrl(roomId, window.location.href);
-  if (navigator.clipboard) {
-    await navigator.clipboard.writeText(inviteUrl);
-    return;
-  }
-
-  const textArea = document.createElement('textarea');
-  textArea.value = inviteUrl;
-  textArea.style.position = 'fixed';
-  textArea.style.opacity = '0';
-  document.body.append(textArea);
-  textArea.select();
-  document.execCommand('copy');
-  textArea.remove();
+  await navigator.clipboard.writeText(inviteUrl);
 }
 
 function chatMessageIdentity(message: ChatMessageView | undefined): ChatMessageIdentity | null {

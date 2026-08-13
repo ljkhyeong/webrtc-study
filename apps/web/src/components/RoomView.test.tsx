@@ -117,25 +117,6 @@ describe('RoomView connection state', () => {
     expect(markup.match(/role="status"/g)).toHaveLength(2);
   });
 
-  it('renders a fallback instead of throwing for an invalid chat timestamp', () => {
-    const markup = renderRoom({
-      messages: [
-        {
-          id: 'message-invalid-time',
-          senderId: 'peer-a',
-          senderName: 'Ara',
-          text: '시간 값이 잘못된 메시지',
-          sentAt: 1e300,
-          isLocal: false,
-          deliveryState: 'received',
-        },
-      ],
-    });
-
-    expect(markup).toContain('시간 미상');
-    expect(markup).toContain('시간 값이 잘못된 메시지');
-  });
-
   it('shows pending, partial, and failed local delivery states instead of false success', () => {
     const markup = renderRoom({
       messages: [

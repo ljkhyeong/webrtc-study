@@ -1,5 +1,4 @@
 import {
-  MAX_CHAT_TEXT_LENGTH,
   MAX_DATA_CHANNEL_FRAME_BYTES,
   PROTOCOL_VERSION,
   parsePeerDataMessage,
@@ -32,8 +31,7 @@ export type RoomSessionStatus =
   | 'ended'
   | 'error';
 
-export type PeerConnectionStatus =
-  'new' | 'negotiating' | 'connecting' | 'connected' | 'disconnected' | 'failed' | 'closed';
+export type PeerConnectionStatus = RTCPeerConnectionState | 'negotiating';
 
 export type RoomIssueCode =
   | SignalingErrorCode
@@ -277,10 +275,6 @@ interface ScreenSenderUpdate {
 
 type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 
-const SOCKET_CONNECTING = 0;
-const SOCKET_OPEN = 1;
-// ECMAScript Date's inclusive TimeClip boundary.
-const MAX_DATE_TIMESTAMP_MS = 8_640_000_000_000_000;
 // Normal ICE gathering stays far below this; retain newest candidates on overflow.
 const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
 const MAX_PENDING_SIGNAL_REQUESTS = 256;
@@ -477,21 +471,12 @@ function safeSignalingErrorMessage(code: SignalingErrorCode): string {
   }
 }
 
-function isDateSafeTimestamp(value: unknown): value is number {
-  return (
-    typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    value >= 0 &&
-    value <= MAX_DATE_TIMESTAMP_MS
-  );
-}
-
 function serializeCandidate(candidate: RTCIceCandidate | null): SerializedIceCandidate | null {
   if (candidate === null) {
     return null;
   }
 
-  const serialized = typeof candidate.toJSON === 'function' ? candidate.toJSON() : candidate;
+  const serialized = candidate.toJSON();
 
   return {
     candidate: serialized.candidate ?? candidate.candidate,
@@ -716,7 +701,8 @@ export class RoomSession {
     this.#disposed = true;
     this.#cancelReconnectWait();
 
-    if (this.#socket?.readyState === SOCKET_OPEN) {
+    const socket = this.#socket;
+    if (socket !== null && socket.readyState === socket.OPEN) {
       try {
         this.#send({
           v: PROTOCOL_VERSION,
@@ -812,8 +798,7 @@ export class RoomSession {
       this.#disposed ||
       this.#status !== 'active' ||
       this.#selfId === null ||
-      !this.#canModerateMedia ||
-      (kind !== 'audio' && kind !== 'video')
+      !this.#canModerateMedia
     ) {
       return false;
     }
@@ -1180,11 +1165,7 @@ export class RoomSession {
       const shouldOffer = this.#isPeerRecoveryInitiator(failedPeer.peerId);
       let replacement: PeerContext;
       try {
-        replacement = this.#replacePeer(
-          failedPeer.peerId,
-          false,
-          Math.max(1, failedPeer.connectionAttempt + 1),
-        );
+        replacement = this.#replacePeer(failedPeer.peerId, false, failedPeer.connectionAttempt + 1);
       } catch (replacementError) {
         this.#failPeer(failedPeer.peerId, replacementError);
         continue;
@@ -1213,10 +1194,6 @@ export class RoomSession {
     if (normalizedText.length === 0) {
       throw new Error('Chat message must not be empty');
     }
-    if (normalizedText.length > MAX_CHAT_TEXT_LENGTH) {
-      throw new Error(`Chat message must be at most ${MAX_CHAT_TEXT_LENGTH} characters`);
-    }
-
     const messageId = this.#createId();
     if (
       this.#activeLocalMessageIds.has(messageId) ||
@@ -1423,10 +1400,7 @@ export class RoomSession {
     }
     this.#staleSelfIds.add(this.#selfId);
     while (this.#staleSelfIds.size > 32) {
-      const oldest = this.#staleSelfIds.values().next().value as string | undefined;
-      if (oldest === undefined) {
-        return;
-      }
+      const oldest = this.#staleSelfIds.values().next().value as string;
       this.#staleSelfIds.delete(oldest);
     }
   }
@@ -1500,7 +1474,7 @@ export class RoomSession {
         if (
           attemptSocket !== null &&
           this.#socket === attemptSocket &&
-          attemptSocket.readyState === SOCKET_OPEN &&
+          attemptSocket.readyState === attemptSocket.OPEN &&
           this.#status === 'active'
         ) {
           return;
@@ -1539,8 +1513,7 @@ export class RoomSession {
   }
 
   #reconnectDelay(attempt: number): number {
-    const exponential =
-      this.#recoveryOptions.reconnectInitialDelayMs * 2 ** Math.max(0, attempt - 1);
+    const exponential = this.#recoveryOptions.reconnectInitialDelayMs * 2 ** (attempt - 1);
     return Math.min(exponential, this.#recoveryOptions.reconnectMaxDelayMs);
   }
 
@@ -1677,9 +1650,9 @@ export class RoomSession {
         }
       }, this.#recoveryOptions.signalingConnectTimeoutMs);
 
-      if (socket.readyState === SOCKET_OPEN) {
+      if (socket.readyState === socket.OPEN) {
         settleOpen();
-      } else if (socket.readyState !== SOCKET_CONNECTING) {
+      } else if (socket.readyState !== socket.CONNECTING) {
         settleError();
       }
     });
@@ -2222,7 +2195,8 @@ export class RoomSession {
     if (
       !this.#isCurrentPeer(peer) ||
       !this.#candidateMatchesCurrentLocalNegotiation(peer, candidate) ||
-      this.#socket?.readyState !== SOCKET_OPEN ||
+      this.#socket === null ||
+      this.#socket.readyState !== this.#socket.OPEN ||
       this.#status === 'reconnecting'
     ) {
       return;
@@ -2310,7 +2284,11 @@ export class RoomSession {
     }
 
     connection.onicecandidate = (event) => {
-      if (!this.#isCurrentPeer(peer) || this.#socket?.readyState !== SOCKET_OPEN) {
+      if (
+        !this.#isCurrentPeer(peer) ||
+        this.#socket === null ||
+        this.#socket.readyState !== this.#socket.OPEN
+      ) {
         return;
       }
       const candidate = serializeCandidate(event.candidate);
@@ -2390,10 +2368,7 @@ export class RoomSession {
       return;
     }
     while (peer.retiredNegotiationIds.size >= MAX_RETIRED_NEGOTIATION_IDS) {
-      const oldestNegotiationId = peer.retiredNegotiationIds.values().next().value;
-      if (oldestNegotiationId === undefined) {
-        break;
-      }
+      const oldestNegotiationId = peer.retiredNegotiationIds.values().next().value as string;
       peer.retiredNegotiationIds.delete(oldestNegotiationId);
     }
     peer.retiredNegotiationIds.add(negotiationId);
@@ -2493,7 +2468,8 @@ export class RoomSession {
       !peer.pendingLocalRenegotiation ||
       this.#disposed ||
       this.#status !== 'active' ||
-      this.#socket?.readyState !== SOCKET_OPEN ||
+      this.#socket === null ||
+      this.#socket.readyState !== this.#socket.OPEN ||
       peer.makingOffer ||
       peer.remoteOffersInProgress.size > 0 ||
       peer.connection.signalingState !== 'stable'
@@ -2988,10 +2964,8 @@ export class RoomSession {
     peer.receivedChatIds.add(messageId);
     peer.receivedChatIdOrder.push(messageId);
     while (peer.receivedChatIdOrder.length > MAX_RECEIVED_CHAT_IDS_PER_PEER) {
-      const removed = peer.receivedChatIdOrder.shift();
-      if (removed !== undefined) {
-        peer.receivedChatIds.delete(removed);
-      }
+      const removed = peer.receivedChatIdOrder.shift() as string;
+      peer.receivedChatIds.delete(removed);
     }
   }
 
@@ -3154,15 +3128,15 @@ export class RoomSession {
 
   #expireOutboundChat(peerId: string, pendingChat: PendingChatMessage): void {
     const peer = this.#peers.get(peerId);
-    const index = peer?.pendingChatMessages.indexOf(pendingChat);
-    if (peer === undefined || index === undefined || index < 0) {
+    if (peer === undefined) {
       return;
     }
-    const [expired] = peer.pendingChatMessages.splice(index, 1);
-    if (expired === undefined) {
+    const index = peer.pendingChatMessages.indexOf(pendingChat);
+    if (index < 0) {
       return;
     }
-    peer.pendingChatBytes = Math.max(0, peer.pendingChatBytes - expired.byteLength);
+    const [expired] = peer.pendingChatMessages.splice(index, 1) as [PendingChatMessage];
+    peer.pendingChatBytes -= expired.byteLength;
     if (this.#markLocalChatRecipientState(expired.message.id, peerId, 'failed')) {
       this.#emit();
     }
@@ -3183,10 +3157,7 @@ export class RoomSession {
     }
 
     while (peer.pendingAckIds.size > 0) {
-      const messageId = peer.pendingAckIds.values().next().value as string | undefined;
-      if (messageId === undefined) {
-        return;
-      }
+      const messageId = peer.pendingAckIds.values().next().value as string;
       const acknowledgement: ChatAckDataMessage = {
         type: 'chat.ack',
         messageId,
@@ -3274,12 +3245,9 @@ export class RoomSession {
     if (index < 0) {
       return false;
     }
-    const [acknowledged] = peer.pendingChatMessages.splice(index, 1);
-    if (acknowledged === undefined) {
-      return false;
-    }
+    const [acknowledged] = peer.pendingChatMessages.splice(index, 1) as [PendingChatMessage];
     globalThis.clearTimeout(acknowledged.timeout);
-    peer.pendingChatBytes = Math.max(0, peer.pendingChatBytes - acknowledged.byteLength);
+    peer.pendingChatBytes -= acknowledged.byteLength;
     return this.#markLocalChatRecipientState(messageId, peer.peerId, 'acknowledged');
   }
 
@@ -3356,8 +3324,8 @@ export class RoomSession {
 
     const maxMessages = this.#options.maxChatMessages ?? 200;
     while (this.#messages.length > maxMessages) {
-      const removed = this.#messages.shift();
-      if (removed?.isLocal === true) {
+      const removed = this.#messages.shift() as ChatMessage;
+      if (removed.isLocal) {
         this.#retireLocalMessageIdIfUnused(removed.id);
       }
     }
@@ -3375,11 +3343,7 @@ export class RoomSession {
     this.#activeLocalMessageIds.delete(messageId);
     this.#recentlyRetiredLocalMessageIds.add(messageId);
     while (this.#recentlyRetiredLocalMessageIds.size > MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS) {
-      const oldest = this.#recentlyRetiredLocalMessageIds.values().next().value as
-        string | undefined;
-      if (oldest === undefined) {
-        return;
-      }
+      const oldest = this.#recentlyRetiredLocalMessageIds.values().next().value as string;
       this.#recentlyRetiredLocalMessageIds.delete(oldest);
     }
   }
@@ -3673,7 +3637,7 @@ export class RoomSession {
     }
 
     this.#detachSocket(socket);
-    if (socket.readyState === SOCKET_CONNECTING || socket.readyState === SOCKET_OPEN) {
+    if (socket.readyState === socket.CONNECTING || socket.readyState === socket.OPEN) {
       socket.close(code, reason);
     }
     this.#socket = null;
@@ -3745,14 +3709,16 @@ export class RoomSession {
   }
 
   #send(message: ClientMessage): void {
-    if (this.#socket?.readyState !== SOCKET_OPEN) {
+    const socket = this.#socket;
+    if (socket === null || socket.readyState !== socket.OPEN) {
       throw new Error('Signaling socket is not open');
     }
-    this.#socket.send(serializeClientMessage(message));
+    socket.send(serializeClientMessage(message));
   }
 
   #sendRelay(message: RelayClientMessage): void {
-    if (this.#socket?.readyState !== SOCKET_OPEN) {
+    const socket = this.#socket;
+    if (socket === null || socket.readyState !== socket.OPEN) {
       throw new Error('Signaling socket is not open');
     }
 
@@ -3761,7 +3727,7 @@ export class RoomSession {
     const serialized = serializeClientMessage(correlatedMessage);
     this.#rememberSignalRequest(requestId, correlatedMessage);
     try {
-      this.#socket.send(serialized);
+      socket.send(serialized);
     } catch (error) {
       this.#pendingSignalRequests.delete(requestId);
       throw error;
@@ -3779,10 +3745,7 @@ export class RoomSession {
       peerId: message.to,
     });
     while (this.#pendingSignalRequests.size > MAX_PENDING_SIGNAL_REQUESTS) {
-      const oldestRequestId = this.#pendingSignalRequests.keys().next().value as string | undefined;
-      if (oldestRequestId === undefined) {
-        return;
-      }
+      const oldestRequestId = this.#pendingSignalRequests.keys().next().value as string;
       this.#pendingSignalRequests.delete(oldestRequestId);
     }
   }
@@ -3917,12 +3880,7 @@ export class RoomSession {
   }
 
   #now(): number {
-    const value = (this.#options.now ?? Date.now)();
-    if (isDateSafeTimestamp(value)) {
-      return value;
-    }
-    const fallback = Date.now();
-    return isDateSafeTimestamp(fallback) ? fallback : 0;
+    return (this.#options.now ?? Date.now)();
   }
 
   #createId(): string {
