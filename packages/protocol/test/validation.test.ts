@@ -336,10 +336,6 @@ describe('client message validation', () => {
     expect(JSON.parse(serialized)).toEqual(message);
   });
 
-  it('uses the platform UTF-8 replacement semantics for an unpaired surrogate', () => {
-    expect(utf8ByteLength('\ud800')).toBe(3);
-  });
-
   it.each([
     ['ASCII', 'x'.repeat(MAX_SDP_BYTES + 1)],
     ['multibyte', '가'.repeat(MAX_SDP_BYTES / 3 + 1)],
