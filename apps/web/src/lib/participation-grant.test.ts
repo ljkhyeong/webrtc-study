@@ -86,6 +86,54 @@ describe('BATON participation grant lease manager', () => {
     expect(fetcher.mock.calls[1]?.[0]).not.toMatch(/[?#]/);
   });
 
+  it('binds default and explicitly injected browser fetch receivers', async () => {
+    const receiverSensitiveFetcher = vi.fn(function (this: unknown, input: RequestInfo | URL) {
+      if (this !== undefined && this !== globalThis) {
+        throw new TypeError('Illegal invocation');
+      }
+      if (input === SESSION_ENDPOINT) {
+        return Promise.resolve(sessionResponse());
+      }
+      return Promise.resolve(
+        response(200, {
+          expiresAt: 1_780_000_000,
+          refreshAfterSeconds: 240,
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', receiverSensitiveFetcher);
+
+    try {
+      const defaultManager = new ParticipationGrantLeaseManager({
+        endpoint: ENDPOINT,
+        roomId: ROOM_ID,
+        storage: null,
+      });
+      const injectedManager = new ParticipationGrantLeaseManager({
+        endpoint: ENDPOINT,
+        roomId: ROOM_ID,
+        storage: null,
+        fetcher: globalThis.fetch,
+      });
+
+      for (const manager of [defaultManager, injectedManager]) {
+        await expect(manager.ensureFresh()).resolves.toEqual({
+          expiresAt: 1_780_000_000,
+          refreshAfterSeconds: 240,
+        });
+      }
+      expect(receiverSensitiveFetcher).toHaveBeenCalledTimes(4);
+      expect(receiverSensitiveFetcher.mock.contexts).toEqual([
+        globalThis,
+        globalThis,
+        globalThis,
+        globalThis,
+      ]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('sends a validated BATON entry locator without treating it as a credential', async () => {
     const getItem = vi.fn(() =>
       JSON.stringify({

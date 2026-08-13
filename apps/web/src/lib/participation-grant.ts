@@ -81,7 +81,11 @@ export class ParticipationGrantLeaseManager {
   constructor(options: ParticipationGrantLeaseManagerOptions) {
     this.#endpoint = requireSameOriginPath(options.endpoint);
     this.#roomId = requireRoomId(options.roomId);
-    this.#fetcher = options.fetcher ?? globalThis.fetch;
+    const configuredFetcher = options.fetcher ?? globalThis.fetch;
+    this.#fetcher =
+      typeof configuredFetcher === 'function' && configuredFetcher === globalThis.fetch
+        ? configuredFetcher.bind(globalThis)
+        : configuredFetcher;
     this.#now = options.now ?? (() => globalThis.performance.now());
     this.#storage = options.storage;
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
