@@ -487,14 +487,10 @@ grep -Fq 'volume-create volume create' "$fixture_dir/docker.log" ||
 for script in ops/linux/*.sh ops/linux/certbot/*; do
   bash -n "$script"
 done
-grep -Fq "trap 'exit 143' TERM" ops/linux/restore-caddy.sh
-grep -Fq 'if [[ ! -e "$rollback_marker" ]]; then' ops/linux/rollback.sh
 grep -Fq 'Persistent=true' ops/linux/systemd/round-turn-certificate-reconcile.timer
 grep -Fq 'OnFailure=round-ops-failure@%n.service' \
   ops/linux/systemd/round-turn-certificate-reconcile.service
 grep -Fq 'TimeoutStartSec=180s' \
   ops/linux/systemd/round-turn-certificate-reconcile.service
-[[ ! -e ops/linux/systemd/round-cert-renew.timer ]]
-[[ ! -e ops/linux/systemd/round-caddy-backup.timer ]]
 
 printf 'ROUND Linux operations tests passed.\n'

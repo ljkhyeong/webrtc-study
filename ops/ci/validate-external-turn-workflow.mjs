@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -13,6 +14,7 @@ const workflowUrl = process.argv[2]
 const targetUrl = process.argv[3]
   ? pathToFileURL(resolve(process.argv[3]))
   : new URL('ops/turn/external-pilot-target.properties', repoRoot);
+const targetResolverUrl = new URL('ops/turn/resolve-external-pilot-target.sh', repoRoot);
 const checkoutAction = 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803';
 
 function fail(message) {
@@ -93,43 +95,16 @@ function requireRunStep(step, expectedKeys, expectedRun, label) {
   assert.equal(step.run.trim(), expectedRun, `${label} command changed`);
 }
 
-function parseTarget(source) {
-  const values = new Map();
-  for (const [index, rawLine] of source.split(/\r?\n/).entries()) {
-    if (rawLine === '' || rawLine.startsWith('#')) {
-      continue;
-    }
-    const match = /^([A-Z][A-Z0-9_]*)=(\S+)$/.exec(rawLine);
-    if (match === null) {
-      fail(`invalid target line ${index + 1}`);
-    }
-    const [, key, value] = match;
-    if (values.has(key)) {
-      fail(`duplicate target key ${key}`);
-    }
-    values.set(key, value);
+function validateTarget() {
+  try {
+    execFileSync(
+      'bash',
+      [fileURLToPath(targetResolverUrl), fileURLToPath(targetUrl)],
+      { stdio: ['ignore', 'ignore', 'pipe'] },
+    );
+  } catch {
+    fail('reviewed pilot target was rejected by the canonical resolver');
   }
-
-  assert.deepEqual(
-    [...values.keys()].sort(),
-    ['ROUND_URL', 'TURN_PROBE_HOST', 'TURN_PROBE_IMAGE'],
-    'pilot target must contain exactly the public probe keys',
-  );
-  assert.match(
-    values.get('ROUND_URL'),
-    /^https:\/\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?$/,
-    'ROUND_URL must be an exact HTTPS origin',
-  );
-  assert.match(
-    values.get('TURN_PROBE_HOST'),
-    /^(?!-)[A-Za-z0-9.-]+$/,
-    'TURN_PROBE_HOST must be a plain host',
-  );
-  assert.match(
-    values.get('TURN_PROBE_IMAGE'),
-    /^coturn\/coturn@sha256:[0-9a-f]{64}$/,
-    'TURN_PROBE_IMAGE must pin the reviewed coturn/coturn repository by digest',
-  );
 }
 
 const workflowSource = readFileSync(workflowUrl, 'utf8');
@@ -408,5 +383,5 @@ const probeWithoutSteps = { ...probe };
 delete probeWithoutSteps.steps;
 requireNoSecretAccess(probeWithoutSteps, 'probe job configuration');
 
-parseTarget(readFileSync(targetUrl, 'utf8'));
+validateTarget();
 process.stdout.write('External TURN workflow contract checks passed.\n');
