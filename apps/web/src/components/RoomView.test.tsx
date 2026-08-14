@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { ChatMessage } from '@round/rtc-core';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,7 +7,6 @@ import {
   countNewRemoteMessages,
   RoomView,
   shouldSubmitChatOnEnter,
-  type ChatMessageView,
 } from './RoomView';
 
 function renderRoom(overrides: Partial<Parameters<typeof RoomView>[0]> = {}) {
@@ -225,7 +225,7 @@ describe('RoomView connection state', () => {
   });
 
   it('detects unread messages after the bounded chat list reaches 200 items', () => {
-    const previous = Array.from({ length: 200 }, (_, index): ChatMessageView => ({
+    const previous = Array.from({ length: 200 }, (_, index): ChatMessage => ({
       id: `message-${index}`,
       senderId: 'peer-a',
       senderName: 'Ara',
@@ -256,7 +256,7 @@ describe('RoomView connection state', () => {
   });
 
   it('uses sender identity when locating the previous unread cursor', () => {
-    const messages: ChatMessageView[] = [
+    const messages: ChatMessage[] = [
       {
         id: 'shared-id',
         senderId: 'peer-a',
@@ -295,11 +295,11 @@ describe('RoomView connection state', () => {
   });
 
   it('detects a local delivery issue only when it first becomes terminal', () => {
-    const previousDeliveryStates = new Map<string, ChatMessageView['deliveryState']>([
+    const previousDeliveryStates = new Map<string, ChatMessage['deliveryState']>([
       ['message-partial', 'pending'],
       ['message-failed', 'failed'],
     ]);
-    const messages: ChatMessageView[] = [
+    const messages: ChatMessage[] = [
       {
         id: 'message-partial',
         senderId: 'self',

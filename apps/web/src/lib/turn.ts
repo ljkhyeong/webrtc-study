@@ -36,15 +36,7 @@ export async function loadTurnCredentials(
   options: LoadTurnCredentialsOptions = {},
 ): Promise<TurnCredentials | null> {
   const fetcher = options.fetcher ?? globalThis.fetch;
-  if (typeof fetcher !== 'function') {
-    throw new Error('TURN credential fetch is unavailable in this browser');
-  }
-
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  if (!Number.isFinite(timeoutMs) || timeoutMs < 1) {
-    throw new Error('TURN credential timeout must be a positive number');
-  }
-
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal =
     options.signal === undefined ? timeoutSignal : AbortSignal.any([options.signal, timeoutSignal]);
@@ -66,9 +58,6 @@ export async function loadTurnCredentials(
 
     const payload = validatePayload(await response.json());
     const receivedAtMs = (options.now ?? (() => globalThis.performance.now()))();
-    if (!Number.isFinite(receivedAtMs)) {
-      throw new Error('TURN credential refresh clock must be finite');
-    }
     return {
       iceServer: {
         urls: payload.urls,

@@ -16,7 +16,7 @@ import {
   BatonRuntimeRoot,
   RoundRuntimeConfigurationError,
 } from './components/BatonRoomEntryBoundary';
-import { RoomView, type ChatMessageView, type RoomSystemNoticeView } from './components/RoomView';
+import { RoomView, type RoomSystemNoticeView } from './components/RoomView';
 import type { ParticipantView } from './components/VideoTile';
 import {
   createWithPreparedMedia,
@@ -879,19 +879,7 @@ export function ActiveRoom({
     });
   }, [snapshot]);
 
-  const messages = useMemo<ChatMessageView[]>(
-    () =>
-      snapshot?.messages.map((message) => ({
-        id: message.id,
-        senderId: message.senderId,
-        senderName: message.senderName,
-        text: message.text,
-        sentAt: message.sentAt,
-        isLocal: message.isLocal,
-        deliveryState: message.deliveryState,
-      })) ?? [],
-    [snapshot?.messages],
-  );
+  const messages = snapshot?.messages ?? [];
 
   const handleLeave = () => {
     const session = sessionRef.current;

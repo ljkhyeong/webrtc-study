@@ -404,9 +404,7 @@ export class PrejoinMedia {
     }
 
     this.#detachTrackEndedListener(track);
-    if (stream.getTracks().includes(track)) {
-      stream.removeTrack(track);
-    }
+    stream.removeTrack(track);
     const deviceName = kind === 'audio' ? '마이크' : '카메라';
     const issue: PrejoinMediaIssue = {
       code: 'media-unavailable',

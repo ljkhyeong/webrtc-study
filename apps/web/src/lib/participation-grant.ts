@@ -89,20 +89,13 @@ export class ParticipationGrantLeaseManager {
     this.#now = options.now ?? (() => globalThis.performance.now());
     this.#storage = options.storage;
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-
-    if (typeof this.#fetcher !== 'function') {
-      throw new Error('Participation grant refresh is unavailable in this browser');
-    }
-    if (!Number.isFinite(this.#timeoutMs) || this.#timeoutMs < 1) {
-      throw new Error('Participation grant refresh timeout must be a positive number');
-    }
   }
 
   ensureFresh(): Promise<ParticipationGrantLease> {
     if (this.#closed) {
       return Promise.reject(new Error('Participation grant refresh manager is closed'));
     }
-    const nowMs = this.#readNow();
+    const nowMs = this.#now();
     if (this.#state !== null && nowMs < this.#state.refreshDueAtMs) {
       return Promise.resolve(this.#state.lease);
     }
@@ -123,7 +116,7 @@ export class ParticipationGrantLeaseManager {
     if (this.#closed || this.#state === null) {
       return null;
     }
-    return Math.max(0, this.#state.refreshDueAtMs - this.#readNow());
+    return Math.max(0, this.#state.refreshDueAtMs - this.#now());
   }
 
   close(): void {
@@ -185,7 +178,7 @@ export class ParticipationGrantLeaseManager {
 
       const lease = validateLease(await response.json());
       this.#assertOpen();
-      const receivedAtMs = this.#readNow();
+      const receivedAtMs = this.#now();
       this.#state = {
         lease,
         refreshDueAtMs: receivedAtMs + lease.refreshAfterSeconds * 1_000,
@@ -213,14 +206,6 @@ export class ParticipationGrantLeaseManager {
     if (this.#closed) {
       throw new Error('Participation grant refresh was cancelled');
     }
-  }
-
-  #readNow(): number {
-    const nowMs = this.#now();
-    if (!Number.isFinite(nowMs)) {
-      throw new Error('Participation grant refresh clock must be finite');
-    }
-    return nowMs;
   }
 }
 

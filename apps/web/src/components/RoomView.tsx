@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { ChatDeliveryState, ChatMessage } from '@round/rtc-core';
+import type { ChatDeliveryState, ChatMessage, RoomSessionStatus } from '@round/rtc-core';
 import {
   CameraIcon,
   CameraOffIcon,
@@ -16,8 +16,6 @@ import {
 } from './Icons';
 import { type ParticipantView, VideoTile } from './VideoTile';
 import { canonicalRoomUrl } from '../lib/room';
-
-export type ChatMessageView = ChatMessage;
 
 export type RoomSystemNoticeId =
   | 'session-error'
@@ -39,10 +37,10 @@ interface ChatMessageIdentity {
 
 interface RoomViewProps {
   roomId: string;
-  status: string;
+  status: RoomSessionStatus;
   statusLabel: string;
   participants: ParticipantView[];
-  messages: ChatMessageView[];
+  messages: readonly ChatMessage[];
   audioAvailable: boolean;
   audioEnabled: boolean;
   videoAvailable: boolean;
@@ -104,7 +102,7 @@ function ChatMessageTime({
   deliveryState,
 }: {
   sentAt: number;
-  deliveryState: ChatMessageView['deliveryState'];
+  deliveryState: ChatMessage['deliveryState'];
 }) {
   const deliveryLabel = chatDeliveryLabels[deliveryState];
   const date = new Date(sentAt);
@@ -117,7 +115,7 @@ function ChatMessageTime({
 }
 
 export function countNewRemoteMessages(
-  messages: ChatMessageView[],
+  messages: readonly ChatMessage[],
   previousLastMessage: ChatMessageIdentity | null,
 ) {
   if (messages.length === 0) {
@@ -138,7 +136,7 @@ function isLocalDeliveryIssue(deliveryState: ChatDeliveryState | undefined) {
   return deliveryState === 'partial' || deliveryState === 'failed';
 }
 
-function collectLocalDeliveryStates(messages: ChatMessageView[]) {
+function collectLocalDeliveryStates(messages: readonly ChatMessage[]) {
   const deliveryStates = new Map<string, ChatDeliveryState>();
   for (const item of messages) {
     if (item.isLocal) {
@@ -149,7 +147,7 @@ function collectLocalDeliveryStates(messages: ChatMessageView[]) {
 }
 
 export function countNewLocalDeliveryIssues(
-  messages: ChatMessageView[],
+  messages: readonly ChatMessage[],
   previousDeliveryStates: ReadonlyMap<string, ChatDeliveryState>,
 ) {
   return messages.filter(
@@ -165,7 +163,7 @@ async function copyInviteLink(roomId: string) {
   await navigator.clipboard.writeText(inviteUrl);
 }
 
-function chatMessageIdentity(message: ChatMessageView | undefined): ChatMessageIdentity | null {
+function chatMessageIdentity(message: ChatMessage | undefined): ChatMessageIdentity | null {
   return message === undefined ? null : { id: message.id, senderId: message.senderId };
 }
 
@@ -259,7 +257,7 @@ export function RoomView({
       return;
     }
 
-    if (onSendMessage(text)) {
+    if (onSendMessage(message)) {
       setMessage('');
     }
   };

@@ -501,10 +501,7 @@ function iceUsernameFragmentsFromSdp(sdp: string | undefined): Set<string> {
 }
 
 function candidateUsernameFragment(candidate: SerializedIceCandidate): string | null {
-  if (candidate.usernameFragment) {
-    return candidate.usernameFragment;
-  }
-  return candidate.candidate.match(/(?:^|\s)ufrag\s+([^\s]+)/)?.[1] ?? null;
+  return candidate.usernameFragment ?? null;
 }
 
 /**
@@ -1045,15 +1042,9 @@ export class RoomSession {
     const senderFailures = new Map<PeerContext, unknown>();
 
     const localStream = this.#localStream;
-    if (localStream?.getTracks().includes(screenTrack)) {
-      localStream.removeTrack(screenTrack);
-    }
+    localStream?.removeTrack(screenTrack);
     for (const cameraTrack of cameraTracks) {
-      if (
-        cameraTrack.readyState === 'live' &&
-        localStream !== null &&
-        !localStream.getTracks().includes(cameraTrack)
-      ) {
+      if (cameraTrack.readyState === 'live' && localStream !== null) {
         localStream.addTrack(cameraTrack);
       }
     }
@@ -1191,9 +1182,6 @@ export class RoomSession {
     }
 
     const normalizedText = text.trim();
-    if (normalizedText.length === 0) {
-      throw new Error('Chat message must not be empty');
-    }
     const messageId = this.#createId();
     if (
       this.#activeLocalMessageIds.has(messageId) ||
@@ -3272,13 +3260,16 @@ export class RoomSession {
     const index = this.#messages.findIndex(
       (message) => message.id === messageId && message.isLocal,
     );
-    const message = this.#messages[index];
     const deliveryState = this.#aggregateChatDeliveryState(recipientStates);
     if (deliveryState !== 'pending') {
       this.#localChatRecipientStates.delete(messageId);
       this.#retireLocalMessageIdIfUnused(messageId);
     }
-    if (index < 0 || message === undefined || message.deliveryState === deliveryState) {
+    if (index < 0) {
+      return false;
+    }
+    const message = this.#messages[index]!;
+    if (message.deliveryState === deliveryState) {
       return false;
     }
     this.#messages[index] = { ...message, deliveryState };
@@ -3488,9 +3479,7 @@ export class RoomSession {
       this.#detachAndCloseChannel(peer.channel);
       peer.channel = null;
     }
-    if (peer.connection.connectionState !== 'closed') {
-      peer.connection.close();
-    }
+    peer.connection.close();
     peer.videoSender = null;
     peer.pendingLocalRenegotiation = false;
     peer.pendingCandidates.length = 0;
@@ -3520,9 +3509,7 @@ export class RoomSession {
     channel.onclose = null;
     channel.onerror = null;
     channel.onbufferedamountlow = null;
-    if (channel.readyState !== 'closed') {
-      channel.close();
-    }
+    channel.close();
   }
 
   #cleanupPeerResources(): void {
@@ -3592,9 +3579,7 @@ export class RoomSession {
     if (retainedCameraIndex >= 0) {
       this.#cameraVideoTracks.splice(retainedCameraIndex, 1);
     }
-    if (stream.getTracks().includes(track)) {
-      stream.removeTrack(track);
-    }
+    stream.removeTrack(track);
     this.#syncLocalParticipantMedia();
     this.#broadcastMediaState();
     if (this.#warning === null || this.#warning.code === 'local-media-ended') {
@@ -3637,9 +3622,7 @@ export class RoomSession {
     }
 
     this.#detachSocket(socket);
-    if (socket.readyState === socket.CONNECTING || socket.readyState === socket.OPEN) {
-      socket.close(code, reason);
-    }
+    socket.close(code, reason);
     this.#socket = null;
   }
 
@@ -3664,7 +3647,7 @@ export class RoomSession {
   #handleServerError(code: SignalingErrorCode, requestId: string | undefined): void {
     const error = new RoomSessionFailure(code, safeSignalingErrorMessage(code));
     if (this.#rejectJoined !== null) {
-      this.#rejectJoined?.(error);
+      this.#rejectJoined(error);
       return;
     }
 
