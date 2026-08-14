@@ -96,11 +96,7 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
   }, [attempt, roomId]);
 
   if (state.status === 'ready') {
-    return children(
-      state.manager,
-      state.authorizeBeforeEntryAction,
-      state.onAccessFailure,
-    );
+    return children(state.manager, state.authorizeBeforeEntryAction, state.onAccessFailure);
   }
 
   if (state.status === 'checking') {

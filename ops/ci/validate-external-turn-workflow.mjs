@@ -97,11 +97,9 @@ function requireRunStep(step, expectedKeys, expectedRun, label) {
 
 function validateTarget() {
   try {
-    execFileSync(
-      'bash',
-      [fileURLToPath(targetResolverUrl), fileURLToPath(targetUrl)],
-      { stdio: ['ignore', 'ignore', 'pipe'] },
-    );
+    execFileSync('bash', [fileURLToPath(targetResolverUrl), fileURLToPath(targetUrl)], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
   } catch {
     fail('reviewed pilot target was rejected by the canonical resolver');
   }

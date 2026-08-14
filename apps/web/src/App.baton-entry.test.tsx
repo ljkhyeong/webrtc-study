@@ -56,10 +56,7 @@ async function enterPrejoin(container: HTMLElement, displayName = '림'): Promis
   const input = container.querySelector<HTMLInputElement>('#display-name');
   expect(input).not.toBeNull();
   await act(async () => {
-    const valueSetter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      'value',
-    )?.set;
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
     valueSetter?.call(input, displayName);
     input?.dispatchEvent(new Event('input', { bubbles: true }));
     await flushMicrotasks();

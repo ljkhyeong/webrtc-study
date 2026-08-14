@@ -510,9 +510,7 @@ interface ActiveRoomProps {
   roomId: string;
   hostCapability?: string | undefined;
   participationGrantLeaseManager?: ParticipationGrantLeaseManager | undefined;
-  onParticipationGrantAccessFailure?:
-    | ((error: ParticipationGrantAccessError) => void)
-    | undefined;
+  onParticipationGrantAccessFailure?: ((error: ParticipationGrantAccessError) => void) | undefined;
   releasePreparedMediaStream: () => void;
   takePreparedMediaStream: () => MediaStream | null;
   onReconnect: () => void;
