@@ -255,6 +255,8 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ github.ref_name }}
+            io.round.image.role=edge
+            io.round.image.flavor=standalone
             io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
           cache-from: type=gha,scope=round-edge
           cache-to: type=gha,mode=max,scope=round-edge
@@ -278,6 +280,8 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ github.ref_name }}-relay
+            io.round.image.role=edge
+            io.round.image.flavor=relay
             io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
           cache-from: type=gha,scope=round-edge-relay
           cache-to: type=gha,mode=max,scope=round-edge-relay
@@ -301,6 +305,8 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ github.ref_name }}
             io.round.auth-mode=baton
+            io.round.image.role=edge
+            io.round.image.flavor=baton
             io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
           cache-from: type=gha,scope=round-baton-web
           cache-to: type=gha,mode=max,scope=round-baton-web
@@ -352,6 +358,8 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ github.ref_name }}
+            io.round.image.role=signaling
+            io.round.image.flavor=shared
             io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
           cache-from: type=gha,scope=round-signaling
           cache-to: type=gha,mode=max,scope=round-signaling
@@ -403,6 +411,8 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ github.ref_name }}
+            io.round.image.role=turn
+            io.round.image.flavor=shared
             io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
           cache-from: type=gha,scope=round-turn
           cache-to: type=gha,mode=max,scope=round-turn

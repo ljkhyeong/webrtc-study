@@ -78,6 +78,35 @@ rollback_origin="$state_dir/rollback-origin.env"
 [[ ! ( -e "$deploy_marker" && -e "$rollback_marker" ) ]] ||
   round_ops_die "deploy and rollback journals both exist; manual state inspection is required"
 
+snapshot_dir=
+rollback_pending_created=false
+rollback_origin_created=false
+cleanup_rollback() {
+  local status=$?
+  if [[ "$rollback_pending_created" == true ]]; then
+    rm -f -- "$rollback_pending"
+  fi
+  if [[ "$rollback_origin_created" == true && ! -e "$rollback_marker" ]]; then
+    rm -f -- "$rollback_origin"
+  fi
+  if [[ -n "$snapshot_dir" && -d "$snapshot_dir" ]]; then
+    if ! round_ops_remove_deployment_snapshot "$state_root" "$snapshot_dir"; then
+      status=1
+    fi
+  fi
+  return "$status"
+}
+trap cleanup_rollback EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+snapshot_dir=$(round_ops_create_deployment_snapshot \
+  "$state_root" \
+  "$env_file" \
+  "$repo_root/compose.yml")
+snapshot_env_file="$snapshot_dir/runtime.env"
+snapshot_compose_file="$snapshot_dir/compose.yml"
+
 mode=
 target_file=
 if [[ -e "$rollback_marker" ]]; then
@@ -97,16 +126,23 @@ if [[ -e "$rollback_marker" ]]; then
 elif [[ -e "$deploy_marker" ]]; then
   round_ops_validate_release_file "$deploy_marker"
   if [[ ! -e "$current_file" ]]; then
-    round_ops_assert_state_compatible "$deploy_marker" "$env_file"
+    round_ops_assert_state_compatible \
+      "$deploy_marker" "$snapshot_env_file" "$snapshot_compose_file"
     edge_image=$(round_ops_read_env_value "$deploy_marker" ROUND_EDGE_IMAGE)
     signaling_image=$(round_ops_read_env_value "$deploy_marker" ROUND_SIGNALING_IMAGE)
     turn_image=$(round_ops_read_env_value "$deploy_marker" ROUND_TURN_IMAGE)
-    round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+    round_ops_compose_with_file \
+      "$snapshot_compose_file" "$snapshot_env_file" \
+      "$edge_image" "$signaling_image" "$turn_image" \
       config --quiet
-    round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+    round_ops_compose_with_file \
+      "$snapshot_compose_file" "$snapshot_env_file" \
+      "$edge_image" "$signaling_image" "$turn_image" \
       down --remove-orphans
     remaining_containers=$(
-      round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+      round_ops_compose_with_file \
+        "$snapshot_compose_file" "$snapshot_env_file" \
+        "$edge_image" "$signaling_image" "$turn_image" \
         ps --all -q
     )
     [[ -z "$remaining_containers" ]] ||
@@ -123,41 +159,43 @@ else
     round_ops_die "orphaned rollback origin exists; manual state inspection is required"
   round_ops_validate_release_file "$current_file"
   round_ops_validate_release_file "$previous_file"
+  rollback_pending_created=true
   round_ops_copy_release_file "$previous_file" "$rollback_pending"
+  rollback_origin_created=true
   round_ops_copy_release_file "$current_file" "$rollback_origin"
-  cleanup_pending() {
-    rm -f -- "$rollback_pending"
-    if [[ ! -e "$rollback_marker" ]]; then
-      rm -f -- "$rollback_origin"
-    fi
-  }
-  trap cleanup_pending EXIT
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
   "$script_dir/preflight.sh" \
     --release-file "$rollback_pending" \
+    --compose-file "$snapshot_compose_file" \
     --state-dir "$state_dir" \
-    "$env_file"
+    "$snapshot_env_file"
   mv -- "$rollback_pending" "$rollback_marker"
-  trap - EXIT INT TERM
   target_file=$rollback_marker
   mode=normal_rollback
 fi
 
-round_ops_assert_state_compatible "$target_file" "$env_file"
+round_ops_assert_state_compatible \
+  "$target_file" "$snapshot_env_file" "$snapshot_compose_file"
 edge_image=$(round_ops_read_env_value "$target_file" ROUND_EDGE_IMAGE)
 signaling_image=$(round_ops_read_env_value "$target_file" ROUND_SIGNALING_IMAGE)
 turn_image=$(round_ops_read_env_value "$target_file" ROUND_TURN_IMAGE)
 if [[ "$mode" != normal_rollback ]]; then
   "$script_dir/preflight.sh" \
     --release-file "$target_file" \
+    --compose-file "$snapshot_compose_file" \
     --state-dir "$state_dir" \
-    "$env_file"
+    "$snapshot_env_file"
 fi
 
-round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+round_ops_compose_with_file \
+  "$snapshot_compose_file" "$snapshot_env_file" \
+  "$edge_image" "$signaling_image" "$turn_image" \
   pull edge signaling turn
-round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+round_ops_assert_state_compatible \
+  "$target_file" "$snapshot_env_file" "$snapshot_compose_file"
+round_ops_verify_release_images "$target_file" "$snapshot_env_file"
+round_ops_compose_with_file \
+  "$snapshot_compose_file" "$snapshot_env_file" \
+  "$edge_image" "$signaling_image" "$turn_image" \
   up -d --wait --no-build --remove-orphans
 
 case "$mode" in

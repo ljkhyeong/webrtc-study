@@ -11,6 +11,7 @@ Usage: ops/linux/preflight.sh [OPTIONS] ENV_FILE
 
 Options:
   --minimum-certificate-validity-days DAYS
+  --compose-file FILE   Render this private Compose snapshot.
   --release-file FILE   Validate and render the immutable images saved in FILE.
   --state-dir DIR       Include the release-state filesystem in disk checks.
 
@@ -22,6 +23,7 @@ EOF
 
 minimum_validity_days=14
 release_file=
+compose_file=
 state_dir=/var/lib/round/releases
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -39,6 +41,14 @@ while [[ $# -gt 0 ]]; do
         exit 2
       }
       release_file=$2
+      shift 2
+      ;;
+    --compose-file)
+      [[ $# -ge 2 ]] || {
+        usage >&2
+        exit 2
+      }
+      compose_file=$2
       shift 2
       ;;
     --state-dir)
@@ -69,6 +79,13 @@ done
 env_file=$1
 repo_root=$(round_ops_repo_root)
 cd "$repo_root"
+if [[ -z "$compose_file" ]]; then
+  compose_file="$repo_root/compose.yml"
+else
+  [[ -n "$release_file" ]] ||
+    round_ops_die "--compose-file requires --release-file"
+  round_ops_require_private_file "$compose_file"
+fi
 
 [[ "$(uname -s)" == 'Linux' ]] || round_ops_die "production preflight must run on Linux"
 for command_name in df docker jq openssl realpath timedatectl; do
@@ -78,6 +95,19 @@ round_ops_require_private_file "$env_file"
 [[ "$state_dir" == /* ]] || round_ops_die "release state directory must be absolute"
 [[ -d "$state_dir" ]] || round_ops_die "release state directory does not exist: $state_dir"
 round_ops_require_private_directory "$state_dir"
+if [[ -n "$release_file" ]]; then
+  round_ops_assert_state_compatible "$release_file" "$env_file" "$compose_file"
+  edge_image=$(round_ops_read_env_value "$release_file" ROUND_EDGE_IMAGE)
+  signaling_image=$(round_ops_read_env_value "$release_file" ROUND_SIGNALING_IMAGE)
+  turn_image=$(round_ops_read_env_value "$release_file" ROUND_TURN_IMAGE)
+else
+  edge_image=$(round_ops_read_env_value "$env_file" ROUND_EDGE_IMAGE)
+  signaling_image=$(round_ops_read_env_value "$env_file" ROUND_SIGNALING_IMAGE)
+  turn_image=$(round_ops_read_env_value "$env_file" ROUND_TURN_IMAGE)
+  round_ops_require_image_repository ROUND_EDGE_IMAGE "$edge_image" edge
+  round_ops_require_image_repository ROUND_SIGNALING_IMAGE "$signaling_image" signaling
+  round_ops_require_image_repository ROUND_TURN_IMAGE "$turn_image" turn
+fi
 round_ops_require_compose_version
 round_ops_docker info >/dev/null 2>&1 || round_ops_die "Docker Engine is unavailable"
 
@@ -98,22 +128,9 @@ for disk_target in "$repo_root" "$docker_root" "$state_dir"; do
     round_ops_die "less than 5 GiB is available on the filesystem for $disk_target"
 done
 
-if [[ -n "$release_file" ]]; then
-  round_ops_assert_state_compatible "$release_file" "$env_file"
-  edge_image=$(round_ops_read_env_value "$release_file" ROUND_EDGE_IMAGE)
-  signaling_image=$(round_ops_read_env_value "$release_file" ROUND_SIGNALING_IMAGE)
-  turn_image=$(round_ops_read_env_value "$release_file" ROUND_TURN_IMAGE)
-else
-  edge_image=$(round_ops_read_env_value "$env_file" ROUND_EDGE_IMAGE)
-  signaling_image=$(round_ops_read_env_value "$env_file" ROUND_SIGNALING_IMAGE)
-  turn_image=$(round_ops_read_env_value "$env_file" ROUND_TURN_IMAGE)
-  round_ops_validate_digest_ref ROUND_EDGE_IMAGE "$edge_image"
-  round_ops_validate_digest_ref ROUND_SIGNALING_IMAGE "$signaling_image"
-  round_ops_validate_digest_ref ROUND_TURN_IMAGE "$turn_image"
-fi
-
 round_domain=$(round_ops_read_env_value "$env_file" ROUND_DOMAIN)
 allowed_origins=$(round_ops_read_env_value "$env_file" ALLOWED_ORIGINS)
+ice_transport_policy=$(round_ops_read_env_value "$env_file" VITE_ICE_TRANSPORT_POLICY)
 turn_realm=$(round_ops_read_env_value "$env_file" TURN_REALM)
 turn_external_ip=$(round_ops_read_env_value "$env_file" TURN_EXTERNAL_IP)
 turn_relay_ip=$(round_ops_read_env_value "$env_file" TURN_RELAY_IP)
@@ -123,6 +140,8 @@ access_password_hash=$(round_ops_read_env_value "$env_file" ROUND_ACCESS_PASSWOR
 turn_shared_secret=$(round_ops_read_env_value "$env_file" TURN_SHARED_SECRET)
 [[ "$allowed_origins" == "https://$round_domain" ]] ||
   round_ops_die "ALLOWED_ORIGINS must equal the exact ROUND_DOMAIN HTTPS origin"
+[[ "$ice_transport_policy" == all || "$ice_transport_policy" == relay ]] ||
+  round_ops_die "VITE_ICE_TRANSPORT_POLICY must be all or relay"
 [[ "$turn_realm" != "$round_domain" ]] ||
   round_ops_die "TURN_REALM and ROUND_DOMAIN must use separate hostnames"
 for hostname in "$round_domain" "$turn_realm"; do
@@ -153,9 +172,12 @@ done
 minimum_validity_seconds=$((minimum_validity_days * 24 * 60 * 60))
 round_ops_validate_certificate "$env_file" "$minimum_validity_seconds"
 
-round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" config --quiet
+round_ops_compose_with_file \
+  "$compose_file" "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+  config --quiet
 replicas=$(
-  round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+  round_ops_compose_with_file \
+    "$compose_file" "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
     config --format json |
     jq -er '.services.signaling.deploy.replicas'
 )

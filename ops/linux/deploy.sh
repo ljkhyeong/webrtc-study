@@ -55,6 +55,8 @@ pending_file="$state_dir/pending.env"
 in_progress_file="$state_dir/in-progress.env"
 current_file="$state_dir/current.env"
 previous_file="$state_dir/previous.env"
+snapshot_dir=
+deployment_started=false
 [[ ! -e "$pending_file" ]] || round_ops_die "stale pending state exists: $pending_file"
 [[ ! -e "$in_progress_file" ]] ||
   round_ops_die "an interrupted deployment is recorded; run rollback before deploying again"
@@ -71,33 +73,60 @@ if [[ -e "$previous_file" ]]; then
   round_ops_validate_release_file "$previous_file"
 fi
 
-edge_image=$(round_ops_read_env_value "$env_file" ROUND_EDGE_IMAGE)
-signaling_image=$(round_ops_read_env_value "$env_file" ROUND_SIGNALING_IMAGE)
-turn_image=$(round_ops_read_env_value "$env_file" ROUND_TURN_IMAGE)
-round_ops_write_release_file \
-  "$pending_file" \
-  "$env_file" \
-  "$edge_image" \
-  "$signaling_image" \
-  "$turn_image"
-
-cleanup_pending() {
-  rm -f -- "$pending_file"
+cleanup_deployment() {
+  local status=$?
+  if [[ "$deployment_started" != true ]]; then
+    rm -f -- "$pending_file"
+  fi
+  if [[ -n "$snapshot_dir" && -d "$snapshot_dir" ]]; then
+    if ! round_ops_remove_deployment_snapshot "$state_root" "$snapshot_dir"; then
+      status=1
+    fi
+  fi
+  return "$status"
 }
-trap cleanup_pending EXIT
+trap cleanup_deployment EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+snapshot_dir=$(round_ops_create_deployment_snapshot \
+  "$state_root" \
+  "$env_file" \
+  "$repo_root/compose.yml")
+snapshot_env_file="$snapshot_dir/runtime.env"
+snapshot_compose_file="$snapshot_dir/compose.yml"
+
+edge_image=$(round_ops_read_env_value "$snapshot_env_file" ROUND_EDGE_IMAGE)
+signaling_image=$(round_ops_read_env_value "$snapshot_env_file" ROUND_SIGNALING_IMAGE)
+turn_image=$(round_ops_read_env_value "$snapshot_env_file" ROUND_TURN_IMAGE)
+round_ops_write_release_file \
+  "$pending_file" \
+  "$snapshot_env_file" \
+  "$edge_image" \
+  "$signaling_image" \
+  "$turn_image" \
+  "$snapshot_compose_file"
 "$script_dir/preflight.sh" \
   --release-file "$pending_file" \
+  --compose-file "$snapshot_compose_file" \
   --state-dir "$state_dir" \
-  "$env_file"
+  "$snapshot_env_file"
 
 mv -- "$pending_file" "$in_progress_file"
-trap - EXIT INT TERM
+deployment_started=true
 
-round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+round_ops_compose_with_file \
+  "$snapshot_compose_file" \
+  "$snapshot_env_file" \
+  "$edge_image" "$signaling_image" "$turn_image" \
   pull edge signaling turn
-round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+round_ops_assert_state_compatible \
+  "$in_progress_file" "$snapshot_env_file" "$snapshot_compose_file"
+round_ops_verify_release_images "$in_progress_file" "$snapshot_env_file"
+round_ops_compose_with_file \
+  "$snapshot_compose_file" \
+  "$snapshot_env_file" \
+  "$edge_image" "$signaling_image" "$turn_image" \
   up -d --wait --no-build --remove-orphans
 
 if [[ -e "$current_file" ]] && ! cmp -s -- "$current_file" "$in_progress_file"; then

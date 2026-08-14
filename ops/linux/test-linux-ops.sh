@@ -42,13 +42,16 @@ write_env() {
   local signaling_digest=$3
   local turn_digest=$4
   local turn_secret=${5:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+  local ice_transport_policy=${6:-all}
+  local image_namespace=${7:-ghcr.io/ljkhyeong}
   cat >"$destination" <<EOF
 COMPOSE_PROJECT_NAME=round-linux-test
-ROUND_EDGE_IMAGE=registry.invalid/round-edge@sha256:$edge_digest
-ROUND_SIGNALING_IMAGE=registry.invalid/round-signaling@sha256:$signaling_digest
-ROUND_TURN_IMAGE=registry.invalid/round-turn@sha256:$turn_digest
+ROUND_EDGE_IMAGE=$image_namespace/round-edge@sha256:$edge_digest
+ROUND_SIGNALING_IMAGE=$image_namespace/round-signaling@sha256:$signaling_digest
+ROUND_TURN_IMAGE=$image_namespace/round-turn@sha256:$turn_digest
 ROUND_DOMAIN=round.round.invalid
 ALLOWED_ORIGINS=https://round.round.invalid
+VITE_ICE_TRANSPORT_POLICY=$ice_transport_policy
 TURN_REALM=turn.round.invalid
 TURN_EXTERNAL_IP=203.0.113.10
 TURN_RELAY_IP=10.0.0.10
@@ -83,9 +86,15 @@ fi
 chmod 0600 "$fixture_dir/turn-key.pem"
 round_ops_validate_digest_ref \
   ROUND_EDGE_IMAGE \
-  "registry.invalid/round-edge@sha256:$digest_a"
+  "ghcr.io/ljkhyeong/round-edge@sha256:$digest_a"
 if (round_ops_validate_digest_ref ROUND_EDGE_IMAGE 'registry.invalid/round-edge:latest' 2>/dev/null); then
   fail 'mutable image tag was accepted'
+fi
+if (round_ops_require_image_repository \
+  ROUND_EDGE_IMAGE \
+  "ghcr.io/attacker/round-edge@sha256:$digest_a" \
+  edge 2>/dev/null); then
+  fail 'an unreviewed edge image repository was accepted'
 fi
 if (round_ops_prepare_private_directory /var >/dev/null 2>&1); then
   fail 'broad private directory target was accepted'
@@ -95,10 +104,39 @@ release_file="$fixture_dir/release.env"
 round_ops_write_release_file \
   "$release_file" \
   "$env_a" \
-  "registry.invalid/round-edge@sha256:$digest_a" \
-  "registry.invalid/round-signaling@sha256:$digest_b" \
-  "registry.invalid/round-turn@sha256:$digest_c"
+  "ghcr.io/ljkhyeong/round-edge@sha256:$digest_a" \
+  "ghcr.io/ljkhyeong/round-signaling@sha256:$digest_b" \
+  "ghcr.io/ljkhyeong/round-turn@sha256:$digest_c"
 round_ops_validate_release_file "$release_file"
+
+snapshot_source_env="$fixture_dir/snapshot-source.env"
+snapshot_source_compose="$fixture_dir/snapshot-source-compose.yml"
+cp -- "$env_a" "$snapshot_source_env"
+cp -- compose.yml "$snapshot_source_compose"
+chmod 0600 "$snapshot_source_env" "$snapshot_source_compose"
+snapshot_root="$fixture_dir/snapshot-root"
+mkdir "$snapshot_root"
+chmod 0700 "$snapshot_root"
+snapshot_dir=$(round_ops_create_deployment_snapshot \
+  "$snapshot_root" \
+  "$snapshot_source_env" \
+  "$snapshot_source_compose")
+[[ "$(round_ops_file_mode "$snapshot_dir")" == '700' ]] ||
+  fail 'deployment snapshot directory was not private'
+[[ "$(round_ops_file_mode "$snapshot_dir/runtime.env")" == '600' ]] ||
+  fail 'deployment env snapshot was not mode 0600'
+[[ "$(round_ops_file_mode "$snapshot_dir/compose.yml")" == '600' ]] ||
+  fail 'deployment Compose snapshot was not mode 0600'
+printf 'ROUND_DOMAIN=changed.invalid\n' >>"$snapshot_source_env"
+printf '\n# changed source\n' >>"$snapshot_source_compose"
+if cmp -s -- "$snapshot_source_env" "$snapshot_dir/runtime.env"; then
+  fail 'deployment env snapshot followed a later source mutation'
+fi
+if cmp -s -- "$snapshot_source_compose" "$snapshot_dir/compose.yml"; then
+  fail 'deployment Compose snapshot followed a later source mutation'
+fi
+round_ops_remove_deployment_snapshot "$snapshot_root" "$snapshot_dir"
+[[ ! -e "$snapshot_dir" ]] || fail 'deployment snapshot cleanup left state behind'
 
 fake_bin="$fixture_dir/bin"
 fake_docker_root="$fixture_dir/docker-root"
@@ -190,14 +228,69 @@ case "$command_line" in
   *' compose version --short '*) printf '2.24.4\n' ;;
   *" info --format {{.DockerRootDir}} "*) printf '%s/docker-root\n' "$fake_root" ;;
   *' info '*) ;;
+  *' image inspect --format '*)
+    template=$4
+    image_ref=$5
+    [[ "$template" == '{{json .Config.Labels}}' ]] || exit 1
+    printf 'image-inspect %s\n' "$image_ref" >>"$fake_root/docker.log"
+    source_label=https://github.com/ljkhyeong/webrtc-study
+    revision_label=0123456789abcdef0123456789abcdef01234567
+    version_label=v1.2.3
+    tag_object_label=1234567890abcdef1234567890abcdef12345678
+    case "$image_ref" in
+      *'/round-edge@'*)
+        role_label=edge
+        flavor_label=standalone
+        if [[ -e "$fake_root/wrong-edge-role" ]]; then role_label=turn; fi
+        if [[ -e "$fake_root/edge-flavor-relay" ]]; then
+          flavor_label=relay
+          version_label=v1.2.3-relay
+        fi
+        ;;
+      *'/round-signaling@'*)
+        role_label=signaling
+        flavor_label=shared
+        ;;
+      *'/round-turn@'*)
+        role_label=turn
+        flavor_label=shared
+        if [[ -e "$fake_root/mixed-release" ]]; then
+          tag_object_label=fedcba9876543210fedcba9876543210fedcba98
+        fi
+        ;;
+      *) exit 1 ;;
+    esac
+    printf '{"org.opencontainers.image.source":"%s","org.opencontainers.image.revision":"%s","org.opencontainers.image.version":"%s","io.round.release.tag-object":"%s","io.round.image.role":"%s","io.round.image.flavor":"%s"}\n' \
+      "$source_label" "$revision_label" "$version_label" "$tag_object_label" \
+      "$role_label" "$flavor_label"
+    ;;
   *' config --format json '*)
     log_compose "$@"
     printf '{"name":"round-linux-test","services":{"signaling":{"deploy":{"replicas":1}}},"volumes":{"caddy_data":{"name":"round-linux-test_caddy_data"},"caddy_config":{"name":"round-linux-test_caddy_config"}}}\n'
     ;;
-  *' config --quiet '*) log_compose "$@" ;;
+  *' config --quiet '*)
+    log_compose "$@"
+    if [[ -s "$fake_root/mutate-original-env-after-config" ]]; then
+      original_env=$(cat "$fake_root/mutate-original-env-after-config")
+      printf '\nMAX_ROOM_SIZE=99\n' >>"$original_env"
+      rm -f -- "$fake_root/mutate-original-env-after-config"
+    fi
+    ;;
   *' ps --status running -q edge '*) ;;
   *' ps --all -q '*) ;;
-  *' pull edge signaling turn '*) log_compose "$@" ;;
+  *' pull edge signaling turn '*)
+    log_compose "$@"
+    if [[ -e "$fake_root/mutate-snapshot-after-pull" ]]; then
+      previous=
+      for argument in "$@"; do
+        if [[ "$previous" == --env-file ]]; then
+          printf '\nMAX_ROOM_SIZE=99\n' >>"$argument"
+          break
+        fi
+        previous=$argument
+      done
+    fi
+    ;;
   *' up -d --wait --no-build --remove-orphans '*)
     log_compose "$@"
     if [[ -e "$fake_root/fail-up" ]]; then
@@ -242,6 +335,61 @@ tar -C "$archive_root" -cf "$fixture_dir/archive.tar" caddy_data caddy_config
 state_dir="$fixture_dir/releases"
 mkdir -p "$state_dir"
 chmod 0700 "$state_dir"
+
+stale_state_root="$fixture_dir/stale-state-root"
+stale_state_dir="$stale_state_root/releases"
+mkdir -p "$stale_state_dir" "$stale_state_root/.deploy-snapshot.interrupted"
+chmod 0700 "$stale_state_root" "$stale_state_dir" \
+  "$stale_state_root/.deploy-snapshot.interrupted"
+cp -- "$env_a" "$stale_state_root/.deploy-snapshot.interrupted/runtime.env"
+cp -- compose.yml "$stale_state_root/.deploy-snapshot.interrupted/compose.yml"
+chmod 0600 "$stale_state_root/.deploy-snapshot.interrupted/runtime.env" \
+  "$stale_state_root/.deploy-snapshot.interrupted/compose.yml"
+: >"$fixture_dir/docker.log"
+if PATH="$fake_bin:$PATH" \
+  ops/linux/deploy.sh --state-dir "$stale_state_dir" "$env_a" >/dev/null 2>&1; then
+  fail 'deployment ignored a snapshot left by an interrupted lifecycle operation'
+fi
+[[ ! -s "$fixture_dir/docker.log" ]] ||
+  fail 'stale snapshot rejection reached Docker'
+rm -f -- "$stale_state_root/.deploy-snapshot.interrupted/runtime.env" \
+  "$stale_state_root/.deploy-snapshot.interrupted/compose.yml"
+rmdir -- "$stale_state_root/.deploy-snapshot.interrupted"
+
+unreviewed_env="$fixture_dir/production-unreviewed-repository.env"
+write_env \
+  "$unreviewed_env" \
+  "$digest_a" "$digest_b" "$digest_c" \
+  0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  all \
+  ghcr.io/attacker
+unreviewed_state_dir="$fixture_dir/unreviewed-repository-releases"
+mkdir "$unreviewed_state_dir"
+chmod 0700 "$unreviewed_state_dir"
+: >"$fixture_dir/docker.log"
+if PATH="$fake_bin:$PATH" \
+  ops/linux/deploy.sh --state-dir "$unreviewed_state_dir" "$unreviewed_env" \
+  >/dev/null 2>&1; then
+  fail 'deployment accepted an unreviewed image repository'
+fi
+if grep -Fq 'pull edge signaling turn' "$fixture_dir/docker.log"; then
+  fail 'an unreviewed image repository reached Docker pull'
+fi
+[[ ! -e "$unreviewed_state_dir/pending.env" && \
+   ! -e "$unreviewed_state_dir/in-progress.env" ]] ||
+  fail 'repository rejection created a deployment journal'
+if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
+  fail 'repository rejection left a transaction snapshot behind'
+fi
+: >"$fixture_dir/docker.log"
+if PATH="$fake_bin:$PATH" \
+  ops/linux/preflight.sh --state-dir "$unreviewed_state_dir" "$unreviewed_env" \
+  >/dev/null 2>&1; then
+  fail 'standalone preflight accepted an unreviewed image repository'
+fi
+[[ ! -s "$fixture_dir/docker.log" ]] ||
+  fail 'standalone repository rejection reached Docker'
+
 : >"$fixture_dir/docker.log"
 ROUND_EDGE_IMAGE='attacker.invalid/edge:latest' \
 ROUND_SIGNALING_IMAGE='attacker.invalid/signaling:latest' \
@@ -253,7 +401,7 @@ DOCKER_HOST='tcp://attacker.invalid:2376' \
 DOCKER_CONTEXT='attacker-context' \
 PATH="$fake_bin:$PATH" \
   ops/linux/preflight.sh --state-dir "$state_dir" "$env_a" >/dev/null
-grep -Fq "edge=registry.invalid/round-edge@sha256:$digest_a" "$fixture_dir/docker.log" ||
+grep -Fq "edge=ghcr.io/ljkhyeong/round-edge@sha256:$digest_a" "$fixture_dir/docker.log" ||
   fail 'sanitized Compose did not receive the verified edge digest'
 grep -Fq 'compose_file=unset compose_project=unset node_image=unset docker_host=unix:///var/run/docker.sock docker_context=unset' "$fixture_dir/docker.log" ||
   fail 'ambient Compose/build variables reached the sanitized Compose process'
@@ -275,6 +423,7 @@ if PATH="$fake_bin:$PATH" \
 fi
 [[ -e "$first_state_dir/in-progress.env" && ! -e "$first_state_dir/current.env" ]] ||
   fail 'failed first deployment did not preserve an abortable journal'
+: >"$fixture_dir/docker.log"
 PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
   --state-dir "$first_state_dir" \
   --confirm ROLLBACK_ROUND \
@@ -282,6 +431,12 @@ PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
   >/dev/null
 [[ ! -e "$first_state_dir/in-progress.env" && ! -e "$first_state_dir/current.env" ]] ||
   fail 'failed first deployment was not recovered to a stopped empty state'
+grep -Eq -- 'down --remove-orphans.*--file .*/\.deploy-snapshot\.[^/]+/compose\.yml|--file .*/\.deploy-snapshot\.[^/]+/compose\.yml.*down --remove-orphans' \
+  "$fixture_dir/docker.log" ||
+  fail 'failed-first-deploy rollback did not use a Compose snapshot'
+if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
+  fail 'failed-first-deploy rollback left a transaction snapshot behind'
+fi
 
 touch "$fixture_dir/git-dirty"
 if PATH="$fake_bin:$PATH" \
@@ -290,9 +445,92 @@ if PATH="$fake_bin:$PATH" \
 fi
 rm -f -- "$fixture_dir/git-dirty"
 
+: >"$fixture_dir/docker.log"
 PATH="$fake_bin:$PATH" ops/linux/deploy.sh --state-dir "$state_dir" "$env_a" >/dev/null
 round_ops_validate_release_file "$state_dir/current.env"
 [[ ! -e "$state_dir/previous.env" ]] || fail 'first deploy unexpectedly created previous.env'
+[[ "$(grep -c '^image-inspect ' "$fixture_dir/docker.log")" == '3' ]] ||
+  fail 'deployment did not snapshot image labels exactly once per digest'
+grep -Fq -- "--project-directory $repo_root" "$fixture_dir/docker.log" ||
+  fail 'snapshot Compose changed the reviewed project directory'
+grep -Eq -- '--file .*/\.deploy-snapshot\.[^/]+/compose\.yml' "$fixture_dir/docker.log" ||
+  fail 'deployment did not execute the snapshotted Compose file'
+grep -Eq -- '--env-file .*/\.deploy-snapshot\.[^/]+/runtime\.env' "$fixture_dir/docker.log" ||
+  fail 'deployment did not execute the snapshotted env file'
+if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
+  fail 'successful deployment left a transaction snapshot behind'
+fi
+
+wrong_role_state_dir="$fixture_dir/wrong-role-releases"
+mkdir "$wrong_role_state_dir"
+chmod 0700 "$wrong_role_state_dir"
+touch "$fixture_dir/wrong-edge-role"
+: >"$fixture_dir/docker.log"
+if PATH="$fake_bin:$PATH" \
+  ops/linux/deploy.sh --state-dir "$wrong_role_state_dir" "$env_a" >/dev/null 2>&1; then
+  fail 'deployment accepted an edge digest carrying the TURN role'
+fi
+rm -f -- "$fixture_dir/wrong-edge-role"
+[[ -e "$wrong_role_state_dir/in-progress.env" ]] ||
+  fail 'image-attestation failure did not preserve the deployment journal'
+grep -Fq 'pull edge signaling turn' "$fixture_dir/docker.log" ||
+  fail 'image attestation ran before pulling the selected digests'
+if grep -Fq 'up -d --wait' "$fixture_dir/docker.log"; then
+  fail 'deployment started containers after image-attestation failure'
+fi
+if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
+  fail 'failed deployment left a transaction snapshot behind'
+fi
+
+wrong_flavor_state_dir="$fixture_dir/wrong-flavor-releases"
+mkdir "$wrong_flavor_state_dir"
+chmod 0700 "$wrong_flavor_state_dir"
+touch "$fixture_dir/edge-flavor-relay"
+if PATH="$fake_bin:$PATH" \
+  ops/linux/deploy.sh --state-dir "$wrong_flavor_state_dir" "$env_a" >/dev/null 2>&1; then
+  fail 'standalone deployment accepted the relay-only edge flavor'
+fi
+rm -f -- "$fixture_dir/edge-flavor-relay"
+
+mixed_release_state_dir="$fixture_dir/mixed-release-releases"
+mkdir "$mixed_release_state_dir"
+chmod 0700 "$mixed_release_state_dir"
+touch "$fixture_dir/mixed-release"
+if PATH="$fake_bin:$PATH" \
+  ops/linux/deploy.sh --state-dir "$mixed_release_state_dir" "$env_a" >/dev/null 2>&1; then
+  fail 'deployment accepted images from different annotated tag objects'
+fi
+rm -f -- "$fixture_dir/mixed-release"
+
+mutated_snapshot_state_dir="$fixture_dir/mutated-snapshot-releases"
+mkdir "$mutated_snapshot_state_dir"
+chmod 0700 "$mutated_snapshot_state_dir"
+touch "$fixture_dir/mutate-snapshot-after-pull"
+: >"$fixture_dir/docker.log"
+if PATH="$fake_bin:$PATH" \
+  ops/linux/deploy.sh --state-dir "$mutated_snapshot_state_dir" "$env_a" >/dev/null 2>&1; then
+  fail 'deployment accepted a runtime snapshot changed after preflight'
+fi
+rm -f -- "$fixture_dir/mutate-snapshot-after-pull"
+[[ -e "$mutated_snapshot_state_dir/in-progress.env" ]] ||
+  fail 'snapshot-integrity failure did not preserve the deployment journal'
+if grep -Fq 'image-inspect ' "$fixture_dir/docker.log" ||
+   grep -Fq 'up -d --wait' "$fixture_dir/docker.log"; then
+  fail 'changed deployment snapshot reached image attestation or container startup'
+fi
+
+relay_env="$fixture_dir/production-relay.env"
+write_env "$relay_env" "$digest_a" "$digest_b" "$digest_c" \
+  0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  relay
+relay_state_dir="$fixture_dir/relay-releases"
+mkdir "$relay_state_dir"
+chmod 0700 "$relay_state_dir"
+touch "$fixture_dir/edge-flavor-relay"
+PATH="$fake_bin:$PATH" \
+  ops/linux/deploy.sh --state-dir "$relay_state_dir" "$relay_env" >/dev/null
+rm -f -- "$fixture_dir/edge-flavor-relay"
+round_ops_validate_release_file "$relay_state_dir/current.env"
 
 touch "$fixture_dir/flock-fail"
 if PATH="$fake_bin:$PATH" \
@@ -306,21 +544,68 @@ rm -f -- "$fixture_dir/flock-fail"
 PATH="$fake_bin:$PATH" ops/linux/deploy.sh --state-dir "$state_dir" "$env_b" >/dev/null
 current_edge=$(round_ops_read_env_value "$state_dir/current.env" ROUND_EDGE_IMAGE)
 previous_edge=$(round_ops_read_env_value "$state_dir/previous.env" ROUND_EDGE_IMAGE)
-[[ "$current_edge" == "registry.invalid/round-edge@sha256:$digest_d" ]] ||
+[[ "$current_edge" == "ghcr.io/ljkhyeong/round-edge@sha256:$digest_d" ]] ||
   fail 'second deploy was not recorded'
-[[ "$previous_edge" == "registry.invalid/round-edge@sha256:$digest_a" ]] ||
+[[ "$previous_edge" == "ghcr.io/ljkhyeong/round-edge@sha256:$digest_a" ]] ||
   fail 'previous release was not preserved'
 
+touch "$fixture_dir/wrong-edge-role"
+: >"$fixture_dir/docker.log"
+if PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
+  --state-dir "$state_dir" \
+  --confirm ROLLBACK_ROUND \
+  "$env_b" \
+  >/dev/null 2>&1; then
+  fail 'rollback accepted an edge digest carrying the TURN role'
+fi
+rm -f -- "$fixture_dir/wrong-edge-role"
+[[ -e "$state_dir/rollback-in-progress.env" && -e "$state_dir/rollback-origin.env" ]] ||
+  fail 'image-attestation failure did not preserve the rollback journal'
+grep -Fq 'pull edge signaling turn' "$fixture_dir/docker.log" ||
+  fail 'rollback image attestation ran before pulling the selected digests'
+if grep -Fq 'up -d --wait' "$fixture_dir/docker.log"; then
+  fail 'rollback started containers after image-attestation failure'
+fi
+if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
+  fail 'failed rollback image attestation left a transaction snapshot behind'
+fi
 PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
   --state-dir "$state_dir" \
   --confirm ROLLBACK_ROUND \
   "$env_b" \
   >/dev/null
+
+rollback_env="$fixture_dir/rollback-runtime.env"
+cp -- "$env_b" "$rollback_env"
+chmod 0600 "$rollback_env"
+printf '%s\n' "$rollback_env" >"$fixture_dir/mutate-original-env-after-config"
+: >"$fixture_dir/docker.log"
+PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
+  --state-dir "$state_dir" \
+  --confirm ROLLBACK_ROUND \
+  "$rollback_env" \
+  >/dev/null
+[[ ! -e "$fixture_dir/mutate-original-env-after-config" ]] ||
+  fail 'rollback test did not mutate the original env after snapshot preflight'
+grep -Fq 'MAX_ROOM_SIZE=99' "$rollback_env" ||
+  fail 'rollback source env mutation was not applied'
+if grep -Fq -- "--env-file $rollback_env" "$fixture_dir/docker.log"; then
+  fail 'rollback executed the original env instead of its snapshot'
+fi
+grep -Eq -- '--file .*/\.deploy-snapshot\.[^/]+/compose\.yml' \
+  "$fixture_dir/docker.log" ||
+  fail 'rollback did not execute the snapshotted Compose file'
+grep -Eq -- '--env-file .*/\.deploy-snapshot\.[^/]+/runtime\.env' \
+  "$fixture_dir/docker.log" ||
+  fail 'rollback did not execute the snapshotted env file'
+if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
+  fail 'successful rollback left a transaction snapshot behind'
+fi
 current_edge=$(round_ops_read_env_value "$state_dir/current.env" ROUND_EDGE_IMAGE)
 previous_edge=$(round_ops_read_env_value "$state_dir/previous.env" ROUND_EDGE_IMAGE)
-[[ "$current_edge" == "registry.invalid/round-edge@sha256:$digest_a" ]] ||
+[[ "$current_edge" == "ghcr.io/ljkhyeong/round-edge@sha256:$digest_a" ]] ||
   fail 'rollback target was not recorded'
-[[ "$previous_edge" == "registry.invalid/round-edge@sha256:$digest_d" ]] ||
+[[ "$previous_edge" == "ghcr.io/ljkhyeong/round-edge@sha256:$digest_d" ]] ||
   fail 'rollback did not preserve roll-forward state'
 
 touch "$fixture_dir/fail-up"
@@ -331,7 +616,7 @@ fi
 [[ -e "$state_dir/in-progress.env" ]] ||
   fail 'failed deployment did not leave an explicit in-progress marker'
 current_edge=$(round_ops_read_env_value "$state_dir/current.env" ROUND_EDGE_IMAGE)
-[[ "$current_edge" == "registry.invalid/round-edge@sha256:$digest_a" ]] ||
+[[ "$current_edge" == "ghcr.io/ljkhyeong/round-edge@sha256:$digest_a" ]] ||
   fail 'failed deployment replaced the last verified current state'
 PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
   --state-dir "$state_dir" \
@@ -341,7 +626,7 @@ PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
 [[ ! -e "$state_dir/in-progress.env" ]] ||
   fail 'failed-deployment recovery left the in-progress marker behind'
 current_edge=$(round_ops_read_env_value "$state_dir/current.env" ROUND_EDGE_IMAGE)
-[[ "$current_edge" == "registry.invalid/round-edge@sha256:$digest_a" ]] ||
+[[ "$current_edge" == "ghcr.io/ljkhyeong/round-edge@sha256:$digest_a" ]] ||
   fail 'failed-deployment recovery did not redeploy current state'
 
 touch "$fixture_dir/fail-up"
@@ -354,6 +639,9 @@ if PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
 fi
 [[ -e "$state_dir/rollback-in-progress.env" && -e "$state_dir/rollback-origin.env" ]] ||
   fail 'failed rollback did not preserve its recovery journal'
+if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
+  fail 'failed rollback left a transaction snapshot behind'
+fi
 if PATH="$fake_bin:$PATH" \
   ops/linux/deploy.sh --state-dir "$state_dir" "$env_b" >/dev/null 2>&1; then
   fail 'deploy was allowed while rollback recovery was pending'
@@ -373,7 +661,7 @@ PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
 [[ ! -e "$state_dir/rollback-in-progress.env" && ! -e "$state_dir/rollback-origin.env" ]] ||
   fail 'interrupted rollback recovery left journal files behind'
 current_edge=$(round_ops_read_env_value "$state_dir/current.env" ROUND_EDGE_IMAGE)
-[[ "$current_edge" == "registry.invalid/round-edge@sha256:$digest_a" ]] ||
+[[ "$current_edge" == "ghcr.io/ljkhyeong/round-edge@sha256:$digest_a" ]] ||
   fail 'interrupted rollback recovery did not restore verified current state'
 
 changed_env="$fixture_dir/production-config-changed.env"
@@ -409,7 +697,7 @@ unchanged_output=$(PATH="$fake_bin:$PATH" ops/linux/reload-turn-certificate.sh \
   --certificate-state-dir "$certificate_state" \
   "$env_b")
 [[ "$unchanged_output" == *'unchanged'* ]] || fail 'unchanged certificate was not a no-op'
-grep -Fq "edge=registry.invalid/round-edge@sha256:$digest_a" "$fixture_dir/docker.log" ||
+grep -Fq "edge=ghcr.io/ljkhyeong/round-edge@sha256:$digest_a" "$fixture_dir/docker.log" ||
   fail 'certificate reload did not use the verified current release state'
 touch "$fixture_dir/tls-fail-once"
 PATH="$fake_bin:$PATH" ops/linux/reload-turn-certificate.sh \

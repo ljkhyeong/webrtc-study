@@ -878,35 +878,64 @@ digest-based Linux deployment uses the guarded wrapper:
 sudo ops/linux/deploy.sh /etc/round/production.env
 ```
 
-All mutating Linux lifecycle commands require the reviewed clean checkout;
-tracked, staged, or untracked repository changes make them fail before touching
-Docker. Ignored secret and certificate files remain outside that Git
-cleanliness check. The deploy command runs the read-only preflight, clears
-ambient Compose/build interpolation
-variables, pulls exactly the three configured digests, uses Compose's health
-wait, confirms `edge`, `signaling`, and `turn` are running, and only then records
-`/var/lib/round/releases/current.env`. The state records the three digests
-together with the checked-out source commit, `compose.yml` digest,
-runtime-config digest, Compose project, ROUND domain, and fixed local Docker
-endpoint. This is an auditable operator association, not proof that the images
-were built from that checkout; retain the release workflow's manifest evidence
-separately. Image lines are deliberately excluded from the runtime-config
-digest because the immutable image identities are stored as separate fields.
-On the next successful deployment, the old complete state moves to
-`previous.env`.
+상태를 변경하는 모든 Linux lifecycle 명령은 검토를 마친 clean checkout을 요구한다.
+tracked, staged, untracked 파일이 하나라도 있으면 Docker를 건드리기 전에 실패한다.
+Git에서 무시한 비밀·인증서 파일은 이 clean 검사 대상이 아니다.
 
-Once pull/up begins, the candidate is retained as `in-progress.env` until the
-deployment succeeds. Any failure therefore blocks another deploy. Inspect the
-logs and run the explicit rollback: it detects the marker and redeploys
-`current.env`, rather than incorrectly skipping back two releases. If the very
-first deployment failed and no verified `current.env` exists, rollback instead
-runs Compose down, confirms that no project container remains, and clears the
-marker while leaving the host stopped. A rollback attempt also writes its own
-target/origin journal; failure blocks deploy, backup, and certificate reload
-until another rollback invocation restores a stable verified state. If Compose
-or non-image runtime configuration changed between releases, restore the saved
-checkout and matching secret-manager version before rollback; the command
-fails closed on either digest mismatch.
+배포와 rollback 명령은 lifecycle lock을 잡은 뒤 state root 아래에 mode `0700`인 임시
+`.deploy-snapshot.*` 디렉터리를 만들고, runtime env와 `compose.yml`을 각각 mode
+`0600`으로 복사한다. release state 작성, preflight, 상태 호환성 재검사, pull, 이미지
+검사, `up`과 첫 배포 복구의 `down`은 모두 이 동일한 env·Compose 스냅샷만 사용하며
+Compose의 project directory는 검토된 저장소 루트로 유지한다. 따라서 원본 env나
+checkout이 검증 뒤 바뀌어도 다른 입력으로 실행되지 않는다. 성공과 일반적인 실패에서는
+임시 스냅샷만 제거하고 기존
+`pending.env`/`in-progress.env` 저널 의미는 보존한다.
+
+TURN 인증서와 개인 키는 Compose secret이 참조하는 영속 host 경로이므로 이 스냅샷에
+복사하지 않는다. 인증서 lifecycle은 별도 lifecycle lock과 Certbot reload hook이
+소유한다. ACME lineage·reload 절차 밖에서는 deploy나 rollback 실행 중 해당 파일을
+교체하지 않는다.
+
+release state 작성·검증과 standalone preflight는 Docker pull 전에 저장소가 정확히
+`ghcr.io/ljkhyeong/round-edge`, `round-signaling`, `round-turn`인지 확인한다. 세 digest를
+pull한 뒤 `up` 전에는 `org.opencontainers.image.source`가 이 ROUND 저장소인지,
+revision이 검토한 checkout commit인지, role/flavor가 서비스와 일치하는지, SemVer
+version과 annotated tag object가 세 이미지에서 같은 release를 가리키는지 검사한다.
+`VITE_ICE_TRANSPORT_POLICY=all`은 `edge/standalone`만, `relay`는 `edge/relay`와
+version의 `-relay` 접미사만 허용한다. rollback도 대상 digest를 pull한 직후 같은 검사를
+통과해야 컨테이너를 시작한다. 이 metadata 검사는 잘못된 서비스 이미지와 release 혼합을
+차단하지만 암호학적 서명 검증을 대체하지 않으므로 release workflow의 provenance와 SBOM
+증거도 함께 보관한다.
+
+모든 검사를 통과한 뒤에만 `/var/lib/round/releases/current.env`를 기록한다. 여기에는
+세 digest, checkout commit, Compose·runtime-config digest, Compose project, ROUND
+domain, 고정 local Docker endpoint가 들어간다. 이미지 줄은 별도 immutable identity로
+기록하므로 runtime-config digest에서 제외한다. 다음 배포가 성공하면 이전 complete
+state는 `previous.env`로 이동한다.
+
+pull/up이 시작된 candidate는 성공할 때까지 `in-progress.env`로 남는다. 실패하면 새
+배포를 막고 명시적인 rollback이 `current.env`를 다시 배포한다. 첫 배포 실패로
+`current.env`가 없으면 rollback은 Compose project를 완전히 내리고 marker를 지운다.
+rollback 자체도 target/origin journal을 사용하며, 중단되면 다음 rollback이 stable
+state를 복구할 때까지 다른 lifecycle 작업을 막는다. Compose나 이미지 외 runtime
+설정이 바뀐 release를 복구하려면 저장한 checkout과 secret-manager 버전을 먼저
+복원해야 한다.
+
+SIGKILL처럼 EXIT trap이 실행되지 않아 `.deploy-snapshot.*`이 남으면 다음 lifecycle
+명령은 lock 획득 직후 안전하게 거부한다. 이 디렉터리에는 runtime 비밀이 있으므로 먼저
+소유자와 mode가 `0700`/`0600`인지 확인하고, `pending.env`, `in-progress.env`,
+`rollback-pending.env`, `rollback-in-progress.env`, `rollback-origin.env` 중 어떤
+저널이 함께 남았는지 점검한다. 재실행에 앞서 확인한 정확한 스냅샷 디렉터리의
+`runtime.env`와 `compose.yml`만 `rm -f --`로 제거하고 빈 디렉터리를 `rmdir --`로
+제거한다. wildcard나 재귀 삭제는 사용하지 않는다.
+
+`pending.env`만 남은 deploy 사전 단계는 Docker 변경 전이므로 pending을 제거한 뒤
+deploy를 새로 실행한다. rollback marker 없이 `rollback-pending.env` 또는
+`rollback-origin.env`만 남은 경우도 Docker 변경 전이다. 존재하는 pending은
+`previous.env`와, origin은 `current.env`와 각각 대조한 뒤 존재하는 pending/origin을
+제거하고 rollback을 새로 실행한다. `in-progress.env`나
+`rollback-in-progress.env`가 있으면 해당 저널은 보존하고 rollback을 다시 실행해
+기록된 상태로 수렴한다.
 
 ROUND does not negotiate the additive `chat.ack` DataChannel capability. After
 the new stack passes the checks below, require every participant with an active

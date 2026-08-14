@@ -142,11 +142,24 @@ round_ops_prepare_private_directory() {
 
 round_ops_acquire_lifecycle_lock() {
   local state_root=$1
+  local nullglob_was_set=false
+  local -a stale_snapshots
 
   round_ops_require_command flock
   round_ops_require_private_directory "$state_root"
   exec 9<"$state_root"
   flock -n 9 || round_ops_die "another ROUND lifecycle operation is already running"
+  if shopt -q nullglob; then
+    nullglob_was_set=true
+  else
+    shopt -s nullglob
+  fi
+  stale_snapshots=("$state_root"/.deploy-snapshot.*)
+  if [[ "$nullglob_was_set" != true ]]; then
+    shopt -u nullglob
+  fi
+  (( ${#stale_snapshots[@]} == 0 )) ||
+    round_ops_die "a stale deployment snapshot exists; inspect and securely remove ${stale_snapshots[0]} before another lifecycle operation"
 }
 
 round_ops_validate_digest_ref() {
@@ -154,6 +167,210 @@ round_ops_validate_digest_ref() {
   local image_ref=$2
   [[ "$image_ref" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] ||
     round_ops_die "$label must be an immutable image digest reference"
+}
+
+round_ops_expected_image_source() {
+  printf '%s\n' 'https://github.com/ljkhyeong/webrtc-study'
+}
+
+round_ops_expected_image_repository() {
+  case "$1" in
+    edge) printf '%s\n' 'ghcr.io/ljkhyeong/round-edge' ;;
+    signaling) printf '%s\n' 'ghcr.io/ljkhyeong/round-signaling' ;;
+    turn) printf '%s\n' 'ghcr.io/ljkhyeong/round-turn' ;;
+    *) round_ops_die "unknown ROUND image role: $1" ;;
+  esac
+}
+
+round_ops_require_image_repository() {
+  local label=$1
+  local image_ref=$2
+  local role=$3
+  local actual_repository
+  local expected_repository
+
+  round_ops_validate_digest_ref "$label" "$image_ref"
+  actual_repository=${image_ref%@sha256:*}
+  expected_repository=$(round_ops_expected_image_repository "$role")
+  [[ "$actual_repository" == "$expected_repository" ]] ||
+    round_ops_die "$label must use the reviewed repository $expected_repository"
+}
+
+round_ops_inspect_image_attestation() {
+  local image_ref=$1
+  local labels
+  local attestation
+
+  labels=$(round_ops_docker image inspect --format '{{json .Config.Labels}}' "$image_ref") ||
+    round_ops_die "could not inspect image labels on $image_ref"
+  attestation=$(jq -er '
+    def required($label):
+      .[$label]
+      | select(type == "string" and length > 0 and (test("[\\r\\n\\t]") | not));
+    select(type == "object")
+    | [
+        required("org.opencontainers.image.source"),
+        required("org.opencontainers.image.revision"),
+        required("org.opencontainers.image.version"),
+        required("io.round.release.tag-object"),
+        required("io.round.image.role"),
+        required("io.round.image.flavor")
+      ]
+    | @tsv
+  ' <<<"$labels") ||
+    round_ops_die "$image_ref has incomplete or invalid release-attestation labels"
+  printf '%s\n' "$attestation"
+}
+
+round_ops_verify_release_images() {
+  local release_file=$1
+  local env_file=$2
+  local edge_image
+  local signaling_image
+  local turn_image
+  local source_commit
+  local expected_source
+  local ice_transport_policy
+  local expected_edge_flavor
+  local edge_attestation
+  local signaling_attestation
+  local turn_attestation
+  local edge_source
+  local signaling_source
+  local turn_source
+  local edge_revision
+  local signaling_revision
+  local turn_revision
+  local edge_version
+  local signaling_version
+  local turn_version
+  local normalized_edge_version
+  local edge_tag_object
+  local signaling_tag_object
+  local turn_tag_object
+  local edge_role
+  local signaling_role
+  local turn_role
+  local edge_flavor
+  local signaling_flavor
+  local turn_flavor
+
+  round_ops_validate_release_file "$release_file"
+  round_ops_require_private_file "$env_file"
+  round_ops_require_command jq
+  edge_image=$(round_ops_read_env_value "$release_file" ROUND_EDGE_IMAGE)
+  signaling_image=$(round_ops_read_env_value "$release_file" ROUND_SIGNALING_IMAGE)
+  turn_image=$(round_ops_read_env_value "$release_file" ROUND_TURN_IMAGE)
+  source_commit=$(round_ops_read_env_value "$release_file" ROUND_CHECKOUT_COMMIT)
+
+  ice_transport_policy=$(round_ops_read_env_value "$env_file" VITE_ICE_TRANSPORT_POLICY)
+  case "$ice_transport_policy" in
+    all) expected_edge_flavor=standalone ;;
+    relay) expected_edge_flavor=relay ;;
+    *) round_ops_die "VITE_ICE_TRANSPORT_POLICY must be all or relay" ;;
+  esac
+
+  edge_attestation=$(round_ops_inspect_image_attestation "$edge_image")
+  signaling_attestation=$(round_ops_inspect_image_attestation "$signaling_image")
+  turn_attestation=$(round_ops_inspect_image_attestation "$turn_image")
+  IFS=$'\t' read -r \
+    edge_source edge_revision edge_version edge_tag_object edge_role edge_flavor \
+    <<<"$edge_attestation"
+  IFS=$'\t' read -r \
+    signaling_source signaling_revision signaling_version signaling_tag_object \
+    signaling_role signaling_flavor \
+    <<<"$signaling_attestation"
+  IFS=$'\t' read -r \
+    turn_source turn_revision turn_version turn_tag_object turn_role turn_flavor \
+    <<<"$turn_attestation"
+
+  expected_source=$(round_ops_expected_image_source)
+  [[ "$edge_source" == "$expected_source" && \
+     "$signaling_source" == "$expected_source" && \
+     "$turn_source" == "$expected_source" ]] ||
+    round_ops_die "release images do not carry the reviewed ROUND source label"
+
+  [[ "$edge_revision" == "$source_commit" && \
+     "$signaling_revision" == "$source_commit" && \
+     "$turn_revision" == "$source_commit" ]] ||
+    round_ops_die "release image revisions do not match the reviewed checkout commit"
+
+  [[ "$edge_role" == edge ]] || round_ops_die "ROUND_EDGE_IMAGE does not carry the edge role"
+  [[ "$signaling_role" == signaling ]] ||
+    round_ops_die "ROUND_SIGNALING_IMAGE does not carry the signaling role"
+  [[ "$turn_role" == turn ]] || round_ops_die "ROUND_TURN_IMAGE does not carry the TURN role"
+
+  [[ "$edge_flavor" == "$expected_edge_flavor" ]] ||
+    round_ops_die "ROUND_EDGE_IMAGE flavor does not match VITE_ICE_TRANSPORT_POLICY"
+  [[ "$signaling_flavor" == shared ]] ||
+    round_ops_die "ROUND_SIGNALING_IMAGE does not carry the shared flavor"
+  [[ "$turn_flavor" == shared ]] ||
+    round_ops_die "ROUND_TURN_IMAGE does not carry the shared flavor"
+
+  normalized_edge_version=$edge_version
+  if [[ "$expected_edge_flavor" == relay ]]; then
+    [[ "$edge_version" == *-relay ]] ||
+      round_ops_die "relay edge image version must end in -relay"
+    normalized_edge_version=${edge_version%-relay}
+  fi
+  [[ "$normalized_edge_version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]] ||
+    round_ops_die "release images carry an invalid SemVer image version"
+  [[ "$signaling_version" == "$normalized_edge_version" && \
+     "$turn_version" == "$normalized_edge_version" ]] ||
+    round_ops_die "release image versions do not identify the same release"
+
+  [[ "$edge_tag_object" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]] ||
+    round_ops_die "release images carry an invalid annotated-tag object"
+  [[ "$signaling_tag_object" == "$edge_tag_object" && \
+     "$turn_tag_object" == "$edge_tag_object" ]] ||
+    round_ops_die "release images do not come from the same annotated tag object"
+}
+
+round_ops_create_deployment_snapshot() {
+  local state_root=$1
+  local env_file=$2
+  local compose_file=$3
+  local snapshot_dir
+
+  round_ops_require_private_directory "$state_root"
+  round_ops_require_private_file "$env_file"
+  [[ -f "$compose_file" && ! -L "$compose_file" && -r "$compose_file" ]] ||
+    round_ops_die "expected a readable regular Compose file: $compose_file"
+  snapshot_dir=$(mktemp -d "$state_root/.deploy-snapshot.XXXXXX") ||
+    round_ops_die "could not create a deployment snapshot under $state_root"
+  chmod 0700 "$snapshot_dir"
+  if ! cp -- "$env_file" "$snapshot_dir/runtime.env" ||
+     ! cp -- "$compose_file" "$snapshot_dir/compose.yml" ||
+     ! chmod 0600 "$snapshot_dir/runtime.env" "$snapshot_dir/compose.yml"; then
+    rm -f -- "$snapshot_dir/runtime.env" "$snapshot_dir/compose.yml"
+    rmdir -- "$snapshot_dir" 2>/dev/null || true
+    round_ops_die "could not create the private deployment snapshot"
+  fi
+  round_ops_require_private_directory "$snapshot_dir"
+  round_ops_require_private_file "$snapshot_dir/runtime.env"
+  round_ops_require_private_file "$snapshot_dir/compose.yml"
+  printf '%s\n' "$snapshot_dir"
+}
+
+round_ops_remove_deployment_snapshot() {
+  local state_root=$1
+  local snapshot_dir=$2
+  local resolved_state_root
+  local resolved_parent
+  local snapshot_name
+
+  round_ops_require_private_directory "$state_root"
+  [[ -d "$snapshot_dir" && ! -L "$snapshot_dir" ]] ||
+    round_ops_die "deployment snapshot is not a regular directory: $snapshot_dir"
+  resolved_state_root=$(cd -- "$state_root" && pwd -P)
+  resolved_parent=$(cd -- "$(dirname -- "$snapshot_dir")" && pwd -P)
+  snapshot_name=$(basename -- "$snapshot_dir")
+  [[ "$resolved_parent" == "$resolved_state_root" && \
+     "$snapshot_name" == .deploy-snapshot.* ]] ||
+    round_ops_die "refusing to remove an unexpected deployment snapshot: $snapshot_dir"
+  rm -f -- "$snapshot_dir/runtime.env" "$snapshot_dir/compose.yml"
+  rmdir -- "$snapshot_dir" ||
+    round_ops_die "deployment snapshot contains unexpected files: $snapshot_dir"
 }
 
 round_ops_validate_release_file() {
@@ -172,9 +389,9 @@ round_ops_validate_release_file() {
   edge_image=$(round_ops_read_env_value "$release_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$release_file" ROUND_SIGNALING_IMAGE)
   turn_image=$(round_ops_read_env_value "$release_file" ROUND_TURN_IMAGE)
-  round_ops_validate_digest_ref ROUND_EDGE_IMAGE "$edge_image"
-  round_ops_validate_digest_ref ROUND_SIGNALING_IMAGE "$signaling_image"
-  round_ops_validate_digest_ref ROUND_TURN_IMAGE "$turn_image"
+  round_ops_require_image_repository ROUND_EDGE_IMAGE "$edge_image" edge
+  round_ops_require_image_repository ROUND_SIGNALING_IMAGE "$signaling_image" signaling
+  round_ops_require_image_repository ROUND_TURN_IMAGE "$turn_image" turn
   source_commit=$(round_ops_read_env_value "$release_file" ROUND_CHECKOUT_COMMIT)
   compose_sha256=$(round_ops_read_env_value "$release_file" ROUND_COMPOSE_SHA256)
   env_sha256=$(round_ops_read_env_value "$release_file" ROUND_ENV_SHA256)
@@ -220,6 +437,7 @@ round_ops_write_release_file() {
   local edge_image=$3
   local signaling_image=$4
   local turn_image=$5
+  local compose_file=${6:-}
   local destination_dir
   local temporary
   local repo_root
@@ -229,14 +447,19 @@ round_ops_write_release_file() {
   local project_name
   local round_domain
 
-  round_ops_validate_digest_ref ROUND_EDGE_IMAGE "$edge_image"
-  round_ops_validate_digest_ref ROUND_SIGNALING_IMAGE "$signaling_image"
-  round_ops_validate_digest_ref ROUND_TURN_IMAGE "$turn_image"
+  round_ops_require_image_repository ROUND_EDGE_IMAGE "$edge_image" edge
+  round_ops_require_image_repository ROUND_SIGNALING_IMAGE "$signaling_image" signaling
+  round_ops_require_image_repository ROUND_TURN_IMAGE "$turn_image" turn
   round_ops_require_private_file "$env_file"
   repo_root=$(round_ops_repo_root)
+  if [[ -z "$compose_file" ]]; then
+    compose_file="$repo_root/compose.yml"
+  fi
+  [[ -f "$compose_file" && ! -L "$compose_file" && -r "$compose_file" ]] ||
+    round_ops_die "expected a readable regular Compose file: $compose_file"
   source_commit=$(git -C "$repo_root" rev-parse HEAD) ||
     round_ops_die "could not resolve the ROUND source commit"
-  compose_sha256=$(round_ops_sha256_file "$repo_root/compose.yml")
+  compose_sha256=$(round_ops_sha256_file "$compose_file")
   env_sha256=$(round_ops_runtime_env_sha256 "$env_file")
   project_name=$(round_ops_read_env_value "$env_file" COMPOSE_PROJECT_NAME)
   round_domain=$(round_ops_read_env_value "$env_file" ROUND_DOMAIN)
@@ -302,6 +525,7 @@ round_ops_runtime_env_sha256() {
 round_ops_assert_state_compatible() {
   local release_file=$1
   local env_file=$2
+  local compose_file=${3:-}
   local repo_root
   local expected
   local actual
@@ -309,8 +533,13 @@ round_ops_assert_state_compatible() {
   round_ops_validate_release_file "$release_file"
   round_ops_require_private_file "$env_file"
   repo_root=$(round_ops_repo_root)
+  if [[ -z "$compose_file" ]]; then
+    compose_file="$repo_root/compose.yml"
+  fi
+  [[ -f "$compose_file" && ! -L "$compose_file" && -r "$compose_file" ]] ||
+    round_ops_die "expected a readable regular Compose file: $compose_file"
   expected=$(round_ops_read_env_value "$release_file" ROUND_COMPOSE_SHA256)
-  actual=$(round_ops_sha256_file "$repo_root/compose.yml")
+  actual=$(round_ops_sha256_file "$compose_file")
   [[ "$actual" == "$expected" ]] ||
     round_ops_die "Compose config differs from the saved deployment state; restore its reviewed checkout first"
   expected=$(round_ops_read_env_value "$release_file" ROUND_ENV_SHA256)
@@ -517,13 +746,15 @@ round_ops_docker() {
   "${sanitized[@]}" docker "$@"
 }
 
-round_ops_compose() {
-  local env_file=$1
-  local edge_image=$2
-  local signaling_image=$3
-  local turn_image=$4
-  shift 4
+round_ops_compose_with_file() {
+  local compose_file=$1
+  local env_file=$2
+  local edge_image=$3
+  local signaling_image=$4
+  local turn_image=$5
+  shift 5
   local repo_root
+  local absolute_compose_file
   local absolute_env_file
   local project_name
   local home_value=${HOME-}
@@ -534,6 +765,10 @@ round_ops_compose() {
   )
 
   repo_root=$(round_ops_repo_root)
+  [[ -f "$compose_file" && ! -L "$compose_file" && -r "$compose_file" ]] ||
+    round_ops_die "expected a readable regular Compose file: $compose_file"
+  absolute_compose_file=$(realpath "$compose_file") ||
+    round_ops_die "could not resolve $compose_file"
   absolute_env_file=$(realpath "$env_file") || round_ops_die "could not resolve $env_file"
   project_name=$(round_ops_read_env_value "$absolute_env_file" COMPOSE_PROJECT_NAME)
   [[ "$project_name" =~ ^[a-z0-9][a-z0-9_-]*$ ]] ||
@@ -551,10 +786,28 @@ round_ops_compose() {
     "ROUND_TURN_IMAGE=$turn_image" \
     docker compose \
       --project-directory "$repo_root" \
-      --file "$repo_root/compose.yml" \
+      --file "$absolute_compose_file" \
       --project-name "$project_name" \
       --env-file "$absolute_env_file" \
       "$@"
+}
+
+round_ops_compose() {
+  local env_file=$1
+  local edge_image=$2
+  local signaling_image=$3
+  local turn_image=$4
+  shift 4
+  local repo_root
+
+  repo_root=$(round_ops_repo_root)
+  round_ops_compose_with_file \
+    "$repo_root/compose.yml" \
+    "$env_file" \
+    "$edge_image" \
+    "$signaling_image" \
+    "$turn_image" \
+    "$@"
 }
 
 round_ops_compose_volume_name() {
