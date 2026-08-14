@@ -216,6 +216,9 @@ node ops/ci/test-validate-external-turn-workflow.mjs
 node ops/ci/validate-external-turn-monitor.mjs
 node ops/ci/test-validate-external-turn-monitor.mjs
 
+printf 'Validating the signed release workflow contract...\n'
+node ops/ci/validate-release-workflow.mjs
+
 caddy_validation_image=round-caddy-validation:local
 printf 'Building the pinned custom Caddy runtime...\n'
 docker build \

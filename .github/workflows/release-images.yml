@@ -1,4 +1,4 @@
-name: Release container images
+name: 컨테이너 이미지 릴리스
 
 on:
   push:
@@ -19,7 +19,7 @@ env:
 
 jobs:
   preflight:
-    name: Validate immutable release inputs
+    name: 불변 릴리스 입력 검증
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -30,14 +30,14 @@ jobs:
       tag_object: ${{ steps.release-inputs.outputs.tag_object }}
 
     steps:
-      - name: Check out repository and tags
+      - name: 저장소와 태그 체크아웃
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
 
-      - name: Validate release tag and embedded inputs
+      - name: 릴리스 태그와 포함 입력 검증
         id: release-inputs
         shell: bash
         env:
@@ -47,11 +47,11 @@ jobs:
           set -euo pipefail
 
           if [[ "$TAG_PUSH_FORCED" == 'true' ]]; then
-            printf 'Forced updates of release tags are not publishable.\n' >&2
+            printf '릴리스 태그 강제 갱신은 게시할 수 없습니다.\n' >&2
             exit 1
           fi
           if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
-            printf 'Release tag must use SemVer without build metadata, for example v0.1.0 or v0.1.0-rc.1.\n' >&2
+            printf '릴리스 태그는 build metadata가 없는 SemVer를 사용해야 합니다. 예: v0.1.0 또는 v0.1.0-rc.1\n' >&2
             exit 1
           fi
           if [[ "$RELEASE_TAG" == *-* ]]; then
@@ -59,7 +59,7 @@ jobs:
             IFS='.' read -r -a prerelease_identifiers <<< "$prerelease"
             for identifier in "${prerelease_identifiers[@]}"; do
               if [[ "$identifier" =~ ^[0-9]+$ && "$identifier" == 0[0-9]* ]]; then
-                printf 'Numeric SemVer prerelease identifiers must not contain leading zeroes: %s\n' \
+                printf '숫자형 SemVer prerelease 식별자에는 앞쪽 0을 사용할 수 없습니다: %s\n' \
                   "$identifier" >&2
                 exit 1
               fi
@@ -68,19 +68,19 @@ jobs:
 
           tag_ref="refs/tags/${RELEASE_TAG}"
           if ! tag_type="$(git cat-file -t "$tag_ref" 2>/dev/null)"; then
-            printf 'Release tag %s is not present in the fetched repository.\n' "$RELEASE_TAG" >&2
+            printf '가져온 저장소에 릴리스 태그 %s가 없습니다.\n' "$RELEASE_TAG" >&2
             exit 1
           fi
           if [[ "$tag_type" != 'tag' ]]; then
-            printf 'Release tag %s must be an annotated tag.\n' "$RELEASE_TAG" >&2
+            printf '릴리스 태그 %s는 annotated tag여야 합니다.\n' "$RELEASE_TAG" >&2
             exit 1
           fi
 
           tag_object="$(git rev-parse "$tag_ref")"
           tag_commit="$(git rev-parse "${tag_ref}^{commit}")"
           if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
-            printf 'Release tag %s resolves to %s, not event commit %s.\n' \
-              "$RELEASE_TAG" "$tag_commit" "$GITHUB_SHA" >&2
+            printf '릴리스 태그 %s가 이벤트 커밋 %s가 아니라 %s를 가리킵니다.\n' \
+              "$RELEASE_TAG" "$GITHUB_SHA" "$tag_commit" >&2
             exit 1
           fi
 
@@ -90,7 +90,7 @@ jobs:
               awk '/^ROUND_STUN_URLS=/{count++} END{print count+0}'
           )"
           if [[ "$stun_line_count" != '1' ]]; then
-            printf 'Annotated tag message must contain exactly one ROUND_STUN_URLS=<comma-separated STUN URIs> line.\n' >&2
+            printf 'annotated tag 메시지에는 ROUND_STUN_URLS=<쉼표로 구분한 STUN URI> 행이 정확히 하나 있어야 합니다.\n' >&2
             exit 1
           fi
 
@@ -99,18 +99,18 @@ jobs:
               sed -n 's/^ROUND_STUN_URLS=//p'
           )"
           if [[ -z "$stun_urls" || "$stun_urls" =~ [[:space:]] ]]; then
-            printf 'ROUND_STUN_URLS must be nonempty and contain no whitespace.\n' >&2
+            printf 'ROUND_STUN_URLS는 비어 있지 않아야 하며 공백을 포함할 수 없습니다.\n' >&2
             exit 1
           fi
           if [[ "$stun_urls" == ,* || "$stun_urls" == *, || "$stun_urls" == *,,* ]]; then
-            printf 'ROUND_STUN_URLS must not contain empty comma-separated entries.\n' >&2
+            printf 'ROUND_STUN_URLS에는 쉼표로 구분된 빈 항목이 있을 수 없습니다.\n' >&2
             exit 1
           fi
 
           IFS=',' read -r -a stun_entries <<< "$stun_urls"
           for stun_url in "${stun_entries[@]}"; do
             if [[ ! "$stun_url" =~ ^stuns?:[^,[:space:]]+$ ]]; then
-              printf 'Invalid STUN URI in release tag: %s\n' "$stun_url" >&2
+              printf '릴리스 태그에 잘못된 STUN URI가 있습니다: %s\n' "$stun_url" >&2
               exit 1
             fi
           done
@@ -118,17 +118,17 @@ jobs:
           printf 'stun_urls=%s\n' "$stun_urls" >> "$GITHUB_OUTPUT"
           printf 'tag_object=%s\n' "$tag_object" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Docker Buildx
+      - name: Docker Buildx 설정
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      - name: Log in to GitHub Container Registry
+      - name: GitHub Container Registry 로그인
         uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Require all final tags to be unused
+      - name: 모든 최종 태그가 미사용 상태인지 확인
         shell: bash
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -141,15 +141,15 @@ jobs:
             local inspect_output
 
             if inspect_output="$(docker buildx imagetools inspect "$reference" 2>&1)"; then
-              printf 'Refusing to overwrite existing image tag: %s\n' "$reference" >&2
+              printf '기존 이미지 태그를 덮어쓰지 않습니다: %s\n' "$reference" >&2
               return 1
             fi
             if grep -Eqi '(manifest unknown|name unknown|(^|: )not found([[:space:]]|$))' <<< "$inspect_output"; then
-              printf 'Confirmed unused image tag: %s\n' "$reference"
+              printf '미사용 이미지 태그를 확인했습니다: %s\n' "$reference"
               return 0
             fi
 
-            printf 'Could not prove image tag is unused: %s\n%s\n' \
+            printf '이미지 태그가 미사용 상태임을 증명하지 못했습니다: %s\n%s\n' \
               "$reference" "$inspect_output" >&2
             return 1
           }
@@ -171,41 +171,41 @@ jobs:
           done
 
   verify:
-    name: Verify release candidate
+    name: 릴리스 후보 검증
     needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
-      - name: Check out repository
+      - name: 저장소 체크아웃
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Set up Node.js
+      - name: Node.js 설정
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
 
-      - name: Set up Java
+      - name: Java 설정
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: 21
           cache: gradle
 
-      - name: Install dependencies
+      - name: 의존성 설치
         run: npm ci
 
-      - name: Run repository checks
+      - name: 저장소 검사 실행
         run: npm run check
 
-      - name: Validate deployment configuration
+      - name: 배포 설정 검증
         run: bash ops/ci/validate-deployment.sh --check-only
 
   build-edge:
-    name: Build web edge image digests
+    name: 웹 edge 이미지 digest build
     needs:
       - preflight
       - verify
@@ -214,31 +214,33 @@ jobs:
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
     outputs:
       edge_digest: ${{ steps.edge.outputs.digest }}
       relay_digest: ${{ steps.edge-relay.outputs.digest }}
       baton_web_digest: ${{ steps.baton-web.outputs.digest }}
 
     steps:
-      - name: Check out repository
+      - name: 저장소 체크아웃
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Set up QEMU
+      - name: QEMU 설정
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
 
-      - name: Set up Docker Buildx
+      - name: Docker Buildx 설정
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      - name: Log in to GitHub Container Registry
+      - name: GitHub Container Registry 로그인
         uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push production edge digest
+      - name: 프로덕션 edge digest build 및 push
         id: edge
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
@@ -263,7 +265,15 @@ jobs:
           provenance: mode=max
           sbom: true
 
-      - name: Build and push relay-only edge digest
+      - name: 독립 실행 edge 이미지의 서명된 출처 증명 발행
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ${{ env.IMAGE_NAMESPACE }}/round-edge
+          subject-digest: ${{ steps.edge.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: 릴레이 전용 edge digest build 및 push
         id: edge-relay
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
@@ -288,7 +298,15 @@ jobs:
           provenance: mode=max
           sbom: true
 
-      - name: Build and push BATON web digest
+      - name: 릴레이 전용 edge 이미지의 서명된 출처 증명 발행
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ${{ env.IMAGE_NAMESPACE }}/round-edge
+          subject-digest: ${{ steps.edge-relay.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: BATON web digest build 및 push
         id: baton-web
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
@@ -313,8 +331,16 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      - name: BATON web 이미지의 서명된 출처 증명 발행
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ${{ env.IMAGE_NAMESPACE }}/round-baton-web
+          subject-digest: ${{ steps.baton-web.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
   build-signaling:
-    name: Build signaling image digest
+    name: 시그널링 이미지 digest build
     needs:
       - preflight
       - verify
@@ -323,29 +349,31 @@ jobs:
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
     outputs:
       digest: ${{ steps.image.outputs.digest }}
 
     steps:
-      - name: Check out repository
+      - name: 저장소 체크아웃
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Set up QEMU
+      - name: QEMU 설정
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
 
-      - name: Set up Docker Buildx
+      - name: Docker Buildx 설정
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      - name: Log in to GitHub Container Registry
+      - name: GitHub Container Registry 로그인
         uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push signaling digest
+      - name: 시그널링 digest build 및 push
         id: image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
@@ -366,8 +394,16 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      - name: 시그널링 이미지의 서명된 출처 증명 발행
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ${{ env.IMAGE_NAMESPACE }}/round-signaling
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
   build-turn:
-    name: Build TURN image digest
+    name: TURN 이미지 digest build
     needs:
       - preflight
       - verify
@@ -376,29 +412,31 @@ jobs:
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
     outputs:
       digest: ${{ steps.image.outputs.digest }}
 
     steps:
-      - name: Check out repository
+      - name: 저장소 체크아웃
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Set up QEMU
+      - name: QEMU 설정
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
 
-      - name: Set up Docker Buildx
+      - name: Docker Buildx 설정
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      - name: Log in to GitHub Container Registry
+      - name: GitHub Container Registry 로그인
         uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push TURN digest
+      - name: TURN digest build 및 push
         id: image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
@@ -419,8 +457,16 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      - name: TURN 이미지의 서명된 출처 증명 발행
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ${{ env.IMAGE_NAMESPACE }}/round-turn
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
   promote:
-    name: Promote verified image digests
+    name: 검증된 이미지 digest 승격
     needs:
       - preflight
       - build-edge
@@ -433,14 +479,14 @@ jobs:
       packages: write
 
     steps:
-      - name: Check out repository and tags
+      - name: 저장소와 태그 체크아웃
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
 
-      - name: Require the release tag object to be unchanged
+      - name: 릴리스 태그 객체 불변성 확인
         shell: bash
         env:
           EXPECTED_TAG_OBJECT: ${{ needs.preflight.outputs.tag_object }}
@@ -450,26 +496,26 @@ jobs:
 
           tag_ref="refs/tags/${RELEASE_TAG}"
           if ! current_tag_object="$(git rev-parse "$tag_ref" 2>/dev/null)"; then
-            printf 'Release tag %s disappeared before promotion.\n' "$RELEASE_TAG" >&2
+            printf '승격 전에 릴리스 태그 %s가 사라졌습니다.\n' "$RELEASE_TAG" >&2
             exit 1
           fi
           if [[ "$current_tag_object" != "$EXPECTED_TAG_OBJECT" ]]; then
-            printf 'Release tag object changed before promotion: expected %s, found %s.\n' \
+            printf '승격 전에 릴리스 태그 객체가 변경되었습니다. 예상값 %s, 실제값 %s.\n' \
               "$EXPECTED_TAG_OBJECT" "$current_tag_object" >&2
             exit 1
           fi
 
-      - name: Set up Docker Buildx
+      - name: Docker Buildx 설정
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      - name: Log in to GitHub Container Registry
+      - name: GitHub Container Registry 로그인
         uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Recheck tags and validate source digests
+      - name: 태그 재확인 및 원본 digest 검증
         shell: bash
         env:
           BATON_WEB_DIGEST: ${{ needs.build-edge.outputs.baton_web_digest }}
@@ -487,14 +533,14 @@ jobs:
             local inspect_output
 
             if inspect_output="$(docker buildx imagetools inspect "$reference" 2>&1)"; then
-              printf 'Refusing to overwrite existing image tag: %s\n' "$reference" >&2
+              printf '기존 이미지 태그를 덮어쓰지 않습니다: %s\n' "$reference" >&2
               return 1
             fi
             if grep -Eqi '(manifest unknown|name unknown|(^|: )not found([[:space:]]|$))' <<< "$inspect_output"; then
               return 0
             fi
 
-            printf 'Could not prove image tag is unused: %s\n%s\n' \
+            printf '이미지 태그가 미사용 상태임을 증명하지 못했습니다: %s\n%s\n' \
               "$reference" "$inspect_output" >&2
             return 1
           }
@@ -525,13 +571,13 @@ jobs:
           for source in "${digest_sources[@]}"; do
             digest="${source##*@}"
             if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-              printf 'Invalid build digest: %s\n' "$source" >&2
+              printf '잘못된 build digest입니다: %s\n' "$source" >&2
               exit 1
             fi
             docker buildx imagetools inspect "$source" >/dev/null
           done
 
-      - name: Promote all image digests to final tags
+      - name: 모든 이미지 digest를 최종 태그로 승격
         shell: bash
         env:
           BATON_WEB_DIGEST: ${{ needs.build-edge.outputs.baton_web_digest }}
@@ -565,7 +611,7 @@ jobs:
             --tag "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}" \
             "${IMAGE_NAMESPACE}/round-edge@${EDGE_DIGEST}"
 
-      - name: Verify every promoted tag digest
+      - name: 승격된 모든 태그 digest 검증
         shell: bash
         env:
           BATON_WEB_DIGEST: ${{ needs.build-edge.outputs.baton_web_digest }}
@@ -590,7 +636,7 @@ jobs:
             actual_digest="${actual_digest#\"}"
             actual_digest="${actual_digest%\"}"
             if [[ "$actual_digest" != "$expected_digest" ]]; then
-              printf 'Promoted tag %s resolved to %s, expected %s.\n' \
+              printf '승격된 태그 %s의 실제 digest는 %s이며 예상값은 %s입니다.\n' \
                 "$reference" "$actual_digest" "$expected_digest" >&2
               return 1
             fi
@@ -607,7 +653,7 @@ jobs:
           verify_tag_digest "${IMAGE_NAMESPACE}/round-turn:${RELEASE_TAG}" "$TURN_DIGEST"
           verify_tag_digest "${IMAGE_NAMESPACE}/round-turn:sha-${RELEASE_SHA}" "$TURN_DIGEST"
 
-      - name: Record promoted image digests
+      - name: 승격된 이미지 digest 기록
         shell: bash
         env:
           BATON_WEB_DIGEST: ${{ needs.build-edge.outputs.baton_web_digest }}
@@ -617,10 +663,10 @@ jobs:
           TURN_DIGEST: ${{ needs.build-turn.outputs.digest }}
         run: |
           {
-            printf '### Promoted ROUND images\n\n'
-            printf -- '- Production edge: `%s/round-edge@%s`\n' "$IMAGE_NAMESPACE" "$EDGE_DIGEST"
-            printf -- '- Relay-only edge: `%s/round-edge@%s`\n' "$IMAGE_NAMESPACE" "$RELAY_DIGEST"
+            printf '### 승격된 ROUND 이미지\n\n'
+            printf -- '- 프로덕션 edge: `%s/round-edge@%s`\n' "$IMAGE_NAMESPACE" "$EDGE_DIGEST"
+            printf -- '- 릴레이 전용 edge: `%s/round-edge@%s`\n' "$IMAGE_NAMESPACE" "$RELAY_DIGEST"
             printf -- '- BATON web: `%s/round-baton-web@%s`\n' "$IMAGE_NAMESPACE" "$BATON_WEB_DIGEST"
-            printf -- '- Signaling: `%s/round-signaling@%s`\n' "$IMAGE_NAMESPACE" "$SIGNALING_DIGEST"
+            printf -- '- 시그널링: `%s/round-signaling@%s`\n' "$IMAGE_NAMESPACE" "$SIGNALING_DIGEST"
             printf -- '- TURN: `%s/round-turn@%s`\n' "$IMAGE_NAMESPACE" "$TURN_DIGEST"
           } >> "$GITHUB_STEP_SUMMARY"
