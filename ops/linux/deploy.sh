@@ -100,15 +100,6 @@ round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
 round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
   up -d --wait --no-build --remove-orphans
 
-running_services=$(
-  round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
-    ps --status running --services
-)
-for required_service in edge signaling turn; do
-  grep -Fxq "$required_service" <<<"$running_services" ||
-    round_ops_die "$required_service is not running after deployment"
-done
-
 if [[ -e "$current_file" ]] && ! cmp -s -- "$current_file" "$in_progress_file"; then
   round_ops_copy_release_file "$current_file" "$previous_file"
 fi

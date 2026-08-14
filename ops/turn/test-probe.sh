@@ -73,7 +73,7 @@ printf '%s\n' \
 
 printf '%s\n' \
   '#!/usr/bin/env bash' \
-  'exit 0' \
+  'exit "${FAKE_OPENSSL_EXIT_CODE:-0}"' \
   >"$fake_bin/openssl"
 
 printf '%s\n' \
@@ -124,6 +124,13 @@ assert_contains 'container-ca=/etc/ssl/certs/ca-certificates.crt' "$docker_log" 
   'default container trust store was not selected'
 assert_not_contains 'target=/run/round-turn-probe/ca.pem,readonly' "$docker_log" \
   'a private CA mount was added without TURN_PROBE_CA_FILE'
+
+: >"$docker_log"
+if FAKE_OPENSSL_EXIT_CODE=1 run_probe 2>/dev/null; then
+  fail 'TLS verification failure was accepted'
+fi
+[[ ! -s "$docker_log" ]] ||
+  fail 'relay client ran after TLS verification failed'
 
 if run_probe "$test_root/missing-ca.pem" 2>/dev/null; then
   fail 'missing TURN_PROBE_CA_FILE was accepted'

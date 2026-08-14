@@ -25,11 +25,7 @@ COPY packages/protocol packages/protocol
 COPY packages/rtc-core packages/rtc-core
 COPY apps/web apps/web
 
-ARG VITE_STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
-ARG VITE_ICE_TRANSPORT_POLICY=all
-RUN VITE_STUN_URLS="${VITE_STUN_URLS}" \
-    VITE_ICE_TRANSPORT_POLICY="${VITE_ICE_TRANSPORT_POLICY}" \
-    npm run build:packages
+RUN npm run build:packages
 
 FROM web-source AS web-build
 ARG VITE_STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302

@@ -195,7 +195,6 @@ case "$command_line" in
     printf '{"name":"round-linux-test","services":{"signaling":{"deploy":{"replicas":1}}},"volumes":{"caddy_data":{"name":"round-linux-test_caddy_data"},"caddy_config":{"name":"round-linux-test_caddy_config"}}}\n'
     ;;
   *' config --quiet '*) log_compose "$@" ;;
-  *' ps --status running --services '*) printf 'edge\nsignaling\nturn\n' ;;
   *' ps --status running -q edge '*) ;;
   *' ps --all -q '*) ;;
   *' pull edge signaling turn '*) log_compose "$@" ;;

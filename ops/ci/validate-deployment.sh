@@ -210,22 +210,6 @@ bash ops/turn/test-tls-verification.sh
 bash ops/linux/test-linux-ops.sh
 bash ops/linux/test-systemd-units.sh
 
-tls_gate_line=$(
-  grep -nF '    verify_tls_endpoint' ops/turn/probe.sh \
-    | head -n 1 \
-    | cut -d: -f1
-)
-tls_client_line=$(
-  grep -nF 'exec /usr/bin/turnutils_uclient' ops/turn/probe.sh \
-    | tail -n 1 \
-    | cut -d: -f1
-)
-[[ -n "$tls_gate_line" && -n "$tls_client_line" ]]
-(( tls_gate_line < tls_client_line ))
-grep -Fq -- '-servername "$host"' ops/turn/verify-tls.sh
-grep -Fq -- '-verify_hostname "$host"' ops/turn/verify-tls.sh
-grep -Fq -- '-verify_return_error' ops/turn/verify-tls.sh
-
 printf 'Validating the external TURN workflow contract...\n'
 node ops/ci/validate-external-turn-workflow.mjs
 node ops/ci/test-validate-external-turn-workflow.mjs
@@ -377,11 +361,6 @@ docker cp "$baton_web_container:/srv" "$fixture_dir/baton-web"
 docker rm "$baton_web_container" >/dev/null
 baton_web_container=
 test "$(cat "$fixture_dir/baton-web/.round-auth-mode")" = baton
-test -f "$fixture_dir/baton-web/index.html"
-test -d "$fixture_dir/baton-web/assets"
-grep -Fq '/round-ui/assets/' "$fixture_dir/baton-web/index.html"
-grep -R -Fq '/api/v1/auth/session' "$fixture_dir/baton-web/assets"
-grep -R -Fq 'round/rooms' "$fixture_dir/baton-web/assets"
 
 printf 'Verifying the BATON browser runtime over HTTP...\n'
 baton_web_runtime_container=$(

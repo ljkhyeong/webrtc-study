@@ -84,7 +84,7 @@ if [[ -e "$backup_file.sha256" ]]; then
   [[ -f "$backup_file.sha256" && ! -L "$backup_file.sha256" ]] ||
     round_ops_die "backup checksum must be a regular file"
   expected_checksum=$(<"$backup_file.sha256")
-  actual_checksum=$(openssl dgst -sha256 "$backup_file" | awk '{ print $NF }')
+  actual_checksum=$(round_ops_sha256_file "$backup_file")
   [[ "$expected_checksum" =~ ^[0-9a-f]{64}$ ]] ||
     round_ops_die "backup checksum file is malformed"
   [[ "$actual_checksum" == "$expected_checksum" ]] ||

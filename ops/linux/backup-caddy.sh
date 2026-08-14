@@ -133,8 +133,7 @@ round_ops_docker run --rm --interactive \
 [[ -s "$temporary" ]] || round_ops_die "encrypted Caddy backup is empty"
 chmod 0600 "$temporary"
 mv -f -- "$temporary" "$backup_file"
-checksum=$(openssl dgst -sha256 "$backup_file" | awk '{ print $NF }')
-[[ "$checksum" =~ ^[0-9a-f]{64}$ ]] || round_ops_die "could not checksum encrypted backup"
+checksum=$(round_ops_sha256_file "$backup_file")
 printf '%s\n' "$checksum" >"$checksum_temporary"
 chmod 0600 "$checksum_temporary"
 mv -f -- "$checksum_temporary" "$backup_file.sha256"

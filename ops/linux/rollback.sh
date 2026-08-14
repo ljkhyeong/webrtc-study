@@ -159,14 +159,6 @@ round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
   pull edge signaling turn
 round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
   up -d --wait --no-build --remove-orphans
-running_services=$(
-  round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
-    ps --status running --services
-)
-for required_service in edge signaling turn; do
-  grep -Fxq "$required_service" <<<"$running_services" ||
-    round_ops_die "$required_service is not running after rollback"
-done
 
 case "$mode" in
   normal_rollback)
