@@ -100,6 +100,9 @@ if [[ -n "$release_file" ]]; then
   edge_image=$(round_ops_read_env_value "$release_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$release_file" ROUND_SIGNALING_IMAGE)
   turn_image=$(round_ops_read_env_value "$release_file" ROUND_TURN_IMAGE)
+  source_commit=$(round_ops_read_env_value "$release_file" ROUND_CHECKOUT_COMMIT)
+  round_ops_verify_signed_provenance \
+    "$source_commit" "$edge_image" "$signaling_image" "$turn_image"
 else
   edge_image=$(round_ops_read_env_value "$env_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$env_file" ROUND_SIGNALING_IMAGE)

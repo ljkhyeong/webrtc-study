@@ -169,8 +169,8 @@ round_ops_validate_digest_ref() {
     round_ops_die "$label must be an immutable image digest reference"
 }
 
-round_ops_expected_image_source() {
-  printf '%s\n' 'https://github.com/ljkhyeong/webrtc-study'
+round_ops_expected_github_repository() {
+  printf '%s\n' 'ljkhyeong/webrtc-study'
 }
 
 round_ops_expected_image_repository() {
@@ -196,21 +196,42 @@ round_ops_require_image_repository() {
     round_ops_die "$label must use the reviewed repository $expected_repository"
 }
 
-round_ops_inspect_image_attestation() {
+round_ops_verify_signed_provenance() {
+  local source_commit=$1
+  shift
+  local repository
+  local signer_workflow
+  local image_ref
+
+  round_ops_require_command gh
+  repository=$(round_ops_expected_github_repository)
+  signer_workflow="$repository/.github/workflows/release-images.yml"
+  for image_ref in "$@"; do
+    gh attestation verify "oci://$image_ref" \
+      --hostname github.com \
+      --repo "$repository" \
+      --signer-workflow "$signer_workflow" \
+      --source-digest "$source_commit" \
+      --bundle-from-oci \
+      --deny-self-hosted-runners \
+      >/dev/null ||
+      round_ops_die "could not verify signed build provenance for $image_ref"
+  done
+}
+
+round_ops_inspect_image_labels() {
   local image_ref=$1
   local labels
-  local attestation
+  local label_fields
 
   labels=$(round_ops_docker image inspect --format '{{json .Config.Labels}}' "$image_ref") ||
     round_ops_die "could not inspect image labels on $image_ref"
-  attestation=$(jq -er '
+  label_fields=$(jq -er '
     def required($label):
       .[$label]
       | select(type == "string" and length > 0 and (test("[\\r\\n\\t]") | not));
     select(type == "object")
     | [
-        required("org.opencontainers.image.source"),
-        required("org.opencontainers.image.revision"),
         required("org.opencontainers.image.version"),
         required("io.round.release.tag-object"),
         required("io.round.image.role"),
@@ -218,29 +239,21 @@ round_ops_inspect_image_attestation() {
       ]
     | @tsv
   ' <<<"$labels") ||
-    round_ops_die "$image_ref has incomplete or invalid release-attestation labels"
-  printf '%s\n' "$attestation"
+    round_ops_die "$image_ref has incomplete or invalid release identity labels"
+  printf '%s\n' "$label_fields"
 }
 
-round_ops_verify_release_images() {
+round_ops_verify_release_image_labels() {
   local release_file=$1
   local env_file=$2
   local edge_image
   local signaling_image
   local turn_image
-  local source_commit
-  local expected_source
   local ice_transport_policy
   local expected_edge_flavor
-  local edge_attestation
-  local signaling_attestation
-  local turn_attestation
-  local edge_source
-  local signaling_source
-  local turn_source
-  local edge_revision
-  local signaling_revision
-  local turn_revision
+  local edge_labels
+  local signaling_labels
+  local turn_labels
   local edge_version
   local signaling_version
   local turn_version
@@ -261,7 +274,6 @@ round_ops_verify_release_images() {
   edge_image=$(round_ops_read_env_value "$release_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$release_file" ROUND_SIGNALING_IMAGE)
   turn_image=$(round_ops_read_env_value "$release_file" ROUND_TURN_IMAGE)
-  source_commit=$(round_ops_read_env_value "$release_file" ROUND_CHECKOUT_COMMIT)
 
   ice_transport_policy=$(round_ops_read_env_value "$env_file" VITE_ICE_TRANSPORT_POLICY)
   case "$ice_transport_policy" in
@@ -270,30 +282,18 @@ round_ops_verify_release_images() {
     *) round_ops_die "VITE_ICE_TRANSPORT_POLICY must be all or relay" ;;
   esac
 
-  edge_attestation=$(round_ops_inspect_image_attestation "$edge_image")
-  signaling_attestation=$(round_ops_inspect_image_attestation "$signaling_image")
-  turn_attestation=$(round_ops_inspect_image_attestation "$turn_image")
+  edge_labels=$(round_ops_inspect_image_labels "$edge_image")
+  signaling_labels=$(round_ops_inspect_image_labels "$signaling_image")
+  turn_labels=$(round_ops_inspect_image_labels "$turn_image")
   IFS=$'\t' read -r \
-    edge_source edge_revision edge_version edge_tag_object edge_role edge_flavor \
-    <<<"$edge_attestation"
+    edge_version edge_tag_object edge_role edge_flavor \
+    <<<"$edge_labels"
   IFS=$'\t' read -r \
-    signaling_source signaling_revision signaling_version signaling_tag_object \
-    signaling_role signaling_flavor \
-    <<<"$signaling_attestation"
+    signaling_version signaling_tag_object signaling_role signaling_flavor \
+    <<<"$signaling_labels"
   IFS=$'\t' read -r \
-    turn_source turn_revision turn_version turn_tag_object turn_role turn_flavor \
-    <<<"$turn_attestation"
-
-  expected_source=$(round_ops_expected_image_source)
-  [[ "$edge_source" == "$expected_source" && \
-     "$signaling_source" == "$expected_source" && \
-     "$turn_source" == "$expected_source" ]] ||
-    round_ops_die "release images do not carry the reviewed ROUND source label"
-
-  [[ "$edge_revision" == "$source_commit" && \
-     "$signaling_revision" == "$source_commit" && \
-     "$turn_revision" == "$source_commit" ]] ||
-    round_ops_die "release image revisions do not match the reviewed checkout commit"
+    turn_version turn_tag_object turn_role turn_flavor \
+    <<<"$turn_labels"
 
   [[ "$edge_role" == edge ]] || round_ops_die "ROUND_EDGE_IMAGE does not carry the edge role"
   [[ "$signaling_role" == signaling ]] ||

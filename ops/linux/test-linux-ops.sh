@@ -183,6 +183,44 @@ case " $* " in
     ;;
 esac
 EOF
+cat >"$fake_bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+fake_root=$(cd -- "$(dirname -- "$0")/.." && pwd)
+[[ "${1:-}" == attestation && "${2:-}" == verify && "${3:-}" == oci://* ]] || exit 1
+image_ref=${3#oci://}
+shift 3
+hostname=
+repository=
+signer_workflow=
+source_digest=
+bundle_from_oci=false
+deny_self_hosted=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --hostname) hostname=$2; shift 2 ;;
+    --repo) repository=$2; shift 2 ;;
+    --signer-workflow) signer_workflow=$2; shift 2 ;;
+    --source-digest) source_digest=$2; shift 2 ;;
+    --bundle-from-oci) bundle_from_oci=true; shift ;;
+    --deny-self-hosted-runners) deny_self_hosted=true; shift ;;
+    *) exit 1 ;;
+  esac
+done
+[[ "$hostname" == github.com ]]
+[[ "$repository" == ljkhyeong/webrtc-study ]]
+[[ "$signer_workflow" == \
+  ljkhyeong/webrtc-study/.github/workflows/release-images.yml ]]
+[[ "$source_digest" == 0123456789abcdef0123456789abcdef01234567 ]]
+[[ "$bundle_from_oci" == true && "$deny_self_hosted" == true ]]
+[[ "$image_ref" =~ ^ghcr\.io/ljkhyeong/round-(edge|signaling|turn)@sha256:[0-9a-f]{64}$ ]]
+printf 'attestation-verify %s\n' "$image_ref" >>"$fake_root/gh.log"
+if [[ -f "$fake_root/fail-provenance-reference" && \
+      "$image_ref" == "$(cat "$fake_root/fail-provenance-reference")" ]]; then
+  exit 1
+fi
+[[ ! -e "$fake_root/fail-provenance" ]]
+EOF
 cat >"$fake_bin/age" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -323,6 +361,7 @@ chmod 0700 \
   "$fake_bin/df" \
   "$fake_bin/flock" \
   "$fake_bin/git" \
+  "$fake_bin/gh" \
   "$fake_bin/age" \
   "$fake_bin/docker"
 
@@ -413,6 +452,29 @@ if PATH="$fake_bin:$PATH" \
   fail 'non-hexadecimal TURN shared secret was accepted'
 fi
 
+unsigned_state_dir="$fixture_dir/unsigned-releases"
+mkdir "$unsigned_state_dir"
+chmod 0700 "$unsigned_state_dir"
+touch "$fixture_dir/fail-provenance"
+: >"$fixture_dir/docker.log"
+: >"$fixture_dir/gh.log"
+if PATH="$fake_bin:$PATH" \
+  ops/linux/deploy.sh --state-dir "$unsigned_state_dir" "$env_a" >/dev/null 2>&1; then
+  fail 'deployment accepted a release without valid signed provenance'
+fi
+rm -f -- "$fixture_dir/fail-provenance"
+[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '1' ]] ||
+  fail 'signed provenance failure did not stop at the first rejected image'
+if grep -Fq 'pull edge signaling turn' "$fixture_dir/docker.log"; then
+  fail 'invalid signed provenance reached Docker pull'
+fi
+[[ ! -e "$unsigned_state_dir/pending.env" && \
+   ! -e "$unsigned_state_dir/in-progress.env" ]] ||
+  fail 'signed provenance rejection created a deployment journal'
+if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
+  fail 'signed provenance rejection left a transaction snapshot behind'
+fi
+
 first_state_dir="$fixture_dir/first-releases"
 mkdir -p "$first_state_dir"
 chmod 0700 "$first_state_dir"
@@ -446,9 +508,12 @@ fi
 rm -f -- "$fixture_dir/git-dirty"
 
 : >"$fixture_dir/docker.log"
+: >"$fixture_dir/gh.log"
 PATH="$fake_bin:$PATH" ops/linux/deploy.sh --state-dir "$state_dir" "$env_a" >/dev/null
 round_ops_validate_release_file "$state_dir/current.env"
 [[ ! -e "$state_dir/previous.env" ]] || fail 'first deploy unexpectedly created previous.env'
+[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '3' ]] ||
+  fail 'deployment did not verify all three signed image provenance statements'
 [[ "$(grep -c '^image-inspect ' "$fixture_dir/docker.log")" == '3' ]] ||
   fail 'deployment did not snapshot image labels exactly once per digest'
 grep -Fq -- "--project-directory $repo_root" "$fixture_dir/docker.log" ||
@@ -459,6 +524,25 @@ grep -Eq -- '--env-file .*/\.deploy-snapshot\.[^/]+/runtime\.env' "$fixture_dir/
   fail 'deployment did not execute the snapshotted env file'
 if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
   fail 'successful deployment left a transaction snapshot behind'
+fi
+
+printf 'ghcr.io/ljkhyeong/round-edge@sha256:%s\n' "$digest_a" \
+  >"$fixture_dir/fail-provenance-reference"
+: >"$fixture_dir/docker.log"
+: >"$fixture_dir/gh.log"
+if PATH="$fake_bin:$PATH" \
+  ops/linux/deploy.sh --state-dir "$state_dir" "$env_b" >/dev/null 2>&1; then
+  fail 'deployment accepted an unsigned current rollback baseline'
+fi
+rm -f -- "$fixture_dir/fail-provenance-reference"
+[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '1' ]] ||
+  fail 'unsigned current rollback baseline did not stop at its first rejected image'
+[[ ! -e "$state_dir/pending.env" && ! -e "$state_dir/in-progress.env" ]] ||
+  fail 'unsigned current rollback baseline rejection created a deployment journal'
+[[ ! -s "$fixture_dir/docker.log" ]] ||
+  fail 'unsigned current rollback baseline rejection reached Docker'
+if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
+  fail 'unsigned current rollback baseline rejection left a transaction snapshot behind'
 fi
 
 wrong_role_state_dir="$fixture_dir/wrong-role-releases"
@@ -472,11 +556,11 @@ if PATH="$fake_bin:$PATH" \
 fi
 rm -f -- "$fixture_dir/wrong-edge-role"
 [[ -e "$wrong_role_state_dir/in-progress.env" ]] ||
-  fail 'image-attestation failure did not preserve the deployment journal'
+  fail 'image-label failure did not preserve the deployment journal'
 grep -Fq 'pull edge signaling turn' "$fixture_dir/docker.log" ||
-  fail 'image attestation ran before pulling the selected digests'
+  fail 'image label verification ran before pulling the selected digests'
 if grep -Fq 'up -d --wait' "$fixture_dir/docker.log"; then
-  fail 'deployment started containers after image-attestation failure'
+  fail 'deployment started containers after image-label failure'
 fi
 if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
   fail 'failed deployment left a transaction snapshot behind'
@@ -516,7 +600,7 @@ rm -f -- "$fixture_dir/mutate-snapshot-after-pull"
   fail 'snapshot-integrity failure did not preserve the deployment journal'
 if grep -Fq 'image-inspect ' "$fixture_dir/docker.log" ||
    grep -Fq 'up -d --wait' "$fixture_dir/docker.log"; then
-  fail 'changed deployment snapshot reached image attestation or container startup'
+  fail 'changed deployment snapshot reached image-label verification or container startup'
 fi
 
 relay_env="$fixture_dir/production-relay.env"
@@ -541,7 +625,10 @@ rm -f -- "$fixture_dir/flock-fail"
 [[ ! -e "$state_dir/in-progress.env" ]] ||
   fail 'lock rejection mutated deployment state'
 
+: >"$fixture_dir/gh.log"
 PATH="$fake_bin:$PATH" ops/linux/deploy.sh --state-dir "$state_dir" "$env_b" >/dev/null
+[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '6' ]] ||
+  fail 'second deployment did not verify both current and candidate image provenance'
 current_edge=$(round_ops_read_env_value "$state_dir/current.env" ROUND_EDGE_IMAGE)
 previous_edge=$(round_ops_read_env_value "$state_dir/previous.env" ROUND_EDGE_IMAGE)
 [[ "$current_edge" == "ghcr.io/ljkhyeong/round-edge@sha256:$digest_d" ]] ||
@@ -560,20 +647,23 @@ if PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
 fi
 rm -f -- "$fixture_dir/wrong-edge-role"
 [[ -e "$state_dir/rollback-in-progress.env" && -e "$state_dir/rollback-origin.env" ]] ||
-  fail 'image-attestation failure did not preserve the rollback journal'
+  fail 'image-label failure did not preserve the rollback journal'
 grep -Fq 'pull edge signaling turn' "$fixture_dir/docker.log" ||
-  fail 'rollback image attestation ran before pulling the selected digests'
+  fail 'rollback image label verification ran before pulling the selected digests'
 if grep -Fq 'up -d --wait' "$fixture_dir/docker.log"; then
-  fail 'rollback started containers after image-attestation failure'
+  fail 'rollback started containers after image-label failure'
 fi
 if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
-  fail 'failed rollback image attestation left a transaction snapshot behind'
+  fail 'failed rollback image label verification left a transaction snapshot behind'
 fi
+: >"$fixture_dir/gh.log"
 PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
   --state-dir "$state_dir" \
   --confirm ROLLBACK_ROUND \
   "$env_b" \
   >/dev/null
+[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '3' ]] ||
+  fail 'rollback did not verify all three signed image provenance statements'
 
 rollback_env="$fixture_dir/rollback-runtime.env"
 cp -- "$env_b" "$rollback_env"

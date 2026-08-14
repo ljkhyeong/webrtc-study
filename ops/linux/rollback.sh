@@ -192,7 +192,7 @@ round_ops_compose_with_file \
   pull edge signaling turn
 round_ops_assert_state_compatible \
   "$target_file" "$snapshot_env_file" "$snapshot_compose_file"
-round_ops_verify_release_images "$target_file" "$snapshot_env_file"
+round_ops_verify_release_image_labels "$target_file" "$snapshot_env_file"
 round_ops_compose_with_file \
   "$snapshot_compose_file" "$snapshot_env_file" \
   "$edge_image" "$signaling_image" "$turn_image" \
