@@ -3,7 +3,6 @@ package com.personal.round.signaling;
 import com.personal.round.auth.RoomAccess;
 import com.personal.round.auth.RoomAccessPolicy;
 import com.personal.round.auth.ParticipationGrant;
-import com.personal.round.config.MonotonicTicker;
 import com.personal.round.config.SignalingExecutionConfig;
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.protocol.ClientMessage;
@@ -30,6 +29,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -87,7 +87,7 @@ public class SignalingService implements SmartLifecycle {
 	private final SignalingMetrics metrics;
 	private final RoomAccessPolicy roomAccessPolicy;
 	private final Clock clock;
-	private final MonotonicTicker monotonicTicker;
+	private final LongSupplier monotonicTicker;
 	private final int maxRoomSize;
 	private final int maxConnections;
 	private final long heartbeatIntervalNanos;
@@ -116,7 +116,7 @@ public class SignalingService implements SmartLifecycle {
 			@Qualifier(SignalingExecutionConfig.OUTBOUND_EXECUTOR_BEAN)
 			ExecutorService outboundExecutor,
 			Clock clock,
-			MonotonicTicker monotonicTicker) {
+			LongSupplier monotonicTicker) {
 		this.serverMessageEncoder = serverMessageEncoder;
 		this.metrics = metrics;
 		this.roomAccessPolicy = roomAccessPolicy;
@@ -169,7 +169,7 @@ public class SignalingService implements SmartLifecycle {
 			boolean accepted;
 			synchronized (monitor) {
 				long nowMillis = clock.millis();
-				long nowNanos = monotonicTicker.readNanos();
+				long nowNanos = monotonicTicker.getAsLong();
 				RoomAccess.Lease accessLease = roomAccess.openLease(nowMillis, nowNanos);
 				removeExpiredInactiveClientStatesLocked(nowNanos);
 				if (accessLease.isExpired(nowMillis, nowNanos)) {
@@ -248,7 +248,7 @@ public class SignalingService implements SmartLifecycle {
 		boolean accepted = false;
 		synchronized (monitor) {
 			long nowMillis = clock.millis();
-			long nowNanos = monotonicTicker.readNanos();
+			long nowNanos = monotonicTicker.getAsLong();
 			Peer peer = connectedPeers.get(session.getId());
 			if (peer != null && peer.connected) {
 				if (closeForExpiredAuthorizationLocked(
@@ -397,7 +397,7 @@ public class SignalingService implements SmartLifecycle {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
 			long nowMillis = clock.millis();
-			long nowNanos = monotonicTicker.readNanos();
+			long nowNanos = monotonicTicker.getAsLong();
 			for (Peer peer : new ArrayList<>(connectedPeers.values())) {
 				if (!peer.connected) {
 					continue;
@@ -453,7 +453,7 @@ public class SignalingService implements SmartLifecycle {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
 			long nowMillis = clock.millis();
-			long nowNanos = monotonicTicker.readNanos();
+			long nowNanos = monotonicTicker.getAsLong();
 			for (Peer peer : new ArrayList<>(connectedPeers.values())) {
 				if (!peer.connected) {
 					continue;
@@ -813,7 +813,7 @@ public class SignalingService implements SmartLifecycle {
 		return closeForExpiredAuthorizationLocked(
 				peer,
 				clock.millis(),
-				monotonicTicker.readNanos(),
+				monotonicTicker.getAsLong(),
 				workPlan,
 				null);
 	}
@@ -990,7 +990,7 @@ public class SignalingService implements SmartLifecycle {
 		peer.role = null;
 		peer.announced = false;
 		if (peer.connected) {
-			peer.unjoinedSinceNanos = monotonicTicker.readNanos();
+			peer.unjoinedSinceNanos = monotonicTicker.getAsLong();
 		}
 		LinkedHashMap<String, Peer> room = rooms.get(roomId);
 		if (room == null || room.remove(peer.peerId) == null) {
@@ -1083,7 +1083,7 @@ public class SignalingService implements SmartLifecycle {
 				|| closeForExpiredAuthorizationLocked(
 						peer,
 						clock.millis(),
-						monotonicTicker.readNanos(),
+						monotonicTicker.getAsLong(),
 						workPlan,
 						pendingOutbound)) {
 			return false;
@@ -1203,7 +1203,7 @@ public class SignalingService implements SmartLifecycle {
 				if (frame.message() instanceof PingMessage
 						&& peer.heartbeatState == HeartbeatState.PING_QUEUED) {
 					peer.heartbeatState = HeartbeatState.AWAITING_PONG;
-					peer.pingSentAtNanos = monotonicTicker.readNanos();
+					peer.pingSentAtNanos = monotonicTicker.getAsLong();
 				}
 			}
 

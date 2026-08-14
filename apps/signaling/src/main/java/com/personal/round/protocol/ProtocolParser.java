@@ -14,7 +14,6 @@ import tools.jackson.databind.node.ObjectNode;
 public class ProtocolParser {
 
 	public static final int PROTOCOL_VERSION = 3;
-	public static final int MAX_ROOM_ID_LENGTH = RoomIdFormat.MAX_LENGTH;
 	public static final int MAX_PEER_ID_LENGTH = 128;
 	public static final int MAX_DISPLAY_NAME_LENGTH = 64;
 	public static final int MAX_REQUEST_ID_LENGTH = 128;
@@ -203,7 +202,7 @@ public class ProtocolParser {
 	}
 
 	private static String roomId(JsonNode input, String path) {
-		String value = boundedString(input, MAX_ROOM_ID_LENGTH, path);
+		String value = requiredText(input, path);
 		if (!RoomIdFormat.isCanonical(value)) {
 			throw fail(
 					path,

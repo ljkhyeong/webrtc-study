@@ -1,6 +1,7 @@
 package com.personal.round.config;
 
 import java.time.Clock;
+import java.util.function.LongSupplier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -13,7 +14,7 @@ public class TimeConfig {
 	}
 
 	@Bean
-	MonotonicTicker monotonicTicker() {
+	LongSupplier monotonicTicker() {
 		return System::nanoTime;
 	}
 }

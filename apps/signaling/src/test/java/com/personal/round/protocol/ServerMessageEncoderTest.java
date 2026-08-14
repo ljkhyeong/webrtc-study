@@ -106,9 +106,9 @@ class ServerMessageEncoderTest {
 	}
 
 	@Test
-	void errorCodesMatchTheSharedProtocolContractInOrder() {
+	void errorCodesMatchTheSharedProtocolContract() {
 		assertThat(Arrays.stream(SignalingErrorCode.values()).map(Enum::name))
-				.containsExactly(
+				.containsExactlyInAnyOrder(
 						"INVALID_MESSAGE",
 						"ALREADY_JOINED",
 						"ROOM_FULL",

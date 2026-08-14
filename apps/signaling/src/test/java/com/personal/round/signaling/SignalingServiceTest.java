@@ -10,7 +10,6 @@ import static org.mockito.Mockito.when;
 import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.auth.RoomAccessPolicy;
 import com.personal.round.auth.RoundAuthProperties;
-import com.personal.round.config.MonotonicTicker;
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.config.TestProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
@@ -40,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.AfterEach;
@@ -3427,7 +3427,7 @@ class SignalingServiceTest {
 		}
 	}
 
-	private static final class MutableTicker implements MonotonicTicker {
+	private static final class MutableTicker implements LongSupplier {
 
 		private final AtomicLong nanos = new AtomicLong();
 
@@ -3436,7 +3436,7 @@ class SignalingServiceTest {
 		}
 
 		@Override
-		public long readNanos() {
+		public long getAsLong() {
 			return nanos.get();
 		}
 	}

@@ -3,6 +3,7 @@ package com.personal.round.auth;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import org.springframework.util.Assert;
 
 public record ParticipationGrant(
 		String subject,
@@ -18,11 +19,11 @@ public record ParticipationGrant(
 			ParticipationGrant.class.getName() + ".verified";
 
 	public ParticipationGrant {
-		requireText(subject, "subject");
-		requireText(studyId, "studyId");
-		requireText(roomId, "roomId");
+		Assert.hasText(subject, "subject must not be blank");
+		Assert.hasText(studyId, "studyId must not be blank");
+		Assert.hasText(roomId, "roomId must not be blank");
 		Objects.requireNonNull(role, "role must not be null");
-		requireText(tokenId, "tokenId");
+		Assert.hasText(tokenId, "tokenId must not be blank");
 		Objects.requireNonNull(issuedAt, "issuedAt must not be null");
 		Objects.requireNonNull(expiresAt, "expiresAt must not be null");
 	}
@@ -46,12 +47,6 @@ public record ParticipationGrant(
 	public String toString() {
 		return "ParticipationGrant[role=%s, issuedAt=%s, expiresAt=%s]"
 				.formatted(role, issuedAt, expiresAt);
-	}
-
-	private static void requireText(String value, String field) {
-		if (value == null || value.isBlank()) {
-			throw new IllegalArgumentException(field + " must not be blank");
-		}
 	}
 
 	public enum Role {

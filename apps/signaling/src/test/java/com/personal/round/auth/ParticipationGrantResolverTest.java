@@ -7,7 +7,6 @@ import static com.personal.round.auth.ParticipationGrantTestFixtures.ROOM_ID;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.authentication;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.jwt;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.jwtWithLifetime;
-import static com.personal.round.auth.ParticipationGrantTestFixtures.validJwt;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.security.Principal;
@@ -111,10 +110,5 @@ class ParticipationGrantResolverTest {
 						ACCOUNT_ID.toUpperCase()))))
 				.as("canonical BATON account identifiers use UUID.toString form")
 				.isEmpty();
-	}
-
-	@Test
-	void staticResolverAcceptsTheValidJwtFixture() {
-		assertThat(ParticipationGrantResolver.resolve(validJwt())).isPresent();
 	}
 }

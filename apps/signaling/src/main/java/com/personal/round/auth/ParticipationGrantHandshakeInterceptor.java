@@ -3,7 +3,6 @@ package com.personal.round.auth;
 import com.personal.round.config.RoundRoutes;
 import java.util.Map;
 import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.PathContainer;
 import org.springframework.http.server.ServerHttpRequest;
@@ -16,7 +15,7 @@ import org.springframework.web.util.pattern.PathPatternParser;
 public final class ParticipationGrantHandshakeInterceptor implements HandshakeInterceptor {
 
 	private static final PathPattern SIGNALING_PATH =
-			new PathPatternParser().parse(RoundRoutes.BATON_SIGNAL_TEMPLATE);
+			PathPatternParser.defaultInstance.parse(RoundRoutes.BATON_SIGNAL_TEMPLATE);
 
 	private final ParticipationGrantResolver grantResolver;
 
@@ -36,9 +35,7 @@ public final class ParticipationGrantHandshakeInterceptor implements HandshakeIn
 		String pathRoomId = match == null ? null : match.getUriVariables().get("roomId");
 		if (grant == null || !grant.allows(pathRoomId)) {
 			response.setStatusCode(HttpStatus.FORBIDDEN);
-			response.getHeaders().set(
-					HttpHeaders.CACHE_CONTROL,
-					CacheControl.noStore().getHeaderValue());
+			response.getHeaders().setCacheControl(CacheControl.noStore());
 			return false;
 		}
 		attributes.put(ParticipationGrant.SESSION_ATTRIBUTE, grant);

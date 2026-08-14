@@ -27,12 +27,8 @@ final class SensitiveHeaderRedactingServletServerHttpRequest
 		super(new SensitiveHandshakeHttpServletRequest(
 				delegate.getServletRequest(),
 				principal));
-		HttpHeaders redactedHeaders = new HttpHeaders();
-		delegate.getHeaders().forEach((name, values) -> {
-			if (!isSensitive(name)) {
-				redactedHeaders.put(name, List.copyOf(values));
-			}
-		});
+		HttpHeaders redactedHeaders = HttpHeaders.copyOf(delegate.getHeaders());
+		SENSITIVE_HEADERS.forEach(redactedHeaders::remove);
 		headers = HttpHeaders.readOnlyHttpHeaders(redactedHeaders);
 	}
 
