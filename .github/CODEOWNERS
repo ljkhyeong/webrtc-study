@@ -1,5 +1,5 @@
-# Deployment destinations, credential-using workflows, and host lifecycle
-# scripts require an explicit owner review before default-branch promotion.
+# 배포 대상, credential 사용 workflow, host 생명주기 script는 default branch로 승격하기 전에
+# 명시적인 owner review가 필요합니다.
 /.github/CODEOWNERS @ljkhyeong
 /.github/workflows/ @ljkhyeong
 /.github/workflows/external-turn-probe.yml @ljkhyeong

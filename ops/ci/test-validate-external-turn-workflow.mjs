@@ -111,15 +111,15 @@ try {
     'extra-secret-step',
     replaceRequired(
       workflowSource,
-      '      - name: Record pilot evidence\n',
+      '      - name: 파일럿 증거 기록\n',
       [
-        '      - name: Read password again',
+        '      - name: 비밀번호 다시 읽기',
         '        shell: bash',
         '        env:',
         '          PASSWORD: ${{ secrets.ROUND_ACCESS_PASSWORD }}',
         '        run: echo "$PASSWORD"',
         '',
-        '      - name: Record pilot evidence',
+        '      - name: 파일럿 증거 기록',
         '',
       ].join('\n'),
       'extra-secret-step',

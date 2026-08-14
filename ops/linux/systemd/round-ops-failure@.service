@@ -1,5 +1,5 @@
 [Unit]
-Description=Record a critical ROUND operations failure for %i
+Description=%i의 치명적인 ROUND 운영 실패 기록
 
 [Service]
 Type=oneshot
@@ -8,4 +8,4 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 CapabilityBoundingSet=
-ExecStart=/usr/bin/logger --stderr --priority daemon.crit --tag round-ops ROUND operation failed: %i
+ExecStart=/usr/bin/logger --stderr --priority daemon.crit --tag round-ops ROUND 운영 실패: %i

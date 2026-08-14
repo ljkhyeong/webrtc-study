@@ -52,7 +52,7 @@
 
 	handle /round-ui/* {
 		header Cache-Control "no-store"
-		respond "Open ROUND from an authorized BATON study room." 404
+		respond "권한이 있는 BATON 스터디룸에서 ROUND를 여세요." 404
 	}
 
 	handle /room/* {

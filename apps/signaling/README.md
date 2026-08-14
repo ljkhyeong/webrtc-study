@@ -1,86 +1,72 @@
-# ROUND signaling operations
+# ROUND signaling 운영
 
-The signaling process always exposes:
+signaling 프로세스는 항상 다음 경로를 노출합니다.
 
-- `GET /healthz` for the legacy transport-only health check
-- `GET /actuator/health/liveness` and `/actuator/health/readiness`
-- `GET /actuator/prometheus` and `/actuator/metrics`
+- 기존 전송 계층 전용 상태 확인을 위한 `GET /healthz`
+- `GET /actuator/health/liveness`와 `/actuator/health/readiness`
+- `GET /actuator/prometheus`와 `/actuator/metrics`
 
-Room operations depend on `ROUND_AUTH_MODE`:
+방 관련 작업은 `ROUND_AUTH_MODE`에 따라 달라집니다.
 
-- `standalone`: WebSocket `/signal` and `POST /api/turn-credentials`
-- `baton`: authenticated WebSocket `/rooms/{roomId}/signal` and
+- `standalone`: WebSocket `/signal`과 `POST /api/turn-credentials`
+- `baton`: 인증된 WebSocket `/rooms/{roomId}/signal`과
   `POST /api/rooms/{roomId}/turn-credentials`
 
-The BATON-owned
-`POST /round/rooms/{roomId}/participation-grant/refresh` route is deliberately
-not exposed by this process and must never be proxied to it. BATON rechecks
-identity and study membership before rotating the room-scoped cookie.
+BATON이 소유한 `POST /round/rooms/{roomId}/participation-grant/refresh` 경로는 이
+프로세스에서 의도적으로 노출하지 않으며 절대로 이 프로세스로 proxy해서는 안 됩니다. BATON은
+방 범위 cookie를 회전하기 전에 신원과 스터디 멤버십을 다시 확인합니다.
 
-The `production` Spring profile fails during startup unless every configured
-`ALLOWED_ORIGINS` entry is an exact HTTPS origin. Wildcard, `null`, and HTTP
-origins are forbidden in that profile. BATON mode independently rejects
-wildcard, `null`, and non-loopback HTTP origins even when the profile is absent.
+설정된 모든 `ALLOWED_ORIGINS` 항목이 정확한 HTTPS Origin이 아니면 `production` Spring
+profile은 시작 중 실패합니다. 이 profile에서는 wildcard, `null`, HTTP Origin을 허용하지
+않습니다. BATON 모드는 해당 profile이 없어도 wildcard, `null`, loopback이 아닌 HTTP
+Origin을 별도로 거부합니다.
 
-## Runtime safety
+## 런타임 안전성
 
-`server.shutdown=graceful` is combined with an early signaling lifecycle stop.
-Once shutdown starts, new handshakes receive HTTP 503 and any handshake that
-won the race is closed with WebSocket status 1001. Existing sessions are also
-closed with 1001 and room state is cleared idempotently.
+`server.shutdown=graceful`은 signaling 생명주기 조기 중지와 함께 사용합니다. 종료가 시작되면
+새 handshake에는 HTTP 503을 반환하고 경합에서 먼저 완료된 handshake는 WebSocket 상태 1001로
+닫습니다. 기존 session도 1001로 닫고 방 상태는 멱등하게 정리합니다.
 
-An unjoined socket is closed after `UNJOINED_SOCKET_TIMEOUT_MS` (15 seconds by
-default). Incoming frames use a 10-second fixed window and are admitted in
-session, effective client address, then global order. Defaults are 600 frames
-per session, 1,200 across one client address, and 3,600 globally. A session
-overage closes only that abusive connection; client and global overages drop
-the frame without closing an arbitrary peer. An inactive client window remains
-until its fixed window expires, so disconnecting and reconnecting from the same
-address cannot reset quota. Expired inactive windows are removed on connect and
-by the periodic unjoined-session sweep. The map is bounded by
-`MAX_SIGNALING_CONNECTIONS`; capacity pressure evicts only inactive
-least-recently-used entries and never active client state.
-`MAX_SIGNALING_CONNECTIONS` defaults to 1,000 and
-`MAX_SIGNALING_CONNECTIONS_PER_CLIENT` defaults to 12.
-Because the same scheduler enforces idle authorization expiry, its configurable
-interval is validated between 100 milliseconds and one second.
+입장하지 않은 socket은 `UNJOINED_SOCKET_TIMEOUT_MS`가 지나면 닫습니다(기본 15초). 수신
+frame에는 10초 고정 window를 사용하며 세션, 유효 client 주소, 서버 전체 순서로 허용 여부를
+판정합니다. 기본값은 세션당 600 frame, 하나의 client 주소 전체에서 1,200 frame, 서버 전체에서
+3,600 frame입니다. 세션이 한도를 넘으면 해당 악성 연결만 닫고, client 또는 서버 전체가 한도를
+넘으면 임의의 peer를 닫지 않고 frame을 버립니다. 비활성 client window는 고정 window가 만료될
+때까지 유지하므로 같은 주소에서 연결을 끊었다가 다시 연결해도 quota를 초기화할 수 없습니다.
+만료된 비활성 window는 연결 시점과 주기적인 미입장 session sweep에서 제거합니다. map 크기는
+`MAX_SIGNALING_CONNECTIONS`로 제한합니다. 용량이 부족하면 비활성 상태 중 가장 오래 사용되지
+않은 항목만 제거하며 활성 client 상태는 제거하지 않습니다. `MAX_SIGNALING_CONNECTIONS`의
+기본값은 1,000이고 `MAX_SIGNALING_CONNECTIONS_PER_CLIENT`의 기본값은 12입니다. 같은
+scheduler가 유휴 authorization 만료도 처리하므로 설정 가능한 주기는 100밀리초 이상 1초 이하인지
+검증합니다.
 
-In BATON mode, the verified grant becomes an immutable lease for the
-established WebSocket. ROUND checks the lease immediately after connection,
-before inbound quota consumption, before outbound enqueue, during heartbeat
-and pong handling, and in the one-second session sweep. Expiry uses both the
-grant's wall-clock `exp` and the remaining lifetime captured against a
-monotonic ticker at connection time, so a wall-clock rollback cannot extend
-the lease. An expired connection is removed through the normal idempotent
-disconnect path and closed with private status `4001` and exact reason
-`Participation grant expired`; an otherwise idle connection is closed within
-one sweep interval. The HTTP decoder uses the same injected clock with zero
-expiry skew; the grant-specific future-`iat` allowance remains 60 seconds.
-Standalone room access has no lease deadline.
+BATON 모드에서는 검증된 참여권이 연결된 WebSocket의 불변 lease가 됩니다. ROUND는 연결 직후,
+수신 quota 차감 전, 송신 enqueue 전, heartbeat와 pong 처리 중, 1초 주기의 session sweep에서
+lease를 확인합니다. 만료 판정에는 참여권의 wall-clock `exp`와 연결 시 monotonic ticker를 기준으로
+기록한 남은 수명을 모두 사용하므로 wall clock을 과거로 돌려도 lease가 연장되지 않습니다. 만료된
+연결은 일반적인 멱등 disconnect 경로로 제거한 뒤 private 상태 `4001`과 정확한 reason
+`Participation grant expired`로 닫습니다. 다른 활동이 없는 연결도 한 번의 sweep 주기 안에
+닫습니다. HTTP decoder는 expiry skew가 0인 동일한 주입 clock을 사용하며 참여권 전용 미래 `iat`
+허용 범위는 계속 60초입니다. Standalone 방 접근에는 lease deadline이 없습니다.
 
-BATON mode also reserves at most one in-flight or active WebSocket for the same
-participation-grant `jti`, and at most two for the same
-`(room_id, sub)`. The second participant-room slot permits one reconnect
-overlap only when BATON has issued a fresh `jti`. A replay of the same grant or
-a third participant-room socket receives HTTP 429; handshake admission never
-evicts an established socket. When the overlapping sockets attempt
-`room.join`, the newer connection sequence wins atomically. ROUND removes the
-older joined peer and closes it with private status `4002` and exact reason
-`Participation session superseded`; its admission reservation is retained
-until that terminal close attempt completes, then released exactly once even
-if the close reports an I/O failure. An older socket whose delayed join arrives
-last is closed instead. The browser treats `4002`
-as terminal so the two sockets cannot enter a reconnect takeover loop. The
-reservation otherwise remains owned until the socket closes, including while
-it is connected but not joined or after `room.leave`. Standalone mode retains
-only the server and client-IP limits.
+BATON 모드는 같은 참여권 `jti`마다 진행 중이거나 활성 상태인 WebSocket을 최대 하나, 같은
+`(room_id, sub)`마다 최대 두 개 예약합니다. 두 번째 참가자-방 슬롯은 BATON이 새 `jti`를 발급한
+경우에만 재연결 한 번이 겹치도록 허용합니다. 같은 참여권을 재사용하거나 세 번째 참가자-방
+socket을 열면 HTTP 429를 반환하며 handshake admission은 기존 socket을 내보내지 않습니다. 겹친
+socket들이 `room.join`을 시도하면 더 최신 connection sequence가 원자적으로 이깁니다. ROUND는
+입장해 있던 이전 peer를 제거하고 private 상태 `4002`와 정확한 reason
+`Participation session superseded`로 닫습니다. 해당 admission reservation은 이 terminal close
+시도가 완료될 때까지 유지한 뒤, close에서 I/O 실패를 보고하더라도 정확히 한 번 해제합니다.
+지연된 join이 나중에 도착한 이전 socket은 대신 닫습니다. 브라우저는 `4002`를 terminal 상태로
+처리하므로 두 socket이 재연결 takeover loop에 빠지지 않습니다. 그 밖의 경우에는 socket이 닫힐
+때까지 reservation을 계속 소유하며, 입장하지 않은 연결 상태나 `room.leave` 이후도 포함합니다.
+Standalone 모드에는 서버와 client IP 제한만 유지합니다.
 
-The client frame limit must be at least the session limit. The global limit
-must be at least twice the client limit so one client's two misaligned fixed
-windows cannot consume the server budget. The defaults retain a six-person ICE
-candidate burst while bounding sustained floods.
+client frame 제한은 세션 제한 이상이어야 합니다. 서버 전체 제한은 client 제한의 두 배
+이상이어야 하므로 한 client의 어긋난 고정 window 두 개가 서버 예산을 소진할 수 없습니다.
+기본값은 6명분의 ICE candidate burst를 허용하면서 지속적인 flood를 제한합니다.
 
-Micrometer publishes these signaling meters:
+Micrometer는 다음 signaling meter를 게시합니다.
 
 - `round.signaling.rooms.active`
 - `round.signaling.peers.connected`
@@ -100,43 +86,39 @@ Micrometer publishes these signaling meters:
 - `round.turn.credentials.rate_limited`
   (`scope=client|participant|global|client_state_capacity|participant_state_capacity`)
 
-Meter tags are deliberately bounded. Room IDs, display names, session/peer IDs,
-SDP, ICE candidates, Origin/header values, TURN shared secrets, and issued TURN
-credentials must never be logged or used as meter tags. Transport logs contain
-only a fixed message and the exception class. The authorization-close meter is
-an identity-free counter with no participant, room, or grant tag.
+meter tag는 의도적으로 제한된 값만 사용합니다. 방 ID, 표시 이름, session/peer ID, SDP, ICE
+candidate, Origin/header 값, TURN shared secret, 발급한 TURN credential은 절대로 기록하거나 meter
+tag로 사용해서는 안 됩니다. 전송 log에는 고정된 메시지와 예외 class만 포함합니다.
+authorization-close meter는 참가자, 방, 참여권 tag가 없는 identity-free counter입니다.
 
-## Coturn REST credentials
+## Coturn REST 자격 증명
 
-Set both `TURN_SHARED_SECRET` and comma-separated `TURN_URLS`, or leave both
-unset. A partial configuration fails startup without printing the secret. The
-optional `TURN_CREDENTIAL_TTL_SECONDS` defaults to 600 seconds (ten minutes).
+`TURN_SHARED_SECRET`과 쉼표로 구분한 `TURN_URLS`를 모두 설정하거나 둘 다 설정하지 않아야
+합니다. 일부만 설정하면 secret을 출력하지 않고 시작에 실패합니다. 선택 사항인
+`TURN_CREDENTIAL_TTL_SECONDS`의 기본값은 600초(10분)입니다.
 
-Credential issuance uses these additional bounded rate-limit settings:
+credential 발급에는 다음과 같은 추가 제한형 rate-limit 설정을 사용합니다.
 
-| Environment variable                                  | Default | Purpose                                                   |
-| ----------------------------------------------------- | ------: | --------------------------------------------------------- |
-| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`           |   `600` | Fixed issuance window                                     |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`             |    `12` | Successful issues per effective client address and window |
-| `TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS` |     `6` | BATON issues per `(room_id, sub)` and window              |
-| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS`      |    `24` | Successful issues across this server and window           |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`              | `10000` | Maximum effective-client windows retained in memory       |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS`         | `10000` | Maximum BATON participant-room windows retained in memory |
+| 환경 변수                                             |  기본값 | 목적                                               |
+| ----------------------------------------------------- | ------: | -------------------------------------------------- |
+| `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`           |   `600` | 고정 발급 구간                                     |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`             |    `12` | 구간당 유효 client 주소의 성공한 발급 수           |
+| `TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS` |     `6` | 구간당 BATON `(room_id, sub)`의 발급 수            |
+| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS`      |    `24` | 구간당 이 서버 전체의 성공한 발급 수               |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`              | `10000` | 메모리에 유지하는 유효 client window의 최대 개수   |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS`         | `10000` | 메모리에 유지하는 BATON 참가자-방 window 최대 개수 |
 
-The default ten-minute issuance window matches the ten-minute credential TTL.
-Twelve issues per address cover the initial issue and the scheduled refresh for
-all six room participants behind one NAT, while 24 global issues provide
-server-wide headroom. The global quota must be at least twice the per-client
-quota so one client cannot consume it across misaligned fixed-window
-boundaries. If operators change the credential TTL or browser refresh timing,
-they should review and normally align the issuance window and quotas as well.
-In BATON mode the issued credential is additionally capped at the participation
-grant's `exp`, so a longer TURN TTL cannot extend the grant's authority. BATON
-also applies a six-issue default window to the verified `(room_id, sub)` in the
-same atomic decision as the client and global limits. Fresh `jti` values or
-client addresses do not reset it. Standalone never creates participant state.
+기본 10분 발급 구간은 10분의 credential TTL과 일치합니다. 주소당 12회는 하나의 NAT 뒤에 있는 방
+참가자 6명 모두의 최초 발급과 예정된 갱신을 수용하며, 서버 전체 24회는 여유를 제공합니다. 서버
+전체 quota는 client별 quota의 두 배 이상이어야 하므로 한 client가 어긋난 고정 window 경계에서
+이를 소진할 수 없습니다. 운영자가 credential TTL이나 브라우저 갱신 시점을 변경하면 발급
+window와 quota도 검토하고 일반적으로 함께 맞춰야 합니다. BATON 모드에서 발급한 credential은
+참여권의 `exp`를 상한으로 추가 적용하므로 더 긴 TURN TTL로 참여권의 권한을 연장할 수 없습니다.
+BATON은 client 및 서버 전체 제한과 같은 원자적 판정에서 검증된 `(room_id, sub)`에도 기본 6회
+window를 적용합니다. 새 `jti` 값이나 client 주소로는 이를 초기화할 수 없습니다. Standalone은
+참가자 상태를 만들지 않습니다.
 
-The credential endpoint returns a no-store response:
+credential endpoint는 다음과 같은 no-store 응답을 반환합니다.
 
 ```json
 {
@@ -148,43 +130,32 @@ The credential endpoint returns a no-store response:
 }
 ```
 
-`expiresAt` is Unix epoch seconds for coturn and operational inspection.
-`refreshAfterSeconds` is calculated from the effective server-side lifetime,
-including a shorter BATON participation-grant boundary. The browser schedules
-renewal from that relative value with its monotonic clock and never subtracts
-its local wall clock from `expiresAt`. Every successful request receives a new
-username and credential, including separate browsers behind the same NAT. The
-endpoint accepts only POST requests with an exact same-origin `Origin`; when
-Fetch Metadata is present, `Sec-Fetch-Site` must also be `same-origin`. Once a
-BATON participant, effective client, or the server reaches its issuance limit,
-the endpoint returns an empty no-store HTTP 429 response with `Retry-After` set
-to the longest remaining whole seconds among the blocking windows.
-The metric `scope` identifies the exact window with the latest expiry. Exact
-ties prefer participant-state capacity, client-state capacity, global,
-participant, then client pressure so the most operationally significant cause
-remains visible.
+`expiresAt`은 coturn과 운영 점검에 사용하는 Unix epoch 초입니다. `refreshAfterSeconds`는 더 짧은
+BATON 참여권 경계를 포함한 유효 server-side 수명에서 계산합니다. 브라우저는 이 상대값과 자체
+monotonic clock으로 갱신을 예약하며 로컬 wall clock의 값을 `expiresAt`에서 빼지 않습니다. 같은
+NAT 뒤의 서로 다른 브라우저를 포함해 성공한 요청마다 새 username과 credential을 받습니다.
+endpoint는 정확히 same-origin인 `Origin`을 포함한 POST 요청만 허용합니다. Fetch Metadata가
+있으면 `Sec-Fetch-Site`도 `same-origin`이어야 합니다. BATON 참가자, 유효 client, 서버 중 하나가
+발급 한도에 도달하면 endpoint는 빈 no-store HTTP 429 응답을 반환하고 `Retry-After`에는 차단 중인
+window 가운데 남은 시간이 가장 긴 값의 정수 초를 설정합니다. metric의 `scope`는 만료 시점이 가장
+늦은 정확한 window를 나타냅니다. 완전히 같은 경우에는 participant-state capacity, client-state
+capacity, global, participant, client 압력 순서를 적용해 운영상 가장 중요한 원인이 계속 보이게
+합니다.
 
-Origin and Fetch Metadata checks prevent another website from spending a
-visitor's quota through a browser. In standalone mode they do not authenticate
-non-browser clients, which can construct these headers; the shared edge
-credential, issuance limits, and short TTL bound but do not remove that
-relay-exhaustion risk. BATON mode additionally requires a signed, room-scoped
-participation grant.
+Origin과 Fetch Metadata 검사는 다른 웹사이트가 브라우저를 통해 방문자의 quota를 소진하지 못하게
+합니다. standalone 모드에서 이 검사는 해당 header를 만들 수 있는 비브라우저 client를 인증하지
+않습니다. 공유 edge credential, 발급 제한, 짧은 TTL은 relay 고갈 위험을 제한하지만 제거하지는
+않습니다. BATON 모드는 서명된 방 범위 참여권을 추가로 요구합니다.
 
-When TURN is intentionally disabled, the endpoint returns an empty no-store
-HTTP 204 response so local STUN-only development does not create a false
-browser console error.
+TURN을 의도적으로 비활성화한 경우 endpoint는 빈 no-store HTTP 204 응답을 반환하므로 로컬 STUN
+전용 개발에서 잘못된 브라우저 console 오류가 생기지 않습니다.
 
-Only issuance counters are stored per effective client and BATON
-participant-room identity; credentials are never cached. Both fixed-window maps
-are bounded and reject new identities at capacity without evicting an active
-quota. Client addresses, participant subjects, room IDs, and credentials are
-not logged or attached to metrics. With
-`server.forward-headers-strategy=native`, Tomcat accepts `X-Forwarded-For` only
-from its configured internal proxy CIDRs. The production signaling port
-therefore remains private behind Caddy, while a direct untrusted peer cannot
-choose its rate-limit key with a spoofed header.
+유효 client와 BATON 참가자-방 identity마다 발급 counter만 저장하며 credential은 절대로 cache하지
+않습니다. 두 고정 window map은 모두 크기가 제한되어 있으며 용량에 도달하면 활성 quota를 내보내지
+않고 새로운 identity를 거부합니다. client 주소, 참가자 subject, 방 ID, credential은 log나 metric에
+포함하지 않습니다. `server.forward-headers-strategy=native`를 사용하면 Tomcat은 설정된 내부 proxy
+CIDR에서 온 `X-Forwarded-For`만 허용합니다. 따라서 프로덕션 signaling 포트는 Caddy 뒤에서 private
+상태로 유지되며 신뢰하지 않는 peer가 직접 연결해 위조 header로 rate-limit key를 선택할 수 없습니다.
 
-Room IDs accepted by the Java boundary are exactly three four-character
-segments separated by hyphens, using
-`abcdefghjkmnpqrstuvwxyz23456789` (for example `abcd-efgh-jkmp`).
+Java 경계가 허용하는 방 ID는 `abcdefghjkmnpqrstuvwxyz23456789`를 사용하고 하이픈으로 구분한
+4문자 segment 세 개로만 구성됩니다(예: `abcd-efgh-jkmp`).

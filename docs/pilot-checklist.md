@@ -1,423 +1,354 @@
-# ROUND pilot release checklist
+# ROUND 파일럿 릴리스 체크리스트
 
-ROUND is ready for a study-group pilot only after every P0 item below has an
-owner, a date, and a passing result. Automated browser media stubs are useful
-for regression testing, but they do not replace the real-device checks in this
-document.
+아래의 모든 P0 항목에 담당자, 날짜, 통과 결과가 기록된 뒤에만 ROUND를 스터디 그룹 파일럿에
+사용할 수 있습니다. 자동화한 브라우저 미디어 stub은 회귀 테스트에 유용하지만 이 문서의 실제
+장치 검사를 대체하지는 않습니다.
 
-This checklist validates the tracked standalone Compose. `compose.yml` is
-intentionally fixed to `ROUND_AUTH_MODE=standalone`; do not mark these checks as
-evidence for a BATON deployment. A BATON-backed study must also pass the
-separate integration gate at the end of this document.
+이 체크리스트는 저장소에서 관리하는 standalone Compose를 검증합니다. `compose.yml`은 의도적으로
+`ROUND_AUTH_MODE=standalone`으로 고정되어 있으므로 이 검사 결과를 BATON 배포의 증거로 표시하지
+마세요. BATON을 사용하는 스터디는 이 문서 마지막의 별도 연동 gate도 통과해야 합니다.
 
-Record which standalone edge policy is under test. The Linux production
-`compose.yml` keeps the static app, `/signal`, and `/api/turn-credentials` behind
-one shared Basic Auth boundary. The temporary macOS Docker Desktop override uses
-`Caddyfile.macos-pilot`: only the UI and static assets remain behind Basic Auth,
-while the two browser transport routes deliberately bypass it for mobile
-compatibility. Items explicitly labelled **Linux standalone** or **macOS
-pilot** apply only to that topology; never copy evidence from one policy to the
-other.
+검사할 standalone edge 정책을 기록하세요. Linux 프로덕션 `compose.yml`은 정적 앱, `/signal`,
+`/api/turn-credentials`를 하나의 공유 Basic Auth 경계 뒤에 둡니다. 임시 macOS Docker Desktop
+override는 `Caddyfile.macos-pilot`을 사용합니다. 이 구성에서는 UI와 정적 asset만 Basic Auth 뒤에
+남고 두 브라우저 전송 경로는 모바일 호환성을 위해 의도적으로 이를 우회합니다. **Linux
+standalone** 또는 **macOS pilot**이라고 명시한 항목은 해당 토폴로지에만 적용합니다. 한 정책의
+증거를 다른 정책에 복사하지 마세요.
 
-## Release candidate
+## 릴리스 후보
 
-- [ ] The release commit is immutable and tagged.
-- [ ] The tag-triggered release workflow passes and records normal edge,
-      relay-only edge, signaling, and TURN manifest digests.
-- [ ] `npm run check` passes from a clean checkout.
-- [ ] The production Compose configuration renders without missing variables.
-- [ ] `ops/ci/validate-deployment.sh` passes with temporary dummy fixtures.
-- [ ] The previous immutable image set is available for rollback. For the first
-      pilot, service shutdown and DNS removal are recorded as the explicit
-      rollback until a known-good deployed image set exists.
-- [ ] The signaling service is configured as exactly one replica.
+- [ ] 릴리스 commit은 변경할 수 없으며 tag가 지정되어 있습니다.
+- [ ] tag로 시작하는 릴리스 workflow가 통과하고 일반 edge, relay-only edge, signaling, TURN
+      manifest digest를 기록합니다.
+- [ ] 깨끗한 checkout에서 `npm run check`가 통과합니다.
+- [ ] 프로덕션 Compose 구성이 누락된 변수 없이 rendering됩니다.
+- [ ] 임시 dummy fixture로 `ops/ci/validate-deployment.sh`가 통과합니다.
+- [ ] 이전 immutable 이미지 세트를 rollback에 사용할 수 있습니다. 첫 파일럿에서는 알려진 정상
+      배포 이미지 세트가 생길 때까지 서비스 종료와 DNS 제거를 명시적인 rollback으로 기록합니다.
+- [ ] signaling 서비스가 정확히 replica 하나로 설정되어 있습니다.
 
-## Public network path
+## 공개 네트워크 경로
 
-- [ ] HTTP redirects to HTTPS.
-- [ ] HTTP Basic Auth is never accepted over plaintext HTTP; the web app loads
-      over HTTPS without mixed-content warnings.
-- [ ] **Both topologies:** missing or incorrect shared credentials receive `401`
-      for the UI and static assets, while `/healthz` remains public.
-- [ ] **Linux standalone only:** missing or incorrect shared credentials also
-      receive `401` for `/signal` and `/api/turn-credentials`.
-- [ ] **macOS pilot only:** `/signal` and `/api/turn-credentials` are confirmed
-      to bypass Basic Auth by policy. Do not require or record `401` from these
-      routes. Record acceptance of this short-lived exposure and confirm that
-      the application still rejects foreign, missing, wildcard, and non-HTTPS
-      Origins.
-- [ ] More than 96 credential-bearing requests from one client network within
-      five minutes receive `429`, while headerless challenges and `/healthz` do
-      not consume that expensive-authentication budget.
-- [ ] On the actual pilot host with at least two logical CPUs, send 96
-      simultaneous, syntactically valid Basic requests whose usernames are all
-      distinct and confirmed absent from the Caddy user map, and whose passwords
-      are also distinct, targeting a UI/static path that requires Basic Auth in
-      the selected topology. This guarantees the cost-14 unknown-user fake-hash
-      path instead of the cheaper configured-user cost-12 path. Run the burst
-      while six physical participants maintain the representative peak session,
-      preferably with the relay-only image so TURN and signaling carry their
-      pilot peak together. Record edge and host CPU, memory, container restarts,
-      direct signaling `/healthz`, public `/healthz`, and a correctly
-      authenticated request from a second network. All six participants must
-      keep audio, video, and chat connected; both health requests and the
-      second-network request must complete within five seconds; no container may
-      restart or be OOM-killed; and all measurements must return to their
-      pre-test range within three minutes after the invalid requests finish.
-      Record that the attacking network remains intentionally limited for the
-      remainder of its five-minute window. Accept this standalone-pilot residual
-      risk explicitly before exposure.
-- [ ] **Linux standalone only:** Basic-authenticated
-      `wss://<domain>/signal` accepts the exact production Origin, and the
-      Basic-authenticated TURN credential POST succeeds.
-- [ ] **macOS pilot only:** `wss://<domain>/signal` and the TURN credential POST
-      accept the exact production Origin without depending on an Authorization
-      header. Supplying the shared credential from a probe does not prove that
-      these bypassed routes authenticated it.
-- [ ] A foreign, missing, wildcard, or non-HTTPS Origin is rejected at the
-      signaling application boundary.
-- [ ] The signaling container port is not reachable directly from the public
-      internet.
-- [ ] Only the bcrypt cost-12 password hash is stored in the deployment env; the
-      plaintext shared password is absent from Git, images, shell history, and
-      logs, and `Authorization` is removed before proxying to signaling.
-- [ ] The shared credential was delivered out of band, its leak-and-rotation
-      procedure was rehearsed, and the team accepts that it is temporary until
-      BATON identity and study-membership authorization replace it. The macOS
-      pilot also records that this credential protects only UI/static delivery,
-      not its two transport routes.
-- [ ] TURN shared secrets are absent from Git, image history, browser bundles,
-      access logs, and application logs.
-- [ ] Visiting an invite path leaves no room code in Caddy access logs, while
-      every route—including shared-auth `401` and rate-limit `429`—remains
-      visible by status with headers and URI removed and client addresses
-      hashed.
+- [ ] HTTP가 HTTPS로 redirect됩니다.
+- [ ] 평문 HTTP에서는 HTTP Basic Auth를 절대로 허용하지 않으며 웹 앱이 mixed-content 경고 없이
+      HTTPS로 로드됩니다.
+- [ ] **두 토폴로지 모두:** 공유 credential이 없거나 올바르지 않으면 UI와 정적 asset에 `401`을
+      반환하고 `/healthz`는 공개 상태를 유지합니다.
+- [ ] **Linux standalone 전용:** 공유 credential이 없거나 올바르지 않으면 `/signal`과
+      `/api/turn-credentials`에도 `401`을 반환합니다.
+- [ ] **macOS pilot 전용:** 정책상 `/signal`과 `/api/turn-credentials`가 Basic Auth를 우회하는지
+      확인합니다. 이 경로에 `401`을 요구하거나 기록하지 마세요. 이 단기 노출의 수용 여부를
+      기록하고 애플리케이션이 외부, 누락, wildcard, HTTPS가 아닌 Origin을 계속 거부하는지
+      확인합니다.
+- [ ] 한 client 네트워크에서 credential을 포함한 요청을 5분 안에 96회 넘게 보내면 `429`를
+      반환하고, header가 없는 challenge와 `/healthz`는 이 고비용 인증 예산을 소모하지 않습니다.
+- [ ] 실제 파일럿 host에 논리 CPU가 2개 이상인 상태에서, 선택한 토폴로지에서 Basic Auth가 필요한
+      UI/정적 경로를 대상으로 문법상 올바른 Basic 요청 96개를 동시에 보냅니다. username은 모두
+      서로 다르고 Caddy 사용자 map에 없는 것을 확인하며 password도 모두 다르게 합니다. 이렇게
+      하면 더 저렴한 설정 사용자 cost-12 경로 대신 cost-14 미등록 사용자 fake-hash 경로를
+      확실히 사용합니다. 실제 참가자 6명이 대표적인 peak session을 유지하는 동안 burst를
+      실행하고, TURN과 signaling이 파일럿 peak를 함께 처리하도록 가능하면 relay-only 이미지를
+      사용합니다. edge와 host의 CPU 및 memory, container restart, signaling 직접 `/healthz`, 공개
+      `/healthz`, 두 번째 네트워크에서 올바르게 인증한 요청을 기록합니다. 참가자 6명 모두의 audio,
+      video, chat 연결이 유지되어야 하고, 두 health 요청과 두 번째 네트워크의 요청은 5초 안에
+      완료되어야 하며, container가 restart되거나 OOM-kill되어서는 안 됩니다. 잘못된 요청이 끝난
+      뒤 3분 안에 모든 측정값이 테스트 전 범위로 돌아와야 합니다. 공격 네트워크가 남은 5분
+      window 동안 의도적으로 계속 제한된다는 점을 기록합니다. 노출 전에 이 standalone 파일럿의
+      잔여 위험을 명시적으로 수용합니다.
+- [ ] **Linux standalone 전용:** Basic Auth로 인증한 `wss://<domain>/signal`이 정확한 프로덕션
+      Origin을 허용하고 Basic Auth로 인증한 TURN credential POST가 성공합니다.
+- [ ] **macOS pilot 전용:** `wss://<domain>/signal`과 TURN credential POST가 Authorization
+      header에 의존하지 않고 정확한 프로덕션 Origin을 허용합니다. probe에서 공유 credential을
+      제공해도 이 우회 경로가 이를 인증했다는 증거가 되지는 않습니다.
+- [ ] 외부, 누락, wildcard, HTTPS가 아닌 Origin을 signaling 애플리케이션 경계에서 거부합니다.
+- [ ] 공개 인터넷에서 signaling container 포트에 직접 접근할 수 없습니다.
+- [ ] 배포 env에는 bcrypt cost-12 password hash만 저장합니다. 평문 공유 password는 Git, 이미지,
+      shell history, log에 없어야 하며 signaling으로 proxy하기 전에 `Authorization`을 제거합니다.
+- [ ] 공유 credential을 별도 경로로 전달했고 유출 및 회전 절차를 예행했으며, BATON의 신원 및
+      스터디 멤버십 authorization이 이를 대체할 때까지 임시 수단이라는 점을 팀이 수용합니다.
+      macOS pilot에서는 이 credential이 두 전송 경로가 아닌 UI/정적 전달만 보호한다는 점도
+      기록합니다.
+- [ ] TURN shared secret은 Git, 이미지 history, 브라우저 bundle, access log, 애플리케이션 log에
+      없습니다.
+- [ ] 초대 경로를 방문해도 Caddy access log에 방 코드가 남지 않습니다. 동시에 공유 인증 `401`과
+      rate-limit `429`를 포함한 모든 경로는 header와 URI를 제거하고 client 주소를 hash한 상태로
+      status를 통해 계속 관측할 수 있습니다.
 
-## Relay-only test
+## Relay-only 테스트
 
-Run this test from two physical devices on different networks. One device
-should use home Wi-Fi and the other cellular tethering or another ISP.
+서로 다른 네트워크에 있는 물리 장치 두 대에서 이 테스트를 실행합니다. 한 장치는 가정용 Wi-Fi를,
+다른 장치는 cellular tethering이나 다른 ISP를 사용해야 합니다.
 
-- [ ] Deploy the release workflow's `-relay` edge image without changing the
-      signaling or TURN image digests.
-- [ ] Both participants can see and hear each other.
-- [ ] Ordered DataChannel chat works in both directions.
-- [ ] Each sender leaves **전송 확인 중** only after the remote browser displays the message;
-      closing or timing out one recipient produces a partial or failed receive-confirmation state
-      without resending to recipients that already acknowledged it.
-- [ ] Every participant reloads the web client after a release; a deliberately stale pre-ACK
-      client fails closed at the 45-second receive-confirmation deadline rather than showing false
-      success.
-- [ ] `RTCPeerConnection.getStats()` shows a selected candidate pair whose
-      local candidate type is `relay`.
-- [ ] UDP relay succeeds.
-- [ ] TCP or TLS relay fallback succeeds when UDP is blocked.
+- [ ] signaling 또는 TURN 이미지 digest를 변경하지 않고 릴리스 workflow의 `-relay` edge 이미지를
+      배포합니다.
+- [ ] 두 참가자가 서로 보고 들을 수 있습니다.
+- [ ] 순서가 보장되는 DataChannel chat이 양방향으로 동작합니다.
+- [ ] 원격 브라우저에 메시지가 표시된 뒤에만 각 발신자의 **전송 확인 중** 상태가 끝납니다. 한
+      수신자가 연결을 닫거나 timeout되면 이미 ACK한 수신자에게 다시 전송하지 않고 부분 또는 실패
+      수신 확인 상태가 됩니다.
+- [ ] 릴리스 후 모든 참가자가 web client를 reload합니다. 의도적으로 남겨 둔 ACK 이전 버전의
+      client는 성공을 잘못 표시하지 않고 45초 수신 확인 deadline에 fail-closed합니다.
+- [ ] `RTCPeerConnection.getStats()`에서 선택된 candidate pair의 local candidate type이 `relay`로
+      표시됩니다.
+- [ ] UDP relay가 성공합니다.
+- [ ] UDP를 차단했을 때 TCP 또는 TLS relay fallback이 성공합니다.
 
-## Permission and device behavior
+## 권한 및 장치 동작
 
-- [ ] Opening an invite link does not request media permission or open a
-      WebSocket before an explicit user action.
-- [ ] The prejoin screen previews the selected camera.
-- [ ] The selected camera and microphone are used after joining.
-- [ ] Screen sharing prompts only after the user presses **화면 공유**, replaces the outbound camera
-      for the remote participant, and restores the camera after both the ROUND stop button and the
-      browser's native stop-sharing action.
-- [ ] Denying or cancelling the display picker leaves the existing camera call usable and shows a
-      Korean next action without ending the room.
-- [ ] Camera denial or absence still permits an audio-only join.
-- [ ] Microphone denial or absence still permits a video-only join.
-- [ ] The user can retry device setup or intentionally join without media.
-- [ ] Permission, missing-device, and busy-device errors give a Korean next
-      action instead of a raw browser exception.
-- [ ] Acoustic echo is tested with only one active microphone/speaker pair per
-      physical space, or with headphones. Browser echo cancellation being
-      enabled is not accepted as proof: mute or disconnect a second nearby
-      device and confirm the audible echo disappears.
+- [ ] 명시적인 사용자 동작 전에 초대 링크를 열어도 미디어 권한을 요청하거나 WebSocket을 열지
+      않습니다.
+- [ ] 입장 전 화면에서 선택한 camera를 미리 보여 줍니다.
+- [ ] 입장 후 선택한 camera와 microphone을 사용합니다.
+- [ ] 사용자가 **화면 공유**를 누른 뒤에만 화면 공유 prompt가 표시되고, 원격 참가자에게 보내는
+      camera를 대체하며, ROUND의 공유 중지 버튼과 브라우저의 기본 공유 중지 동작 모두에서 camera를
+      복원합니다.
+- [ ] display picker를 거부하거나 취소해도 기존 camera 통화를 계속 사용할 수 있고 방을 끝내지 않은
+      채 한국어로 다음 동작을 안내합니다.
+- [ ] camera를 거부했거나 사용할 수 없어도 audio-only 입장을 허용합니다.
+- [ ] microphone을 거부했거나 사용할 수 없어도 video-only 입장을 허용합니다.
+- [ ] 사용자가 장치 설정을 다시 시도하거나 의도적으로 미디어 없이 입장할 수 있습니다.
+- [ ] 권한, 장치 누락, 장치 사용 중 오류는 가공하지 않은 브라우저 예외 대신 한국어로 다음 동작을
+      안내합니다.
+- [ ] 물리 공간마다 활성 microphone/speaker pair를 하나만 두거나 headphone을 사용해 acoustic echo를
+      테스트합니다. 브라우저 echo cancellation 활성화만으로 통과한 것으로 보지 않습니다. 가까운
+      두 번째 장치를 mute하거나 연결 해제해 들리던 echo가 사라지는지 확인합니다.
 
-## Host moderation behavior
+## 방장 관리 동작
 
-- [ ] The configured standalone host key is different from the shared Basic Auth password, contains
-      at least 32 random bytes, and exists in the runtime env only as its SHA-256 digest. The
-      plaintext is absent from Git, images, URLs, browser storage, logs, and shell history.
-- [ ] Operators accept that one standalone digest covers every room on this signaling instance and
-      have rehearsed rotating it, restarting signaling, and reconnecting admitted hosts after a leak.
-- [ ] A valid host can turn off a different participant's microphone or camera, and both browsers
-      show the resulting state and a clear moderation notice.
-- [ ] A participant, an invalid host key, a self-target, a host target, a departed target, and a
-      different-room target are rejected without changing any media state.
-- [ ] No UI or protocol path can remotely turn on another person's microphone, camera, or screen.
-      The affected participant can deliberately turn the disabled device back on.
-- [ ] Disabling video while the target shares a screen stops display capture and leaves the restored
-      camera disabled.
-- [ ] The team accepts that a modified mesh client can ignore a disable request; stronger hostile
-      participant enforcement is deferred until kick/ban or SFU-owned media forwarding exists.
+- [ ] 설정한 standalone 방장 key는 공유 Basic Auth password와 달라야 하고 최소 32개의 random
+      byte를 포함해야 하며, runtime env에는 SHA-256 digest로만 존재해야 합니다. 평문은 Git, 이미지,
+      URL, 브라우저 storage, log, shell history에 없어야 합니다.
+- [ ] 운영자는 하나의 standalone digest가 이 signaling instance의 모든 방에 적용된다는 점을
+      수용하고, 유출 시 이를 회전한 뒤 signaling을 restart하고 허용된 방장을 다시 연결하는 절차를
+      예행했습니다.
+- [ ] 유효한 방장이 다른 참가자의 microphone이나 camera를 끌 수 있고, 두 브라우저 모두 변경된
+      상태와 명확한 관리 알림을 표시합니다.
+- [ ] 참가자, 올바르지 않은 방장 key, 자기 자신인 대상, 방장인 대상, 나간 대상, 다른 방의 대상을
+      거부하며 어떤 미디어 상태도 변경하지 않습니다.
+- [ ] 어떤 UI나 프로토콜 경로도 다른 사람의 microphone, camera, screen을 원격으로 켤 수 없습니다.
+      영향을 받은 참가자는 비활성화된 장치를 의도적으로 다시 켤 수 있습니다.
+- [ ] 대상이 화면을 공유하는 동안 video를 비활성화하면 display capture가 중지되고 복원된 camera는
+      비활성 상태로 남습니다.
+- [ ] 변조한 mesh client는 비활성화 요청을 무시할 수 있음을 팀이 수용합니다. 악의적인 참가자를 더
+      강하게 제어하는 기능은 kick/ban이나 SFU가 소유하는 미디어 전달이 생길 때까지 미룹니다.
 
-## Recovery behavior
+## 복구 동작
 
-- [ ] Signaling connect, room join, and peer connection each have a bounded
-      timeout; no spinner waits forever.
-- [ ] Switching between Wi-Fi and a hotspot recovers without a page refresh.
-- [ ] A ten-second network interruption recovers within fifteen seconds after
-      connectivity returns.
-- [ ] Restarting the signaling process triggers bounded automatic re-entry.
-- [ ] Recovery does not leave duplicate participant tiles or ghost room slots.
-- [ ] Choosing **Leave** cancels all reconnect and ICE-recovery timers.
-- [ ] Exhausted retries show **Reconnect** and **Leave** actions.
+- [ ] signaling 연결, 방 입장, peer 연결에는 각각 제한된 timeout이 있으며 어떤 spinner도 무한정
+      기다리지 않습니다.
+- [ ] Wi-Fi와 hotspot 사이를 전환해도 페이지를 새로고침하지 않고 복구됩니다.
+- [ ] 10초 동안 네트워크가 끊긴 뒤 연결이 돌아오면 15초 안에 복구됩니다.
+- [ ] signaling 프로세스를 restart하면 제한된 자동 재입장이 시작됩니다.
+- [ ] 복구 후 중복 참가자 tile이나 ghost 방 슬롯이 남지 않습니다.
+- [ ] **나가기**를 선택하면 모든 재연결 및 ICE 복구 timer를 취소합니다.
+- [ ] 모든 재시도를 소진하면 **재연결**과 **나가기** 동작을 표시합니다.
 
-## Browser and device matrix
+## 브라우저 및 장치 조합표
 
-Record the exact browser and OS versions used.
+사용한 브라우저와 OS의 정확한 version을 기록합니다.
 
-| Device               | Browser     | 2-person | 4-person | 6-person | Background/foreground |
-| -------------------- | ----------- | -------- | -------- | -------- | --------------------- |
-| Desktop or laptop    | Chrome/Edge | [ ]      | [ ]      | [ ]      | N/A                   |
-| macOS                | Safari      | [ ]      | [ ]      | [ ]      | N/A                   |
-| iPhone/iPad          | Safari      | [ ]      | [ ]      | [ ]      | [ ]                   |
-| Android phone/tablet | Chrome      | [ ]      | [ ]      | [ ]      | [ ]                   |
+| 장치                  | 브라우저    | 2명 | 4명 | 6명 | 백그라운드/포그라운드 |
+| --------------------- | ----------- | --- | --- | --- | --------------------- |
+| 데스크톱 또는 노트북  | Chrome/Edge | [ ] | [ ] | [ ] | N/A                   |
+| macOS                 | Safari      | [ ] | [ ] | [ ] | N/A                   |
+| iPhone/iPad           | Safari      | [ ] | [ ] | [ ] | [ ]                   |
+| Android 휴대폰/태블릿 | Chrome      | [ ] | [ ] | [ ] | [ ]                   |
 
-For every checked cell, verify join, remote audio/video, screen share start/stop, chat, mute, camera
-toggle, host disable-only controls, leave, rejoin, invite-copy behavior, and zero unexpected console
-errors.
+표시한 모든 칸에서 입장, 원격 audio/video, 화면 공유 시작/중지, chat, mute, camera 전환, 방장의
+비활성화 전용 제어, 나가기, 재입장, 초대 복사 동작을 확인하고 예상하지 못한 console 오류가 하나도
+없는지 검증합니다.
 
-## Capacity and soak
+## 용량 및 장시간 테스트
 
-- [ ] Two and four participants remain connected for at least thirty minutes.
-- [ ] Six physical participants remain connected for at least ninety minutes.
-- [ ] A two-participant relay-only session remains connected for four hours.
-- [ ] Six relay-only participants can join concurrently without coturn
-      `user-quota`, `total-quota`, or relay-port exhaustion; observed allocation
-      counts are recorded before changing the defaults.
-- [ ] Six-person video uses the documented low-bandwidth capture policy and
-      keeps audio intelligible.
-- [ ] RTT, packet loss, outbound bitrate, process memory, open file
-      descriptors, and TURN egress are recorded.
-- [ ] No browser crash, unbounded queue growth, ghost peer, or unexplained
-      disconnect occurs.
+- [ ] 참가자 2명과 4명이 각각 최소 30분 동안 연결을 유지합니다.
+- [ ] 실제 참가자 6명이 최소 90분 동안 연결을 유지합니다.
+- [ ] 참가자 2명의 relay-only session이 4시간 동안 연결을 유지합니다.
+- [ ] relay-only 참가자 6명이 coturn의 `user-quota`, `total-quota`, relay 포트 고갈 없이 동시에
+      입장할 수 있고, 기본값을 변경하기 전에 관측한 allocation 수를 기록합니다.
+- [ ] 6명 video가 문서화한 저대역폭 capture 정책을 사용하고 알아들을 수 있는 audio를 유지합니다.
+- [ ] RTT, packet loss, 송신 bitrate, 프로세스 memory, 열린 file descriptor, TURN egress를
+      기록합니다.
+- [ ] 브라우저 crash, 무제한 queue 증가, ghost peer, 원인을 설명할 수 없는 disconnect가 발생하지
+      않습니다.
 
-## Operations
+## 운영
 
-- [ ] `docker compose up -d --wait --wait-timeout 120` passes the local
-      signaling, edge, and TURN-listener startup gates.
-- [ ] The external TURN probe passes UDP, TCP, and TLS from a network outside
-      the TURN host and its NAT using monitor inputs from a secret store and a
-      freshly issued short-lived TURN credential.
-- [ ] **Linux standalone only:** the probe's HTTPS credential fetch is recorded
-      as evidence that the shared Basic Auth gate accepted the monitor account.
-- [ ] **macOS pilot only:** the same probe is recorded as exact-Origin credential
-      issuance plus coturn authentication and relay evidence—not as shared Basic
-      Auth evidence. The static UI `401` and transport Origin rejection are
-      verified separately.
-- [ ] Default-branch rules require pull-request and code-owner review for the
-      external TURN workflow, target properties, probe, TLS verification and
-      resolver scripts, and workflow contract validator/tests; self-review and
-      administrator bypass are disabled where the repository plan supports
-      those controls.
-- [ ] `external-pilot-target.properties` contains the reviewed public ROUND
-      origin, TURN host, and `coturn/coturn@sha256` digest rather than the
-      committed example hosts.
-- [ ] The `round-pilot` GitHub environment allows only the default branch,
-      stores only the shared-access and optional private-CA values as secrets,
-      and requires a reviewer with self-review disabled where supported.
-- [ ] The manual `External TURN pilot probe` workflow passes for the
-      operator-declared annotated release tag. Its run summary records the tag
-      object, release and workflow commits, exact targets, probe image digest,
-      and authenticated UDP, TCP, and TLS results.
-- [ ] The recorded release and tag object are independently matched to the
-      deployed revision or immutable image publication evidence; a `v*` tag
-      ruleset prevents release tag update and deletion.
-- [ ] The TLS probe verifies both the certificate chain and
-      `TURN_PROBE_HOST`; an untrusted certificate or hostname mismatch makes the
-      deployment gate fail before relay traffic is attempted. A private CA is
-      snapshotted and used by both the host verifier and coturn utility
-      container rather than disabling verification.
-- [ ] A nonzero external TURN probe result is enforced as a manual pilot stop
-      condition until an automated promotion gate or production alert exists.
-- [ ] Edge `/healthz` and the local STUN listener are not accepted as proof of
-      public TURN authentication or relay-media health.
-- [ ] Active rooms, peers, rejected connections and joins, invalid or
-      session/client/global-limited frames, queue overflow, and heartbeat
-      closures are observable without logging room IDs, names, SDP, ICE
-      candidates, or chat text.
-- [ ] A graceful SIGTERM rejects new joins, closes existing sockets with a
-      restart-appropriate code, and exits within the configured timeout.
-- [ ] The previous image can be restored and smoke-tested in five minutes.
+- [ ] `docker compose up -d --wait --wait-timeout 120`이 로컬 signaling, edge, TURN listener의 시작
+      gate를 통과합니다.
+- [ ] TURN host와 그 NAT 외부의 네트워크에서 secret store의 monitor 입력과 새로 발급한 단기 TURN
+      credential을 사용해 외부 TURN probe의 UDP, TCP, TLS 검사가 통과합니다.
+- [ ] **Linux standalone 전용:** probe의 HTTPS credential fetch를 공유 Basic Auth gate가 monitor
+      account를 허용했다는 증거로 기록합니다.
+- [ ] **macOS pilot 전용:** 같은 probe를 정확한 Origin의 credential 발급과 coturn 인증 및 relay의
+      증거로 기록하며 공유 Basic Auth의 증거로 기록하지 않습니다. 정적 UI의 `401`과 전송 Origin
+      거부는 별도로 검증합니다.
+- [ ] 기본 branch 규칙이 외부 TURN workflow, target property, probe, TLS 검증 및 resolver script,
+      workflow 계약 validator/test에 pull request와 code owner review를 요구합니다. 저장소 plan이
+      해당 제어를 지원하는 경우 self-review와 관리자 우회를 비활성화합니다.
+- [ ] `external-pilot-target.properties`에는 commit된 예시 host 대신 검토한 공개 ROUND Origin, TURN
+      host, `coturn/coturn@sha256` digest가 들어 있습니다.
+- [ ] `round-pilot` GitHub environment는 기본 branch만 허용하고, 공유 접근 값과 선택적인 private CA
+      값만 secret으로 저장하며, 지원되는 경우 self-review가 비활성화된 reviewer를 요구합니다.
+- [ ] 수동 `External TURN pilot probe` workflow가 운영자가 선언한 annotated 릴리스 tag에서
+      통과합니다. 실행 요약에는 tag object, 릴리스와 workflow commit, 정확한 target, probe 이미지
+      digest, 인증된 UDP, TCP, TLS 결과를 기록합니다.
+- [ ] 기록한 릴리스와 tag object를 배포 revision 또는 immutable 이미지 게시 증거와 별도로
+      대조합니다. `v*` tag ruleset은 릴리스 tag의 갱신과 삭제를 막습니다.
+- [ ] TLS probe가 certificate chain과 `TURN_PROBE_HOST`를 모두 검증합니다. 신뢰하지 않는
+      certificate나 hostname 불일치는 relay traffic을 시도하기 전에 배포 gate를 실패시킵니다.
+      검증을 비활성화하는 대신 private CA를 snapshot하고 host verifier와 coturn utility container가
+      모두 사용합니다.
+- [ ] 자동 promotion gate나 프로덕션 alert가 생길 때까지 0이 아닌 외부 TURN probe 결과를 수동
+      파일럿 중단 조건으로 강제합니다.
+- [ ] edge `/healthz`와 로컬 STUN listener를 공개 TURN 인증이나 relay media 상태의 증거로 인정하지
+      않습니다.
+- [ ] 방과 peer의 활성 수, 거부한 연결과 입장, 잘못되었거나 session/client/global 제한을 받은
+      frame, queue overflow, heartbeat 종료를 방 ID, 이름, SDP, ICE candidate, chat text를 기록하지
+      않고 관측할 수 있습니다.
+- [ ] graceful SIGTERM은 새 입장을 거부하고 기존 socket을 restart에 적합한 code로 닫은 뒤 설정된
+      timeout 안에 종료됩니다.
+- [ ] 이전 이미지를 5분 안에 복원하고 smoke test할 수 있습니다.
 
-## Pilot stages
+## 파일럿 단계
 
-1. Run a two-to-three-person pilot with the maintainer present.
-2. Fix every P0 issue and repeat the failed scenario.
-3. Run a full study session with the intended group, up to six people.
-4. Promote only if the full session completes without a manual page refresh or
-   an unexplained media loss.
+1. maintainer가 함께 있는 상태에서 2~3명 파일럿을 실행합니다.
+2. 모든 P0 문제를 수정하고 실패한 scenario를 반복합니다.
+3. 의도한 그룹과 최대 6명의 전체 스터디 session을 실행합니다.
+4. 수동 페이지 새로고침이나 원인을 설명할 수 없는 미디어 손실 없이 전체 session이 끝난 경우에만
+   promotion합니다.
 
-Recording, persistent chat, accounts, hostile-client media enforcement, and rooms larger than six
-are explicitly outside this pilot gate. BATON integration is outside the
-standalone gate above and has its own required checks below.
+녹화, 영속 chat, account, 악의적인 client의 미디어 제어, 6명보다 큰 방은 명시적으로 이 파일럿
+gate의 범위 밖입니다. BATON 연동은 위의 standalone gate 범위 밖이며 아래의 필수 검사를 별도로
+적용합니다.
 
-## BATON integration gate
+## BATON 연동 gate
 
-Run these checks against the BATON-owned edge and a separately deployed ROUND
-instance. Do not change the bundled standalone Compose to perform them.
+BATON이 소유한 edge와 별도로 배포한 ROUND instance를 대상으로 다음 검사를 실행합니다. 이를
+실행하려고 bundle된 standalone Compose를 변경하지 마세요.
 
-### 2026-07-31 local rehearsal evidence (not production approval)
+### 2026-07-31 로컬 리허설 증거(프로덕션 승인 아님)
 
-- [x] Production images, Caddy local-CA HTTPS, mock OIDC, real MySQL session and
-      active OWNER/MEMBER memberships, BATON RS256/JWK, BATON-mode web/signaling,
-      and local coturn were composed behind the BATON-owned edge.
-- [x] Two isolated Chromium identities completed refresh 200, TURN credential
-      200, WSS entry, relay-only nominated UDP candidate pairs, bidirectional
-      audio/video traffic, acknowledged chat, remote media-state propagation,
-      and normal leave.
-- [x] The hardened lifecycle re-ran with one read-only TURN secret mount for
-      Spring `configtree`; coturn copied the same secret into its tmpfs runtime
-      config. The secret was absent from
-      container argv, environment, and logs, and cleanup proved zero remaining
-      project containers, volumes, and networks.
-- [x] The local safety suite rejects unsafe/symlinked/forged state, Compose
-      2.24.3, stale volumes/networks, ambient Compose overrides, and failed
-      cleanup; SIGINT/SIGTERM return 130/143.
-- [ ] This local evidence does not cover real Google OIDC, Naver OAuth 2.0,
-      local verified-email login, identity linking that preserves one BATON
-      `Account.id`, public DNS/ACME,
-      physical media devices, public TURN/NAT/firewall behavior, TCP/TLS relay
-      fallback, external networks, key rotation, two full grant lifetimes,
-      long-session stability, or six-person load.
+- [x] 프로덕션 이미지, Caddy local-CA HTTPS, mock OIDC, 실제 MySQL session과 활성 OWNER/MEMBER
+      membership, BATON RS256/JWK, BATON 모드 web/signaling, 로컬 coturn을 BATON 소유 edge 뒤에
+      구성했습니다.
+- [x] 격리된 Chromium identity 두 개가 refresh 200, TURN credential 200, WSS 입장, relay-only로
+      선택된 UDP candidate pair, 양방향 audio/video traffic, ACK된 chat, 원격 미디어 상태 전파,
+      정상 나가기를 완료했습니다.
+- [x] 강화된 생명주기를 Spring `configtree`용 read-only TURN secret mount 하나로 다시
+      실행했습니다. coturn은 같은 secret을 tmpfs runtime config에 복사했습니다. container argv,
+      environment, log에 secret이 없었고, 정리 후 남아 있는 project container, volume, network가
+      하나도 없음을 확인했습니다.
+- [x] 로컬 안전성 suite는 안전하지 않거나 symlink되었거나 위조된 상태, Compose 2.24.3, stale
+      volume/network, 주위 Compose override, 실패한 정리를 거부하며 SIGINT/SIGTERM은 130/143을
+      반환합니다.
+- [ ] 이 로컬 증거에는 실제 Google OIDC, Naver OAuth 2.0, 로컬 verified-email login, 하나의 BATON
+      `Account.id`를 유지하는 identity 연결, 공개 DNS/ACME, 실제 미디어 장치, 공개
+      TURN/NAT/firewall 동작, TCP/TLS relay fallback, 외부 네트워크, key 회전, 참여권 수명 두 번,
+      장시간 session 안정성, 6명 부하가 포함되지 않습니다.
 
-The unchecked production gate below remains authoritative.
+아래의 미완료 프로덕션 gate가 계속 최종 기준입니다.
 
-- [ ] BATON has a real authenticated user identity and current study-membership
-      authorization. The grant `sub` is the canonical, non-reassigned BATON
-      `Account.id`; Google OIDC `sub`, Naver profile ID, email, a shared access
-      key, display name, or other client claim is not used as `sub`.
-- [ ] Real Google, Naver, and verified local-email accounts each complete grant
-      refresh, TURN issuance, and WSS entry. Explicitly linking those identities
-      to one BATON account preserves the same JWT `sub`; changing an email or
-      linked login provider does not create a new ROUND participant.
-- [ ] The ROUND deployment uses `ROUND_AUTH_MODE=baton`, the exact BATON
-      issuer, `aud=round`, the production HTTPS JWK Set URI, a maximum grant
-      lifetime of at most five minutes, and BATON's exact HTTPS origin. Removing
-      any required verifier setting makes startup fail.
-- [ ] BATON signs grants with `RS256`, includes the signing key's `kid` in the
-      JOSE header, and keeps the private key absent from ROUND. ROUND receives
-      only the public JWK Set. A rehearsed rotation publishes the new key before
-      issuance switches and keeps both public keys available until the previous
-      grant lifetime and clock skew have elapsed.
-- [ ] BATON issues the grant only as an `HttpOnly`, `Secure`,
-      `SameSite=Strict` cookie scoped to
-      `/round/rooms/{roomId}` with no `Domain` attribute. Tokens are absent from
-      URLs, browser storage, proxy logs, application logs, and monitoring labels.
-- [ ] The edge maps `/round/rooms/{roomId}/signal` to
-      `/rooms/{roomId}/signal` and
-      `/round/rooms/{roomId}/turn-credentials` to
-      `/api/rooms/{roomId}/turn-credentials`, preserving the room ID,
-      WebSocket upgrade, original `Origin`, and cookie. It leaves
-      `/round/rooms/{roomId}/participation-grant/refresh` in BATON and never
-      proxies that path to ROUND.
-- [ ] The BATON-owned web bundle is built with `VITE_ROUND_AUTH_MODE=baton`
-      and no signaling or TURN endpoint override. A direct invite completes
-      Account-session and room-participation preflight before rendering prejoin
-      or allowing any media request; explicit entry uses only the three room-scoped
-      public paths and never the standalone endpoints.
-- [ ] A preflight `401` offers BATON login with only canonical
-      `/room/{roomId}` as `returnTo`; a `403` returns to BATON without a login
-      loop. Neither response body, CSRF token, participation cookie, nor JWT is
-      rendered or put in a URL.
-- [ ] Preflight and active-room startup reuse one single-flight grant manager.
-      Mounting the active room before `refreshAfterSeconds` does not issue a
-      second refresh, signing operation, or quota debit.
-- [ ] Waiting in prejoin past `refreshAfterSeconds` triggers authorization again
-      before camera, microphone, or media-less join. A later `401`, `403`, or
-      `404` leaves the active room without a 30-second refresh loop, and an
-      unsupported auth mode cannot render landing or prejoin.
-- [ ] A BATON alias entered by one account is not prefilled for the next account
-      from account-agnostic browser storage.
-- [ ] Only hashed `/round-ui/assets/*` is cached immutable. `/room/*` HTML is
-      `no-store`, and `/round-ui/` returns a no-store 404 without standalone
-      room creation or invite-code controls.
-- [ ] The edge discards client-supplied forwarding headers, sets the canonical
-      HTTPS host and client address itself, and applies a bounded pre-auth rate
-      limit to all three room-scoped public paths.
-- [ ] Refresh requires an authenticated BATON session, rechecks current study
-      membership, exact same-origin `Origin`, and
-      `Sec-Fetch-Site: same-origin`, and exposes no CORS access. Success rotates
-      a host-only Strict cookie with a fresh `jti` and expiry, returns only
-      numeric `expiresAt` and `refreshAfterSeconds`, and sets
-      `Cache-Control: no-store`. No JWT reaches JavaScript, URLs, or logs.
-- [ ] Concurrent grant checks share one refresh request. The browser schedules
-      `refreshAfterSeconds` from a monotonic relative clock rather than
-      subtracting its wall clock from `expiresAt`.
-- [ ] TURN issuance returns a numeric server-derived `refreshAfterSeconds` and
-      the browser schedules it from a monotonic receipt deadline; changing the
-      browser wall clock does not reject a fresh credential or postpone renewal.
-- [ ] Missing, malformed, expired, wrong-signature, wrong-issuer,
-      wrong-audience, and wrong-room grants are rejected for both WebSocket
-      upgrade and TURN credential issuance.
-- [ ] Invalid grants return no-store `401`, while a cold-cache JWK endpoint
-      outage returns an empty no-store `503` and is counted as infrastructure
-      unavailability rather than a credential failure.
-- [ ] A grant with `iat` more than 60 seconds in the future or with
-      `exp - iat` above `ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS` is rejected.
-- [ ] A valid grant cannot join a different room by changing the public path,
-      internal path, or `room.join` payload, and the rejected attempt creates
-      no room or participant state.
-- [ ] A foreign, missing, wildcard, or non-HTTPS Origin is rejected even when
-      the request carries an otherwise valid grant.
-- [ ] The Java signaling port is reachable only from the BATON edge and
-      monitoring plane. `/actuator/prometheus` and
-      `/actuator/metrics/**` are private, and any public health rule exposes
-      only transport-only `GET /healthz`.
-- [ ] The BATON page's `Permissions-Policy` permits its own camera, microphone,
-      and display-capture use, and `connect-src` permits the room-scoped WSS endpoint
-      without widening either policy to unrelated origins.
-- [ ] A valid participant can complete signaling, obtain and refresh TURN
-      credentials, refresh the grant before expiry, and remain in one room for
-      at least two full grant lifetimes. At the old socket's own `exp`, ROUND
-      closes it with `4001 / Participation grant expired`; the browser uses the
-      refreshed cookie to reconnect without a page refresh while preserving
-      local media and chat history.
-- [ ] BATON or its database can be unavailable without interrupting signaling
-      frames on an already-established socket only until its current grant
-      expires. Refresh and reconnect remain fail-closed, and the socket closes
-      at expiry, until BATON recovers.
-- [ ] An idle or unjoined socket is closed by `exp + 1s` at the latest, and
-      moving the ROUND wall clock backwards does not extend the monotonic lease
-      deadline. Expiry releases admission reservations, room membership,
-      outbound queue state, and gauges exactly once and emits one `peer.left`.
-- [ ] A second concurrent WebSocket using the same `jti` receives HTTP 429
-      without evicting the established socket. After that socket closes, the
-      same still-valid grant can connect again because the policy is not a
-      permanent one-time-token store.
-- [ ] Two sockets for the same `(room_id, sub)` can overlap only with distinct
-      freshly issued `jti` values, even if their `study_id` values differ. A
-      third receives HTTP 429, and closing either accepted socket makes one
-      slot available after that close attempt completes.
-- [ ] When both accepted sockets attempt `room.join`, only the newer connection
-      remains a participant. This succeeds even in a six-person room, keeps the
-      room size at six, emits `peer.left` before `peer.joined`, retains the old
-      reservation through the terminal close attempt, releases it once, and
-      closes the loser with
-      `4002 / Participation session superseded`. A delayed older join loses as
-      well, and its browser does not automatically reconnect.
-- [ ] TURN issuance for the same `(room_id, sub)` reaches the configured quota
-      even when BATON issues fresh `jti` values or the client address changes.
-      The rejected response is an empty HTTP 429 with `Cache-Control: no-store`
-      and a positive `Retry-After`; another room or participant remains
-      independent.
-- [ ] `round.turn.credentials.rate_limited` is collected with only the bounded
-      `scope` label. No participant, room, token, or address value appears in
-      metrics or logs, and the monitoring runbook distinguishes participant,
-      client, global, and state-capacity pressure.
-- [ ] `round.signaling.authorization.closes` is collected as an identity-free
-      counter without participant, room, `jti`, role, or address tags.
-- [ ] The BATON socket and TURN checks above do not change standalone behavior.
-      Standalone TURN issuance remains limited by client IP and server-wide
-      quota without creating participant quota state. Standalone creates no
-      grant-refresh request, lease timer, or authorization-close event.
-- [ ] The BATON integration probe obtains a real short-lived participation
-      grant, refreshes the room cookie without printing either token, confirms
-      a fresh `jti` and the exact no-store metadata response, and validates UDP,
-      TCP, and TLS relay paths. The standalone Basic Auth probe is not used as
-      proof of this boundary.
-- [ ] Rollout was rehearsed in the order BATON identity/membership/refresh and
-      edge, new web bundle, then ROUND active lease. Rollback was rehearsed in
-      the exact reverse order.
+- [ ] BATON에 실제 인증된 사용자 identity와 현재 스터디 멤버십 authorization이 있습니다. 참여권의
+      `sub`는 재할당되지 않는 canonical BATON `Account.id`입니다. Google OIDC `sub`, Naver profile
+      ID, email, 공유 access key, 표시 이름이나 다른 client claim을 `sub`로 사용하지 않습니다.
+- [ ] 실제 Google, Naver, 검증된 로컬 email account가 각각 참여권 refresh, TURN 발급, WSS 입장을
+      완료합니다. 이러한 identity를 하나의 BATON account에 명시적으로 연결하면 같은 JWT `sub`가
+      유지되고 email이나 연결된 login provider를 변경해도 새 ROUND 참가자가 생성되지 않습니다.
+- [ ] ROUND 배포는 `ROUND_AUTH_MODE=baton`, 정확한 BATON issuer, `aud=round`, 프로덕션 HTTPS JWK
+      Set URI, 최대 5분인 참여권 수명 상한, BATON의 정확한 HTTPS Origin을 사용합니다. 필수 verifier
+      설정을 하나라도 제거하면 시작에 실패합니다.
+- [ ] BATON은 참여권을 `RS256`으로 서명하고 JOSE header에 서명 key의 `kid`를 포함하며 private key를
+      ROUND에 제공하지 않습니다. ROUND는 공개 JWK Set만 받습니다. 예행한 회전에서는 발급 key를
+      바꾸기 전에 새 key를 게시하고, 이전 참여권 수명과 clock skew가 지날 때까지 두 공개 key를
+      모두 유지합니다.
+- [ ] BATON은 참여권을 `Domain` attribute 없이 `/round/rooms/{roomId}` 범위의 `HttpOnly`, `Secure`,
+      `SameSite=Strict` cookie로만 발급합니다. token은 URL, 브라우저 storage, proxy log,
+      애플리케이션 log, monitoring label에 없어야 합니다.
+- [ ] edge는 방 ID, WebSocket upgrade, 원래 `Origin`, cookie를 보존하면서
+      `/round/rooms/{roomId}/signal`을 `/rooms/{roomId}/signal`로,
+      `/round/rooms/{roomId}/turn-credentials`를 `/api/rooms/{roomId}/turn-credentials`로
+      mapping합니다. `/round/rooms/{roomId}/participation-grant/refresh`는 BATON에 남겨 두며 그
+      경로를 ROUND로 proxy하지 않습니다.
+- [ ] BATON 소유 web bundle을 `VITE_ROUND_AUTH_MODE=baton`으로 빌드하고 signaling 또는 TURN
+      endpoint override를 두지 않습니다. 직접 초대는 입장 전 화면을 rendering하거나 미디어 요청을
+      허용하기 전에 Account session과 방 참여 preflight를 완료합니다. 명시적인 입장에는 방 범위
+      공개 경로 세 개만 사용하고 standalone endpoint는 사용하지 않습니다.
+- [ ] preflight `401`은 canonical `/room/{roomId}`만 `returnTo`로 사용해 BATON login을 제안하고,
+      `403`은 login loop 없이 BATON으로 돌아갑니다. 어떤 응답 body, CSRF token, 참여 cookie, JWT도
+      rendering하거나 URL에 넣지 않습니다.
+- [ ] preflight와 활성 방 시작은 하나의 single-flight 참여권 manager를 재사용합니다.
+      `refreshAfterSeconds` 전에 활성 방을 mount해도 두 번째 refresh, 서명 작업, quota 차감이
+      발생하지 않습니다.
+- [ ] `refreshAfterSeconds`가 지난 뒤에도 입장 전 화면에서 기다리면 camera, microphone, 미디어 없는
+      입장 전에 authorization을 다시 수행합니다. 이후의 `401`, `403`, `404`는 30초 refresh loop
+      없이 활성 방에서 나가게 하며 지원하지 않는 auth mode는 landing이나 입장 전 화면을 rendering할
+      수 없습니다.
+- [ ] 한 account가 입력한 BATON alias를 account 구분이 없는 브라우저 storage에서 다음 account에
+      미리 채우지 않습니다.
+- [ ] hash가 붙은 `/round-ui/assets/*`만 immutable cache합니다. `/room/*` HTML은 `no-store`이고,
+      `/round-ui/`는 standalone 방 생성이나 초대 코드 제어 없이 no-store 404를 반환합니다.
+- [ ] edge는 client가 보낸 forwarding header를 버리고 canonical HTTPS host와 client 주소를 직접
+      설정하며 방 범위 공개 경로 세 개 모두에 제한된 pre-auth rate limit을 적용합니다.
+- [ ] refresh에는 인증된 BATON session이 필요하고, 현재 스터디 멤버십, 정확한 same-origin
+      `Origin`, `Sec-Fetch-Site: same-origin`을 다시 확인하며 CORS 접근을 노출하지 않습니다. 성공
+      시 새 `jti`와 만료 시점을 가진 host-only Strict cookie를 회전하고 숫자인 `expiresAt`과
+      `refreshAfterSeconds`만 반환하며 `Cache-Control: no-store`를 설정합니다. JWT는 JavaScript,
+      URL, log에 도달하지 않습니다.
+- [ ] 동시에 실행한 참여권 검사는 하나의 refresh 요청을 공유합니다. 브라우저는 wall clock 값을
+      `expiresAt`에서 빼는 대신 monotonic 상대 clock을 기준으로 `refreshAfterSeconds`를 예약합니다.
+- [ ] TURN 발급은 숫자인 server-derived `refreshAfterSeconds`를 반환하고 브라우저는 수신 시점의
+      monotonic deadline을 기준으로 예약합니다. 브라우저 wall clock을 변경해도 새 credential을
+      거부하거나 갱신을 미루지 않습니다.
+- [ ] 누락되었거나, 잘못된 형식이거나, 만료되었거나, 서명·issuer·audience·방이 잘못된 참여권을
+      WebSocket upgrade와 TURN credential 발급에서 모두 거부합니다.
+- [ ] 잘못된 참여권에는 no-store `401`을 반환합니다. cold-cache JWK endpoint 장애에는 빈 no-store
+      `503`을 반환하고 credential 실패가 아니라 infrastructure 가용성 문제로 집계합니다.
+- [ ] 미래 `iat`가 60초를 넘거나 `exp - iat`가 `ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS`보다 큰
+      참여권을 거부합니다.
+- [ ] 유효한 참여권은 공개 path, 내부 path, `room.join` payload를 변경해도 다른 방에 입장할 수
+      없고, 거부된 시도는 방이나 참가자 상태를 만들지 않습니다.
+- [ ] 요청에 다른 면에서 유효한 참여권이 있어도 외부, 누락, wildcard, HTTPS가 아닌 Origin을
+      거부합니다.
+- [ ] Java signaling 포트는 BATON edge와 monitoring plane에서만 접근할 수 있습니다.
+      `/actuator/prometheus`와 `/actuator/metrics/**`는 private이며 공개 health 규칙은 전송 계층
+      전용 `GET /healthz`만 노출합니다.
+- [ ] BATON 페이지의 `Permissions-Policy`는 자체 camera, microphone, display-capture 사용을
+      허용하고 `connect-src`는 정책 범위를 관계없는 Origin으로 넓히지 않으면서 방 범위 WSS
+      endpoint를 허용합니다.
+- [ ] 유효한 참가자는 signaling을 완료하고 TURN credential을 발급 및 갱신하며, 만료 전에 참여권을
+      갱신하고 참여권 수명의 두 배 이상 한 방에 머물 수 있습니다. 이전 socket 자체의 `exp`가 되면
+      ROUND는 `4001 / Participation grant expired`로 닫고 브라우저는 갱신된 cookie를 사용해 페이지
+      새로고침 없이 재연결하면서 로컬 미디어와 chat history를 유지합니다.
+- [ ] BATON이나 그 database를 사용할 수 없어도 이미 연결된 socket의 signaling frame은 현재
+      참여권이 만료될 때까지만 중단되지 않습니다. BATON이 복구될 때까지 refresh와 재연결은 계속
+      fail-closed하고 socket은 만료 시점에 닫힙니다.
+- [ ] 유휴 상태이거나 입장하지 않은 socket은 늦어도 `exp + 1s`까지 닫히며 ROUND wall clock을
+      과거로 옮겨도 monotonic lease deadline이 연장되지 않습니다. 만료 시 admission reservation,
+      방 멤버십, 송신 queue 상태, gauge를 정확히 한 번 해제하고 `peer.left`를 한 번 보냅니다.
+- [ ] 같은 `jti`를 사용하는 두 번째 동시 WebSocket은 기존 socket을 내보내지 않고 HTTP 429를
+      받습니다. 해당 socket이 닫힌 뒤에는 정책이 영구적인 one-time token 저장소가 아니므로 아직
+      유효한 같은 참여권으로 다시 연결할 수 있습니다.
+- [ ] 같은 `(room_id, sub)`의 socket 두 개는 `study_id` 값이 다르더라도 각각 새로 발급한 서로 다른
+      `jti`가 있을 때만 겹칠 수 있습니다. 세 번째 socket은 HTTP 429를 받고, 허용된 두 socket 중
+      하나가 닫히면 해당 close 시도가 완료된 뒤 슬롯 하나를 사용할 수 있게 됩니다.
+- [ ] 허용된 두 socket이 모두 `room.join`을 시도하면 더 최신 connection만 참가자로 남습니다. 6명이
+      있는 방에서도 성공하고 방 크기를 6명으로 유지하며 `peer.joined`보다 `peer.left`를 먼저
+      보내고, terminal close 시도 동안 이전 reservation을 유지했다가 한 번 해제하며 패자를
+      `4002 / Participation session superseded`로 닫습니다. 지연된 이전 join도 패하고 해당
+      브라우저는 자동으로 재연결하지 않습니다.
+- [ ] 같은 `(room_id, sub)`의 TURN 발급은 BATON이 새 `jti`를 발급하거나 client 주소가 바뀌어도
+      설정된 quota에 도달합니다. 거부 응답은 `Cache-Control: no-store`와 양수인 `Retry-After`를
+      포함한 빈 HTTP 429이며 다른 방이나 참가자는 독립적으로 유지됩니다.
+- [ ] `round.turn.credentials.rate_limited`는 제한된 `scope` label만 사용해 수집합니다. 참가자, 방,
+      token, 주소 값은 metric이나 log에 나타나지 않고 monitoring runbook은 participant, client,
+      global, state-capacity 압력을 구분합니다.
+- [ ] `round.signaling.authorization.closes`는 참가자, 방, `jti`, role, 주소 tag가 없는 identity-free
+      counter로 수집합니다.
+- [ ] 위 BATON socket과 TURN 검사는 standalone 동작을 변경하지 않습니다. Standalone TURN 발급은
+      참가자 quota 상태를 만들지 않고 계속 client IP와 서버 전체 quota로 제한합니다. Standalone은
+      참여권 refresh 요청, lease timer, authorization-close event를 만들지 않습니다.
+- [ ] BATON 연동 probe는 실제 단기 참여권을 얻고 두 token을 출력하지 않은 채 방 cookie를
+      refresh하며, 새 `jti`와 정확한 no-store metadata 응답을 확인하고 UDP, TCP, TLS relay 경로를
+      검증합니다. standalone Basic Auth probe를 이 경계의 증거로 사용하지 않습니다.
+- [ ] BATON identity/membership/refresh와 edge, 새 web bundle, ROUND active lease 순서로 rollout을
+      예행했습니다. rollback은 정확히 반대 순서로 예행했습니다.

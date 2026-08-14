@@ -2,7 +2,7 @@
   "name": "webrtc-study",
   "version": "0.1.0",
   "private": true,
-  "description": "A small, self-hosted WebRTC study room for video, voice, and chat.",
+  "description": "영상, 음성, 채팅을 위한 소규모 자체 호스팅 WebRTC 스터디룸입니다.",
   "workspaces": [
     "packages/*",
     "apps/*"

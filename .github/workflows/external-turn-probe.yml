@@ -1,10 +1,10 @@
-name: External TURN pilot probe
+name: 외부 TURN 파일럿 probe
 
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Operator-declared annotated ROUND release tag
+        description: 운영자가 선언한 annotated ROUND release tag
         required: true
         type: string
 
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   release:
-    name: Validate release reference and reviewed target
+    name: release reference 및 review된 대상 검증
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -29,30 +29,30 @@ jobs:
       probe_image: ${{ steps.target.outputs.probe_image }}
 
     steps:
-      - name: Require a default-branch dispatch
+      - name: default branch dispatch 확인
         shell: bash
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
-            printf 'External TURN probes must be dispatched from the default branch.\n' >&2
+            printf '외부 TURN probe는 default branch에서 dispatch해야 합니다.\n' >&2
             exit 1
           fi
 
-      - name: Check out repository and tags
+      - name: 저장소 및 tag checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
 
-      - name: Resolve code-reviewed pilot target
+      - name: code review된 파일럿 대상 결정
         id: target
         shell: bash
         run: bash ops/turn/resolve-external-pilot-target.sh ops/turn/external-pilot-target.properties >>"$GITHUB_OUTPUT"
 
-      - name: Resolve the declared release reference
+      - name: 선언한 release reference 결정
         id: release
         shell: bash
         env:
@@ -60,7 +60,7 @@ jobs:
         run: bash ops/turn/resolve-external-release.sh "$RELEASE_TAG" >>"$GITHUB_OUTPUT"
 
   probe:
-    name: Authenticate UDP, TCP, and TLS relay traffic
+    name: UDP, TCP 및 TLS relay traffic 인증
     needs: release
     if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
@@ -70,12 +70,12 @@ jobs:
       contents: read
 
     steps:
-      - name: Check out trusted probe implementation
+      - name: 신뢰하는 probe 구현 checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Prepare optional private TURN CA
+      - name: 선택적인 비공개 TURN CA 준비
         shell: bash
         env:
           TURN_PROBE_CA_PEM: ${{ secrets.TURN_PROBE_CA_PEM }}
@@ -90,7 +90,7 @@ jobs:
           chmod 0600 "$ca_file"
           printf 'TURN_PROBE_CA_FILE=%s\n' "$ca_file" >>"$GITHUB_ENV"
 
-      - name: Probe every public TURN transport
+      - name: 모든 공개 TURN transport probe
         shell: bash
         env:
           ROUND_URL: ${{ needs.release.outputs.round_url }}
@@ -101,7 +101,7 @@ jobs:
           TURN_PROBE_TRANSPORTS: udp,tcp,tls
         run: bash ops/turn/probe.sh
 
-      - name: Record pilot evidence
+      - name: 파일럿 증거 기록
         shell: bash
         env:
           RELEASE_SHA: ${{ needs.release.outputs.release_sha }}
@@ -113,13 +113,13 @@ jobs:
           WORKFLOW_SHA: ${{ github.sha }}
         run: |
           {
-            printf '### External TURN pilot probe\n\n'
-            printf -- '- Operator-declared release: `%s` (`%s`)\n' "$RELEASE_TAG" "$RELEASE_SHA"
+            printf '### 외부 TURN 파일럿 probe\n\n'
+            printf -- '- 운영자 선언 release: `%s` (`%s`)\n' "$RELEASE_TAG" "$RELEASE_SHA"
             printf -- '- Tag object: `%s`\n' "$TAG_OBJECT_SHA"
             printf -- '- Workflow commit: `%s`\n' "$WORKFLOW_SHA"
-            printf -- '- Target: `%s` / `%s`\n' "$ROUND_URL" "$TURN_PROBE_HOST"
-            printf -- '- Probe image: `%s`\n' "$TURN_PROBE_IMAGE"
-            printf -- '- Transports: authenticated UDP, TCP, and TLS relay\n'
-            printf -- '- Result: passed from GitHub-hosted external runner\n'
-            printf -- '- Scope: deployment identity was not verified automatically\n'
+            printf -- '- 대상: `%s` / `%s`\n' "$ROUND_URL" "$TURN_PROBE_HOST"
+            printf -- '- Probe 이미지: `%s`\n' "$TURN_PROBE_IMAGE"
+            printf -- '- 전송 방식: 인증된 UDP, TCP 및 TLS relay\n'
+            printf -- '- 결과: GitHub-hosted 외부 runner에서 통과\n'
+            printf -- '- 범위: deployment identity를 자동 검증하지 않음\n'
           } >>"$GITHUB_STEP_SUMMARY"

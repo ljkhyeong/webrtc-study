@@ -192,7 +192,7 @@ BATON 연동 시 브라우저가 사용하는 공개 경로는 다음과 같습�
 
 - 참여권 갱신: `POST /round/rooms/{roomId}/participation-grant/refresh`
 - WebSocket: `/round/rooms/{roomId}/signal`
-- TURN credential: `/round/rooms/{roomId}/turn-credentials`
+- TURN 자격 증명: `/round/rooms/{roomId}/turn-credentials`
 
 BATON이 제공하는 웹 번들은 빌드 시 `VITE_ROUND_AUTH_MODE=baton`을 주입하고
 `VITE_SIGNALING_URL`, `VITE_TURN_CREDENTIALS_URL`은 비워 둡니다. 브라우저는 세 경로를

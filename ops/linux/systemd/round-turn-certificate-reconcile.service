@@ -1,5 +1,5 @@
 [Unit]
-Description=Reconcile and verify the TURN certificate loaded by coturn
+Description=coturn이 불러온 TURN 인증서 조정 및 검증
 Documentation=file:/opt/round/docs/deployment.md
 After=docker.service network-online.target
 Wants=network-online.target

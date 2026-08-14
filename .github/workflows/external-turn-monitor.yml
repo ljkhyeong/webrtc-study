@@ -1,4 +1,4 @@
-name: External TURN availability monitor
+name: 외부 TURN 가용성 모니터
 
 on:
   schedule:
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   probe:
-    name: Probe public UDP, TCP, and TLS relay availability
+    name: 공개 UDP, TCP 및 TLS relay 가용성 probe
     if: ${{ vars.ROUND_EXTERNAL_TURN_MONITOR_ENABLED == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -22,17 +22,17 @@ jobs:
       contents: read
 
     steps:
-      - name: Check out trusted monitor implementation
+      - name: 신뢰하는 monitor 구현 checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Resolve code-reviewed public target
+      - name: code review된 공개 대상 결정
         id: target
         shell: bash
         run: bash ops/turn/resolve-external-pilot-target.sh ops/turn/external-pilot-target.properties >>"$GITHUB_OUTPUT"
 
-      - name: Prepare optional private TURN CA
+      - name: 선택적인 비공개 TURN CA 준비
         shell: bash
         env:
           TURN_PROBE_CA_PEM: ${{ secrets.TURN_PROBE_CA_PEM }}
@@ -47,7 +47,7 @@ jobs:
           chmod 0600 "$ca_file"
           printf 'TURN_PROBE_CA_FILE=%s\n' "$ca_file" >>"$GITHUB_ENV"
 
-      - name: Require three consecutive failed attempts before alerting
+      - name: 알림 전 3회 연속 실패 확인
         shell: bash
         env:
           ROUND_URL: ${{ steps.target.outputs.round_url }}
@@ -60,19 +60,19 @@ jobs:
           set -euo pipefail
           for attempt in 1 2 3; do
             if bash ops/turn/probe.sh; then
-              printf 'External TURN monitor passed on attempt %s.\n' "$attempt"
+              printf '외부 TURN monitor가 %s번째 시도에서 통과했습니다.\n' "$attempt"
               exit 0
             fi
             if [[ "$attempt" -lt 3 ]]; then
               delay_seconds=$((attempt * 20))
-              printf 'Attempt %s failed; retrying in %s seconds.\n' "$attempt" "$delay_seconds" >&2
+              printf '%s번째 시도 실패; %s초 후 재시도합니다.\n' "$attempt" "$delay_seconds" >&2
               sleep "$delay_seconds"
             fi
           done
-          printf 'External TURN monitor failed three consecutive attempts.\n' >&2
+          printf '외부 TURN monitor가 3회 연속 실패했습니다.\n' >&2
           exit 1
 
-      - name: Record monitor scope
+      - name: monitor 범위 기록
         if: ${{ always() }}
         shell: bash
         env:
@@ -81,10 +81,10 @@ jobs:
           WORKFLOW_SHA: ${{ github.sha }}
         run: |
           {
-            printf '### External TURN availability monitor\n\n'
+            printf '### 외부 TURN 가용성 모니터\n\n'
             printf -- '- Workflow commit: `%s`\n' "$WORKFLOW_SHA"
-            printf -- '- Target: `%s` / `%s`\n' "$ROUND_URL" "$TURN_PROBE_HOST"
-            printf -- '- Transports: authenticated UDP, TCP, and TLS relay\n'
-            printf -- '- Alert threshold: three consecutive attempts in this run\n'
-            printf -- '- Scope: availability only; deployed release identity was not verified\n'
+            printf -- '- 대상: `%s` / `%s`\n' "$ROUND_URL" "$TURN_PROBE_HOST"
+            printf -- '- 전송 방식: 인증된 UDP, TCP 및 TLS relay\n'
+            printf -- '- 알림 기준: 이번 실행에서 3회 연속 시도 실패\n'
+            printf -- '- 범위: 가용성만 확인; 배포된 release identity는 검증하지 않음\n'
           } >>"$GITHUB_STEP_SUMMARY"

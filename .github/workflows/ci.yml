@@ -16,72 +16,72 @@ concurrency:
 
 jobs:
   check:
-    name: Typecheck, test, and build
+    name: 타입 검사, 테스트 및 빌드
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
-      - name: Check out repository
+      - name: 저장소 checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Set up Node.js
+      - name: Node.js 설정
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
 
-      - name: Set up Java
+      - name: Java 설정
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: 21
           cache: gradle
 
-      - name: Install dependencies
+      - name: 의존성 설치
         run: npm ci
 
-      - name: Run repository checks
+      - name: 저장소 검사 실행
         run: npm run check
 
   browser-e2e:
-    name: Chromium WebRTC and BATON edge smoke tests
+    name: Chromium WebRTC 및 BATON edge smoke 테스트
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
-      - name: Check out repository
+      - name: 저장소 checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Set up Node.js
+      - name: Node.js 설정
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
 
-      - name: Set up Java
+      - name: Java 설정
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: 21
           cache: gradle
 
-      - name: Install dependencies
+      - name: 의존성 설치
         run: npm ci
 
-      - name: Install Chromium
+      - name: Chromium 설치
         run: npx playwright install --with-deps chromium
 
-      - name: Run Chromium full-media smoke test
+      - name: Chromium 전체 미디어 smoke 테스트 실행
         run: npx playwright test --project=chromium-full-media
 
-      - name: Run BATON production-edge authorization test
+      - name: BATON production edge 권한 부여 테스트 실행
         run: npm run test:e2e:baton-edge
 
-      - name: Upload browser diagnostics
+      - name: 브라우저 진단 자료 업로드
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -91,39 +91,39 @@ jobs:
           retention-days: 7
 
   browser-webkit:
-    name: WebKit compatibility smoke test
+    name: WebKit 호환성 smoke 테스트
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
-      - name: Check out repository
+      - name: 저장소 checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Set up Node.js
+      - name: Node.js 설정
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
 
-      - name: Set up Java
+      - name: Java 설정
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: 21
           cache: gradle
 
-      - name: Install dependencies
+      - name: 의존성 설치
         run: npm ci
 
-      - name: Install WebKit
+      - name: WebKit 설치
         run: npx playwright install --with-deps webkit
 
-      - name: Run WebKit compatibility smoke test
+      - name: WebKit 호환성 smoke 테스트 실행
         run: npx playwright test --project=webkit-smoke
 
-      - name: Upload WebKit diagnostics
+      - name: WebKit 진단 자료 업로드
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -133,24 +133,24 @@ jobs:
           retention-days: 7
 
   deployment:
-    name: Validate deployment artifacts and images
+    name: 배포 artifact 및 이미지 검증
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - name: Check out repository
+      - name: 저장소 checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Set up Node.js
+      - name: Node.js 설정
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
 
-      - name: Install validation dependencies
+      - name: 검증 의존성 설치
         run: npm ci
 
-      - name: Validate deployment
+      - name: 배포 검증
         run: bash ops/ci/validate-deployment.sh

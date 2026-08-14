@@ -1,5 +1,5 @@
 [Unit]
-Description=Periodically reconcile and verify the TURN certificate
+Description=TURN 인증서 주기적 조정 및 검증
 
 [Timer]
 OnBootSec=5m

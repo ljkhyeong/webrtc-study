@@ -1,11 +1,10 @@
-# macOS study-pilot edge policy.
+# macOS 스터디 파일럿 edge 정책입니다.
 #
-# Mobile browsers do not consistently reuse a page's HTTP Basic Auth
-# credentials for WebSocket upgrades. The UI and static assets remain behind
-# the shared pilot password, while the two browser transport endpoints rely on
-# the signaling service's exact-origin checks and bounded connection, frame,
-# byte, and TURN-credential quotas. Do not use this file as the Linux
-# production edge contract.
+# 모바일 브라우저는 페이지의 HTTP Basic Auth credential을 WebSocket upgrade에 일관되게
+# 재사용하지 않습니다. UI와 정적 asset은 공유 파일럿 비밀번호 뒤에 두고, 두 브라우저
+# transport endpoint는 signaling 서비스의 exact-origin 검사와 제한된 connection, frame,
+# byte 및 TURN credential quota를 사용합니다. 이 파일을 Linux production edge 계약으로
+# 사용하지 않습니다.
 {
 	email {$ACME_EMAIL}
 	admin off
@@ -32,9 +31,8 @@ http://127.0.0.1:8080 {
 {$ROUND_DOMAIN} {
 	encode zstd gzip
 
-	# The mobile-compatible transport paths intentionally bypass only the
-	# coarse shared Basic Auth gate. Their application-layer origin and quota
-	# checks remain active in signaling.
+	# 모바일 호환 transport 경로는 의도적으로 거친 공유 Basic Auth gate만 우회합니다.
+	# 애플리케이션 계층의 origin 및 quota 검사는 signaling에서 계속 적용됩니다.
 	@requiresPilotAccess not path /healthz /signal /api/turn-credentials
 	rate_limit {
 		zone pilot_client {

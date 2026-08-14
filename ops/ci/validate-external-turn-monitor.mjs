@@ -13,7 +13,7 @@ const workflowUrl = process.argv[2]
 const checkoutAction = 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803';
 
 function fail(message) {
-  throw new Error(`external TURN monitor validation: ${message}`);
+  throw new Error(`외부 TURN monitor 검증: ${message}`);
 }
 
 function record(value, label) {
@@ -69,7 +69,7 @@ const workflow = exactKeys(
   ['concurrency', 'jobs', 'name', 'on', 'permissions'],
   'workflow',
 );
-assert.equal(workflow.name, 'External TURN availability monitor');
+assert.equal(workflow.name, '외부 TURN 가용성 모니터');
 exactKeys(workflow.permissions, [], 'top-level permissions');
 assert.deepEqual(exactKeys(workflow.concurrency, ['cancel-in-progress', 'group'], 'concurrency'), {
   group: 'external-turn-monitor-${{ github.repository }}',
@@ -86,7 +86,7 @@ const probe = exactKeys(
   ['environment', 'if', 'name', 'permissions', 'runs-on', 'steps', 'timeout-minutes'],
   'probe job',
 );
-assert.equal(probe.name, 'Probe public UDP, TCP, and TLS relay availability');
+assert.equal(probe.name, '공개 UDP, TCP 및 TLS relay 가용성 probe');
 assert.equal(
   probe.if,
   "${{ vars.ROUND_EXTERNAL_TURN_MONITOR_ENABLED == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}",
@@ -102,22 +102,22 @@ assert.ok(Array.isArray(probe.steps), 'probe steps must be a sequence');
 assert.deepEqual(
   probe.steps.map((step) => record(step, 'probe step').name),
   [
-    'Check out trusted monitor implementation',
-    'Resolve code-reviewed public target',
-    'Prepare optional private TURN CA',
-    'Require three consecutive failed attempts before alerting',
-    'Record monitor scope',
+    '신뢰하는 monitor 구현 checkout',
+    'code review된 공개 대상 결정',
+    '선택적인 비공개 TURN CA 준비',
+    '알림 전 3회 연속 실패 확인',
+    'monitor 범위 기록',
   ],
 );
 const [checkout, target, privateCa, relay, summary] = probe.steps;
 
 assert.deepEqual(exactKeys(checkout, ['name', 'uses', 'with'], 'checkout'), {
-  name: 'Check out trusted monitor implementation',
+  name: '신뢰하는 monitor 구현 checkout',
   uses: checkoutAction,
   with: { 'persist-credentials': false },
 });
 assert.deepEqual(exactKeys(target, ['id', 'name', 'run', 'shell'], 'target step'), {
-  name: 'Resolve code-reviewed public target',
+  name: 'code review된 공개 대상 결정',
   id: 'target',
   shell: 'bash',
   run: 'bash ops/turn/resolve-external-pilot-target.sh ops/turn/external-pilot-target.properties >>"$GITHUB_OUTPUT"',
@@ -150,16 +150,16 @@ exactRun(
     'set -euo pipefail',
     'for attempt in 1 2 3; do',
     '  if bash ops/turn/probe.sh; then',
-    '    printf \'External TURN monitor passed on attempt %s.\\n\' "$attempt"',
+    '    printf \'외부 TURN monitor가 %s번째 시도에서 통과했습니다.\\n\' "$attempt"',
     '    exit 0',
     '  fi',
     '  if [[ "$attempt" -lt 3 ]]; then',
     '    delay_seconds=$((attempt * 20))',
-    '    printf \'Attempt %s failed; retrying in %s seconds.\\n\' "$attempt" "$delay_seconds" >&2',
+    '    printf \'%s번째 시도 실패; %s초 후 재시도합니다.\\n\' "$attempt" "$delay_seconds" >&2',
     '    sleep "$delay_seconds"',
     '  fi',
     'done',
-    "printf 'External TURN monitor failed three consecutive attempts.\\n' >&2",
+    "printf '외부 TURN monitor가 3회 연속 실패했습니다.\\n' >&2",
     'exit 1',
   ].join('\n'),
   'relay step',
@@ -191,12 +191,12 @@ exactRun(
   ['env', 'if', 'name', 'run', 'shell'],
   [
     '{',
-    "  printf '### External TURN availability monitor\\n\\n'",
+    "  printf '### 외부 TURN 가용성 모니터\\n\\n'",
     '  printf -- \'- Workflow commit: `%s`\\n\' "$WORKFLOW_SHA"',
-    '  printf -- \'- Target: `%s` / `%s`\\n\' "$ROUND_URL" "$TURN_PROBE_HOST"',
-    "  printf -- '- Transports: authenticated UDP, TCP, and TLS relay\\n'",
-    "  printf -- '- Alert threshold: three consecutive attempts in this run\\n'",
-    "  printf -- '- Scope: availability only; deployed release identity was not verified\\n'",
+    '  printf -- \'- 대상: `%s` / `%s`\\n\' "$ROUND_URL" "$TURN_PROBE_HOST"',
+    "  printf -- '- 전송 방식: 인증된 UDP, TCP 및 TLS relay\\n'",
+    "  printf -- '- 알림 기준: 이번 실행에서 3회 연속 시도 실패\\n'",
+    "  printf -- '- 범위: 가용성만 확인; 배포된 release identity는 검증하지 않음\\n'",
     '} >>"$GITHUB_STEP_SUMMARY"',
   ].join('\n'),
   'summary step',
@@ -225,7 +225,7 @@ assert.deepEqual(secretAccesses(workflow), [
   },
 ]);
 
-printf('External TURN monitor workflow validation passed.\n');
+printf('외부 TURN monitor workflow 검증을 통과했습니다.\n');
 
 function printf(message) {
   process.stdout.write(message);

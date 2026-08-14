@@ -18,7 +18,7 @@ const targetResolverUrl = new URL('ops/turn/resolve-external-pilot-target.sh', r
 const checkoutAction = 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803';
 
 function fail(message) {
-  throw new Error(`external TURN workflow validation: ${message}`);
+  throw new Error(`외부 TURN workflow 검증: ${message}`);
 }
 
 function requireRecord(value, label) {
@@ -120,7 +120,7 @@ const workflow = requireExactKeys(
   ['concurrency', 'jobs', 'name', 'on', 'permissions'],
   fileURLToPath(workflowUrl),
 );
-assert.equal(workflow.name, 'External TURN pilot probe');
+assert.equal(workflow.name, '외부 TURN 파일럿 probe');
 
 const triggers = requireExactKeys(workflow.on, ['workflow_dispatch'], 'on');
 const dispatch = requireExactKeys(triggers.workflow_dispatch, ['inputs'], 'workflow_dispatch');
@@ -131,7 +131,7 @@ const releaseTagInput = requireExactKeys(
   'release_tag input',
 );
 assert.deepEqual(releaseTagInput, {
-  description: 'Operator-declared annotated ROUND release tag',
+  description: '운영자가 선언한 annotated ROUND release tag',
   required: true,
   type: 'string',
 });
@@ -156,7 +156,7 @@ const probe = requireExactKeys(
   'probe job',
 );
 
-assert.equal(release.name, 'Validate release reference and reviewed target');
+assert.equal(release.name, 'release reference 및 review된 대상 검증');
 assert.equal(release['runs-on'], 'ubuntu-latest');
 assert.equal(release['timeout-minutes'], 5);
 assert.deepEqual(requireExactKeys(release.permissions, ['contents'], 'release permissions'), {
@@ -164,7 +164,7 @@ assert.deepEqual(requireExactKeys(release.permissions, ['contents'], 'release pe
 });
 requireNoSecretAccess(release, 'release job');
 
-assert.equal(probe.name, 'Authenticate UDP, TCP, and TLS relay traffic');
+assert.equal(probe.name, 'UDP, TCP 및 TLS relay traffic 인증');
 assert.equal(probe.needs, 'release');
 assert.equal(
   probe.if,
@@ -196,10 +196,10 @@ assert.deepEqual(releaseOutputs, {
 const releaseSteps = requireSteps(
   release,
   [
-    'Require a default-branch dispatch',
-    'Check out repository and tags',
-    'Resolve code-reviewed pilot target',
-    'Resolve the declared release reference',
+    'default branch dispatch 확인',
+    '저장소 및 tag checkout',
+    'code review된 파일럿 대상 결정',
+    '선언한 release reference 결정',
   ],
   'release job',
 );
@@ -210,7 +210,7 @@ requireRunStep(
   [
     'set -euo pipefail',
     'if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then',
-    "  printf 'External TURN probes must be dispatched from the default branch.\\n' >&2",
+    "  printf '외부 TURN probe는 default branch에서 dispatch해야 합니다.\\n' >&2",
     '  exit 1',
     'fi',
   ].join('\n'),
@@ -255,10 +255,10 @@ requireNoSecretAccess(releaseStep, 'release reference step');
 const probeSteps = requireSteps(
   probe,
   [
-    'Check out trusted probe implementation',
-    'Prepare optional private TURN CA',
-    'Probe every public TURN transport',
-    'Record pilot evidence',
+    '신뢰하는 probe 구현 checkout',
+    '선택적인 비공개 TURN CA 준비',
+    '모든 공개 TURN transport probe',
+    '파일럿 증거 기록',
   ],
   'probe job',
 );
@@ -338,15 +338,15 @@ requireRunStep(
   ['env', 'name', 'run', 'shell'],
   [
     '{',
-    "  printf '### External TURN pilot probe\\n\\n'",
-    '  printf -- \'- Operator-declared release: `%s` (`%s`)\\n\' "$RELEASE_TAG" "$RELEASE_SHA"',
+    "  printf '### 외부 TURN 파일럿 probe\\n\\n'",
+    '  printf -- \'- 운영자 선언 release: `%s` (`%s`)\\n\' "$RELEASE_TAG" "$RELEASE_SHA"',
     '  printf -- \'- Tag object: `%s`\\n\' "$TAG_OBJECT_SHA"',
     '  printf -- \'- Workflow commit: `%s`\\n\' "$WORKFLOW_SHA"',
-    '  printf -- \'- Target: `%s` / `%s`\\n\' "$ROUND_URL" "$TURN_PROBE_HOST"',
-    '  printf -- \'- Probe image: `%s`\\n\' "$TURN_PROBE_IMAGE"',
-    "  printf -- '- Transports: authenticated UDP, TCP, and TLS relay\\n'",
-    "  printf -- '- Result: passed from GitHub-hosted external runner\\n'",
-    "  printf -- '- Scope: deployment identity was not verified automatically\\n'",
+    '  printf -- \'- 대상: `%s` / `%s`\\n\' "$ROUND_URL" "$TURN_PROBE_HOST"',
+    '  printf -- \'- Probe 이미지: `%s`\\n\' "$TURN_PROBE_IMAGE"',
+    "  printf -- '- 전송 방식: 인증된 UDP, TCP 및 TLS relay\\n'",
+    "  printf -- '- 결과: GitHub-hosted 외부 runner에서 통과\\n'",
+    "  printf -- '- 범위: deployment identity를 자동 검증하지 않음\\n'",
     '} >>"$GITHUB_STEP_SUMMARY"',
   ].join('\n'),
   'summary step',
@@ -382,4 +382,4 @@ delete probeWithoutSteps.steps;
 requireNoSecretAccess(probeWithoutSteps, 'probe job configuration');
 
 validateTarget();
-process.stdout.write('External TURN workflow contract checks passed.\n');
+process.stdout.write('외부 TURN workflow 계약 검사를 통과했습니다.\n');

@@ -8,7 +8,7 @@ x-logging: &default-logging
 
 services:
   edge:
-    image: ${ROUND_EDGE_IMAGE:?Set ROUND_EDGE_IMAGE to an immutable release tag or digest}
+    image: ${ROUND_EDGE_IMAGE:?ROUND_EDGE_IMAGE를 불변 release tag 또는 digest로 설정하세요}
     build:
       context: .
       dockerfile: Dockerfile
@@ -18,13 +18,13 @@ services:
         CADDY_BUILDER_IMAGE: ${CADDY_BUILDER_IMAGE:-caddy:2.11.4-builder-alpine}
         CADDY_IMAGE: ${CADDY_IMAGE:-caddy:2.11.4-alpine}
         VITE_ROUND_AUTH_MODE: standalone
-        VITE_STUN_URLS: ${VITE_STUN_URLS:?Set VITE_STUN_URLS}
+        VITE_STUN_URLS: ${VITE_STUN_URLS:?VITE_STUN_URLS를 설정하세요}
         VITE_ICE_TRANSPORT_POLICY: ${VITE_ICE_TRANSPORT_POLICY:-all}
     environment:
-      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
-      ROUND_DOMAIN: ${ROUND_DOMAIN:?Set ROUND_DOMAIN}
-      ROUND_ACCESS_USER: ${ROUND_ACCESS_USER:?Set ROUND_ACCESS_USER}
-      ROUND_ACCESS_PASSWORD_HASH: ${ROUND_ACCESS_PASSWORD_HASH:?Set ROUND_ACCESS_PASSWORD_HASH to a bcrypt cost-12 hash}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL을 설정하세요}
+      ROUND_DOMAIN: ${ROUND_DOMAIN:?ROUND_DOMAIN을 설정하세요}
+      ROUND_ACCESS_USER: ${ROUND_ACCESS_USER:?ROUND_ACCESS_USER를 설정하세요}
+      ROUND_ACCESS_PASSWORD_HASH: ${ROUND_ACCESS_PASSWORD_HASH:?ROUND_ACCESS_PASSWORD_HASH를 bcrypt cost-12 hash로 설정하세요}
     ports:
       - '80:80/tcp'
       - '443:443/tcp'
@@ -57,7 +57,7 @@ services:
     logging: *default-logging
 
   signaling:
-    image: ${ROUND_SIGNALING_IMAGE:?Set ROUND_SIGNALING_IMAGE to an immutable release tag or digest}
+    image: ${ROUND_SIGNALING_IMAGE:?ROUND_SIGNALING_IMAGE를 불변 release tag 또는 digest로 설정하세요}
     build:
       context: .
       dockerfile: Dockerfile
@@ -69,11 +69,11 @@ services:
       HOST: 0.0.0.0
       PORT: '8787'
       SPRING_PROFILES_ACTIVE: production
-      # Safety boundary: this bundled edge and its Basic Auth routes implement
-      # only the standalone contract. BATON uses a separate manifest and edge.
+      # 안전 경계: 기본 제공 edge와 Basic Auth route는 standalone 계약만 구현합니다.
+      # BATON은 별도의 manifest와 edge를 사용합니다.
       ROUND_AUTH_MODE: standalone
       ROUND_STANDALONE_HOST_TOKEN_SHA256: ${ROUND_STANDALONE_HOST_TOKEN_SHA256:-}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set ALLOWED_ORIGINS to the exact HTTPS origin}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS를 정확한 HTTPS origin으로 설정하세요}
       MAX_ROOM_SIZE: ${MAX_ROOM_SIZE:-6}
       MAX_SIGNALING_CONNECTIONS: ${MAX_SIGNALING_CONNECTIONS:-1000}
       MAX_SIGNALING_CONNECTIONS_PER_CLIENT: ${MAX_SIGNALING_CONNECTIONS_PER_CLIENT:-12}
@@ -89,8 +89,8 @@ services:
       SIGNALING_MAX_OUTBOUND_QUEUE_BYTES: ${SIGNALING_MAX_OUTBOUND_QUEUE_BYTES:-2097152}
       SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL: ${SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL:-67108864}
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError
-      TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:?Set TURN_SHARED_SECRET outside Git}
-      TURN_URLS: ${TURN_URLS:?Set TURN_URLS}
+      TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:?TURN_SHARED_SECRET을 Git 외부에서 설정하세요}
+      TURN_URLS: ${TURN_URLS:?TURN_URLS를 설정하세요}
       TURN_CREDENTIAL_TTL_SECONDS: ${TURN_CREDENTIAL_TTL_SECONDS:-600}
       TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS: ${TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS:-600}
       TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS:-12}
@@ -119,7 +119,7 @@ services:
     logging: *default-logging
 
   turn:
-    image: ${ROUND_TURN_IMAGE:?Set ROUND_TURN_IMAGE to an immutable release tag or digest}
+    image: ${ROUND_TURN_IMAGE:?ROUND_TURN_IMAGE를 불변 release tag 또는 digest로 설정하세요}
     build:
       context: .
       dockerfile: Dockerfile
@@ -128,10 +128,10 @@ services:
         COTURN_IMAGE: ${COTURN_IMAGE:-coturn/coturn:4.14.0-r0-alpine}
     network_mode: host
     environment:
-      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:?Set TURN_EXTERNAL_IP to the public IPv4 address}
-      TURN_RELAY_IP: ${TURN_RELAY_IP:?Set TURN_RELAY_IP to the host interface IPv4 address}
-      TURN_REALM: ${TURN_REALM:?Set TURN_REALM}
-      TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:?Set TURN_SHARED_SECRET outside Git}
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:?TURN_EXTERNAL_IP를 공개 IPv4 주소로 설정하세요}
+      TURN_RELAY_IP: ${TURN_RELAY_IP:?TURN_RELAY_IP를 host interface IPv4 주소로 설정하세요}
+      TURN_REALM: ${TURN_REALM:?TURN_REALM을 설정하세요}
+      TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:?TURN_SHARED_SECRET을 Git 외부에서 설정하세요}
       TURN_MIN_PORT: ${TURN_MIN_PORT:-49160}
       TURN_MAX_PORT: ${TURN_MAX_PORT:-49259}
       TURN_USER_QUOTA: ${TURN_USER_QUOTA:-20}
@@ -177,6 +177,6 @@ volumes:
 
 secrets:
   turn_tls_cert:
-    file: ${TURN_TLS_CERT_FILE:?Set TURN_TLS_CERT_FILE to the TURN full-chain PEM}
+    file: ${TURN_TLS_CERT_FILE:?TURN_TLS_CERT_FILE을 TURN full-chain PEM으로 설정하세요}
   turn_tls_key:
-    file: ${TURN_TLS_KEY_FILE:?Set TURN_TLS_KEY_FILE to the TURN private-key PEM}
+    file: ${TURN_TLS_KEY_FILE:?TURN_TLS_KEY_FILE을 TURN private-key PEM으로 설정하세요}

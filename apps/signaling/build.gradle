@@ -6,7 +6,7 @@ plugins {
 
 group = 'com.personal'
 version = '0.1.0-SNAPSHOT'
-description = 'ROUND raw WebSocket signaling server'
+description = 'ROUND raw WebSocket signaling 서버'
 
 java {
 	toolchain {

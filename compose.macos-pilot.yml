@@ -1,14 +1,14 @@
-# Temporary Docker Desktop topology for study-group testing on macOS.
+# macOS의 스터디 그룹 테스트를 위한 임시 Docker Desktop 토폴로지입니다.
 #
-# Keep compose.yml as the Linux production contract. This override replaces
-# host networking with explicit Docker Desktop port publishing and binds the
-# edge to alternate host ports so it can coexist with a local service on :80.
+# compose.yml은 Linux production 계약으로 유지합니다. 이 override는 host networking을
+# 명시적인 Docker Desktop 포트 publish로 교체하고, edge를 대체 host 포트에 bind해 :80의
+# 로컬 서비스와 함께 실행할 수 있게 합니다.
 
 services:
   edge:
-    # Mobile Safari and some Android browsers do not reuse HTTP Basic Auth
-    # credentials for a WebSocket upgrade. Keep the web UI behind Basic Auth,
-    # but use the pilot-only Caddy policy for the same-origin transport paths.
+    # Mobile Safari와 일부 Android 브라우저는 WebSocket upgrade에 HTTP Basic Auth
+    # credential을 재사용하지 않습니다. web UI는 Basic Auth 뒤에 두되, same-origin
+    # transport 경로에는 파일럿 전용 Caddy 정책을 사용합니다.
     command:
       - caddy
       - run
