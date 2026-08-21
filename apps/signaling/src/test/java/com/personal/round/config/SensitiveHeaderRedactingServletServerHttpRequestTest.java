@@ -30,17 +30,7 @@ class SensitiveHeaderRedactingServletServerHttpRequestTest {
 				new Cookie("preference", "compact"));
 		Principal originalPrincipal = () -> "raw-jwt-principal";
 		nativeRequest.setUserPrincipal(originalPrincipal);
-		Principal participantPrincipal = new Principal() {
-			@Override
-			public String getName() {
-				return "member-42";
-			}
-
-			@Override
-			public String toString() {
-				return "VerifiedParticipantPrincipal";
-			}
-		};
+		Principal participantPrincipal = () -> "member-42";
 
 		SensitiveHeaderRedactingServletServerHttpRequest request =
 				new SensitiveHeaderRedactingServletServerHttpRequest(
