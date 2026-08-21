@@ -150,7 +150,6 @@ describe('ActiveRoom mounted lifecycle', () => {
         return Promise.resolve(
           jsonResponse({
             authenticated: true,
-            accountId: '00000000-0000-4000-8000-000000000001',
             csrfHeaderName: 'X-CSRF-TOKEN',
             csrfToken: 'csrf-token',
           }),
@@ -224,6 +223,7 @@ describe('ActiveRoom mounted lifecycle', () => {
       root.render(
         <StrictMode>
           <ActiveRoom
+            authMode="baton"
             displayName="Rim"
             roomId={ROOM_ID}
             releasePreparedMediaStream={vi.fn()}

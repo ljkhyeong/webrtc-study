@@ -8,11 +8,9 @@ import {
   navigateToOwningHome,
   resolveActiveRoomTerminalState,
   roomErrorMessage,
-  roomStartupErrorMessage,
   roomStatusLabel,
   roomWarningMessage,
   screenShareStartNotice,
-  shouldStopRoomRefreshes,
 } from './App';
 
 describe('App pre-join boundary', () => {
@@ -255,10 +253,7 @@ describe('App pre-join boundary', () => {
       startupError: 'turn-configuration',
     });
 
-    expect(terminal).toEqual({
-      status: 'error',
-      terminalErrorMessage: roomStartupErrorMessage('turn-configuration'),
-    });
+    expect(terminal.status).toBe('error');
     expect(terminal.terminalErrorMessage).toContain('TURN');
     expect(terminal.terminalErrorMessage).not.toContain('credential request failed');
   });
@@ -284,13 +279,6 @@ describe('App pre-join boundary', () => {
         actionError: 'duplicate raw action error',
       }),
     ).toEqual([]);
-  });
-
-  it('stops background refresh loops only at terminal room states', () => {
-    expect(shouldStopRoomRefreshes('active')).toBe(false);
-    expect(shouldStopRoomRefreshes('reconnecting')).toBe(false);
-    expect(shouldStopRoomRefreshes('error')).toBe(true);
-    expect(shouldStopRoomRefreshes('ended')).toBe(true);
   });
 
   it('never exposes an unexpected chat exception or peer id', () => {

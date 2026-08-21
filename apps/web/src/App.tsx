@@ -29,7 +29,7 @@ import {
 } from './lib/participation-grant';
 import { pathForRoom, roomIdFromPath, sanitizeDisplayName } from './lib/room';
 import {
-  resolveRoomEndpoints,
+  resolveNormalizedRoomEndpoints,
   resolveRoundAuthMode,
   type RoomEndpoints,
   type RoundAuthMode,
@@ -42,7 +42,7 @@ const PEER_CONNECTION_FAILURE_MESSAGE =
   '일부 참가자와 직접 연결하지 못했습니다. 현재 연결은 유지됩니다. 모두 다시 연결하려면 방에 다시 입장해 주세요.';
 type RoomIssueMessages = Readonly<Record<'error' | 'warning', string>>;
 
-export type RoomStartupErrorCode =
+type RoomStartupErrorCode =
   'endpoint-configuration' | 'participation-grant' | 'turn-configuration' | 'session-start';
 
 const ROOM_STARTUP_ERROR_MESSAGES = {
@@ -63,14 +63,6 @@ class RoomStartupFailure extends Error {
     super(code, { cause });
     this.name = 'RoomStartupFailure';
   }
-}
-
-export function roomStartupErrorMessage(code: RoomStartupErrorCode): string {
-  return ROOM_STARTUP_ERROR_MESSAGES[code];
-}
-
-function startupErrorCode(error: unknown): RoomStartupErrorCode {
-  return error instanceof RoomStartupFailure ? error.code : 'session-start';
 }
 
 const SIGNALING_ISSUE_MESSAGES = {
@@ -245,10 +237,6 @@ const ROOM_ISSUE_MESSAGES = {
   ...INTERNAL_ROOM_ISSUE_MESSAGES,
 } satisfies Record<RoomIssueCode, RoomIssueMessages>;
 
-function isTerminalPeerWarning(issue: RoomIssue | null | undefined): boolean {
-  return issue?.code === 'peer-connection-timeout' || issue?.code === 'peer-negotiation-failed';
-}
-
 const statusLabels: Record<RoomSessionStatus, string> = {
   idle: '방 준비 중',
   'preparing-media': '카메라와 마이크 확인 중',
@@ -334,7 +322,7 @@ interface ActiveRoomTerminalStateInput {
   readonly startupError: RoomStartupErrorCode | null;
 }
 
-export interface ActiveRoomTerminalState {
+interface ActiveRoomTerminalState {
   readonly status: RoomSessionStatus;
   readonly terminalErrorMessage?: string | undefined;
 }
@@ -347,14 +335,14 @@ export function resolveActiveRoomTerminalState({
   if (startupError !== null) {
     return {
       status: 'error',
-      terminalErrorMessage: roomStartupErrorMessage(startupError),
+      terminalErrorMessage: ROOM_STARTUP_ERROR_MESSAGES[startupError],
     };
   }
   const status = snapshotStatus ?? 'idle';
   return {
     status,
     ...(status === 'error'
-      ? { terminalErrorMessage: sessionError ?? roomStartupErrorMessage('session-start') }
+      ? { terminalErrorMessage: sessionError ?? ROOM_STARTUP_ERROR_MESSAGES['session-start'] }
       : {}),
   };
 }
@@ -376,10 +364,6 @@ export function screenShareStartNotice(
     };
   }
   return undefined;
-}
-
-export function shouldStopRoomRefreshes(status: RoomSessionStatus): boolean {
-  return status === 'error' || status === 'ended';
 }
 
 export function roomStatusLabel(
@@ -506,6 +490,7 @@ export function navigateToOwningHome(
 }
 
 interface ActiveRoomProps {
+  authMode: RoundAuthMode;
   displayName: string;
   roomId: string;
   hostCapability?: string | undefined;
@@ -518,6 +503,7 @@ interface ActiveRoomProps {
 }
 
 export function ActiveRoom({
+  authMode,
   displayName,
   roomId,
   hostCapability,
@@ -699,7 +685,7 @@ export function ActiveRoom({
     };
 
     const handleSessionSnapshot = (nextSnapshot: RoomSessionSnapshot) => {
-      if (shouldStopRoomRefreshes(nextSnapshot.status)) {
+      if (nextSnapshot.status === 'error' || nextSnapshot.status === 'ended') {
         stopBackgroundRefreshes();
       }
       setSnapshot(nextSnapshot);
@@ -711,9 +697,9 @@ export function ActiveRoom({
           async () => {
             let resolvedEndpoints: RoomEndpoints;
             try {
-              resolvedEndpoints = resolveRoomEndpoints({
+              resolvedEndpoints = resolveNormalizedRoomEndpoints({
                 roomId,
-                authMode: import.meta.env.VITE_ROUND_AUTH_MODE,
+                authMode,
                 location: window.location,
                 signalingUrl: import.meta.env.VITE_SIGNALING_URL,
                 turnCredentialsUrl: import.meta.env.VITE_TURN_CREDENTIALS_URL,
@@ -779,7 +765,6 @@ export function ActiveRoom({
                       facingMode: 'user',
                     },
                   },
-                  maxChatMessages: 200,
                 }),
               );
               sessionRef.current = session;
@@ -806,7 +791,7 @@ export function ActiveRoom({
         if (isCurrentLifecycle()) {
           const sessionStatus = sessionRef.current?.getSnapshot().status;
           if (sessionStatus !== 'error') {
-            setStartupError(startupErrorCode(error));
+            setStartupError(error instanceof RoomStartupFailure ? error.code : 'session-start');
           }
         }
       }
@@ -850,6 +835,7 @@ export function ActiveRoom({
       });
     };
   }, [
+    authMode,
     displayName,
     hostCapability,
     onParticipationGrantAccessFailure,
@@ -953,7 +939,10 @@ export function ActiveRoom({
       }
       peerRecoveryMessage={hasFailedRemotePeer ? PEER_CONNECTION_FAILURE_MESSAGE : undefined}
       mediaWarning={
-        isTerminalPeerWarning(snapshot?.warning) ? undefined : roomWarningMessage(snapshot?.warning)
+        snapshot?.warning?.code === 'peer-connection-timeout' ||
+        snapshot?.warning?.code === 'peer-negotiation-failed'
+          ? undefined
+          : roomWarningMessage(snapshot?.warning)
       }
       mediaRecoveryAvailable={snapshot?.warning?.code === 'local-media-ended'}
       errorMessage={terminalErrorMessage}
@@ -1150,6 +1139,7 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
     return (
       <ActiveRoom
         key={roomKey}
+        authMode={authMode}
         displayName={displayName}
         roomId={roomId}
         hostCapability={activeHostCapability}
