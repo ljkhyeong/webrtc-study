@@ -168,15 +168,6 @@ round_ops_validate_digest_ref() {
     round_ops_die "$label must be an immutable image digest reference"
 }
 
-round_ops_expected_image_repository() {
-  case "$1" in
-    edge) printf '%s\n' 'ghcr.io/ljkhyeong/round-edge' ;;
-    signaling) printf '%s\n' 'ghcr.io/ljkhyeong/round-signaling' ;;
-    turn) printf '%s\n' 'ghcr.io/ljkhyeong/round-turn' ;;
-    *) round_ops_die "unknown ROUND image role: $1" ;;
-  esac
-}
-
 round_ops_require_image_repository() {
   local label=$1
   local image_ref=$2
@@ -186,7 +177,12 @@ round_ops_require_image_repository() {
 
   round_ops_validate_digest_ref "$label" "$image_ref"
   actual_repository=${image_ref%@sha256:*}
-  expected_repository=$(round_ops_expected_image_repository "$role")
+  case "$role" in
+    edge) expected_repository='ghcr.io/ljkhyeong/round-edge' ;;
+    signaling) expected_repository='ghcr.io/ljkhyeong/round-signaling' ;;
+    turn) expected_repository='ghcr.io/ljkhyeong/round-turn' ;;
+    *) round_ops_die "unknown ROUND image role: $role" ;;
+  esac
   [[ "$actual_repository" == "$expected_repository" ]] ||
     round_ops_die "$label must use the reviewed repository $expected_repository"
 }
