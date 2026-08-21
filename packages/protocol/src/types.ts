@@ -12,7 +12,7 @@ export const SIGNALING_ERROR_CODES = [
   'INTERNAL_ERROR',
 ] as const;
 
-export type ProtocolVersion = typeof PROTOCOL_VERSION;
+type ProtocolVersion = typeof PROTOCOL_VERSION;
 export type SignalingErrorCode = (typeof SIGNALING_ERROR_CODES)[number];
 export type ParticipantRole = 'host' | 'participant';
 export type ModeratedMediaKind = 'audio' | 'video';
