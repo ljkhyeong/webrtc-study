@@ -1,4 +1,4 @@
-import { createPrejoinMedia, type PrejoinMedia, type PrejoinMediaSnapshot } from '@round/rtc-core';
+import { PrejoinMedia, type PrejoinMediaSnapshot } from '@round/rtc-core';
 import { MAX_HOST_CAPABILITY_LENGTH, MIN_HOST_CAPABILITY_LENGTH } from '@round/protocol';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowIcon, CameraIcon, CameraOffIcon, MicIcon, MicOffIcon } from './Icons';
@@ -61,7 +61,7 @@ export function PrejoinScreen({
       return existing;
     }
 
-    const controller = createPrejoinMedia({
+    const controller = new PrejoinMedia({
       audioConstraints: {
         autoGainControl: true,
         echoCancellation: true,

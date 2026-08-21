@@ -1,6 +1,5 @@
 export {
   PrejoinMedia,
-  createPrejoinMedia,
   type PrejoinLocalMediaSnapshot,
   type PrejoinMediaDevice,
   type PrejoinMediaIssue,

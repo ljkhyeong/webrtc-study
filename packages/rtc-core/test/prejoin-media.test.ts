@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createPrejoinMedia } from '../src/index.js';
+import { PrejoinMedia } from '../src/index.js';
 
 class FakeTrack {
   enabled = true;
@@ -129,7 +129,7 @@ describe('PrejoinMedia', () => {
       }
       throw namedError('NotReadableError');
     });
-    const controller = createPrejoinMedia({
+    const controller = new PrejoinMedia({
       mediaDevices: {
         ...mediaDeviceEventTarget(),
         getUserMedia,
@@ -168,7 +168,7 @@ describe('PrejoinMedia', () => {
       }
       throw namedError('NotFoundError');
     });
-    const controller = createPrejoinMedia({
+    const controller = new PrejoinMedia({
       mediaDevices: {
         ...mediaDeviceEventTarget(),
         getUserMedia,
@@ -209,7 +209,7 @@ describe('PrejoinMedia', () => {
       tracks.push(track);
       return new FakeMediaStream([track]) as unknown as MediaStream;
     });
-    const controller = createPrejoinMedia({
+    const controller = new PrejoinMedia({
       mediaDevices: {
         ...mediaDeviceEventTarget(),
         getUserMedia,
@@ -254,7 +254,7 @@ describe('PrejoinMedia', () => {
       }
       return new FakeMediaStream([video]) as unknown as MediaStream;
     });
-    const controller = createPrejoinMedia({
+    const controller = new PrejoinMedia({
       mediaDevices: {
         ...mediaDeviceEventTarget(),
         getUserMedia,
@@ -300,7 +300,7 @@ describe('PrejoinMedia', () => {
 
   it('releases preview ended listeners when stream ownership transfers', async () => {
     const audioTrack = new FakeTrack('audio', 'mic-default');
-    const controller = createPrejoinMedia({
+    const controller = new PrejoinMedia({
       mediaDevices: {
         ...mediaDeviceEventTarget(),
         getUserMedia: vi.fn(async (constraints: MediaStreamConstraints) => {
@@ -361,7 +361,7 @@ describe('PrejoinMedia', () => {
       ),
       removeEventListener,
     } as unknown as MediaDevices;
-    const controller = createPrejoinMedia({
+    const controller = new PrejoinMedia({
       mediaDevices,
       mediaStreamFactory: () => new FakeMediaStream() as unknown as MediaStream,
     });

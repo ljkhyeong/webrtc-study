@@ -642,7 +642,3 @@ export class PrejoinMedia {
     }
   }
 }
-
-export function createPrejoinMedia(options: PrejoinMediaOptions = {}): PrejoinMedia {
-  return new PrejoinMedia(options);
-}
