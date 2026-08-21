@@ -1502,11 +1502,6 @@ export class RoomSession {
 
   #cancelReconnectWait(): void {
     this.#cancelReconnectDelay?.();
-    this.#cancelReconnectDelay = null;
-    if (this.#reconnectDelayTimer !== null) {
-      globalThis.clearTimeout(this.#reconnectDelayTimer);
-      this.#reconnectDelayTimer = null;
-    }
   }
 
   #finishReconnectFailure(issue: RoomIssue): void {
@@ -1829,8 +1824,6 @@ export class RoomSession {
     }
     this.#setStatus('active');
     this.#resolveJoined?.();
-    this.#resolveJoined = null;
-    this.#rejectJoined = null;
 
     await Promise.all(offerPromises);
   }
