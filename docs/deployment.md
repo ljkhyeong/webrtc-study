@@ -333,8 +333,8 @@ Linux Compose 토폴로지가 프로덕션 계약입니다. Docker Desktop에서
 Mac host의 대체 port에 bind합니다.
 
 override는 Compose 전용 `!override` 및 `!reset` merge tag를 사용하므로 Docker Compose
-**2.24.4 이상**이 필요합니다. 배포 validator는 override를 render하기 전에 오래되었거나
-해석할 수 없는 version을 거부합니다. Docker 문서의
+**2.24.4 이상**이 필요합니다. 배포 validator는 실제 override를 render해 이 기능의 지원 여부를
+검증합니다. Docker 문서의
 [Compose merge 참고 자료](https://docs.docker.com/reference/compose-file/merge/#replace-value)에
 version 요구사항이 설명되어 있습니다.
 

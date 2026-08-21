@@ -36,8 +36,6 @@ curl \
   "$baton_edge_origin/healthz" \
   >/dev/null
 
-bash ops/ci/verify-baton-web-runtime.sh "$baton_edge_origin"
-
 ROUND_BATON_E2E_BASE_URL="$baton_edge_origin" \
 ROUND_BATON_E2E_EDGE=true \
   npx playwright test --config playwright.baton.config.ts

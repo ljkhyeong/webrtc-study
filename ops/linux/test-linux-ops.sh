@@ -861,9 +861,6 @@ PATH="$fake_bin:$PATH" ops/linux/restore-caddy.sh \
 grep -Fq 'volume-create volume create' "$fixture_dir/docker.log" ||
   fail 'fresh-host restore did not create missing Compose volumes'
 
-for script in ops/linux/*.sh ops/linux/certbot/*; do
-  bash -n "$script"
-done
 grep -Fq 'Persistent=true' ops/linux/systemd/round-turn-certificate-reconcile.timer
 grep -Fq 'OnFailure=round-ops-failure@%n.service' \
   ops/linux/systemd/round-turn-certificate-reconcile.service

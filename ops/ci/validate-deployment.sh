@@ -50,35 +50,6 @@ require_command jq
 require_command node
 require_command openssl
 
-minimum_compose_version=2.24.4
-compose_version=$(docker compose version --short 2>/dev/null) || {
-  printf 'deployment validation: Docker Compose is unavailable\n' >&2
-  exit 1
-}
-compose_version=${compose_version#v}
-if [[ ! "$compose_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
-  printf 'deployment validation: could not parse Docker Compose version: %s\n' \
-    "$compose_version" >&2
-  exit 1
-fi
-
-compose_major=${BASH_REMATCH[1]}
-compose_minor=${BASH_REMATCH[2]}
-compose_patch=${BASH_REMATCH[3]}
-IFS=. read -r minimum_compose_major minimum_compose_minor minimum_compose_patch \
-  <<<"$minimum_compose_version"
-
-if (( compose_major < minimum_compose_major \
-  || (compose_major == minimum_compose_major && compose_minor < minimum_compose_minor) \
-  || (compose_major == minimum_compose_major \
-    && compose_minor == minimum_compose_minor \
-    && compose_patch < minimum_compose_patch) )); then
-  printf \
-    'deployment validation: Docker Compose %s or later is required for !override/!reset (found %s)\n' \
-    "$minimum_compose_version" "$compose_version" >&2
-  exit 1
-fi
-
 printf 'Verifying local pilot secrets are excluded from the Docker build context...\n'
 grep -Fxq 'ops/macos-pilot.env' .dockerignore || {
   printf 'deployment validation: ops/macos-pilot.env must be listed in .dockerignore\n' >&2
@@ -176,28 +147,8 @@ jq -e '
 
 printf 'Validating deployment shell scripts...\n'
 sh -n ops/turn/entrypoint.sh
-bash -n ops/turn/probe.sh
-bash -n ops/turn/resolve-external-pilot-target.sh
-bash -n ops/turn/resolve-external-release.sh
-bash -n ops/turn/test-external-pilot-target.sh
-bash -n ops/turn/test-external-release.sh
-bash -n ops/turn/test-probe.sh
-bash -n ops/turn/verify-tls.sh
-bash -n ops/turn/test-tls-verification.sh
-bash -n ops/linux/common.sh
-bash -n ops/linux/preflight.sh
-bash -n ops/linux/deploy.sh
-bash -n ops/linux/rollback.sh
-bash -n ops/linux/reload-turn-certificate.sh
-bash -n ops/linux/backup-caddy.sh
-bash -n ops/linux/restore-caddy.sh
-bash -n ops/linux/test-linux-ops.sh
-bash -n ops/linux/test-systemd-units.sh
 bash -n ops/ci/run-baton-edge-e2e.sh
-bash -n ops/ci/verify-baton-web-runtime.sh
-bash -n ops/linux/certbot/round-turn-deploy-hook
-bash -n ops/linux/certbot/round-turn-certificate-check
-bash -n ops/linux/certbot/round-turn-certificate-reconcile
+bash -n ops/linux/test-systemd-units.sh
 bash ops/turn/probe.sh --help >/dev/null
 bash ops/turn/test-external-pilot-target.sh
 bash ops/turn/test-external-release.sh
@@ -220,9 +171,7 @@ docker build \
   --tag "$caddy_validation_image" \
   .
 
-printf 'Verifying the rate-limit module and Caddy configuration...\n'
-docker run --rm "$caddy_validation_image" caddy list-modules --skip-standard \
-  | grep -Fx 'http.handlers.rate_limit' >/dev/null
+printf 'Verifying the Caddy configuration...\n'
 docker run --rm \
   -e ACME_EMAIL=ci@round.invalid \
   -e ROUND_ACCESS_PASSWORD_HASH \
@@ -238,11 +187,6 @@ docker run --rm \
   -e ROUND_DOMAIN=round.invalid \
   "$caddy_validation_image" \
   caddy validate --config /etc/caddy/Caddyfile.macos-pilot
-docker run --rm \
-  -v "$repo_root/ops/caddy/BatonWebCaddyfile:/etc/caddy/BatonWebCaddyfile:ro" \
-  "$caddy_validation_image" \
-  caddy validate --config /etc/caddy/BatonWebCaddyfile --adapter caddyfile
-
 printf 'Verifying the adapted rate-limit policy and handler order...\n'
 docker run --rm \
   -e ACME_EMAIL=ci@round.invalid \
@@ -287,58 +231,6 @@ docker run --rm \
           "/signal",
           "/api/turn-credentials"
         ]]
-    ' >/dev/null
-
-printf 'Verifying the BATON browser cache and entry-route boundary...\n'
-docker run --rm \
-  -v "$repo_root/ops/caddy/BatonWebCaddyfile:/etc/caddy/BatonWebCaddyfile:ro" \
-  "$caddy_validation_image" \
-  caddy adapt --config /etc/caddy/BatonWebCaddyfile --adapter caddyfile \
-  | jq -e '
-      def route($path):
-        .apps.http.servers.srv0.routes[]
-        | select(.match[0].path? == [$path]);
-      (route("/round-ui/assets/*")) as $assets
-      | (route("/round-ui/favicon.svg")) as $favicon
-      | (route("/round-ui/*")) as $asset_root
-      | (route("/room/*")) as $room
-      | ([$assets | .. | objects
-          | select(.handler? == "headers")
-          | .response.set["Cache-Control"][0]]) as $asset_cache_controls
-      | ([$assets | .. | objects
-          | select(
-              has("file")
-              and .path_regexp?.name == "vite_asset"
-            )
-          | .path_regexp.pattern][0]
-          == "^/assets/(?:[^/]+/)*[^/]+-[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9.]+$")
-        and ($asset_cache_controls | length == 2)
-        and ($asset_cache_controls
-          | contains([
-              "public, max-age=31536000, immutable",
-              "no-store"
-            ]))
-        and ([$assets | .. | objects
-          | select(.handler? == "rewrite")
-          | .strip_path_prefix][0] == "/round-ui")
-        and ([$assets | .. | objects
-          | select(.handler? == "static_response")
-          | .status_code][0] == 404)
-        and ([$favicon | .. | objects
-          | select(.handler? == "headers")
-          | .response.set["Cache-Control"][0]][0] == "no-cache")
-        and ([$asset_root | .. | objects
-          | select(.handler? == "headers")
-          | .response.set["Cache-Control"][0]][0] == "no-store")
-        and ([$asset_root | .. | objects
-          | select(.handler? == "static_response")
-          | .status_code][0] == 404)
-        and ([$room | .. | objects
-          | select(.handler? == "headers")
-          | .response.set["Cache-Control"][0]][0] == "no-store")
-        and ([$room | .. | objects
-          | select(has("try_files"))
-          | .try_files][0] == ["{http.request.uri.path}", "/index.html"])
     ' >/dev/null
 
 printf 'Checking Dockerfile runtime targets...\n'

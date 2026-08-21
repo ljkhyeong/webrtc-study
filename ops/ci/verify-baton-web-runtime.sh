@@ -40,46 +40,28 @@ request() {
   local name=$1
   local path=$2
   local expected_status=$3
+  local expected_cache_control=$4
+  local metadata
   local status
+  local cache_control
 
-  status=$(
+  metadata=$(
     curl \
       --silent \
       --show-error \
-      --dump-header "$fixture_dir/$name.headers" \
       --output "$fixture_dir/$name.body" \
-      --write-out '%{http_code}' \
+      --write-out $'%{http_code}\n%header{cache-control}' \
       "$base_url$path"
   )
+  status=${metadata%%$'\n'*}
+  cache_control=${metadata#*$'\n'}
   [[ "$status" == "$expected_status" ]] ||
     fail "$path returned HTTP $status; expected $expected_status"
+  [[ "$cache_control" == "$expected_cache_control" ]] ||
+    fail "$name Cache-Control was '$cache_control'; expected '$expected_cache_control'"
 }
 
-cache_control() {
-  local name=$1
-  awk '
-    BEGIN { IGNORECASE = 1 }
-    $1 == "Cache-Control:" {
-      sub(/^[^:]+:[[:space:]]*/, "")
-      sub(/\r$/, "")
-      value = $0
-    }
-    END { print value }
-  ' "$fixture_dir/$name.headers"
-}
-
-assert_cache_control() {
-  local name=$1
-  local expected=$2
-  local actual
-
-  actual=$(cache_control "$name")
-  [[ "$actual" == "$expected" ]] ||
-    fail "$name Cache-Control was '$actual'; expected '$expected'"
-}
-
-request room_html /room/abcd-efgh-jkmp 200
-assert_cache_control room_html no-store
+request room_html /room/abcd-efgh-jkmp 200 no-store
 grep -Fq '<div id="root"></div>' "$fixture_dir/room_html.body" ||
   fail '/room/* did not serve the BATON browser HTML'
 
@@ -95,17 +77,16 @@ asset_path=$(
 [[ "$asset_path" =~ ^/round-ui/assets/([^/]+/)*[^/]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9.]+$ ]] ||
   fail "room HTML referenced an asset without a Vite content hash: $asset_path"
 
-request hashed_asset "$asset_path" 200
-assert_cache_control hashed_asset 'public, max-age=31536000, immutable'
+request hashed_asset "$asset_path" 200 'public, max-age=31536000, immutable'
 [[ -s "$fixture_dir/hashed_asset.body" ]] || fail "$asset_path returned an empty body"
 
-request missing_hashed_asset /round-ui/assets/missing-AAAAAAAA.js 404
-assert_cache_control missing_hashed_asset no-store
+request missing_hashed_asset /round-ui/assets/missing-AAAAAAAA.js 404 no-store
 
-request non_hashed_asset /round-ui/assets/index.js 404
-assert_cache_control non_hashed_asset no-store
+request non_hashed_asset /round-ui/assets/index.js 404 no-store
 
-request asset_root /round-ui/ 404
-assert_cache_control asset_root no-store
+request favicon /round-ui/favicon.svg 200 no-cache
+[[ -s "$fixture_dir/favicon.body" ]] || fail '/round-ui/favicon.svg returned an empty body'
+
+request asset_root /round-ui/ 404 no-store
 
 printf 'BATON web runtime HTTP contract passed.\n'
