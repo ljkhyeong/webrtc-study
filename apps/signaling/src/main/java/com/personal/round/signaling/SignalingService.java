@@ -1321,11 +1321,6 @@ public class SignalingService implements SmartLifecycle {
 		return running;
 	}
 
-	@Override
-	public int getPhase() {
-		return Integer.MAX_VALUE;
-	}
-
 	private void refreshMetricsLocked() {
 		int joined = rooms.values().stream().mapToInt(Map::size).sum();
 		metrics.updateState(rooms.size(), connectedPeers.size(), joined);
