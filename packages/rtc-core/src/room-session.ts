@@ -3638,7 +3638,7 @@ export class RoomSession {
 
   #send(message: ClientMessage): void {
     const socket = this.#requireOpenSocket();
-    this.#sendSerialized(socket, serializeClientMessage(message));
+    socket.send(serializeClientMessage(message));
   }
 
   #requireOpenSocket(): WebSocket {
@@ -3649,10 +3649,6 @@ export class RoomSession {
     return socket;
   }
 
-  #sendSerialized(socket: WebSocket, serialized: string): void {
-    socket.send(serialized);
-  }
-
   #sendRelay(message: RelayClientMessage): void {
     const socket = this.#requireOpenSocket();
     const requestId = this.#createSignalRequestId();
@@ -3660,7 +3656,7 @@ export class RoomSession {
     const serialized = serializeClientMessage(correlatedMessage);
     this.#rememberSignalRequest(requestId, correlatedMessage);
     try {
-      this.#sendSerialized(socket, serialized);
+      socket.send(serialized);
     } catch (error) {
       this.#pendingSignalRequests.delete(requestId);
       throw error;
