@@ -106,14 +106,6 @@ public class TurnCredentialService {
 		return Math.max(1, lifetimeSeconds - refreshSkewSeconds);
 	}
 
-	int trackedClientCount() {
-		return issuanceLimiter.trackedClientCount();
-	}
-
-	int trackedParticipantCount() {
-		return issuanceLimiter.trackedParticipantCount();
-	}
-
 	private String sign(String username) {
 		try {
 			Mac mac = Mac.getInstance(HMAC_ALGORITHM);

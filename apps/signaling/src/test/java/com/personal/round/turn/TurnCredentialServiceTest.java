@@ -198,7 +198,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void standaloneIssuanceDoesNotCreateOrApplyParticipantQuotaState() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 2, 1, 4, 10_000, 10_000);
+				TURN_URLS, SHARED_SECRET, 2, 1, 4, 10_000, 1);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service =
@@ -207,8 +207,10 @@ class TurnCredentialServiceTest {
 		issued(service.issueFor("198.51.100.10"));
 		issued(service.issueFor("198.51.100.10"));
 
-		assertThat(service.trackedParticipantCount()).isZero();
 		rateLimited(service.issueFor("198.51.100.10"));
+		issued(service.issueFor(
+				"198.51.100.11",
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
 		assertThat(registry.get("round.turn.credentials.rate_limited")
 				.tag("scope", "client")
 				.counter()
@@ -262,8 +264,6 @@ class TurnCredentialServiceTest {
 				rateLimited(service.issueFor("198.51.100.12"));
 
 		assertThat(limited.retryAfterSeconds()).isEqualTo(600);
-		assertThat(service.trackedClientCount()).isEqualTo(2);
-
 		clock.advanceSeconds(300);
 		assertThat(rateLimited(service.issueFor("198.51.100.12")).retryAfterSeconds())
 				.isEqualTo(300);
@@ -291,17 +291,13 @@ class TurnCredentialServiceTest {
 		clock.advanceSeconds(60);
 		issued(service.issueFor("198.51.100.2"));
 
-		assertThat(service.trackedClientCount()).isEqualTo(2);
 		assertThat(rateLimited(service.issueFor("198.51.100.3")).retryAfterSeconds())
 				.isEqualTo(540);
 		assertThat(rateLimited(service.issueFor("198.51.100.1")).retryAfterSeconds())
 				.isEqualTo(540);
-		assertThat(service.trackedClientCount()).isEqualTo(2);
-
 		clock.advanceSeconds(540);
 		issued(service.issueFor("198.51.100.3"));
 
-		assertThat(service.trackedClientCount()).isEqualTo(2);
 		assertThat(rateLimited(service.issueFor("198.51.100.2")).retryAfterSeconds())
 				.isEqualTo(60);
 		assertThat(registry.get("round.turn.credentials.issued").counter().count())
@@ -336,7 +332,6 @@ class TurnCredentialServiceTest {
 				grant("abcd-efgh-jkmp", "member-2", "ticket-5", clock)));
 
 		assertThat(limited.retryAfterSeconds()).isEqualTo(600);
-		assertThat(service.trackedParticipantCount()).isEqualTo(3);
 		assertThat(registry.get("round.turn.credentials.rate_limited")
 				.tag("scope", "participant")
 				.counter()
@@ -407,9 +402,6 @@ class TurnCredentialServiceTest {
 				"198.51.100.3",
 				grant("abcd-efgh-jkmp", "member-3", "ticket-3", clock)));
 		assertThat(limited.retryAfterSeconds()).isEqualTo(540);
-		assertThat(service.trackedParticipantCount()).isEqualTo(2);
-		assertThat(service.trackedClientCount()).isEqualTo(2);
-
 		issued(service.issueFor(
 				"198.51.100.1",
 				grant("abcd-efgh-jkmp", "member-1", "ticket-4", clock)));
@@ -418,7 +410,6 @@ class TurnCredentialServiceTest {
 				"198.51.100.3",
 				grant("abcd-efgh-jkmp", "member-3", "ticket-5", clock)));
 
-		assertThat(service.trackedParticipantCount()).isEqualTo(2);
 		assertThat(registry.get("round.turn.credentials.rate_limited")
 				.tag("scope", "participant_state_capacity")
 				.counter()

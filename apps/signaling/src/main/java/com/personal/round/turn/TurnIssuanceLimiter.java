@@ -99,14 +99,6 @@ final class TurnIssuanceLimiter {
 		return Acquired.INSTANCE;
 	}
 
-	synchronized int trackedClientCount() {
-		return clientWindows.size();
-	}
-
-	synchronized int trackedParticipantCount() {
-		return participantWindows.size();
-	}
-
 	private <K> void removeExpiredWindows(
 			Map<K, IssuanceWindow> windows,
 			long nowMillis) {
