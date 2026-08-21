@@ -1158,7 +1158,7 @@ export class RoomSession {
     }
 
     const normalizedText = text.trim();
-    const messageId = this.#createId();
+    const messageId = (this.#options.createId ?? defaultCreateId)();
     if (
       this.#activeLocalMessageIds.has(messageId) ||
       this.#recentlyRetiredLocalMessageIds.has(messageId)
@@ -3821,10 +3821,6 @@ export class RoomSession {
 
   #now(): number {
     return (this.#options.now ?? Date.now)();
-  }
-
-  #createId(): string {
-    return (this.#options.createId ?? defaultCreateId)();
   }
 }
 
