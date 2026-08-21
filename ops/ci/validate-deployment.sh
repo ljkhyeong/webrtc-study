@@ -90,12 +90,8 @@ grep -Fxq 'ops/macos-pilot.credentials' .dockerignore || {
 }
 
 fixture_dir=$(mktemp -d)
-baton_web_container=
 baton_web_runtime_container=
 cleanup() {
-  if [[ -n "$baton_web_container" ]]; then
-    docker rm -f "$baton_web_container" >/dev/null 2>&1 || true
-  fi
   if [[ -n "$baton_web_runtime_container" ]]; then
     docker rm -f "$baton_web_runtime_container" >/dev/null 2>&1 || true
   fi
@@ -359,11 +355,6 @@ docker build \
   --tag "$baton_web_image" \
   .
 test "$(docker image inspect --format '{{ index .Config.Labels "io.round.auth-mode" }}' "$baton_web_image")" = baton
-baton_web_container=$(docker create "$baton_web_image")
-docker cp "$baton_web_container:/srv" "$fixture_dir/baton-web"
-docker rm "$baton_web_container" >/dev/null
-baton_web_container=
-test "$(cat "$fixture_dir/baton-web/.round-auth-mode")" = baton
 
 printf 'Verifying the BATON browser runtime over HTTP...\n'
 baton_web_runtime_container=$(

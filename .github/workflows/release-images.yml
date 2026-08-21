@@ -249,7 +249,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           pull: true
           build-args: |
-            VITE_ROUND_AUTH_MODE=standalone
             VITE_STUN_URLS=${{ needs.preflight.outputs.stun_urls }}
             VITE_ICE_TRANSPORT_POLICY=all
           outputs: type=image,name=${{ env.IMAGE_NAMESPACE }}/round-edge,push-by-digest=true,name-canonical=true,push=true
@@ -282,7 +281,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           pull: true
           build-args: |
-            VITE_ROUND_AUTH_MODE=standalone
             VITE_STUN_URLS=${{ needs.preflight.outputs.stun_urls }}
             VITE_ICE_TRANSPORT_POLICY=relay
           outputs: type=image,name=${{ env.IMAGE_NAMESPACE }}/round-edge,push-by-digest=true,name-canonical=true,push=true

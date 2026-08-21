@@ -64,8 +64,8 @@ docker build \
 ```
 
 이 target은 BATON 모드를 고정하고 port 8080에서 `/room/*`와 `/round-ui/*`를 제공하며,
-`io.round.auth-mode=baton` image metadata와 내부 mode marker를 모두 포함합니다. release
-workflow는 이를 `round-baton-web`으로 별도 게시합니다. standalone `round-edge` image로
+`io.round.auth-mode=baton` image metadata를 포함합니다. release workflow는 이를
+`round-baton-web`으로 별도 게시합니다. standalone `round-edge` image로
 대체하지 마세요. 아래의 공개 경로와 비공개 경로 간 연결은 계속 BATON 외부 edge가 담당합니다.
 
 BATON 환경의 정확한 issuer와 JWK Set URI를 사용합니다. 프로덕션 issuer와 JWK URL은 HTTPS를
