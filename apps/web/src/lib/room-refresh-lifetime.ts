@@ -13,7 +13,7 @@ export class RoomRefreshLifetime {
     if (!this.#active) {
       return;
     }
-    this.clear(timer);
+    this.#clear(timer);
     const handle = globalThis.setTimeout(() => {
       if (this.#timers.get(timer) !== handle) {
         return;
@@ -26,7 +26,7 @@ export class RoomRefreshLifetime {
     this.#timers.set(timer, handle);
   }
 
-  clear(timer: RoomRefreshTimer): void {
+  #clear(timer: RoomRefreshTimer): void {
     const handle = this.#timers.get(timer);
     if (handle === undefined) {
       return;
