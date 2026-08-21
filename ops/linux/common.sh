@@ -169,10 +169,6 @@ round_ops_validate_digest_ref() {
     round_ops_die "$label must be an immutable image digest reference"
 }
 
-round_ops_expected_github_repository() {
-  printf '%s\n' 'ljkhyeong/webrtc-study'
-}
-
 round_ops_expected_image_repository() {
   case "$1" in
     edge) printf '%s\n' 'ghcr.io/ljkhyeong/round-edge' ;;
@@ -204,7 +200,7 @@ round_ops_verify_signed_provenance() {
   local image_ref
 
   round_ops_require_command gh
-  repository=$(round_ops_expected_github_repository)
+  repository='ljkhyeong/webrtc-study'
   signer_workflow="$repository/.github/workflows/release-images.yml"
   for image_ref in "$@"; do
     gh attestation verify "oci://$image_ref" \

@@ -67,16 +67,12 @@ jobs:
           fi
 
           tag_ref="refs/tags/${RELEASE_TAG}"
-          if ! tag_type="$(git cat-file -t "$tag_ref" 2>/dev/null)"; then
-            printf '가져온 저장소에 릴리스 태그 %s가 없습니다.\n' "$RELEASE_TAG" >&2
-            exit 1
-          fi
-          if [[ "$tag_type" != 'tag' ]]; then
-            printf '릴리스 태그 %s는 annotated tag여야 합니다.\n' "$RELEASE_TAG" >&2
+          if ! tag_object="$(git rev-parse "${tag_ref}^{tag}" 2>/dev/null)"; then
+            printf '가져온 릴리스 태그 %s는 존재하는 annotated tag여야 합니다.\n' \
+              "$RELEASE_TAG" >&2
             exit 1
           fi
 
-          tag_object="$(git rev-parse "$tag_ref")"
           tag_commit="$(git rev-parse "${tag_ref}^{commit}")"
           if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
             printf '릴리스 태그 %s가 이벤트 커밋 %s가 아니라 %s를 가리킵니다.\n' \
@@ -567,11 +563,6 @@ jobs:
             "${IMAGE_NAMESPACE}/round-turn@${TURN_DIGEST}"
           )
           for source in "${digest_sources[@]}"; do
-            digest="${source##*@}"
-            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-              printf '잘못된 build digest입니다: %s\n' "$source" >&2
-              exit 1
-            fi
             docker buildx imagetools inspect "$source" >/dev/null
           done
 
@@ -629,10 +620,8 @@ jobs:
 
             actual_digest="$(
               docker buildx imagetools inspect "$reference" \
-                --format '{{json .Manifest.Digest}}'
+                --format '{{.Manifest.Digest}}'
             )"
-            actual_digest="${actual_digest#\"}"
-            actual_digest="${actual_digest%\"}"
             if [[ "$actual_digest" != "$expected_digest" ]]; then
               printf '승격된 태그 %s의 실제 digest는 %s이며 예상값은 %s입니다.\n' \
                 "$reference" "$actual_digest" "$expected_digest" >&2

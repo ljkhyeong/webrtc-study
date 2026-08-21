@@ -28,11 +28,9 @@ if [[ "$release_tag" == *-* ]]; then
 fi
 
 tag_ref=refs/tags/$release_tag
-if [[ "$(git cat-file -t "$tag_ref" 2>/dev/null || true)" != tag ]]; then
+tag_object_sha=$(git rev-parse "${tag_ref}^{tag}" 2>/dev/null) ||
   fail "release tag must exist and be annotated: $release_tag"
-fi
 
-tag_object_sha=$(git rev-parse "$tag_ref")
 release_sha=$(git rev-parse "${tag_ref}^{commit}")
 if ! git merge-base --is-ancestor "$release_sha" "$github_sha"; then
   fail 'release tag is not reachable from the dispatched default-branch commit'
