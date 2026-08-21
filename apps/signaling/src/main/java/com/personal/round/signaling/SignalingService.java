@@ -26,7 +26,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
@@ -407,7 +406,7 @@ public class SignalingService implements SmartLifecycle {
 				}
 				switch (peer.heartbeatState) {
 					case READY -> {
-						byte[] challenge = heartbeatChallenge();
+						byte[] challenge = HEARTBEAT_CHALLENGE_GENERATOR.generateKey();
 						if (enqueue(
 								peer,
 								new PingMessage(ByteBuffer.wrap(challenge)),
@@ -1227,9 +1226,7 @@ public class SignalingService implements SmartLifecycle {
 
 	private static void closeQuietly(WebSocketSession session, CloseStatus status) {
 		try {
-			if (session.isOpen()) {
-				session.close(status);
-			}
+			session.close(status);
 		}
 		catch (IOException ignored) {
 			// The cleanup below is authoritative even if the transport has already disappeared.
@@ -1470,10 +1467,6 @@ public class SignalingService implements SmartLifecycle {
 				&& nowNanos - startedAtNanos >= durationNanos;
 	}
 
-	private static byte[] heartbeatChallenge() {
-		return HEARTBEAT_CHALLENGE_GENERATOR.generateKey();
-	}
-
 	private void closeSessionsConcurrently(
 			List<WebSocketSession> sessions,
 			long deadlineNanos) {
@@ -1493,10 +1486,7 @@ public class SignalingService implements SmartLifecycle {
 					}
 				})
 				.toList();
-		ThreadFactory threadFactory = Thread.ofVirtual()
-				.name("round-signaling-close-", 0)
-				.factory();
-		ExecutorService closeExecutor = Executors.newThreadPerTaskExecutor(threadFactory);
+		ExecutorService closeExecutor = Executors.newVirtualThreadPerTaskExecutor();
 		try {
 			long remainingNanos = Math.max(0, deadlineNanos - System.nanoTime());
 			closeExecutor.invokeAll(

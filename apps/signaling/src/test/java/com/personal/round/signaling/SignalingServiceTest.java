@@ -82,8 +82,7 @@ class SignalingServiceTest {
 				ZoneOffset.UTC);
 		monotonicTicker = new MutableTicker();
 		meterRegistry = new SimpleMeterRegistry();
-		outboundExecutor = Executors.newThreadPerTaskExecutor(
-				Thread.ofVirtual().name("round-signaling-test-", 0).factory());
+		outboundExecutor = Executors.newVirtualThreadPerTaskExecutor();
 		defaultAdmissionPolicy = admissionPolicy(properties(6));
 		nextTestClientAddress = 1;
 		service = service(properties(6), meterRegistry);
@@ -2511,8 +2510,7 @@ class SignalingServiceTest {
 
 	@Test
 	void executesOutboundWorkInlineWhenTheDedicatedExecutorRejectsIt() throws Exception {
-		try (ExecutorService rejectingExecutor = Executors.newThreadPerTaskExecutor(
-				Thread.ofVirtual().name("round-signaling-rejected-test-", 0).factory())) {
+		try (ExecutorService rejectingExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
 			SignalingService fallbackService = new SignalingService(
 					serverMessageEncoder,
 					properties(1),
@@ -3365,13 +3363,11 @@ class SignalingServiceTest {
 			CountDownLatch releaseFirstSend) throws Exception {
 		WebSocketSession session = mock(WebSocketSession.class);
 		List<WebSocketMessage<?>> messages = Collections.synchronizedList(new ArrayList<>());
-		AtomicBoolean open = new AtomicBoolean(true);
 		AtomicBoolean firstSend = new AtomicBoolean(true);
 		AtomicBoolean failNextSend = new AtomicBoolean(false);
 		AtomicReference<CloseStatus> closeStatus = new AtomicReference<>();
 		when(session.getId()).thenReturn(id);
 		when(session.getAttributes()).thenReturn(new HashMap<>());
-		when(session.isOpen()).thenAnswer(ignored -> open.get());
 		doAnswer(invocation -> {
 			if (failNextSend.compareAndSet(true, false)) {
 				throw new java.io.IOException("Simulated send failure");
@@ -3386,7 +3382,6 @@ class SignalingServiceTest {
 			return null;
 		}).when(session).sendMessage(any(WebSocketMessage.class));
 		doAnswer(invocation -> {
-			open.set(false);
 			closeStatus.set(invocation.getArgument(0));
 			return null;
 		}).when(session).close(any(CloseStatus.class));

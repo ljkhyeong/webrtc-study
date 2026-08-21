@@ -55,7 +55,6 @@ class SignalingWebSocketHandlerTest {
 
 	@Test
 	void closesTextFramesLargerThan64KiB() throws Exception {
-		when(session.isOpen()).thenReturn(true);
 		String oversized = "x".repeat(64 * 1024 + 1);
 
 		handler.handleMessage(session, new TextMessage(oversized));

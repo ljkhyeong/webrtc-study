@@ -12,9 +12,6 @@ public class SignalingExecutionConfig {
 
 	@Bean(name = OUTBOUND_EXECUTOR_BEAN, destroyMethod = "shutdownNow")
 	ExecutorService signalingOutboundExecutor() {
-		return Executors.newThreadPerTaskExecutor(
-				Thread.ofVirtual()
-						.name("round-signaling-outbound-", 0)
-						.factory());
+		return Executors.newVirtualThreadPerTaskExecutor();
 	}
 }
