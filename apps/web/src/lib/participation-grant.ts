@@ -85,7 +85,7 @@ export class ParticipationGrantLeaseManager {
     this.#roomId = options.roomId;
     const configuredFetcher = options.fetcher ?? globalThis.fetch;
     this.#fetcher =
-      typeof configuredFetcher === 'function' && configuredFetcher === globalThis.fetch
+      configuredFetcher === globalThis.fetch
         ? configuredFetcher.bind(globalThis)
         : configuredFetcher;
     this.#now = options.now ?? (() => globalThis.performance.now());
