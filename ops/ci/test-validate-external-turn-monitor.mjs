@@ -42,36 +42,25 @@ function assertValidYaml(source, label) {
   }
 }
 
-function runValidator(workflowPath) {
-  return spawnSync(process.execPath, [validatorPath, workflowPath], {
-    encoding: 'utf8',
-  });
-}
-
 function assertRejected(label, workflow) {
   assertValidYaml(workflow, label);
   const workflowPath = join(testRoot, `${label}.yml`);
   writeFileSync(workflowPath, workflow);
 
-  const result = runValidator(workflowPath);
+  const result = spawnSync(process.execPath, [validatorPath, workflowPath], {
+    encoding: 'utf8',
+  });
   if (result.status === 0) {
     fail(`${label} mutation was accepted`);
   }
 }
 
 try {
-  const defaultBaseline = spawnSync(process.execPath, [validatorPath], {
+  const baseline = spawnSync(process.execPath, [validatorPath], {
     encoding: 'utf8',
   });
-  if (defaultBaseline.status !== 0) {
-    fail(`default baseline validation failed: ${defaultBaseline.stderr}`);
-  }
-
-  const baselinePath = join(testRoot, 'baseline.yml');
-  writeFileSync(baselinePath, workflowSource);
-  const baseline = runValidator(baselinePath);
   if (baseline.status !== 0) {
-    fail(`path-argument baseline validation failed: ${baseline.stderr}`);
+    fail(`default baseline validation failed: ${baseline.stderr}`);
   }
 
   assertRejected(

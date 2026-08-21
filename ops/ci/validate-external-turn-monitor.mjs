@@ -29,8 +29,15 @@ function exactKeys(value, expected, label) {
   return result;
 }
 
+function exactStructuralKeys(value, expected, label) {
+  const result = record(value, label);
+  const keys = Object.keys(result).filter((key) => key !== 'name' && key !== 'description');
+  assert.deepEqual(keys.sort(), [...expected].sort(), `${label} keys changed`);
+  return result;
+}
+
 function exactRun(step, expectedKeys, expectedRun, label) {
-  exactKeys(step, expectedKeys, label);
+  exactStructuralKeys(step, expectedKeys, label);
   assert.equal(step.shell, 'bash', `${label} shell changed`);
   assert.equal(step.run.trim(), expectedRun, `${label} command changed`);
 }
@@ -64,12 +71,11 @@ if (document.errors.length > 0) {
   fail(document.errors.map((error) => error.message).join('; '));
 }
 
-const workflow = exactKeys(
+const workflow = exactStructuralKeys(
   document.toJS({ maxAliasCount: 0 }),
-  ['concurrency', 'jobs', 'name', 'on', 'permissions'],
+  ['concurrency', 'jobs', 'on', 'permissions'],
   'workflow',
 );
-assert.equal(workflow.name, '외부 TURN 가용성 모니터');
 exactKeys(workflow.permissions, [], 'top-level permissions');
 assert.deepEqual(exactKeys(workflow.concurrency, ['cancel-in-progress', 'group'], 'concurrency'), {
   group: 'external-turn-monitor-${{ github.repository }}',
@@ -81,12 +87,11 @@ assert.deepEqual(triggers.schedule, [{ cron: '17 */6 * * *' }]);
 exactKeys(triggers.workflow_dispatch, [], 'workflow_dispatch');
 
 const jobs = exactKeys(workflow.jobs, ['probe'], 'jobs');
-const probe = exactKeys(
+const probe = exactStructuralKeys(
   jobs.probe,
-  ['environment', 'if', 'name', 'permissions', 'runs-on', 'steps', 'timeout-minutes'],
+  ['environment', 'if', 'permissions', 'runs-on', 'steps', 'timeout-minutes'],
   'probe job',
 );
-assert.equal(probe.name, '공개 UDP, TCP 및 TLS relay 가용성 probe');
 assert.equal(
   probe.if,
   "${{ vars.ROUND_EXTERNAL_TURN_MONITOR_ENABLED == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}",
@@ -99,33 +104,25 @@ assert.deepEqual(exactKeys(probe.permissions, ['contents'], 'probe permissions')
 });
 
 assert.ok(Array.isArray(probe.steps), 'probe steps must be a sequence');
-assert.deepEqual(
-  probe.steps.map((step) => record(step, 'probe step').name),
-  [
-    '신뢰하는 monitor 구현 checkout',
-    'code review된 공개 대상 결정',
-    '선택적인 비공개 TURN CA 준비',
-    '알림 전 3회 연속 실패 확인',
-    'monitor 범위 기록',
-  ],
+assert.equal(probe.steps.length, 5, 'probe step count changed');
+const [checkout, target, privateCa, relay, summary] = probe.steps.map((step, index) =>
+  record(step, `probe step ${index + 1}`),
 );
-const [checkout, target, privateCa, relay, summary] = probe.steps;
 
-assert.deepEqual(exactKeys(checkout, ['name', 'uses', 'with'], 'checkout'), {
-  name: '신뢰하는 monitor 구현 checkout',
-  uses: checkoutAction,
-  with: { 'persist-credentials': false },
-});
-assert.deepEqual(exactKeys(target, ['id', 'name', 'run', 'shell'], 'target step'), {
-  name: 'code review된 공개 대상 결정',
-  id: 'target',
-  shell: 'bash',
-  run: 'bash ops/turn/resolve-external-pilot-target.sh ops/turn/external-pilot-target.properties >>"$GITHUB_OUTPUT"',
-});
+exactStructuralKeys(checkout, ['uses', 'with'], 'checkout');
+assert.equal(checkout.uses, checkoutAction);
+assert.deepEqual(checkout.with, { 'persist-credentials': false });
+exactStructuralKeys(target, ['id', 'run', 'shell'], 'target step');
+assert.equal(target.id, 'target');
+assert.equal(target.shell, 'bash');
+assert.equal(
+  target.run,
+  'bash ops/turn/resolve-external-pilot-target.sh ops/turn/external-pilot-target.properties >>"$GITHUB_OUTPUT"',
+);
 
 exactRun(
   privateCa,
-  ['env', 'name', 'run', 'shell'],
+  ['env', 'run', 'shell'],
   [
     'set -euo pipefail',
     'if [[ -z "$TURN_PROBE_CA_PEM" ]]; then',
@@ -145,7 +142,7 @@ assert.deepEqual(exactKeys(privateCa.env, ['TURN_PROBE_CA_PEM'], 'private CA env
 
 exactRun(
   relay,
-  ['env', 'name', 'run', 'shell'],
+  ['env', 'run', 'shell'],
   [
     'set -euo pipefail',
     'for attempt in 1 2 3; do',
@@ -188,7 +185,7 @@ assert.deepEqual(
 );
 exactRun(
   summary,
-  ['env', 'if', 'name', 'run', 'shell'],
+  ['env', 'if', 'run', 'shell'],
   [
     '{',
     "  printf '### 외부 TURN 가용성 모니터\\n\\n'",
@@ -225,8 +222,4 @@ assert.deepEqual(secretAccesses(workflow), [
   },
 ]);
 
-printf('외부 TURN monitor workflow 검증을 통과했습니다.\n');
-
-function printf(message) {
-  process.stdout.write(message);
-}
+process.stdout.write('외부 TURN monitor workflow 검증을 통과했습니다.\n');

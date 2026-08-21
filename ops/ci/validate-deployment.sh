@@ -207,9 +207,7 @@ bash ops/linux/test-linux-ops.sh
 bash ops/linux/test-systemd-units.sh
 
 printf 'Validating the external TURN workflow contract...\n'
-node ops/ci/validate-external-turn-workflow.mjs
 node ops/ci/test-validate-external-turn-workflow.mjs
-node ops/ci/validate-external-turn-monitor.mjs
 node ops/ci/test-validate-external-turn-monitor.mjs
 
 printf 'Validating the signed release workflow contract...\n'

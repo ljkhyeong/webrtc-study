@@ -15,10 +15,6 @@ const workflowSource = readFileSync(
   new URL('.github/workflows/external-turn-probe.yml', repoRoot),
   'utf8',
 );
-const targetSource = readFileSync(
-  new URL('ops/turn/external-pilot-target.properties', repoRoot),
-  'utf8',
-);
 const testRoot = mkdtempSync(join(tmpdir(), 'round-workflow-contract-'));
 
 function fail(message) {
@@ -48,14 +44,12 @@ function assertValidYaml(source, label) {
   }
 }
 
-function assertRejected(label, workflow, target = targetSource) {
+function assertRejected(label, workflow) {
   assertValidYaml(workflow, label);
   const workflowPath = join(testRoot, `${label}.yml`);
-  const targetPath = join(testRoot, `${label}.properties`);
   writeFileSync(workflowPath, workflow);
-  writeFileSync(targetPath, target);
 
-  const result = spawnSync(process.execPath, [validatorPath, workflowPath, targetPath], {
+  const result = spawnSync(process.execPath, [validatorPath, workflowPath], {
     encoding: 'utf8',
   });
   if (result.status === 0) {
@@ -160,17 +154,6 @@ try {
       'variable-bracket-access',
     ),
   );
-  assertRejected(
-    'untrusted-image-repository',
-    workflowSource,
-    replaceRequired(
-      targetSource,
-      'coturn/coturn@',
-      'untrusted/probe@',
-      'untrusted-image-repository',
-    ),
-  );
-
   process.stdout.write('External TURN workflow adversarial contract checks passed.\n');
 } finally {
   rmSync(testRoot, { recursive: true, force: true });

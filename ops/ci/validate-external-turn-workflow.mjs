@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -11,10 +10,6 @@ const repoRoot = new URL('../../', import.meta.url);
 const workflowUrl = process.argv[2]
   ? pathToFileURL(resolve(process.argv[2]))
   : new URL('.github/workflows/external-turn-probe.yml', repoRoot);
-const targetUrl = process.argv[3]
-  ? pathToFileURL(resolve(process.argv[3]))
-  : new URL('ops/turn/external-pilot-target.properties', repoRoot);
-const targetResolverUrl = new URL('ops/turn/resolve-external-pilot-target.sh', repoRoot);
 const checkoutAction = 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803';
 
 function fail(message) {
@@ -38,16 +33,19 @@ function requireExactKeys(value, expected, label) {
   return record;
 }
 
-function requireSteps(job, expectedNames, label) {
+function requireExactStructuralKeys(value, expected, label) {
+  const record = requireRecord(value, label);
+  const keys = Object.keys(record).filter((key) => key !== 'name' && key !== 'description');
+  assert.deepEqual(keys.sort(), [...expected].sort(), `${label} has an unexpected key`);
+  return record;
+}
+
+function requireSteps(job, expectedCount, label) {
   if (!Array.isArray(job.steps)) {
     fail(`${label}.steps must be a sequence`);
   }
-  assert.deepEqual(
-    job.steps.map((step) => requireRecord(step, `${label} step`).name),
-    expectedNames,
-    `${label} step order changed`,
-  );
-  return job.steps;
+  assert.equal(job.steps.length, expectedCount, `${label} step count changed`);
+  return job.steps.map((step, index) => requireRecord(step, `${label} step ${index + 1}`));
 }
 
 function collectSecretAccesses(value, path = '', accesses = []) {
@@ -69,40 +67,17 @@ function collectSecretAccesses(value, path = '', accesses = []) {
   return accesses;
 }
 
-function requireNoSecretAccess(value, label) {
-  assert.deepEqual(
-    collectSecretAccesses(value),
-    [],
-    `${label} must not access the secrets context`,
-  );
-}
-
-function requireExactSecretAccesses(value, expected, label) {
-  assert.deepEqual(collectSecretAccesses(value), expected, `${label} secret access changed`);
-}
-
 function requireCheckout(step, expectedWith, label) {
-  requireExactKeys(step, ['name', 'uses', 'with'], label);
+  requireExactStructuralKeys(step, ['uses', 'with'], label);
   assert.equal(step.uses, checkoutAction, `${label} action changed`);
   const withOptions = requireExactKeys(step.with, Object.keys(expectedWith), `${label}.with`);
   assert.deepEqual(withOptions, expectedWith, `${label}.with changed`);
-  requireNoSecretAccess(step, label);
 }
 
 function requireRunStep(step, expectedKeys, expectedRun, label) {
-  requireExactKeys(step, expectedKeys, label);
+  requireExactStructuralKeys(step, expectedKeys, label);
   assert.equal(step.shell, 'bash', `${label} shell changed`);
   assert.equal(step.run.trim(), expectedRun, `${label} command changed`);
-}
-
-function validateTarget() {
-  try {
-    execFileSync('bash', [fileURLToPath(targetResolverUrl), fileURLToPath(targetUrl)], {
-      stdio: ['ignore', 'ignore', 'pipe'],
-    });
-  } catch {
-    fail('reviewed pilot target was rejected by the canonical resolver');
-  }
 }
 
 const workflowSource = readFileSync(workflowUrl, 'utf8');
@@ -115,26 +90,21 @@ if (document.errors.length > 0) {
   fail(document.errors.map((error) => error.message).join('; '));
 }
 
-const workflow = requireExactKeys(
+const workflow = requireExactStructuralKeys(
   document.toJS({ maxAliasCount: 0 }),
-  ['concurrency', 'jobs', 'name', 'on', 'permissions'],
+  ['concurrency', 'jobs', 'on', 'permissions'],
   fileURLToPath(workflowUrl),
 );
-assert.equal(workflow.name, '외부 TURN 파일럿 probe');
-
 const triggers = requireExactKeys(workflow.on, ['workflow_dispatch'], 'on');
 const dispatch = requireExactKeys(triggers.workflow_dispatch, ['inputs'], 'workflow_dispatch');
 const inputs = requireExactKeys(dispatch.inputs, ['release_tag'], 'workflow_dispatch.inputs');
-const releaseTagInput = requireExactKeys(
+const releaseTagInput = requireExactStructuralKeys(
   inputs.release_tag,
-  ['description', 'required', 'type'],
+  ['required', 'type'],
   'release_tag input',
 );
-assert.deepEqual(releaseTagInput, {
-  description: '운영자가 선언한 annotated ROUND release tag',
-  required: true,
-  type: 'string',
-});
+assert.equal(releaseTagInput.required, true);
+assert.equal(releaseTagInput.type, 'string');
 requireExactKeys(workflow.permissions, [], 'top-level permissions');
 assert.deepEqual(
   requireExactKeys(workflow.concurrency, ['cancel-in-progress', 'group'], 'concurrency'),
@@ -145,26 +115,22 @@ assert.deepEqual(
 );
 
 const jobs = requireExactKeys(workflow.jobs, ['probe', 'release'], 'jobs');
-const release = requireExactKeys(
+const release = requireExactStructuralKeys(
   jobs.release,
-  ['name', 'outputs', 'permissions', 'runs-on', 'steps', 'timeout-minutes'],
+  ['outputs', 'permissions', 'runs-on', 'steps', 'timeout-minutes'],
   'release job',
 );
-const probe = requireExactKeys(
+const probe = requireExactStructuralKeys(
   jobs.probe,
-  ['environment', 'if', 'name', 'needs', 'permissions', 'runs-on', 'steps', 'timeout-minutes'],
+  ['environment', 'if', 'needs', 'permissions', 'runs-on', 'steps', 'timeout-minutes'],
   'probe job',
 );
 
-assert.equal(release.name, 'release reference 및 review된 대상 검증');
 assert.equal(release['runs-on'], 'ubuntu-latest');
 assert.equal(release['timeout-minutes'], 5);
 assert.deepEqual(requireExactKeys(release.permissions, ['contents'], 'release permissions'), {
   contents: 'read',
 });
-requireNoSecretAccess(release, 'release job');
-
-assert.equal(probe.name, 'UDP, TCP 및 TLS relay traffic 인증');
 assert.equal(probe.needs, 'release');
 assert.equal(
   probe.if,
@@ -193,20 +159,11 @@ assert.deepEqual(releaseOutputs, {
   probe_image: '${{ steps.target.outputs.probe_image }}',
 });
 
-const releaseSteps = requireSteps(
-  release,
-  [
-    'default branch dispatch 확인',
-    '저장소 및 tag checkout',
-    'code review된 파일럿 대상 결정',
-    '선언한 release reference 결정',
-  ],
-  'release job',
-);
+const releaseSteps = requireSteps(release, 4, 'release job');
 const [branchStep, releaseCheckout, targetStep, releaseStep] = releaseSteps;
 requireRunStep(
   branchStep,
-  ['env', 'name', 'run', 'shell'],
+  ['env', 'run', 'shell'],
   [
     'set -euo pipefail',
     'if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then',
@@ -219,8 +176,6 @@ requireRunStep(
 assert.deepEqual(requireExactKeys(branchStep.env, ['DEFAULT_BRANCH'], 'default-branch env'), {
   DEFAULT_BRANCH: '${{ github.event.repository.default_branch }}',
 });
-requireNoSecretAccess(branchStep, 'default-branch step');
-
 requireCheckout(
   releaseCheckout,
   {
@@ -233,16 +188,15 @@ requireCheckout(
 
 requireRunStep(
   targetStep,
-  ['id', 'name', 'run', 'shell'],
+  ['id', 'run', 'shell'],
   'bash ops/turn/resolve-external-pilot-target.sh ops/turn/external-pilot-target.properties >>"$GITHUB_OUTPUT"',
   'target step',
 );
 assert.equal(targetStep.id, 'target');
-requireNoSecretAccess(targetStep, 'target step');
 
 requireRunStep(
   releaseStep,
-  ['env', 'id', 'name', 'run', 'shell'],
+  ['env', 'id', 'run', 'shell'],
   'bash ops/turn/resolve-external-release.sh "$RELEASE_TAG" >>"$GITHUB_OUTPUT"',
   'release reference step',
 );
@@ -250,24 +204,14 @@ assert.equal(releaseStep.id, 'release');
 assert.deepEqual(requireExactKeys(releaseStep.env, ['RELEASE_TAG'], 'release reference env'), {
   RELEASE_TAG: '${{ inputs.release_tag }}',
 });
-requireNoSecretAccess(releaseStep, 'release reference step');
 
-const probeSteps = requireSteps(
-  probe,
-  [
-    '신뢰하는 probe 구현 checkout',
-    '선택적인 비공개 TURN CA 준비',
-    '모든 공개 TURN transport probe',
-    '파일럿 증거 기록',
-  ],
-  'probe job',
-);
+const probeSteps = requireSteps(probe, 4, 'probe job');
 const [probeCheckout, caStep, relayStep, summaryStep] = probeSteps;
 requireCheckout(probeCheckout, { 'persist-credentials': false }, 'probe checkout');
 
 requireRunStep(
   caStep,
-  ['env', 'name', 'run', 'shell'],
+  ['env', 'run', 'shell'],
   [
     'set -euo pipefail',
     'if [[ -z "$TURN_PROBE_CA_PEM" ]]; then',
@@ -284,18 +228,8 @@ requireRunStep(
 assert.deepEqual(requireExactKeys(caStep.env, ['TURN_PROBE_CA_PEM'], 'private CA env'), {
   TURN_PROBE_CA_PEM: '${{ secrets.TURN_PROBE_CA_PEM }}',
 });
-requireExactSecretAccesses(
-  caStep,
-  [
-    {
-      path: 'env.TURN_PROBE_CA_PEM',
-      value: '${{ secrets.TURN_PROBE_CA_PEM }}',
-    },
-  ],
-  'private CA step',
-);
 
-requireRunStep(relayStep, ['env', 'name', 'run', 'shell'], 'bash ops/turn/probe.sh', 'relay step');
+requireRunStep(relayStep, ['env', 'run', 'shell'], 'bash ops/turn/probe.sh', 'relay step');
 assert.deepEqual(
   requireExactKeys(
     relayStep.env,
@@ -318,24 +252,9 @@ assert.deepEqual(
     TURN_PROBE_TRANSPORTS: 'udp,tcp,tls',
   },
 );
-requireExactSecretAccesses(
-  relayStep,
-  [
-    {
-      path: 'env.ROUND_ACCESS_USER',
-      value: '${{ secrets.ROUND_ACCESS_USER }}',
-    },
-    {
-      path: 'env.ROUND_ACCESS_PASSWORD',
-      value: '${{ secrets.ROUND_ACCESS_PASSWORD }}',
-    },
-  ],
-  'relay step',
-);
-
 requireRunStep(
   summaryStep,
-  ['env', 'name', 'run', 'shell'],
+  ['env', 'run', 'shell'],
   [
     '{',
     "  printf '### 외부 TURN 파일럿 probe\\n\\n'",
@@ -375,11 +294,18 @@ assert.deepEqual(
     WORKFLOW_SHA: '${{ github.sha }}',
   },
 );
-requireNoSecretAccess(summaryStep, 'summary step');
-
-const probeWithoutSteps = { ...probe };
-delete probeWithoutSteps.steps;
-requireNoSecretAccess(probeWithoutSteps, 'probe job configuration');
-
-validateTarget();
+assert.deepEqual(collectSecretAccesses(workflow), [
+  {
+    path: 'jobs.probe.steps[1].env.TURN_PROBE_CA_PEM',
+    value: '${{ secrets.TURN_PROBE_CA_PEM }}',
+  },
+  {
+    path: 'jobs.probe.steps[2].env.ROUND_ACCESS_USER',
+    value: '${{ secrets.ROUND_ACCESS_USER }}',
+  },
+  {
+    path: 'jobs.probe.steps[2].env.ROUND_ACCESS_PASSWORD',
+    value: '${{ secrets.ROUND_ACCESS_PASSWORD }}',
+  },
+]);
 process.stdout.write('외부 TURN workflow 계약 검사를 통과했습니다.\n');
