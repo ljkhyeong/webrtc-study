@@ -428,7 +428,6 @@ round_ops_write_release_file() {
   round_ops_require_image_repository ROUND_EDGE_IMAGE "$edge_image" edge
   round_ops_require_image_repository ROUND_SIGNALING_IMAGE "$signaling_image" signaling
   round_ops_require_image_repository ROUND_TURN_IMAGE "$turn_image" turn
-  round_ops_require_private_file "$env_file"
   repo_root=$(round_ops_repo_root)
   if [[ -z "$compose_file" ]]; then
     compose_file="$repo_root/compose.yml"
@@ -509,7 +508,6 @@ round_ops_assert_state_compatible() {
   local actual
 
   round_ops_validate_release_file "$release_file"
-  round_ops_require_private_file "$env_file"
   repo_root=$(round_ops_repo_root)
   if [[ -z "$compose_file" ]]; then
     compose_file="$repo_root/compose.yml"
