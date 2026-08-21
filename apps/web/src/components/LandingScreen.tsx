@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { ArrowIcon, CameraIcon, MessageIcon, MicIcon } from './Icons';
 import {
   createRoomId,
@@ -24,7 +24,6 @@ export function LandingScreen({
   const [displayName, setDisplayName] = useState(initialDisplayName);
   const [roomId, setRoomId] = useState('');
   const [error, setError] = useState('');
-  const normalizedRoomId = useMemo(() => normalizeRoomId(roomId), [roomId]);
 
   const enterRoom = (targetRoomId: string) => {
     const safeName = sanitizeDisplayName(displayName);
@@ -48,7 +47,7 @@ export function LandingScreen({
 
   const handleJoin = (event: FormEvent) => {
     event.preventDefault();
-    enterRoom(invitedRoomId ?? normalizedRoomId);
+    enterRoom(invitedRoomId ?? roomId);
   };
 
   return (
@@ -116,7 +115,7 @@ export function LandingScreen({
                     value={roomId}
                     onChange={(event) => setRoomId(normalizeRoomId(event.target.value))}
                   />
-                  <button type="submit" disabled={!isValidRoomId(normalizedRoomId)}>
+                  <button type="submit" disabled={!isValidRoomId(roomId)}>
                     준비
                   </button>
                 </div>

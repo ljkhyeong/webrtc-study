@@ -52,14 +52,6 @@ export function CheckIcon(props: IconProps) {
   );
 }
 
-export function ChevronIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <path d="m8 10 4 4 4-4" />
-    </IconFrame>
-  );
-}
-
 export function CloseIcon(props: IconProps) {
   return (
     <IconFrame {...props}>

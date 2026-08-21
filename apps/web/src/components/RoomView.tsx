@@ -17,7 +17,7 @@ import {
 import { type ParticipantView, VideoTile } from './VideoTile';
 import { canonicalRoomUrl } from '../lib/room';
 
-export type RoomSystemNoticeId =
+type RoomSystemNoticeId =
   | 'session-error'
   | 'action-warning'
   | 'action-error'
@@ -118,9 +118,6 @@ export function countNewRemoteMessages(
   messages: readonly ChatMessage[],
   previousLastMessage: ChatMessageIdentity | null,
 ) {
-  if (messages.length === 0) {
-    return 0;
-  }
   const previousIndex =
     previousLastMessage === null
       ? -1
@@ -156,11 +153,6 @@ export function countNewLocalDeliveryIssues(
       isLocalDeliveryIssue(item.deliveryState) &&
       !isLocalDeliveryIssue(previousDeliveryStates.get(item.id)),
   ).length;
-}
-
-async function copyInviteLink(roomId: string) {
-  const inviteUrl = canonicalRoomUrl(roomId, window.location.href);
-  await navigator.clipboard.writeText(inviteUrl);
 }
 
 function chatMessageIdentity(message: ChatMessage | undefined): ChatMessageIdentity | null {
@@ -242,7 +234,8 @@ export function RoomView({
 
   const handleCopy = async () => {
     try {
-      await copyInviteLink(roomId);
+      const inviteUrl = canonicalRoomUrl(roomId, window.location.href);
+      await navigator.clipboard.writeText(inviteUrl);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {

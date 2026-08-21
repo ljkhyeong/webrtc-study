@@ -76,7 +76,6 @@ export function PrejoinScreen({
     });
     controllerRef.current = controller;
     unsubscribeRef.current = controller.subscribe(setSnapshot);
-    setSnapshot(controller.getSnapshot());
     return controller;
   };
 
