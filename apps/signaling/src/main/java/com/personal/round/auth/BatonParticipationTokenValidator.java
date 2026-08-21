@@ -3,7 +3,6 @@ package com.personal.round.auth;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Objects;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
@@ -23,10 +22,8 @@ final class BatonParticipationTokenValidator implements OAuth2TokenValidator<Jwt
 	BatonParticipationTokenValidator(
 			Duration maxGrantLifetime,
 			Clock clock) {
-		this.maxGrantLifetime = Objects.requireNonNull(
-				maxGrantLifetime,
-				"maxGrantLifetime must not be null");
-		this.clock = Objects.requireNonNull(clock, "clock must not be null");
+		this.maxGrantLifetime = maxGrantLifetime;
+		this.clock = clock;
 	}
 
 	@Override

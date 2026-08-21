@@ -7,7 +7,6 @@ import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import java.security.Key;
 import java.util.List;
-import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.regex.Pattern;
 
@@ -22,10 +21,8 @@ final class BatonJwsKeySelector implements JWSKeySelector<SecurityContext> {
 	BatonJwsKeySelector(
 			JWSKeySelector<SecurityContext> delegate,
 			BooleanSupplier jwkSourceUnavailable) {
-		this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
-		this.jwkSourceUnavailable = Objects.requireNonNull(
-				jwkSourceUnavailable,
-				"jwkSourceUnavailable must not be null");
+		this.delegate = delegate;
+		this.jwkSourceUnavailable = jwkSourceUnavailable;
 	}
 
 	@Override

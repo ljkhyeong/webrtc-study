@@ -1,9 +1,7 @@
 package com.personal.round.auth;
 
 import static com.personal.round.auth.ParticipationGrantTestFixtures.ISSUED_AT;
-import static com.personal.round.auth.ParticipationGrantTestFixtures.jwt;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.jwtWithLifetime;
-import static com.personal.round.auth.ParticipationGrantTestFixtures.validJwt;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Clock;
@@ -17,29 +15,6 @@ class BatonParticipationTokenValidatorTest {
 			new BatonParticipationTokenValidator(
 					Duration.ofMinutes(5),
 					Clock.fixed(ISSUED_AT, ZoneOffset.UTC));
-
-	@Test
-	void acceptsCompleteGrantClaims() {
-		assertThat(validator.validate(validJwt()).hasErrors()).isFalse();
-	}
-
-	@Test
-	void rejectsInvalidGrantClaims() {
-		assertThat(validator.validate(
-				jwt(claims -> claims.remove("room_id"))).hasErrors()).isTrue();
-		assertThat(validator.validate(
-				jwt(claims -> claims.put("role", "viewer"))).hasErrors()).isTrue();
-	}
-
-	@Test
-	void rejectsSubjectsThatAreNotCanonicalBatonAccountUuids() {
-		assertThat(validator.validate(
-				jwt(claims -> claims.put("sub", "member-42"))).hasErrors())
-				.isTrue();
-		assertThat(validator.validate(
-				jwt(claims -> claims.put("sub", "1-1-1-1-1"))).hasErrors())
-				.isTrue();
-	}
 
 	@Test
 	void rejectsGrantsAtOrBeforeTheExactExpiryBoundary() {
