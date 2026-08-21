@@ -522,14 +522,6 @@ public class SignalingService implements SmartLifecycle {
 		}
 	}
 
-	int activeInboundClientCount() {
-		synchronized (monitor) {
-			return (int) inboundClients.values().stream()
-					.filter(state -> state.activeConnections > 0)
-					.count();
-		}
-	}
-
 	private void join(Peer peer, ClientMessage.Join message, WorkPlan workPlan) {
 		if (peer.roomId != null) {
 			metrics.recordJoinRejectedAlreadyJoined();

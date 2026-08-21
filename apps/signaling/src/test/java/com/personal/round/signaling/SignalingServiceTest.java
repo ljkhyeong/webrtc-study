@@ -2716,7 +2716,6 @@ class SignalingServiceTest {
 
 		service.disconnect(first.session());
 		assertThat(service.trackedInboundClientCount()).isOne();
-		assertThat(service.activeInboundClientCount()).isZero();
 
 		TestPeer reconnected = peer("reconnect-second");
 		connectFrom(policy, "192.0.2.20", reconnected);
@@ -2796,16 +2795,18 @@ class SignalingServiceTest {
 		assertThat(service.acceptInboundFrame(inactive.session(), 0)).isTrue();
 		service.disconnect(inactive.session());
 		assertThat(service.trackedInboundClientCount()).isEqualTo(2);
-		assertThat(service.activeInboundClientCount()).isOne();
 
 		TestPeer replacement = peer("bounded-replacement");
 		connectFrom(policy, "192.0.2.25", replacement);
 
 		assertThat(service.trackedInboundClientCount()).isEqualTo(2);
-		assertThat(service.activeInboundClientCount()).isEqualTo(2);
 		service.disconnect(active.session());
 		assertThat(service.trackedInboundClientCount()).isEqualTo(2);
-		assertThat(service.activeInboundClientCount()).isOne();
+
+		TestPeer reconnectedActive = peer("bounded-active-reconnected");
+		connectFrom(policy, "192.0.2.23", reconnectedActive);
+		assertThat(service.acceptInboundFrame(reconnectedActive.session(), 0)).isTrue();
+		assertThat(service.acceptInboundFrame(reconnectedActive.session(), 0)).isFalse();
 	}
 
 	@Test
@@ -2820,7 +2821,6 @@ class SignalingServiceTest {
 		service.stop();
 
 		assertThat(service.trackedInboundClientCount()).isZero();
-		assertThat(service.activeInboundClientCount()).isZero();
 	}
 
 	@Test
