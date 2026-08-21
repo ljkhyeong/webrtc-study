@@ -18,6 +18,7 @@ import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistration;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 
 @Configuration
@@ -47,7 +48,10 @@ public class WebSocketConfig implements WebSocketConfigurer {
 						OriginPolicy.SecurityMode.from(production, batonMode)));
 		this.grantInterceptor = new ParticipationGrantHandshakeInterceptor(grantResolver);
 		this.admissionHandler =
-				new ConnectionAdmissionHandshakeHandler(signalingService, admissionPolicy);
+				new ConnectionAdmissionHandshakeHandler(
+						signalingService,
+						admissionPolicy,
+						new DefaultHandshakeHandler());
 		this.batonMode = batonMode;
 	}
 

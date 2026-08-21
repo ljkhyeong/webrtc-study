@@ -28,12 +28,6 @@ public final class ConnectionAdmissionHandshakeHandler
 	private final ConnectionAdmissionPolicy admissionPolicy;
 	private final DefaultHandshakeHandler delegate;
 
-	public ConnectionAdmissionHandshakeHandler(
-			SignalingService signalingService,
-			ConnectionAdmissionPolicy admissionPolicy) {
-		this(signalingService, admissionPolicy, new DefaultHandshakeHandler());
-	}
-
 	ConnectionAdmissionHandshakeHandler(
 			SignalingService signalingService,
 			ConnectionAdmissionPolicy admissionPolicy,
@@ -54,7 +48,9 @@ public final class ConnectionAdmissionHandshakeHandler
 			return false;
 		}
 
-		ParticipationGrant participationGrant = participationGrant(attributes);
+		Object candidate = attributes.get(ParticipationGrant.SESSION_ATTRIBUTE);
+		ParticipationGrant participationGrant =
+				candidate instanceof ParticipationGrant grant ? grant : null;
 		Admission admission = admissionPolicy.reserve(
 				request.getRemoteAddress(),
 				participationGrant);
@@ -115,12 +111,6 @@ public final class ConnectionAdmissionHandshakeHandler
 				reservation.close();
 			}
 		}
-	}
-
-	private static ParticipationGrant participationGrant(
-			Map<String, Object> attributes) {
-		Object candidate = attributes.get(ParticipationGrant.SESSION_ATTRIBUTE);
-		return candidate instanceof ParticipationGrant grant ? grant : null;
 	}
 
 	@Override
