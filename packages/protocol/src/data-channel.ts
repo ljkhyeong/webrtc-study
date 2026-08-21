@@ -95,12 +95,9 @@ function exactKeys(
   allowedKeys: readonly string[],
   path: string,
 ): void {
-  const actualKeys = Object.keys(value);
-  if (
-    actualKeys.length !== allowedKeys.length ||
-    actualKeys.some((key) => !allowedKeys.includes(key))
-  ) {
-    throw new ProtocolValidationError(path, `must contain exactly: ${allowedKeys.join(', ')}`);
+  const unexpected = Object.keys(value).find((key) => !allowedKeys.includes(key));
+  if (unexpected !== undefined) {
+    throw new ProtocolValidationError(`${path}.${unexpected}`, 'is not allowed');
   }
 }
 
