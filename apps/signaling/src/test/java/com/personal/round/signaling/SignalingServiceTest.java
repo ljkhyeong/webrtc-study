@@ -1,6 +1,7 @@
 package com.personal.round.signaling;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -30,8 +31,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -40,7 +41,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
-import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -250,7 +250,7 @@ class SignalingServiceTest {
 		assertThat(command.at("/payload/targetPeerId").asString())
 				.isEqualTo(participantPeerId);
 		assertThat(command.at("/payload/kind").asString()).isEqualTo("audio");
-		assertThat(host.hasNoTextMessageFor(100)).isTrue();
+		host.assertNoTextMessageFor(Duration.ofMillis(100));
 
 		service.handle(
 				participant.session(),
@@ -440,7 +440,7 @@ class SignalingServiceTest {
 			JsonNode command = participant.nextJson();
 			assertThat(command.get("type").asString()).isEqualTo("moderation.media.disabled");
 			assertThat(command.get("from").asString()).isEqualTo(hostPeerId);
-			assertThat(host.hasNoTextMessageFor(100)).isTrue();
+			host.assertNoTextMessageFor(Duration.ofMillis(100));
 		}
 		finally {
 			batonService.stop();
@@ -735,7 +735,7 @@ class SignalingServiceTest {
 					.isEqualTo(new CloseStatus(4001, "Participation grant expired"));
 			assertThat(observer.nextJson().at("/payload/peerId").asString())
 					.isEqualTo(joinedPeerId);
-			assertThat(observer.hasNoTextMessageFor(100)).isTrue();
+			observer.assertNoTextMessageFor(Duration.ofMillis(100));
 			assertThat(batonService.participantCount(ROOM_ID)).isOne();
 			assertThat(batonAdmissionPolicy.activeParticipationTokenReservationCount(
 					joinedGrant.tokenId())).isZero();
@@ -754,7 +754,7 @@ class SignalingServiceTest {
 			assertThat(batonRegistry.get("round.signaling.authorization.closes")
 					.counter()
 					.count()).isEqualTo(3);
-			assertThat(observer.hasNoTextMessageFor(100)).isTrue();
+			observer.assertNoTextMessageFor(Duration.ofMillis(100));
 		}
 		finally {
 			batonService.stop();
@@ -817,7 +817,7 @@ class SignalingServiceTest {
 			JsonNode peerLeft = sender.nextJson();
 			assertThat(peerLeft.get("type").asString()).isEqualTo("peer.left");
 			assertThat(peerLeft.at("/payload/peerId").asString()).isEqualTo(targetPeerId);
-			assertThat(target.hasNoTextMessageFor(100)).isTrue();
+			target.assertNoTextMessageFor(Duration.ofMillis(100));
 			assertThat(batonAdmissionPolicy.activeParticipationTokenReservationCount(
 					targetGrant.tokenId())).isZero();
 
@@ -1067,10 +1067,9 @@ class SignalingServiceTest {
 			assertThat(batonService.roomCount()).isOne();
 			assertThat(batonService.participantCount(ROOM_ID)).isOne();
 			assertThat(batonService.connectedPeerCount()).isOne();
-			assertThat(TestPeer.await(
+			await().atMost(Duration.ofSeconds(2)).until(
 					() -> batonAdmissionPolicy.activeParticipationTokenReservationCount(
-							originalGrant.tokenId()) == 0,
-					2_000)).isTrue();
+							originalGrant.tokenId()) == 0);
 			assertThat(batonAdmissionPolicy.activeParticipationTokenReservationCount(
 					originalGrant.tokenId())).isZero();
 			assertThat(batonAdmissionPolicy.activeParticipationTokenReservationCount(
@@ -1166,11 +1165,10 @@ class SignalingServiceTest {
 			JsonNode observerJoined = observer.nextJson();
 			String originalPeerId = observerJoined.at("/payload/participants/0/peerId").asString();
 			original.nextJson();
-			assertThat(TestPeer.await(
+			await().atMost(Duration.ofSeconds(2)).until(
 					() -> batonRegistry.get("round.signaling.outbound.queue.bytes")
 							.gauge()
-							.value() == 0,
-					2_000)).isTrue();
+							.value() == 0);
 
 			TestPeer replacement = peer(
 					"pressure-replacement",
@@ -1205,16 +1203,15 @@ class SignalingServiceTest {
 					.isEqualTo(new CloseStatus(4002, "Participation session superseded"));
 			assertThat(replacement.closeStatus().get())
 					.isEqualTo(new CloseStatus(1011, "Outbound queue overflow"));
-			assertThat(observer.hasNoTextMessageFor(100)).isTrue();
+			observer.assertNoTextMessageFor(Duration.ofMillis(100));
 			assertThat(batonService.roomCount()).isOne();
 			assertThat(batonService.participantCount(ROOM_ID)).isOne();
 			assertThat(batonService.connectedPeerCount()).isOne();
 			assertThat(batonRegistry.get("round.signaling.outbound.queue.global_overflows")
 					.counter()
 					.count()).isEqualTo(1);
-			assertThat(TestPeer.await(
-					() -> batonAdmissionPolicy.activeReservationCount() == 1,
-					2_000)).isTrue();
+			await().atMost(Duration.ofSeconds(2)).until(
+					() -> batonAdmissionPolicy.activeReservationCount() == 1);
 		}
 		finally {
 			releaseReplacementSend.countDown();
@@ -1264,16 +1261,15 @@ class SignalingServiceTest {
 			original.awaitClosed();
 			assertThat(original.closeStatus().get())
 					.isEqualTo(new CloseStatus(4002, "Participation session superseded"));
-			assertThat(original.hasNoTextMessageFor(100)).isTrue();
-			assertThat(replacement.hasNoTextMessageFor(100)).isTrue();
+			original.assertNoTextMessageFor(Duration.ofMillis(100));
+			replacement.assertNoTextMessageFor(Duration.ofMillis(100));
 			assertThat(replacement.closeStatus().get()).isNull();
 			assertThat(batonService.roomCount()).isOne();
 			assertThat(batonService.participantCount(ROOM_ID)).isOne();
 			assertThat(batonService.connectedPeerCount()).isOne();
-			assertThat(TestPeer.await(
+			await().atMost(Duration.ofSeconds(2)).until(
 					() -> batonAdmissionPolicy.activeParticipationTokenReservationCount(
-							originalGrant.tokenId()) == 0,
-					2_000)).isTrue();
+							originalGrant.tokenId()) == 0);
 			assertThat(batonAdmissionPolicy.activeParticipationTokenReservationCount(
 					originalGrant.tokenId())).isZero();
 			assertThat(batonAdmissionPolicy.activeParticipationTokenReservationCount(
@@ -1367,10 +1363,9 @@ class SignalingServiceTest {
 
 			assertThat(batonService.participantCount(ROOM_ID)).isEqualTo(6);
 			assertThat(batonService.connectedPeerCount()).isEqualTo(6);
-			assertThat(TestPeer.await(
+			await().atMost(Duration.ofSeconds(2)).until(
 					() -> batonAdmissionPolicy.activeParticipationTokenReservationCount(
-							originalGrant.tokenId()) == 0,
-					2_000)).isTrue();
+							originalGrant.tokenId()) == 0);
 			assertThat(batonAdmissionPolicy.activeParticipationTokenReservationCount(
 					originalGrant.tokenId())).isZero();
 			assertThat(batonAdmissionPolicy.activeParticipationTokenReservationCount(
@@ -1482,9 +1477,8 @@ class SignalingServiceTest {
 
 			releaseClose.countDown();
 			original.awaitClosed();
-			assertThat(TestPeer.await(
-					() -> batonAdmissionPolicy.activeParticipantRoomReservationCount(freshGrant) == 1,
-					2_000)).isTrue();
+			await().atMost(Duration.ofSeconds(2)).until(
+					() -> batonAdmissionPolicy.activeParticipantRoomReservationCount(freshGrant) == 1);
 			assertThat(attemptedStatuses)
 					.containsExactly(new CloseStatus(4002, "Participation session superseded"));
 			assertThat(batonAdmissionPolicy.activeParticipationTokenReservationCount(
@@ -1494,7 +1488,7 @@ class SignalingServiceTest {
 			handler.handleTransportError(
 					original.session(),
 					new java.io.IOException("post-close transport failure"));
-			assertThat(TestPeer.await(() -> closeAttempts.get() == 2, 2_000)).isTrue();
+			await().atMost(Duration.ofSeconds(2)).until(() -> closeAttempts.get() == 2);
 			assertThat(attemptedStatuses).containsExactly(
 					new CloseStatus(4002, "Participation session superseded"),
 					new CloseStatus(4002, "Participation session superseded"));
@@ -1733,7 +1727,7 @@ class SignalingServiceTest {
 		grace.awaitClosed();
 		assertThat(service.participantCount(ROOM_ID)).isOne();
 		service.disconnect(grace.session());
-		assertThat(ada.hasNoTextMessageFor(100)).isTrue();
+		ada.assertNoTextMessageFor(Duration.ofMillis(100));
 		assertThat(meterRegistry.get("round.signaling.frames.invalid").counter().count())
 				.isEqualTo(1);
 	}
@@ -1820,11 +1814,10 @@ class SignalingServiceTest {
 				.value()).isGreaterThan(32D * 1024D);
 
 		releaseSend.countDown();
-		assertThat(TestPeer.await(
+		await().atMost(Duration.ofSeconds(2)).until(
 				() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
 						.gauge()
-						.value() == 0,
-				2_000)).isTrue();
+						.value() == 0);
 	}
 
 	@Test
@@ -1882,11 +1875,10 @@ class SignalingServiceTest {
 		}
 
 		second.awaitFrameCount(2);
-		assertThat(TestPeer.await(
+		await().atMost(Duration.ofSeconds(2)).until(
 				() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
 						.gauge()
-						.value() == 0,
-				2_000)).isTrue();
+						.value() == 0);
 	}
 
 	@Test
@@ -1939,11 +1931,10 @@ class SignalingServiceTest {
 			releaseSecondSend.countDown();
 		}
 
-		assertThat(TestPeer.await(
+		await().atMost(Duration.ofSeconds(2)).until(
 				() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
 						.gauge()
-						.value() == 0,
-				2_000)).isTrue();
+						.value() == 0);
 	}
 
 	@Test
@@ -2113,12 +2104,11 @@ class SignalingServiceTest {
 			service.handle(observer.session(), join(observerName));
 			JsonNode observerJoined = observer.nextJson();
 			String victimPeerId = observerJoined.at("/payload/participants/0/peerId").asString();
-			assertThat(TestPeer.await(
+			await().atMost(Duration.ofSeconds(2)).until(
 					() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
 							.gauge()
 							.value()
-							== desiredBallastBytes + victimJoinedBytes + queuedPeerJoinedBytes,
-					2_000)).isTrue();
+							== desiredBallastBytes + victimJoinedBytes + queuedPeerJoinedBytes);
 
 			service.handle(newcomer.session(), join(newcomerName));
 			releaseBallastSend.countDown();
@@ -2133,18 +2123,17 @@ class SignalingServiceTest {
 					.isEqualTo(new CloseStatus(1011, "Outbound queue overflow"));
 			assertThat(newcomer.closeStatus().get())
 					.isEqualTo(new CloseStatus(1011, "Outbound queue overflow"));
-			assertThat(observer.hasNoTextMessageFor(100)).isTrue();
-			assertThat(newcomer.hasNoTextMessageFor(100)).isTrue();
+			observer.assertNoTextMessageFor(Duration.ofMillis(100));
+			newcomer.assertNoTextMessageFor(Duration.ofMillis(100));
 			assertThat(service.participantCount(ROOM_ID)).isOne();
 			assertThat(service.connectedPeerCount()).isEqualTo(2);
 			assertThat(meterRegistry.get("round.signaling.outbound.queue.global_overflows")
 					.counter()
 					.count()).isEqualTo(2);
-			assertThat(TestPeer.await(
+			await().atMost(Duration.ofSeconds(2)).until(
 					() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
 							.gauge()
-							.value() == 0,
-					2_000)).isTrue();
+							.value() == 0);
 		}
 		finally {
 			releaseBallastSend.countDown();
@@ -2237,11 +2226,10 @@ class SignalingServiceTest {
 			String victimPeerId = observerJoined.at("/payload/participants/1/peerId").asString();
 			service.sendInvalidMessage(leaver.session(), "x".repeat(leaverDetailLength));
 			service.sendInvalidMessage(victim.session(), "y".repeat(victimDetailLength));
-			assertThat(TestPeer.await(
+			await().atMost(Duration.ofSeconds(2)).until(
 					() -> meterRegistry.get("round.signaling.outbound.queue.bytes")
 							.gauge()
-							.value() == desiredLeaverBytes + desiredVictimBytes,
-					2_000)).isTrue();
+							.value() == desiredLeaverBytes + desiredVictimBytes);
 
 			service.handle(leaver.session(), new ClientMessage.Leave(ROOM_ID, null));
 			releaseLeaverSend.countDown();
@@ -2422,9 +2410,8 @@ class SignalingServiceTest {
 			releaseClose.countDown();
 		}
 
-		assertThat(TestPeer.await(
-				() -> peers.stream().allMatch(peer -> peer.closeStatus().get() != null),
-				2_000)).isTrue();
+		await().atMost(Duration.ofSeconds(2)).until(
+				() -> peers.stream().allMatch(peer -> peer.closeStatus().get() != null));
 	}
 
 	@Test
@@ -2501,9 +2488,8 @@ class SignalingServiceTest {
 		}
 		finally {
 			releaseCloses.countDown();
-			assertThat(TestPeer.await(
-					() -> batonAdmissionPolicy.activeReservationCount() == 0,
-					2_000)).isTrue();
+			await().atMost(Duration.ofSeconds(2)).until(
+					() -> batonAdmissionPolicy.activeReservationCount() == 0);
 			batonService.stop();
 		}
 	}
@@ -3452,8 +3438,7 @@ class SignalingServiceTest {
 			ObjectMapper objectMapper) {
 
 		JsonNode nextJson() throws Exception {
-			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-			do {
+			return await().atMost(Duration.ofSeconds(2)).until(() -> {
 				synchronized (messages) {
 					for (int index = 0; index < messages.size(); index++) {
 						WebSocketMessage<?> message = messages.get(index);
@@ -3463,10 +3448,8 @@ class SignalingServiceTest {
 						}
 					}
 				}
-				Thread.sleep(5);
-			}
-			while (System.nanoTime() < deadline);
-			throw new AssertionError("No queued text signaling message");
+				return null;
+			}, java.util.Objects::nonNull);
 		}
 
 		boolean hasMessage(Predicate<JsonNode> predicate) {
@@ -3491,11 +3474,11 @@ class SignalingServiceTest {
 		}
 
 		void awaitMessage(Predicate<WebSocketMessage<?>> predicate) {
-			assertThat(await(() -> {
+			await().atMost(Duration.ofSeconds(2)).until(() -> {
 				synchronized (messages) {
 					return messages.stream().anyMatch(predicate);
 				}
-			}, 2_000)).isTrue();
+			});
 		}
 
 		PingMessage awaitPing() {
@@ -3510,11 +3493,11 @@ class SignalingServiceTest {
 		}
 
 		void awaitFrameCount(int expected) {
-			assertThat(await(() -> messages.size() >= expected, 2_000)).isTrue();
+			await().atMost(Duration.ofSeconds(2)).until(() -> messages.size() >= expected);
 		}
 
 		void awaitClosed() {
-			assertThat(await(() -> closeStatus.get() != null, 2_000)).isTrue();
+			await().atMost(Duration.ofSeconds(2)).until(() -> closeStatus.get() != null);
 		}
 
 		void failNextSend() {
@@ -3544,42 +3527,15 @@ class SignalingServiceTest {
 			}
 		}
 
-		boolean hasNoTextMessageFor(long milliseconds) {
-			long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(milliseconds);
-			do {
-				synchronized (messages) {
-					if (messages.stream().anyMatch(TextMessage.class::isInstance)) {
-						return false;
-					}
-				}
-				try {
-					Thread.sleep(5);
-				}
-				catch (InterruptedException exception) {
-					Thread.currentThread().interrupt();
-					return false;
-				}
-			}
-			while (System.nanoTime() < deadline);
-			return true;
-		}
-
-		private static boolean await(BooleanSupplier condition, long milliseconds) {
-			long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(milliseconds);
-			do {
-				if (condition.getAsBoolean()) {
-					return true;
-				}
-				try {
-					Thread.sleep(5);
-				}
-				catch (InterruptedException exception) {
-					Thread.currentThread().interrupt();
-					return false;
-				}
-			}
-			while (System.nanoTime() < deadline);
-			return condition.getAsBoolean();
+		void assertNoTextMessageFor(Duration duration) {
+			await().pollInterval(Duration.ofMillis(5))
+					.during(duration)
+					.atMost(duration.plusSeconds(1))
+					.until(() -> {
+						synchronized (messages) {
+							return messages.stream().noneMatch(TextMessage.class::isInstance);
+						}
+					});
 		}
 	}
 
