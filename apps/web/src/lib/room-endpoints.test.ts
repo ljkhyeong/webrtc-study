@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveRoomEndpoints } from './room-endpoints';
+import { resolveNormalizedRoomEndpoints, resolveRoundAuthMode } from './room-endpoints';
 
 const ROOM_ID = 'abcd-efgh-jkmp';
 
@@ -9,8 +9,8 @@ describe('room transport endpoint resolution', () => {
     'keeps the standalone same-origin defaults for auth mode %s',
     (authMode) => {
       expect(
-        resolveRoomEndpoints({
-          authMode,
+        resolveNormalizedRoomEndpoints({
+          authMode: resolveRoundAuthMode(authMode),
           location: {
             host: 'round.example.com',
             protocol: 'https:',
@@ -27,7 +27,7 @@ describe('room transport endpoint resolution', () => {
 
   it('keeps standalone signaling and TURN overrides backward compatible', () => {
     expect(
-      resolveRoomEndpoints({
+      resolveNormalizedRoomEndpoints({
         authMode: 'standalone',
         location: {
           host: 'round.example.com',
@@ -62,7 +62,7 @@ describe('room transport endpoint resolution', () => {
   ])(
     'uses room-scoped same-origin BATON endpoints for $location.protocol',
     ({ expectedSignalingUrl, location }) => {
-      const endpoints = resolveRoomEndpoints({
+      const endpoints = resolveNormalizedRoomEndpoints({
         authMode: 'baton',
         location,
         roomId: ROOM_ID,
@@ -82,16 +82,7 @@ describe('room transport endpoint resolution', () => {
   it.each(['typo', 'BATON', 'stand-alone'])(
     'fails closed for an unsupported authentication mode %s',
     (authMode) => {
-      expect(() =>
-        resolveRoomEndpoints({
-          authMode,
-          location: {
-            host: 'round.example.com',
-            protocol: 'https:',
-          },
-          roomId: ROOM_ID,
-        }),
-      ).toThrow();
+      expect(() => resolveRoundAuthMode(authMode)).toThrow();
     },
   );
 
@@ -100,7 +91,7 @@ describe('room transport endpoint resolution', () => {
     { turnCredentialsUrl: 'https://turn.example.net/credentials' },
   ])('rejects endpoint overrides in BATON mode: %#', (overrides) => {
     expect(() =>
-      resolveRoomEndpoints({
+      resolveNormalizedRoomEndpoints({
         authMode: 'baton',
         location: {
           host: 'round.example.com',
@@ -114,7 +105,7 @@ describe('room transport endpoint resolution', () => {
 
   it('treats blank BATON overrides as unset configuration', () => {
     expect(
-      resolveRoomEndpoints({
+      resolveNormalizedRoomEndpoints({
         authMode: 'baton',
         location: {
           host: 'round.example.com',
@@ -135,7 +126,7 @@ describe('room transport endpoint resolution', () => {
     'rejects a non-canonical BATON room id %s',
     (roomId) => {
       expect(() =>
-        resolveRoomEndpoints({
+        resolveNormalizedRoomEndpoints({
           authMode: 'baton',
           location: {
             host: 'round.example.com',

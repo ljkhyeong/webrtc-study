@@ -2,19 +2,12 @@ import { isValidRoomId } from './room';
 
 type RoomEndpointLocation = Pick<Location, 'host' | 'protocol'>;
 
-interface ResolveRoomEndpointsOptions {
+interface ResolveNormalizedRoomEndpointsOptions {
   readonly roomId: string;
-  readonly authMode?: string | undefined;
+  readonly authMode: RoundAuthMode;
   readonly location: RoomEndpointLocation;
   readonly signalingUrl?: string | undefined;
   readonly turnCredentialsUrl?: string | undefined;
-}
-
-interface ResolveNormalizedRoomEndpointsOptions extends Omit<
-  ResolveRoomEndpointsOptions,
-  'authMode'
-> {
-  readonly authMode: RoundAuthMode;
 }
 
 export interface RoomEndpoints {
@@ -27,13 +20,6 @@ export type RoundAuthMode = 'standalone' | 'baton';
 
 const DEFAULT_SIGNALING_PATH = '/signal';
 const DEFAULT_TURN_CREDENTIALS_PATH = '/api/turn-credentials';
-
-export function resolveRoomEndpoints(options: ResolveRoomEndpointsOptions): RoomEndpoints {
-  return resolveNormalizedRoomEndpoints({
-    ...options,
-    authMode: resolveRoundAuthMode(options.authMode),
-  });
-}
 
 export function resolveNormalizedRoomEndpoints(
   options: ResolveNormalizedRoomEndpointsOptions,
