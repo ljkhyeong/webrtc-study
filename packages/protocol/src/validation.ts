@@ -1,7 +1,5 @@
 import {
-  CLIENT_MESSAGE_TYPES,
   PROTOCOL_VERSION,
-  SERVER_MESSAGE_TYPES,
   SIGNALING_ERROR_CODES,
   type AnswerDescription,
   type ClientMessage,
@@ -17,14 +15,11 @@ export const ROOM_ID_SEGMENT_COUNT = 3;
 export const ROOM_ID_PATTERN = new RegExp(
   `^[${ROOM_ID_ALPHABET}]{${ROOM_ID_SEGMENT_LENGTH}}(?:-[${ROOM_ID_ALPHABET}]{${ROOM_ID_SEGMENT_LENGTH}}){${ROOM_ID_SEGMENT_COUNT - 1}}$`,
 );
-export const MAX_ROOM_ID_LENGTH =
-  ROOM_ID_SEGMENT_LENGTH * ROOM_ID_SEGMENT_COUNT + ROOM_ID_SEGMENT_COUNT - 1;
 const MAX_PEER_ID_LENGTH = 128;
 const MAX_DISPLAY_NAME_LENGTH = 64;
 export const MIN_HOST_CAPABILITY_LENGTH = 32;
 export const MAX_HOST_CAPABILITY_LENGTH = 256;
-const MAX_REQUEST_ID_LENGTH = 128;
-const MAX_NEGOTIATION_ID_LENGTH = MAX_REQUEST_ID_LENGTH;
+const MAX_IDENTIFIER_LENGTH = 128;
 const MAX_CANDIDATE_LENGTH = 8 * 1024;
 const MAX_ERROR_MESSAGE_LENGTH = 1_024;
 const PARTICIPANT_ROLES = ['host', 'participant'] as const;
@@ -48,15 +43,13 @@ export class ProtocolValidationError extends Error {
 
 export function parseClientMessage(input: unknown): ClientMessage {
   const message = record(input, '$');
-  assertSerializedFrameWithinBudget(message);
   literal(message.v, PROTOCOL_VERSION, '$.v');
-  oneOf(message.type, CLIENT_MESSAGE_TYPES, '$.type');
 
   switch (message.type) {
     case 'room.join':
       exactKeys(message, ['v', 'type', 'roomId', 'requestId', 'payload'], '$');
       roomId(message.roomId, '$.roomId');
-      optionalRequestId(message.requestId, '$.requestId');
+      optionalIdentifier(message.requestId, '$.requestId');
       validateJoinPayload(message.payload, '$.payload');
       return message as unknown as ClientMessage;
     case 'rtc.offer':
@@ -82,22 +75,23 @@ export function parseClientMessage(input: unknown): ClientMessage {
     case 'room.leave':
       exactKeys(message, ['v', 'type', 'roomId', 'requestId'], '$');
       roomId(message.roomId, '$.roomId');
-      optionalRequestId(message.requestId, '$.requestId');
+      optionalIdentifier(message.requestId, '$.requestId');
       return message as unknown as ClientMessage;
+    default:
+      fail('$.type', 'must be a supported client message type');
   }
 }
 
 export function parseServerMessage(input: unknown): ServerMessage {
   const message = record(input, '$');
-  assertSerializedFrameWithinBudget(message);
+  serializeFrame(message);
   literal(message.v, PROTOCOL_VERSION, '$.v');
-  oneOf(message.type, SERVER_MESSAGE_TYPES, '$.type');
 
   switch (message.type) {
     case 'room.joined':
       exactKeys(message, ['v', 'type', 'roomId', 'requestId', 'payload'], '$');
       roomId(message.roomId, '$.roomId');
-      optionalRequestId(message.requestId, '$.requestId');
+      optionalIdentifier(message.requestId, '$.requestId');
       validateRoomJoinedPayload(message.payload, '$.payload');
       return message as unknown as ServerMessage;
     case 'peer.joined':
@@ -124,7 +118,7 @@ export function parseServerMessage(input: unknown): ServerMessage {
       exactKeys(message, ['v', 'type', 'roomId', 'from', 'requestId', 'payload'], '$');
       roomId(message.roomId, '$.roomId');
       boundedNonBlankString(message.from, MAX_PEER_ID_LENGTH, '$.from');
-      optionalRequestId(message.requestId, '$.requestId');
+      optionalIdentifier(message.requestId, '$.requestId');
       validateModerationMediaDisabledPayload(message.payload, '$.payload');
       return message as unknown as ServerMessage;
     case 'peer.left':
@@ -137,27 +131,11 @@ export function parseServerMessage(input: unknown): ServerMessage {
       if (message.roomId !== undefined) {
         roomId(message.roomId, '$.roomId');
       }
-      optionalRequestId(message.requestId, '$.requestId');
+      optionalIdentifier(message.requestId, '$.requestId');
       validateErrorPayload(message.payload, '$.payload');
       return message as unknown as ServerMessage;
-  }
-}
-
-export function isClientMessage(input: unknown): input is ClientMessage {
-  try {
-    parseClientMessage(input);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function isServerMessage(input: unknown): input is ServerMessage {
-  try {
-    parseServerMessage(input);
-    return true;
-  } catch {
-    return false;
+    default:
+      fail('$.type', 'must be a supported server message type');
   }
 }
 
@@ -171,7 +149,7 @@ export function utf8ByteLength(value: string): number {
 
 function relayEnvelope(message: UnknownRecord): void {
   roomId(message.roomId, '$.roomId');
-  optionalRequestId(message.requestId, '$.requestId');
+  optionalIdentifier(message.requestId, '$.requestId');
   boundedNonBlankString(message.to, MAX_PEER_ID_LENGTH, '$.to');
 }
 
@@ -206,7 +184,7 @@ function validateDescriptionPayload(
 ): void {
   const payload = record(input, path);
   exactKeys(payload, ['description', 'negotiationId'], path);
-  optionalNegotiationId(payload.negotiationId, `${path}.negotiationId`);
+  optionalIdentifier(payload.negotiationId, `${path}.negotiationId`);
   const description = record(payload.description, `${path}.description`);
   exactKeys(description, ['type', 'sdp'], `${path}.description`);
   literal(description.type, expectedType, `${path}.description.type`);
@@ -218,7 +196,7 @@ function validateDescriptionPayload(
 function validateIcePayload(input: unknown, path: string): void {
   const payload = record(input, path);
   exactKeys(payload, ['candidate', 'negotiationId'], path);
-  optionalNegotiationId(payload.negotiationId, `${path}.negotiationId`);
+  optionalIdentifier(payload.negotiationId, `${path}.negotiationId`);
   if (payload.candidate === null) {
     return;
   }
@@ -295,7 +273,9 @@ function validateParticipant(input: unknown, path: string): asserts input is Par
 function validateCapabilities(input: unknown, path: string): void {
   const capabilities = record(input, path);
   exactKeys(capabilities, ['canModerateMedia'], path);
-  booleanValue(capabilities.canModerateMedia, `${path}.canModerateMedia`);
+  if (typeof capabilities.canModerateMedia !== 'boolean') {
+    fail(`${path}.canModerateMedia`, 'must be a boolean');
+  }
 }
 
 function validateErrorPayload(input: unknown, path: string): void {
@@ -306,21 +286,14 @@ function validateErrorPayload(input: unknown, path: string): void {
 }
 
 function roomId(input: unknown, path: string): void {
-  boundedString(input, MAX_ROOM_ID_LENGTH, path);
-  if (!(input as string).match(ROOM_ID_PATTERN)) {
+  if (typeof input !== 'string' || !ROOM_ID_PATTERN.test(input)) {
     fail(path, 'must be a canonical ROUND room id');
   }
 }
 
-function optionalRequestId(input: unknown, path: string): void {
+function optionalIdentifier(input: unknown, path: string): void {
   if (input !== undefined) {
-    boundedNonBlankString(input, MAX_REQUEST_ID_LENGTH, path);
-  }
-}
-
-function optionalNegotiationId(input: unknown, path: string): void {
-  if (input !== undefined) {
-    boundedNonBlankString(input, MAX_NEGOTIATION_ID_LENGTH, path);
+    boundedNonBlankString(input, MAX_IDENTIFIER_LENGTH, path);
   }
 }
 
@@ -360,16 +333,6 @@ function boundedUtf8String(input: unknown, maximumBytes: number, path: string): 
   if (utf8ByteLength(input) > maximumBytes) {
     fail(path, `must contain at most ${maximumBytes} UTF-8 bytes`);
   }
-}
-
-function booleanValue(input: unknown, path: string): void {
-  if (typeof input !== 'boolean') {
-    fail(path, 'must be a boolean');
-  }
-}
-
-function assertSerializedFrameWithinBudget(message: UnknownRecord): void {
-  serializeFrame(message);
 }
 
 function serializeFrame(message: UnknownRecord): string {

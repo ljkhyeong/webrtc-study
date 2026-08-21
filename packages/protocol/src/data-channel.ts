@@ -1,14 +1,8 @@
 import { ProtocolValidationError, utf8ByteLength } from './validation.js';
 
-export const DATA_CHANNEL_MESSAGE_TYPES = [
-  'chat.message',
-  'chat.ack',
-  'participant.media',
-] as const;
-
 export const MAX_DATA_CHANNEL_FRAME_BYTES = 32 * 1024;
-export const MAX_CHAT_TEXT_LENGTH = 4_000;
-export const MAX_DATA_MESSAGE_ID_LENGTH = 128;
+const MAX_CHAT_TEXT_LENGTH = 4_000;
+const MAX_DATA_MESSAGE_ID_LENGTH = 128;
 
 const MAX_DATE_TIMESTAMP_MS = 8_640_000_000_000_000;
 
@@ -125,10 +119,9 @@ function boundedIdentifier(input: unknown, path: string): void {
 
 function dateSafeTimestamp(input: unknown, path: string): void {
   if (
-    typeof input !== 'number' ||
     !Number.isSafeInteger(input) ||
-    input < 0 ||
-    input > MAX_DATE_TIMESTAMP_MS
+    (input as number) < 0 ||
+    (input as number) > MAX_DATE_TIMESTAMP_MS
   ) {
     throw new ProtocolValidationError(path, 'must be a Date-safe non-negative integer');
   }

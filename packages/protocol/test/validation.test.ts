@@ -7,8 +7,6 @@ import {
   MAX_SIGNALING_FRAME_BYTES,
   PROTOCOL_VERSION,
   ProtocolValidationError,
-  isClientMessage,
-  isServerMessage,
   parseClientMessage,
   parseServerMessage,
   serializeClientMessage,
@@ -107,7 +105,6 @@ describe('client message validation', () => {
     },
   ])('accepts $type', (message) => {
     expect(parseClientMessage(message)).toEqual(message);
-    expect(isClientMessage(message)).toBe(true);
   });
 
   it.each(RELAY_PAYLOAD_CASES)(
@@ -125,7 +122,6 @@ describe('client message validation', () => {
       };
 
       expect(parseClientMessage(message)).toEqual(message);
-      expect(isClientMessage(message)).toBe(true);
     },
   );
 
@@ -147,7 +143,6 @@ describe('client message validation', () => {
     };
 
     expect(() => parseClientMessage(message)).toThrow('$.payload.negotiationId');
-    expect(isClientMessage(message)).toBe(false);
   });
 
   it('rejects a sender identity supplied by a client', () => {
@@ -161,20 +156,19 @@ describe('client message validation', () => {
     };
 
     expect(() => parseClientMessage(spoofed)).toThrow(ProtocolValidationError);
-    expect(isClientMessage(spoofed)).toBe(false);
   });
 
   it.each(['room', 'Study-A', 'abcd-efgh-ijkl', 'abcd-efgh-jkmp-extra'])(
     'rejects non-canonical room id %s',
     (roomId) => {
-      expect(
-        isClientMessage({
+      expect(() =>
+        parseClientMessage({
           v: PROTOCOL_VERSION,
           type: 'room.join',
           roomId,
           payload: { displayName: 'Ada' },
         }),
-      ).toBe(false);
+      ).toThrow('$.roomId');
     },
   );
 
@@ -207,7 +201,7 @@ describe('client message validation', () => {
       },
     ],
   ])('rejects malformed messages', (message) => {
-    expect(isClientMessage(message)).toBe(false);
+    expect(() => parseClientMessage(message)).toThrow(ProtocolValidationError);
   });
 
   it.each([
@@ -225,7 +219,6 @@ describe('client message validation', () => {
     };
 
     expect(() => parseClientMessage(message)).toThrow('$.payload.hostCapability');
-    expect(isClientMessage(message)).toBe(false);
   });
 
   it('rejects unsupported room.join fields', () => {
@@ -237,7 +230,6 @@ describe('client message validation', () => {
     };
 
     expect(() => parseClientMessage(message)).toThrow('$.payload.role');
-    expect(isClientMessage(message)).toBe(false);
   });
 
   it.each([
@@ -255,7 +247,6 @@ describe('client message validation', () => {
     };
 
     expect(() => parseClientMessage(message)).toThrow('$.payload.kind');
-    expect(isClientMessage(message)).toBe(false);
   });
 
   it.each([
@@ -271,7 +262,6 @@ describe('client message validation', () => {
     };
 
     expect(() => parseClientMessage(message)).toThrow('$.to');
-    expect(isClientMessage(message)).toBe(false);
   });
 
   it.each([
@@ -300,7 +290,6 @@ describe('client message validation', () => {
     ],
   ])('rejects an unsupported moderation %s field', (_case, message, path) => {
     expect(() => parseClientMessage(message)).toThrow(path);
-    expect(isClientMessage(message)).toBe(false);
   });
 
   it('rejects an unsupported media-enable request', () => {
@@ -313,7 +302,6 @@ describe('client message validation', () => {
     };
 
     expect(() => parseClientMessage(message)).toThrow('$.type');
-    expect(isClientMessage(message)).toBe(false);
   });
 
   it.each([
@@ -457,7 +445,6 @@ describe('server message validation', () => {
     },
   ])('accepts $type', (message) => {
     expect(parseServerMessage(message)).toEqual(message);
-    expect(isServerMessage(message)).toBe(true);
   });
 
   it.each(RELAY_PAYLOAD_CASES)(
@@ -475,7 +462,6 @@ describe('server message validation', () => {
       };
 
       expect(parseServerMessage(message)).toEqual(message);
-      expect(isServerMessage(message)).toBe(true);
     },
   );
 
@@ -497,7 +483,6 @@ describe('server message validation', () => {
     };
 
     expect(() => parseServerMessage(message)).toThrow('$.payload.negotiationId');
-    expect(isServerMessage(message)).toBe(false);
   });
 
   it.each([
@@ -514,7 +499,6 @@ describe('server message validation', () => {
     };
 
     expect(() => parseServerMessage(message)).toThrow('$.payload.participant.role');
-    expect(isServerMessage(message)).toBe(false);
   });
 
   it.each([
@@ -551,7 +535,6 @@ describe('server message validation', () => {
     ],
   ])('rejects an overlong %s peer id', (_case, message, path) => {
     expect(() => parseServerMessage(message)).toThrow(path);
-    expect(isServerMessage(message)).toBe(false);
   });
 
   it.each([
@@ -571,7 +554,6 @@ describe('server message validation', () => {
     };
 
     expect(() => parseServerMessage(message)).toThrow('$.payload.selfRole');
-    expect(isServerMessage(message)).toBe(false);
   });
 
   it.each([
@@ -597,7 +579,6 @@ describe('server message validation', () => {
     };
 
     expect(() => parseServerMessage(message)).toThrow(path);
-    expect(isServerMessage(message)).toBe(false);
   });
 
   it.each([
@@ -636,7 +617,6 @@ describe('server message validation', () => {
     ],
   ])('rejects an unsupported %s field', (_case, message, path) => {
     expect(() => parseServerMessage(message)).toThrow(path);
-    expect(isServerMessage(message)).toBe(false);
   });
 
   it.each([
@@ -654,7 +634,6 @@ describe('server message validation', () => {
     };
 
     expect(() => parseServerMessage(message)).toThrow('$.payload.kind');
-    expect(isServerMessage(message)).toBe(false);
   });
 
   it.each([
@@ -672,7 +651,6 @@ describe('server message validation', () => {
     };
 
     expect(() => parseServerMessage(message)).toThrow(path);
-    expect(isServerMessage(message)).toBe(false);
   });
 
   it.each([
@@ -701,7 +679,6 @@ describe('server message validation', () => {
     ],
   ])('rejects an unsupported disabled-media %s field', (_case, message, path) => {
     expect(() => parseServerMessage(message)).toThrow(path);
-    expect(isServerMessage(message)).toBe(false);
   });
 
   it('rejects an unsupported media-enabled event', () => {
@@ -714,17 +691,16 @@ describe('server message validation', () => {
     };
 
     expect(() => parseServerMessage(message)).toThrow('$.type');
-    expect(isServerMessage(message)).toBe(false);
   });
 
   it('rejects an unknown signaling error code', () => {
-    expect(
-      isServerMessage({
+    expect(() =>
+      parseServerMessage({
         v: PROTOCOL_VERSION,
         type: 'error',
         payload: { code: 'SURPRISE', message: 'Nope' },
       }),
-    ).toBe(false);
+    ).toThrow('$.payload.code');
   });
 
   it('rejects a server message whose serialized UTF-8 frame exceeds 64 KiB', () => {

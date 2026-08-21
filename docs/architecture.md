@@ -226,7 +226,7 @@ ICE 복구는 glare를 피하도록 피어 쌍마다 결정적인 offer initiato
 peer connection을 다시 생성합니다. 모든 ROUND offer는 제한된 `negotiationId` generation을
 시작하며 answer와 ICE candidate가 이를 그대로 반환합니다. 다시 생성한 피어는 폐기된
 generation의 메시지를 거부하므로 지연된 SDP나 ICE가 단 한 번의 교체 시도를 손상시키지
-않습니다. Protocol v2는 이 wire-contract 변경을 나타냅니다. web client와 signaling 서버는
-함께 배포해야 하며 현재 ROUND client는 항상 이 optional field를 보냅니다. 방 제한을 늘리거나
-여러 영상 소스를 추가할 때는 이 mesh 복구 모델을 무기한 확장하지 말고 미디어 토폴로지를
-SFU로 전환해야 합니다.
+않습니다. `negotiationId`는 protocol v2에서 도입됐으며, 현재 wire 계약은 관리 메시지를 포함한
+protocol v3입니다. web client와 signaling 서버는 함께 배포해야 하며 현재 ROUND client는 항상
+이 optional field를 보냅니다. 방 제한을 늘리거나 여러 영상 소스를 추가할 때는 이 mesh 복구
+모델을 무기한 확장하지 말고 미디어 토폴로지를 SFU로 전환해야 합니다.

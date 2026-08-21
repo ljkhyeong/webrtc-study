@@ -1,25 +1,5 @@
 export const PROTOCOL_VERSION = 3 as const;
 
-export const CLIENT_MESSAGE_TYPES = [
-  'room.join',
-  'rtc.offer',
-  'rtc.answer',
-  'rtc.ice',
-  'moderation.media.disable',
-  'room.leave',
-] as const;
-
-export const SERVER_MESSAGE_TYPES = [
-  'room.joined',
-  'peer.joined',
-  'rtc.offer',
-  'rtc.answer',
-  'rtc.ice',
-  'moderation.media.disabled',
-  'peer.left',
-  'error',
-] as const;
-
 export const SIGNALING_ERROR_CODES = [
   'INVALID_MESSAGE',
   'ALREADY_JOINED',
@@ -33,8 +13,6 @@ export const SIGNALING_ERROR_CODES = [
 ] as const;
 
 export type ProtocolVersion = typeof PROTOCOL_VERSION;
-export type ClientMessageType = (typeof CLIENT_MESSAGE_TYPES)[number];
-export type ServerMessageType = (typeof SERVER_MESSAGE_TYPES)[number];
 export type SignalingErrorCode = (typeof SIGNALING_ERROR_CODES)[number];
 export type ParticipantRole = 'host' | 'participant';
 export type ModeratedMediaKind = 'audio' | 'video';
@@ -74,7 +52,7 @@ interface ClientMessageBase {
   requestId?: string;
 }
 
-export interface RoomJoinClientMessage extends ClientMessageBase {
+interface RoomJoinClientMessage extends ClientMessageBase {
   type: 'room.join';
   payload: {
     displayName: string;
@@ -82,7 +60,7 @@ export interface RoomJoinClientMessage extends ClientMessageBase {
   };
 }
 
-export interface RtcOfferClientMessage extends ClientMessageBase {
+interface RtcOfferClientMessage extends ClientMessageBase {
   type: 'rtc.offer';
   to: string;
   payload: {
@@ -91,7 +69,7 @@ export interface RtcOfferClientMessage extends ClientMessageBase {
   };
 }
 
-export interface RtcAnswerClientMessage extends ClientMessageBase {
+interface RtcAnswerClientMessage extends ClientMessageBase {
   type: 'rtc.answer';
   to: string;
   payload: {
@@ -100,7 +78,7 @@ export interface RtcAnswerClientMessage extends ClientMessageBase {
   };
 }
 
-export interface RtcIceClientMessage extends ClientMessageBase {
+interface RtcIceClientMessage extends ClientMessageBase {
   type: 'rtc.ice';
   to: string;
   payload: {
@@ -109,7 +87,7 @@ export interface RtcIceClientMessage extends ClientMessageBase {
   };
 }
 
-export interface ModerationMediaDisableClientMessage extends ClientMessageBase {
+interface ModerationMediaDisableClientMessage extends ClientMessageBase {
   type: 'moderation.media.disable';
   to: string;
   payload: {
@@ -117,7 +95,7 @@ export interface ModerationMediaDisableClientMessage extends ClientMessageBase {
   };
 }
 
-export interface RoomLeaveClientMessage extends ClientMessageBase {
+interface RoomLeaveClientMessage extends ClientMessageBase {
   type: 'room.leave';
 }
 
@@ -134,7 +112,7 @@ interface ServerMessageBase {
   roomId: string;
 }
 
-export interface RoomJoinedServerMessage extends ServerMessageBase {
+interface RoomJoinedServerMessage extends ServerMessageBase {
   type: 'room.joined';
   requestId?: string;
   payload: {
@@ -147,14 +125,14 @@ export interface RoomJoinedServerMessage extends ServerMessageBase {
   };
 }
 
-export interface PeerJoinedServerMessage extends ServerMessageBase {
+interface PeerJoinedServerMessage extends ServerMessageBase {
   type: 'peer.joined';
   payload: {
     participant: Participant;
   };
 }
 
-export interface RtcOfferServerMessage extends ServerMessageBase {
+interface RtcOfferServerMessage extends ServerMessageBase {
   type: 'rtc.offer';
   from: string;
   payload: {
@@ -163,7 +141,7 @@ export interface RtcOfferServerMessage extends ServerMessageBase {
   };
 }
 
-export interface RtcAnswerServerMessage extends ServerMessageBase {
+interface RtcAnswerServerMessage extends ServerMessageBase {
   type: 'rtc.answer';
   from: string;
   payload: {
@@ -172,7 +150,7 @@ export interface RtcAnswerServerMessage extends ServerMessageBase {
   };
 }
 
-export interface RtcIceServerMessage extends ServerMessageBase {
+interface RtcIceServerMessage extends ServerMessageBase {
   type: 'rtc.ice';
   from: string;
   payload: {
@@ -181,7 +159,7 @@ export interface RtcIceServerMessage extends ServerMessageBase {
   };
 }
 
-export interface ModerationMediaDisabledServerMessage extends ServerMessageBase {
+interface ModerationMediaDisabledServerMessage extends ServerMessageBase {
   type: 'moderation.media.disabled';
   from: string;
   requestId?: string;
@@ -191,14 +169,14 @@ export interface ModerationMediaDisabledServerMessage extends ServerMessageBase 
   };
 }
 
-export interface PeerLeftServerMessage extends ServerMessageBase {
+interface PeerLeftServerMessage extends ServerMessageBase {
   type: 'peer.left';
   payload: {
     peerId: string;
   };
 }
 
-export interface ErrorServerMessage {
+interface ErrorServerMessage {
   v: ProtocolVersion;
   type: 'error';
   roomId?: string;
