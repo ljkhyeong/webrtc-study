@@ -30,14 +30,14 @@ class ConnectionAdmissionPolicyTest {
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		ConnectionAdmissionPolicy policy = policy(3, 2, registry);
 
-		ConnectionAdmissionPolicy.Admission first = policy.reserve(FIRST_CLIENT);
+		ConnectionAdmissionPolicy.Admission first = policy.reserve(FIRST_CLIENT, null);
 		ConnectionAdmissionPolicy.Admission second =
-				policy.reserve(SAME_CLIENT_DIFFERENT_PORT);
+				policy.reserve(SAME_CLIENT_DIFFERENT_PORT, null);
 		ConnectionAdmissionPolicy.Admission sameClientRejected =
-				policy.reserve(FIRST_CLIENT);
-		ConnectionAdmissionPolicy.Admission otherClient = policy.reserve(SECOND_CLIENT);
+				policy.reserve(FIRST_CLIENT, null);
+		ConnectionAdmissionPolicy.Admission otherClient = policy.reserve(SECOND_CLIENT, null);
 		ConnectionAdmissionPolicy.Admission serverRejected =
-				policy.reserve(new InetSocketAddress("192.0.2.12", 41_000));
+				policy.reserve(new InetSocketAddress("192.0.2.12", 41_000), null);
 
 		assertAccepted(first);
 		assertAccepted(second);
@@ -64,14 +64,14 @@ class ConnectionAdmissionPolicyTest {
 	void releasesReservationsIdempotentlyAndRemovesEmptyClientState() {
 		ConnectionAdmissionPolicy policy = policy(1, 1, new SimpleMeterRegistry());
 		ConnectionAdmissionPolicy.Reservation reservation =
-				acceptedReservation(policy.reserve(FIRST_CLIENT));
+				acceptedReservation(policy.reserve(FIRST_CLIENT, null));
 
 		reservation.close();
 		reservation.close();
 
 		assertThat(policy.activeReservationCount()).isZero();
 		assertThat(policy.activeReservationCount(FIRST_CLIENT)).isZero();
-		assertAccepted(policy.reserve(FIRST_CLIENT));
+		assertAccepted(policy.reserve(FIRST_CLIENT, null));
 	}
 
 	@Test
@@ -84,11 +84,11 @@ class ConnectionAdmissionPolicyTest {
 		InetSocketAddress otherPrefix =
 				new InetSocketAddress("2001:db8:abcd:13::1", 41_000);
 
-		assertAccepted(policy.reserve(first));
-		assertThat(policy.reserve(samePrefix))
+		assertAccepted(policy.reserve(first, null));
+		assertThat(policy.reserve(samePrefix, null))
 				.isEqualTo(new ConnectionAdmissionPolicy.Rejected(
 						ConnectionAdmissionPolicy.Rejection.CLIENT_CAPACITY));
-		assertAccepted(policy.reserve(otherPrefix));
+		assertAccepted(policy.reserve(otherPrefix, null));
 		assertThat(policy.activeReservationCount(first)).isOne();
 		assertThat(policy.activeReservationCount(samePrefix)).isOne();
 	}
@@ -180,11 +180,11 @@ class ConnectionAdmissionPolicyTest {
 		ConnectionAdmissionPolicy policy = policy(3, 3, new SimpleMeterRegistry());
 
 		ConnectionAdmissionPolicy.Reservation first = acceptedReservation(
-				policy.reserve(FIRST_CLIENT));
+				policy.reserve(FIRST_CLIENT, null));
 		ConnectionAdmissionPolicy.Reservation second = acceptedReservation(
-				policy.reserve(FIRST_CLIENT));
+				policy.reserve(FIRST_CLIENT, null));
 		ConnectionAdmissionPolicy.Reservation third = acceptedReservation(
-				policy.reserve(FIRST_CLIENT));
+				policy.reserve(FIRST_CLIENT, null));
 
 		assertThat(policy.activeReservationCount()).isEqualTo(3);
 

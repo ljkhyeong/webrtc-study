@@ -25,7 +25,7 @@ public final class ClientAddressKeyResolver {
 		}
 		InetAddress resolved = remoteAddress.getAddress();
 		if (resolved != null) {
-			return resolve(resolved);
+			return key(resolved.getAddress());
 		}
 		return resolve(remoteAddress.getHostString());
 	}
@@ -54,23 +54,19 @@ public final class ClientAddressKeyResolver {
 			return UNKNOWN_CLIENT;
 		}
 		try {
-			return resolve(InetAddress.getByName(candidate));
+			return key(InetAddress.getByName(candidate).getAddress());
 		}
 		catch (UnknownHostException ignored) {
 			return UNKNOWN_CLIENT;
 		}
 	}
 
-	private String resolve(InetAddress address) {
-		return key(address.getAddress());
-	}
-
 	private static String key(byte[] address) {
 		if (address.length == 4) {
-			return "ipv4:" + unsigned(address[0])
-					+ "." + unsigned(address[1])
-					+ "." + unsigned(address[2])
-					+ "." + unsigned(address[3]);
+			return "ipv4:" + Byte.toUnsignedInt(address[0])
+					+ "." + Byte.toUnsignedInt(address[1])
+					+ "." + Byte.toUnsignedInt(address[2])
+					+ "." + Byte.toUnsignedInt(address[3]);
 		}
 		if (address.length != 16) {
 			return UNKNOWN_CLIENT;
@@ -111,9 +107,5 @@ public final class ClientAddressKeyResolver {
 			address[index] = (byte) value;
 		}
 		return address;
-	}
-
-	private static int unsigned(byte value) {
-		return Byte.toUnsignedInt(value);
 	}
 }

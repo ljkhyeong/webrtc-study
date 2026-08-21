@@ -6,7 +6,6 @@ import com.personal.round.net.ClientAddressKeyResolver;
 import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -37,10 +36,6 @@ public final class ConnectionAdmissionPolicy {
 		this.maxConnectionsPerClient = properties.maxConnectionsPerClient();
 		this.metrics = metrics;
 		this.clientAddressKeyResolver = clientAddressKeyResolver;
-	}
-
-	public Admission reserve(InetSocketAddress remoteAddress) {
-		return reserve(remoteAddress, null);
 	}
 
 	public Admission reserve(
@@ -163,17 +158,9 @@ public final class ConnectionAdmissionPolicy {
 	}
 
 	public record Accepted(Reservation reservation) implements Admission {
-
-		public Accepted {
-			Objects.requireNonNull(reservation, "reservation");
-		}
 	}
 
 	public record Rejected(Rejection reason) implements Admission {
-
-		public Rejected {
-			Objects.requireNonNull(reason, "reason");
-		}
 	}
 
 	public static final class Reservation implements AutoCloseable {

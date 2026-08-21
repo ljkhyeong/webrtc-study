@@ -26,8 +26,7 @@ public final class ConnectionAdmissionHandshakeHandler
 
 	private final SignalingService signalingService;
 	private final ConnectionAdmissionPolicy admissionPolicy;
-	private final HandshakeHandler delegate;
-	private volatile boolean running;
+	private final DefaultHandshakeHandler delegate;
 
 	public ConnectionAdmissionHandshakeHandler(
 			SignalingService signalingService,
@@ -38,7 +37,7 @@ public final class ConnectionAdmissionHandshakeHandler
 	ConnectionAdmissionHandshakeHandler(
 			SignalingService signalingService,
 			ConnectionAdmissionPolicy admissionPolicy,
-			HandshakeHandler delegate) {
+			DefaultHandshakeHandler delegate) {
 		this.signalingService = signalingService;
 		this.admissionPolicy = admissionPolicy;
 		this.delegate = delegate;
@@ -94,7 +93,8 @@ public final class ConnectionAdmissionHandshakeHandler
 			}
 			Principal principal = servletRequest.getPrincipal();
 			if (participationGrant != null) {
-				principal = verifiedParticipantPrincipal(participationGrant);
+				String subject = participationGrant.subject();
+				principal = () -> subject;
 			}
 			ServerHttpRequest sanitizedRequest =
 					new SensitiveHeaderRedactingServletServerHttpRequest(
@@ -123,57 +123,23 @@ public final class ConnectionAdmissionHandshakeHandler
 		return candidate instanceof ParticipationGrant grant ? grant : null;
 	}
 
-	private static Principal verifiedParticipantPrincipal(ParticipationGrant grant) {
-		return new VerifiedParticipantPrincipal(grant.subject());
-	}
-
-	private static final class VerifiedParticipantPrincipal implements Principal {
-
-		private final String name;
-
-		private VerifiedParticipantPrincipal(String name) {
-			this.name = name;
-		}
-
-		@Override
-		public String getName() {
-			return name;
-		}
-
-		@Override
-		public String toString() {
-			return "VerifiedParticipantPrincipal";
-		}
-	}
-
 	@Override
 	public void setServletContext(ServletContext servletContext) {
-		if (delegate instanceof ServletContextAware contextAware) {
-			contextAware.setServletContext(servletContext);
-		}
+		delegate.setServletContext(servletContext);
 	}
 
 	@Override
 	public void start() {
-		if (delegate instanceof Lifecycle lifecycle) {
-			lifecycle.start();
-		}
-		running = true;
+		delegate.start();
 	}
 
 	@Override
 	public void stop() {
-		running = false;
-		if (delegate instanceof Lifecycle lifecycle) {
-			lifecycle.stop();
-		}
+		delegate.stop();
 	}
 
 	@Override
 	public boolean isRunning() {
-		if (delegate instanceof Lifecycle lifecycle) {
-			return lifecycle.isRunning();
-		}
-		return running;
+		return delegate.isRunning();
 	}
 }

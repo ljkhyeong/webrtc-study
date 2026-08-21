@@ -28,7 +28,7 @@ import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeFailureException;
-import org.springframework.web.socket.server.HandshakeHandler;
+import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 
 class ConnectionAdmissionHandshakeHandlerTest {
 
@@ -37,7 +37,7 @@ class ConnectionAdmissionHandshakeHandlerTest {
 
 	private SignalingService service;
 	private ConnectionAdmissionPolicy policy;
-	private HandshakeHandler delegate;
+	private DefaultHandshakeHandler delegate;
 	private ConnectionAdmissionHandshakeHandler handler;
 	private ServletServerHttpRequest request;
 	private ServerHttpResponse response;
@@ -50,7 +50,7 @@ class ConnectionAdmissionHandshakeHandlerTest {
 				TestProperties.signalingWithConnectionLimits(6, 1_000, 1),
 				new SignalingMetrics(new SimpleMeterRegistry()),
 				new ClientAddressKeyResolver());
-		delegate = mock(HandshakeHandler.class);
+		delegate = mock(DefaultHandshakeHandler.class);
 		handler = new ConnectionAdmissionHandshakeHandler(service, policy, delegate);
 		request = mock(ServletServerHttpRequest.class);
 		response = mock(ServerHttpResponse.class);
@@ -207,7 +207,6 @@ class ConnectionAdmissionHandshakeHandlerTest {
 		assertThat(upgradeRequest.getPrincipal().getName()).isEqualTo("member-42");
 		assertThat(upgradeRequest.getPrincipal())
 				.asString()
-				.isEqualTo("VerifiedParticipantPrincipal")
 				.doesNotContain("member-42", "raw-jwt");
 		release(attributes);
 	}

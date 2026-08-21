@@ -3104,7 +3104,8 @@ class SignalingServiceTest {
 		attachReservation(
 				unclaimed,
 				acceptedReservation(policy.reserve(
-						new InetSocketAddress("192.0.2.29", 41_000))));
+						new InetSocketAddress("192.0.2.29", 41_000),
+						null)));
 		service.releaseUnclaimedReservation(unclaimed.session());
 		assertThat(policy.activeReservationCount()).isZero();
 
@@ -3113,11 +3114,13 @@ class SignalingServiceTest {
 		attachReservation(
 				accepted,
 				acceptedReservation(policy.reserve(
-						new InetSocketAddress("192.0.2.30", 41_000))));
+						new InetSocketAddress("192.0.2.30", 41_000),
+						null)));
 		attachReservation(
 				rejected,
 				acceptedReservation(policy.reserve(
-						new InetSocketAddress("192.0.2.31", 41_000))));
+						new InetSocketAddress("192.0.2.31", 41_000),
+						null)));
 
 		assertThat(service.connect(accepted.session())).isTrue();
 		assertThat(service.connect(rejected.session())).isFalse();
@@ -3133,7 +3136,8 @@ class SignalingServiceTest {
 		attachReservation(
 				stoppedPeer,
 				acceptedReservation(policy.reserve(
-						new InetSocketAddress("192.0.2.32", 41_000))));
+						new InetSocketAddress("192.0.2.32", 41_000),
+						null)));
 		assertThat(service.connect(stoppedPeer.session())).isTrue();
 
 		service.stop();
@@ -3152,7 +3156,8 @@ class SignalingServiceTest {
 		ConnectionAdmissionPolicy.Admission admission = defaultAdmissionPolicy.reserve(
 				new InetSocketAddress(
 						"198.51.100." + nextTestClientAddress++,
-						41_000));
+						41_000),
+				null);
 		attachReservation(peer, acceptedReservation(admission));
 	}
 
@@ -3170,7 +3175,7 @@ class SignalingServiceTest {
 		int port = 41_000;
 		for (TestPeer peer : peers) {
 			ConnectionAdmissionPolicy.Admission admission =
-					policy.reserve(new InetSocketAddress(clientAddress, port++));
+					policy.reserve(new InetSocketAddress(clientAddress, port++), null);
 			attachReservation(peer, acceptedReservation(admission));
 			assertThat(service.connect(peer.session())).isTrue();
 		}
