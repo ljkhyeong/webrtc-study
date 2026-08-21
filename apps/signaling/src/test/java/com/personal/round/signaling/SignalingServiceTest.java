@@ -194,7 +194,7 @@ class SignalingServiceTest {
 			assertThat(batonService.connect(peer.session())).isTrue();
 			batonService.handle(
 					peer.session(),
-					new ClientMessage.Join(OTHER_ROOM_ID, "join-other", "Mallory"));
+					new ClientMessage.Join(OTHER_ROOM_ID, "join-other", "Mallory", null));
 
 			assertError(peer.nextJson(), "ROOM_MISMATCH");
 			assertThat(batonService.roomCount()).isZero();
@@ -315,7 +315,8 @@ class SignalingServiceTest {
 
 		service.handle(
 				otherRoom.session(),
-				new ClientMessage.Join(OTHER_ROOM_ID, "join-other-room", "Other room"));
+				new ClientMessage.Join(
+						OTHER_ROOM_ID, "join-other-room", "Other room", null));
 		String otherRoomPeerId = otherRoom.nextJson().at("/payload/peerId").asString();
 
 		service.handle(
@@ -380,7 +381,9 @@ class SignalingServiceTest {
 		assertThat(peer.nextJson().at("/payload/selfRole").asString()).isEqualTo("host");
 
 		service.handle(peer.session(), new ClientMessage.Leave(ROOM_ID, "leave-host"));
-		service.handle(peer.session(), new ClientMessage.Join(ROOM_ID, "join-participant", "Host"));
+		service.handle(
+				peer.session(),
+				new ClientMessage.Join(ROOM_ID, "join-participant", "Host", null));
 		JsonNode rejoined = peer.nextJson();
 		assertThat(rejoined.at("/payload/selfRole").asString()).isEqualTo("participant");
 		assertThat(rejoined.at("/payload/capabilities/canModerateMedia").asBoolean()).isFalse();
@@ -605,7 +608,7 @@ class SignalingServiceTest {
 
 			clock.advanceMillis(1);
 
-			assertThat(batonService.acceptInboundFrame(inbound.session())).isFalse();
+			assertThat(batonService.acceptInboundFrame(inbound.session(), 0)).isFalse();
 			inbound.awaitClosed();
 			assertThat(inbound.closeStatus().get())
 					.isEqualTo(new CloseStatus(4001, "Participation grant expired"));
@@ -625,7 +628,7 @@ class SignalingServiceTest {
 					ParticipationGrant.SESSION_ATTRIBUTE,
 					handleGrant);
 			assertThat(batonService.connect(handleRace.session())).isTrue();
-			assertThat(batonService.acceptInboundFrame(handleRace.session())).isTrue();
+			assertThat(batonService.acceptInboundFrame(handleRace.session(), 0)).isTrue();
 
 			clock.advanceMillis(1);
 			batonService.handle(handleRace.session(), join("Ada"));
@@ -1008,7 +1011,7 @@ class SignalingServiceTest {
 		monotonicTicker.advanceMillis(Duration.ofDays(365).toMillis());
 		service.expireUnjoinedSessions();
 
-		assertThat(service.acceptInboundFrame(peer.session())).isTrue();
+		assertThat(service.acceptInboundFrame(peer.session(), 0)).isTrue();
 		service.heartbeatSweep();
 		peer.awaitPing();
 		assertThat(peer.closeStatus().get()).isNull();
@@ -1635,7 +1638,7 @@ class SignalingServiceTest {
 
 			service.handle(
 					independent.session(),
-					new ClientMessage.Join(OTHER_ROOM_ID, null, "Independent peer"));
+					new ClientMessage.Join(OTHER_ROOM_ID, null, "Independent peer", null));
 			JsonNode joined = independent.nextJson();
 
 			assertThat(joined.get("type").asString()).isEqualTo("room.joined");
@@ -2584,15 +2587,15 @@ class SignalingServiceTest {
 
 		for (TestPeer peer : peers) {
 			for (int frame = 0; frame < 200; frame++) {
-				assertThat(service.acceptInboundFrame(peer.session())).isTrue();
+				assertThat(service.acceptInboundFrame(peer.session(), 0)).isTrue();
 			}
 		}
 		TestPeer offender = peers.getFirst();
 		for (int frame = 200; frame < 600; frame++) {
-			assertThat(service.acceptInboundFrame(offender.session())).isTrue();
+			assertThat(service.acceptInboundFrame(offender.session(), 0)).isTrue();
 		}
 
-		assertThat(service.acceptInboundFrame(offender.session())).isFalse();
+		assertThat(service.acceptInboundFrame(offender.session(), 0)).isFalse();
 		offender.awaitClosed();
 		assertThat(offender.closeStatus().get())
 				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
@@ -2615,9 +2618,9 @@ class SignalingServiceTest {
 		TestPeer peer = peer("clock-forward");
 		connect(peer);
 
-		assertThat(service.acceptInboundFrame(peer.session())).isTrue();
+		assertThat(service.acceptInboundFrame(peer.session(), 0)).isTrue();
 		clock.advanceMillis(Duration.ofDays(365).toMillis());
-		assertThat(service.acceptInboundFrame(peer.session())).isFalse();
+		assertThat(service.acceptInboundFrame(peer.session(), 0)).isFalse();
 
 		peer.awaitClosed();
 		assertThat(peer.closeStatus().get())
@@ -2634,11 +2637,11 @@ class SignalingServiceTest {
 		TestPeer peer = peer("clock-rollback");
 		connect(peer);
 
-		assertThat(service.acceptInboundFrame(peer.session())).isTrue();
+		assertThat(service.acceptInboundFrame(peer.session(), 0)).isTrue();
 		clock.advanceMillis(-Duration.ofDays(365).toMillis());
 		monotonicTicker.advanceMillis(properties.abuseWindow().toMillis());
 
-		assertThat(service.acceptInboundFrame(peer.session())).isTrue();
+		assertThat(service.acceptInboundFrame(peer.session(), 0)).isTrue();
 		assertThat(peer.closeStatus().get()).isNull();
 	}
 
@@ -2658,14 +2661,14 @@ class SignalingServiceTest {
 		connectFrom(policy, "192.0.2.11", otherClient);
 
 		for (int frame = 0; frame < 3; frame++) {
-			assertThat(service.acceptInboundFrame(first.session())).isTrue();
-			assertThat(service.acceptInboundFrame(second.session())).isTrue();
+			assertThat(service.acceptInboundFrame(first.session(), 0)).isTrue();
+			assertThat(service.acceptInboundFrame(second.session(), 0)).isTrue();
 		}
 
-		assertThat(service.acceptInboundFrame(first.session())).isFalse();
+		assertThat(service.acceptInboundFrame(first.session(), 0)).isFalse();
 		assertThat(first.closeStatus().get()).isNull();
 		assertThat(second.closeStatus().get()).isNull();
-		assertThat(service.acceptInboundFrame(otherClient.session())).isTrue();
+		assertThat(service.acceptInboundFrame(otherClient.session(), 0)).isTrue();
 		assertThat(meterRegistry.get("round.signaling.frames.client_rate_limited")
 				.counter()
 				.count()).isEqualTo(1);
@@ -2676,7 +2679,7 @@ class SignalingServiceTest {
 				.counter()
 				.count()).isZero();
 
-		assertThat(service.acceptInboundFrame(first.session())).isFalse();
+		assertThat(service.acceptInboundFrame(first.session(), 0)).isFalse();
 		first.awaitClosed();
 		assertThat(first.closeStatus().get())
 				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
@@ -2701,14 +2704,14 @@ class SignalingServiceTest {
 		connectFrom(policy, "192.0.2.40", exhaustedSession, exhaustedClient);
 		connectFrom(policy, "192.0.2.41", otherClient);
 
-		assertThat(service.acceptInboundFrame(exhaustedSession.session())).isTrue();
-		assertThat(service.acceptInboundFrame(exhaustedSession.session())).isTrue();
+		assertThat(service.acceptInboundFrame(exhaustedSession.session(), 0)).isTrue();
+		assertThat(service.acceptInboundFrame(exhaustedSession.session(), 0)).isTrue();
 
-		assertThat(service.acceptInboundFrame(exhaustedSession.session())).isFalse();
+		assertThat(service.acceptInboundFrame(exhaustedSession.session(), 0)).isFalse();
 		exhaustedSession.awaitClosed();
-		assertThat(service.acceptInboundFrame(exhaustedClient.session())).isFalse();
+		assertThat(service.acceptInboundFrame(exhaustedClient.session(), 0)).isFalse();
 
-		assertThat(service.acceptInboundFrame(otherClient.session())).isTrue();
+		assertThat(service.acceptInboundFrame(otherClient.session(), 0)).isTrue();
 		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
 				.counter()
 				.count()).isZero();
@@ -2724,8 +2727,8 @@ class SignalingServiceTest {
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
 		TestPeer first = peer("reconnect-first");
 		connectFrom(policy, "192.0.2.20", first);
-		assertThat(service.acceptInboundFrame(first.session())).isTrue();
-		assertThat(service.acceptInboundFrame(first.session())).isTrue();
+		assertThat(service.acceptInboundFrame(first.session(), 0)).isTrue();
+		assertThat(service.acceptInboundFrame(first.session(), 0)).isTrue();
 
 		service.disconnect(first.session());
 		assertThat(service.trackedInboundClientCount()).isOne();
@@ -2734,7 +2737,7 @@ class SignalingServiceTest {
 		TestPeer reconnected = peer("reconnect-second");
 		connectFrom(policy, "192.0.2.20", reconnected);
 
-		assertThat(service.acceptInboundFrame(reconnected.session())).isFalse();
+		assertThat(service.acceptInboundFrame(reconnected.session(), 0)).isFalse();
 		assertThat(reconnected.closeStatus().get()).isNull();
 		assertThat(service.connectedPeerCount()).isOne();
 		assertThat(meterRegistry.get("round.signaling.frames.client_rate_limited")
@@ -2748,7 +2751,7 @@ class SignalingServiceTest {
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
 		TestPeer first = peer("expired-on-connect");
 		connectFrom(policy, "192.0.2.21", first);
-		assertThat(service.acceptInboundFrame(first.session())).isTrue();
+		assertThat(service.acceptInboundFrame(first.session(), 0)).isTrue();
 		service.disconnect(first.session());
 		assertThat(service.trackedInboundClientCount()).isOne();
 
@@ -2756,7 +2759,7 @@ class SignalingServiceTest {
 		TestPeer second = peer("expired-on-sweep");
 		connectFrom(policy, "192.0.2.22", second);
 		assertThat(service.trackedInboundClientCount()).isOne();
-		assertThat(service.acceptInboundFrame(second.session())).isTrue();
+		assertThat(service.acceptInboundFrame(second.session(), 0)).isTrue();
 		service.disconnect(second.session());
 
 		monotonicTicker.advanceMillis(properties.abuseWindow().toMillis() - 1);
@@ -2775,14 +2778,14 @@ class SignalingServiceTest {
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
 		TestPeer first = peer("cleanup-wall-clock-first");
 		connectFrom(policy, "192.0.2.81", first);
-		assertThat(service.acceptInboundFrame(first.session())).isTrue();
+		assertThat(service.acceptInboundFrame(first.session(), 0)).isTrue();
 		service.disconnect(first.session());
 
 		clock.advanceMillis(Duration.ofDays(365).toMillis());
 		TestPeer second = peer("cleanup-wall-clock-second");
 		connectFrom(policy, "192.0.2.82", second);
 		assertThat(service.trackedInboundClientCount()).isEqualTo(2);
-		assertThat(service.acceptInboundFrame(second.session())).isTrue();
+		assertThat(service.acceptInboundFrame(second.session(), 0)).isTrue();
 		service.disconnect(second.session());
 
 		clock.advanceMillis(-2 * Duration.ofDays(365).toMillis());
@@ -2805,8 +2808,8 @@ class SignalingServiceTest {
 		TestPeer inactive = peer("bounded-inactive");
 		connectFrom(policy, "192.0.2.23", active);
 		connectFrom(policy, "192.0.2.24", inactive);
-		assertThat(service.acceptInboundFrame(active.session())).isTrue();
-		assertThat(service.acceptInboundFrame(inactive.session())).isTrue();
+		assertThat(service.acceptInboundFrame(active.session(), 0)).isTrue();
+		assertThat(service.acceptInboundFrame(inactive.session(), 0)).isTrue();
 		service.disconnect(inactive.session());
 		assertThat(service.trackedInboundClientCount()).isEqualTo(2);
 		assertThat(service.activeInboundClientCount()).isOne();
@@ -2826,7 +2829,7 @@ class SignalingServiceTest {
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties(6));
 		TestPeer peer = peer("retained-until-stop");
 		connectFrom(policy, "192.0.2.26", peer);
-		assertThat(service.acceptInboundFrame(peer.session())).isTrue();
+		assertThat(service.acceptInboundFrame(peer.session(), 0)).isTrue();
 		service.disconnect(peer.session());
 		assertThat(service.trackedInboundClientCount()).isOne();
 
@@ -2852,14 +2855,14 @@ class SignalingServiceTest {
 		connectFrom(policy, "192.0.2.32", third);
 
 		for (int frame = 0; frame < 7; frame++) {
-			assertThat(service.acceptInboundFrame(first.session())).isTrue();
-			assertThat(service.acceptInboundFrame(second.session())).isTrue();
+			assertThat(service.acceptInboundFrame(first.session(), 0)).isTrue();
+			assertThat(service.acceptInboundFrame(second.session(), 0)).isTrue();
 		}
 		for (int frame = 0; frame < 6; frame++) {
-			assertThat(service.acceptInboundFrame(third.session())).isTrue();
+			assertThat(service.acceptInboundFrame(third.session(), 0)).isTrue();
 		}
 
-		assertThat(service.acceptInboundFrame(third.session())).isFalse();
+		assertThat(service.acceptInboundFrame(third.session(), 0)).isFalse();
 		assertThat(first.closeStatus().get()).isNull();
 		assertThat(second.closeStatus().get()).isNull();
 		assertThat(third.closeStatus().get()).isNull();
@@ -2874,7 +2877,7 @@ class SignalingServiceTest {
 				.counter()
 				.count()).isEqualTo(1);
 		monotonicTicker.advanceMillis(properties.abuseWindow().toMillis());
-		assertThat(service.acceptInboundFrame(third.session())).isTrue();
+		assertThat(service.acceptInboundFrame(third.session(), 0)).isTrue();
 	}
 
 	@Test
@@ -2993,8 +2996,8 @@ class SignalingServiceTest {
 		connectFrom(policy, "192.0.2.40", firstLoad);
 		connectFrom(policy, "192.0.2.41", secondLoad);
 		connectFrom(policy, "192.0.2.42", responsive);
-		assertThat(service.acceptInboundFrame(firstLoad.session())).isTrue();
-		assertThat(service.acceptInboundFrame(secondLoad.session())).isTrue();
+		assertThat(service.acceptInboundFrame(firstLoad.session(), 0)).isTrue();
+		assertThat(service.acceptInboundFrame(secondLoad.session(), 0)).isTrue();
 		service.disconnect(firstLoad.session());
 		service.disconnect(secondLoad.session());
 
@@ -3182,7 +3185,7 @@ class SignalingServiceTest {
 	}
 
 	private ClientMessage.Join join(String displayName) {
-		return new ClientMessage.Join(ROOM_ID, null, displayName);
+		return new ClientMessage.Join(ROOM_ID, null, displayName, null);
 	}
 
 	private ClientMessage.Relay relay(String type, String roomId, String target) throws Exception {

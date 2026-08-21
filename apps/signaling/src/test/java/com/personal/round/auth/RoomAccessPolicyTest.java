@@ -98,7 +98,6 @@ class RoomAccessPolicyTest {
 
 		assertThat(access.roleFor(null)).contains(ParticipationGrant.Role.PARTICIPANT);
 		assertThat(access.roleFor(HOST_TOKEN)).contains(ParticipationGrant.Role.HOST);
-		assertThat(access.roleFor("too-short")).isEmpty();
 		assertThat(access.roleFor("f".repeat(64))).isEmpty();
 	}
 

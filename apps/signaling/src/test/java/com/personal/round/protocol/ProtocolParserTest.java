@@ -96,7 +96,7 @@ class ProtocolParserTest {
 
 	@Test
 	void acceptsAndPreservesNegotiationIdsForEveryRelayPayload() {
-		String negotiationId = "n".repeat(ProtocolParser.MAX_NEGOTIATION_ID_LENGTH);
+		String negotiationId = "n".repeat(ProtocolParser.MAX_REQUEST_ID_LENGTH);
 
 		for (String type : new String[] {"rtc.offer", "rtc.answer", "rtc.ice"}) {
 			ClientMessage.Relay relay = (ClientMessage.Relay) parser.parse(
@@ -112,7 +112,7 @@ class ProtocolParserTest {
 		String[] invalidNegotiationIds = {
 				"",
 				" ",
-				"n".repeat(ProtocolParser.MAX_NEGOTIATION_ID_LENGTH + 1)
+				"n".repeat(ProtocolParser.MAX_REQUEST_ID_LENGTH + 1)
 		};
 
 		for (String type : new String[] {"rtc.offer", "rtc.answer", "rtc.ice"}) {
@@ -214,7 +214,7 @@ class ProtocolParserTest {
 	}
 
 	@Test
-	void acceptsMaximumAsciiAndMultibyteSdpWithinTheTransportFrameBudget() {
+	void acceptsMaximumAsciiAndMultibyteSdp() {
 		String[] maximumSdpValues = {
 				"x".repeat(ProtocolParser.MAX_SDP_BYTES),
 				"가".repeat(ProtocolParser.MAX_SDP_BYTES / 3)
@@ -226,10 +226,6 @@ class ProtocolParserTest {
 					"p".repeat(ProtocolParser.MAX_PEER_ID_LENGTH),
 					"r".repeat(ProtocolParser.MAX_REQUEST_ID_LENGTH));
 
-			assertThat(ProtocolParser.utf8ByteLength(sdp))
-					.isEqualTo(ProtocolParser.MAX_SDP_BYTES);
-			assertThat(ProtocolParser.utf8ByteLength(json))
-					.isLessThanOrEqualTo(ProtocolParser.MAX_SIGNALING_FRAME_BYTES);
 			assertThat(parser.parse(json)).isInstanceOf(ClientMessage.Relay.class);
 		}
 	}
@@ -242,18 +238,6 @@ class ProtocolParserTest {
 		assertInvalid(
 				offerJson("가".repeat(ProtocolParser.MAX_SDP_BYTES / 3 + 1), "peer-b", null),
 				"$.payload.description.sdp");
-	}
-
-	@Test
-	void rejectsAnEscapeHeavySdpWhoseSerializedFrameExceeds64KiB() {
-		String sdp = "\n".repeat(ProtocolParser.MAX_SDP_BYTES);
-		String json = offerJson(sdp, "peer-b", null);
-
-		assertThat(ProtocolParser.utf8ByteLength(sdp))
-				.isEqualTo(ProtocolParser.MAX_SDP_BYTES);
-		assertThat(ProtocolParser.utf8ByteLength(json))
-				.isGreaterThan(ProtocolParser.MAX_SIGNALING_FRAME_BYTES);
-		assertInvalid(json, "$");
 	}
 
 	@Test

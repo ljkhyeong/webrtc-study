@@ -8,7 +8,6 @@ import java.util.Optional;
 
 final class StandaloneRoomAccess implements RoomAccess {
 
-	private static final int MIN_HOST_CAPABILITY_LENGTH = 32;
 	private final byte[] expectedHostTokenDigest;
 
 	StandaloneRoomAccess(String hostTokenSha256) {
@@ -27,8 +26,7 @@ final class StandaloneRoomAccess implements RoomAccess {
 		if (hostCapability == null) {
 			return Optional.of(ParticipationGrant.Role.PARTICIPANT);
 		}
-		if (expectedHostTokenDigest.length == 0
-				|| hostCapability.length() < MIN_HOST_CAPABILITY_LENGTH) {
+		if (expectedHostTokenDigest.length == 0) {
 			return Optional.empty();
 		}
 

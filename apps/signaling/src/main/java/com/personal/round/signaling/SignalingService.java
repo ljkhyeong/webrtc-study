@@ -239,10 +239,6 @@ public class SignalingService implements SmartLifecycle {
 		return acceptingConnections;
 	}
 
-	public boolean acceptInboundFrame(WebSocketSession session) {
-		return acceptInboundFrame(session, 0);
-	}
-
 	public boolean acceptInboundFrame(WebSocketSession session, int payloadBytes) {
 		WorkPlan workPlan = new WorkPlan();
 		boolean accepted = false;

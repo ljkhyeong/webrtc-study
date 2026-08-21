@@ -14,10 +14,6 @@ public sealed interface ClientMessage
 	record Join(String roomId, String requestId, String displayName, String hostCapability)
 			implements ClientMessage {
 
-		public Join(String roomId, String requestId, String displayName) {
-			this(roomId, requestId, displayName, null);
-		}
-
 		@Override
 		public String type() {
 			return "room.join";

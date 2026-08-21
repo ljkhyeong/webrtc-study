@@ -19,7 +19,6 @@ public class ProtocolParser {
 	public static final int MAX_REQUEST_ID_LENGTH = 128;
 	public static final int MIN_HOST_CAPABILITY_LENGTH = 32;
 	public static final int MAX_HOST_CAPABILITY_LENGTH = 256;
-	public static final int MAX_NEGOTIATION_ID_LENGTH = MAX_REQUEST_ID_LENGTH;
 	public static final int MAX_SIGNALING_FRAME_BYTES = 64 * 1024;
 	public static final int MAX_SDP_BYTES = 48 * 1024;
 	public static final int MAX_CANDIDATE_LENGTH = 8 * 1024;
@@ -34,22 +33,12 @@ public class ProtocolParser {
 		if (rawMessage == null) {
 			throw new MalformedJsonException();
 		}
-		if (utf8ByteLength(rawMessage) > MAX_SIGNALING_FRAME_BYTES) {
-			throw fail(
-					"$",
-					"serialized message must contain at most "
-							+ MAX_SIGNALING_FRAME_BYTES
-							+ " UTF-8 bytes");
-		}
 
 		JsonNode parsed;
 		try {
 			parsed = objectReader.readTree(rawMessage);
 		}
 		catch (JacksonException exception) {
-			throw new MalformedJsonException();
-		}
-		if (parsed == null || parsed.isMissingNode()) {
 			throw new MalformedJsonException();
 		}
 
@@ -118,7 +107,7 @@ public class ProtocolParser {
 		ObjectNode payload = object(message.get("payload"), "$.payload");
 		exactKeys(payload, Set.of("description", "negotiationId"), "$.payload");
 		optionalNonBlankString(
-				payload, "negotiationId", MAX_NEGOTIATION_ID_LENGTH, "$.payload.negotiationId");
+				payload, "negotiationId", MAX_REQUEST_ID_LENGTH, "$.payload.negotiationId");
 		ObjectNode description = object(payload.get("description"), "$.payload.description");
 		exactKeys(description, Set.of("type", "sdp"), "$.payload.description");
 		textLiteral(description.get("type"), expectedType, "$.payload.description.type");
@@ -139,7 +128,7 @@ public class ProtocolParser {
 		ObjectNode payload = object(message.get("payload"), "$.payload");
 		exactKeys(payload, Set.of("candidate", "negotiationId"), "$.payload");
 		optionalNonBlankString(
-				payload, "negotiationId", MAX_NEGOTIATION_ID_LENGTH, "$.payload.negotiationId");
+				payload, "negotiationId", MAX_REQUEST_ID_LENGTH, "$.payload.negotiationId");
 		JsonNode candidateNode = payload.get("candidate");
 		if (candidateNode == null) {
 			throw fail("$.payload.candidate", "is required");
@@ -270,7 +259,7 @@ public class ProtocolParser {
 		return value;
 	}
 
-	static long utf8ByteLength(String value) {
+	private static long utf8ByteLength(String value) {
 		long bytes = 0;
 		for (int index = 0; index < value.length(); index++) {
 			char codeUnit = value.charAt(index);
