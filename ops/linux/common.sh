@@ -632,11 +632,11 @@ round_ops_turn_certificate_fingerprint() {
 
 round_ops_verify_turn_tls_listener() {
   local env_file=$1
-  local check_host=${2:-127.0.0.1}
-  local check_port=${3:-5349}
-  local ca_file=${4:-}
+  local expected_fingerprint=$2
+  local check_host=${3:-127.0.0.1}
+  local check_port=${4:-5349}
+  local ca_file=${5:-}
   local turn_realm
-  local expected_fingerprint
   local served_fingerprint
   local peer_output
   local -a client_command
@@ -653,7 +653,6 @@ round_ops_verify_turn_tls_listener() {
   fi
 
   turn_realm=$(round_ops_read_env_value "$env_file" TURN_REALM)
-  expected_fingerprint=$(round_ops_turn_certificate_fingerprint "$env_file")
   peer_output=$(mktemp)
   chmod 0600 "$peer_output"
   client_command=(

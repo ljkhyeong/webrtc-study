@@ -3,13 +3,16 @@ set -Eeuo pipefail
 
 # Certbot runs every executable in /etc/letsencrypt/renewal-hooks/deploy only
 # after a lineage was renewed successfully. Unrelated lineage renewals are safe:
-# the reconciler treats an unchanged ROUND certificate fingerprint as a
+# the reload command treats an unchanged ROUND certificate fingerprint as a
 # listener-verified no-op.
 umask 077
 env_file=${ROUND_ENV_FILE:-/etc/round/production.env}
 release_state_dir=${ROUND_RELEASE_STATE_DIR:-/var/lib/round/releases}
 certificate_state_dir=${ROUND_CERTIFICATE_STATE_DIR:-/var/lib/round/certificates}
-reconcile_script=${ROUND_TURN_RECONCILE_SCRIPT:-/opt/round/ops/linux/certbot/round-turn-certificate-reconcile}
+check_host=${ROUND_TURN_CERTIFICATE_CHECK_HOST:-127.0.0.1}
+check_port=${ROUND_TURN_CERTIFICATE_CHECK_PORT:-5349}
+tls_ca_file=${ROUND_TURN_CERTIFICATE_CHECK_CA_FILE:-}
+reload_script=${ROUND_TURN_RELOAD_SCRIPT:-/opt/round/ops/linux/reload-turn-certificate.sh}
 
 fail() {
   printf 'round-turn-deploy-hook: %s\n' "$*" >&2
@@ -21,13 +24,20 @@ fail() {
   fail 'ROUND_RELEASE_STATE_DIR must be an absolute non-root path'
 [[ "$certificate_state_dir" == /* && "$certificate_state_dir" != / ]] ||
   fail 'ROUND_CERTIFICATE_STATE_DIR must be an absolute non-root path'
-[[ "$reconcile_script" == /* ]] || fail 'ROUND_TURN_RECONCILE_SCRIPT must be an absolute path'
+[[ "$reload_script" == /* ]] || fail 'ROUND_TURN_RELOAD_SCRIPT must be an absolute path'
 [[ -f "$env_file" && -r "$env_file" ]] ||
   fail "ROUND_ENV_FILE is not a readable regular file: $env_file"
-[[ -f "$reconcile_script" && -r "$reconcile_script" ]] ||
-  fail "certificate reconcile script is missing or unreadable: $reconcile_script"
+[[ -f "$reload_script" && -r "$reload_script" ]] ||
+  fail "certificate reload script is missing or unreadable: $reload_script"
 
-ROUND_ENV_FILE="$env_file" \
-ROUND_RELEASE_STATE_DIR="$release_state_dir" \
-ROUND_CERTIFICATE_STATE_DIR="$certificate_state_dir" \
-  exec /bin/bash "$reconcile_script"
+reload_arguments=(
+  --release-state-dir "$release_state_dir"
+  --certificate-state-dir "$certificate_state_dir"
+  --check-host "$check_host"
+  --check-port "$check_port"
+)
+if [[ -n "$tls_ca_file" ]]; then
+  reload_arguments+=(--tls-ca-file "$tls_ca_file")
+fi
+
+exec /bin/bash "$reload_script" "${reload_arguments[@]}" "$env_file"

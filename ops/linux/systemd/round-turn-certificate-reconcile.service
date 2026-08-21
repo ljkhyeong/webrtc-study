@@ -8,19 +8,11 @@ OnFailure=round-ops-failure@%n.service
 StartLimitIntervalSec=30m
 StartLimitBurst=3
 AssertPathExists=/opt/round/ops/linux/reload-turn-certificate.sh
-AssertPathExists=/opt/round/ops/linux/certbot/round-turn-certificate-reconcile
-AssertPathExists=/opt/round/ops/linux/certbot/round-turn-certificate-check
 AssertPathExists=/etc/round/production.env
 AssertPathExists=/var/lib/round/releases/current.env
 
 [Service]
 Type=oneshot
-Environment=ROUND_ENV_FILE=/etc/round/production.env
-Environment=ROUND_RELEASE_STATE_DIR=/var/lib/round/releases
-Environment=ROUND_CERTIFICATE_STATE_DIR=/var/lib/round/certificates
-Environment=ROUND_TURN_CERTIFICATE_CHECK_HOST=127.0.0.1
-Environment=ROUND_TURN_CERTIFICATE_CHECK_PORT=5349
-Environment=ROUND_TURN_CERTIFICATE_MINIMUM_VALIDITY_SECONDS=604800
 StateDirectory=round/certificates
 StateDirectoryMode=0700
 UMask=0077
@@ -40,4 +32,4 @@ CapabilityBoundingSet=
 Restart=on-failure
 RestartSec=5m
 TimeoutStartSec=180s
-ExecStart=/bin/bash /opt/round/ops/linux/certbot/round-turn-certificate-reconcile
+ExecStart=/bin/bash /opt/round/ops/linux/reload-turn-certificate.sh --release-state-dir /var/lib/round/releases --certificate-state-dir /var/lib/round/certificates --check-host 127.0.0.1 --check-port 5349 /etc/round/production.env

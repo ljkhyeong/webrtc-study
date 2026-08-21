@@ -85,7 +85,7 @@ done
 env_file=$1
 repo_root=$(round_ops_repo_root)
 cd "$repo_root"
-for command_name in docker openssl realpath timeout; do
+for command_name in openssl realpath timeout; do
   round_ops_require_command "$command_name"
 done
 round_ops_require_private_file "$env_file"
@@ -106,8 +106,6 @@ signaling_image=$(round_ops_read_env_value "$current_file" ROUND_SIGNALING_IMAGE
 turn_image=$(round_ops_read_env_value "$current_file" ROUND_TURN_IMAGE)
 
 round_ops_validate_certificate "$env_file" $((7 * 24 * 60 * 60))
-round_ops_docker info >/dev/null 2>&1 || round_ops_die "Docker Engine is unavailable"
-
 fingerprint=$(round_ops_turn_certificate_fingerprint "$env_file")
 
 fingerprint_file="$certificate_state_dir/turn-certificate.sha256"
@@ -115,7 +113,7 @@ if [[ -e "$fingerprint_file" ]]; then
   round_ops_require_private_file "$fingerprint_file"
   if [[ "$(<"$fingerprint_file")" == "$fingerprint" ]]; then
     if (round_ops_verify_turn_tls_listener \
-      "$env_file" "$check_host" "$check_port" "$tls_ca_file" \
+      "$env_file" "$fingerprint" "$check_host" "$check_port" "$tls_ca_file" \
       >/dev/null); then
       printf 'TURN certificate fingerprint and live TLS listener are unchanged; no container restart is needed.\n'
       exit 0
@@ -127,7 +125,7 @@ fi
 round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
   up -d --wait --no-build --no-deps --force-recreate turn
 round_ops_verify_turn_tls_listener \
-  "$env_file" "$check_host" "$check_port" "$tls_ca_file" \
+  "$env_file" "$fingerprint" "$check_host" "$check_port" "$tls_ca_file" \
   >/dev/null
 temporary=$(mktemp "$certificate_state_dir/.turn-certificate.XXXXXX")
 chmod 0600 "$temporary"

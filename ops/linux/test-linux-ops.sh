@@ -265,7 +265,7 @@ log_compose() {
 case "$command_line" in
   *' compose version --short '*) printf '2.24.4\n' ;;
   *" info --format {{.DockerRootDir}} "*) printf '%s/docker-root\n' "$fake_root" ;;
-  *' info '*) ;;
+  *' info '*) [[ ! -e "$fake_root/docker-info-fail" ]] ;;
   *' image inspect --format '*)
     template=$4
     image_ref=$5
@@ -782,10 +782,12 @@ PATH="$fake_bin:$PATH" ops/linux/reload-turn-certificate.sh \
   >/dev/null
 [[ -s "$certificate_state/turn-certificate.sha256" ]] ||
   fail 'certificate deploy hook did not record its fingerprint'
+touch "$fixture_dir/docker-info-fail"
 unchanged_output=$(PATH="$fake_bin:$PATH" ops/linux/reload-turn-certificate.sh \
   --release-state-dir "$state_dir" \
   --certificate-state-dir "$certificate_state" \
   "$env_b")
+rm -f -- "$fixture_dir/docker-info-fail"
 [[ "$unchanged_output" == *'unchanged'* ]] || fail 'unchanged certificate was not a no-op'
 grep -Fq "edge=ghcr.io/ljkhyeong/round-edge@sha256:$digest_a" "$fixture_dir/docker.log" ||
   fail 'certificate reload did not use the verified current release state'
@@ -798,40 +800,22 @@ PATH="$fake_bin:$PATH" ops/linux/reload-turn-certificate.sh \
 [[ ! -e "$fixture_dir/tls-fail-once" ]] ||
   fail 'stale listener reconciliation did not retry after recreation'
 
-ROUND_ENV_FILE="$env_b" \
-ROUND_CERTIFICATE_STATE_DIR="$certificate_state" \
-PATH="$fake_bin:$PATH" \
-  ops/linux/certbot/round-turn-certificate-check >/dev/null
-touch "$fixture_dir/tls-fail"
-if ROUND_ENV_FILE="$env_b" \
-  ROUND_CERTIFICATE_STATE_DIR="$certificate_state" \
-  PATH="$fake_bin:$PATH" \
-  ops/linux/certbot/round-turn-certificate-check >/dev/null 2>&1; then
-  fail 'certificate checker accepted a failing live TLS listener'
-fi
-rm -f -- "$fixture_dir/tls-fail"
-
-reconcile_environment=(
+hook_environment=(
   "ROUND_ENV_FILE=$env_b"
   "ROUND_RELEASE_STATE_DIR=$state_dir"
   "ROUND_CERTIFICATE_STATE_DIR=$certificate_state"
   "ROUND_TURN_RELOAD_SCRIPT=$repo_root/ops/linux/reload-turn-certificate.sh"
-  "ROUND_TURN_CERTIFICATE_CHECK_SCRIPT=$repo_root/ops/linux/certbot/round-turn-certificate-check"
   "PATH=$fake_bin:$PATH"
 )
-env "${reconcile_environment[@]}" \
-  ops/linux/certbot/round-turn-certificate-reconcile >/dev/null
 touch "$fixture_dir/flock-fail"
 if env \
-  "${reconcile_environment[@]}" \
-  "ROUND_TURN_RECONCILE_SCRIPT=$repo_root/ops/linux/certbot/round-turn-certificate-reconcile" \
+  "${hook_environment[@]}" \
   ops/linux/certbot/round-turn-deploy-hook >/dev/null 2>&1; then
   fail 'Certbot hook ignored a lifecycle lock failure'
 fi
 rm -f -- "$fixture_dir/flock-fail"
 env \
-  "${reconcile_environment[@]}" \
-  "ROUND_TURN_RECONCILE_SCRIPT=$repo_root/ops/linux/certbot/round-turn-certificate-reconcile" \
+  "${hook_environment[@]}" \
   ops/linux/certbot/round-turn-deploy-hook >/dev/null
 
 recipient_file="$fixture_dir/backup-recipients.txt"
@@ -890,6 +874,8 @@ grep -Fq 'Persistent=true' ops/linux/systemd/round-turn-certificate-reconcile.ti
 grep -Fq 'OnFailure=round-ops-failure@%n.service' \
   ops/linux/systemd/round-turn-certificate-reconcile.service
 grep -Fq 'TimeoutStartSec=180s' \
+  ops/linux/systemd/round-turn-certificate-reconcile.service
+grep -Fq 'ExecStart=/bin/bash /opt/round/ops/linux/reload-turn-certificate.sh' \
   ops/linux/systemd/round-turn-certificate-reconcile.service
 
 printf 'ROUND Linux operations tests passed.\n'
