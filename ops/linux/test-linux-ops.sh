@@ -304,15 +304,15 @@ case "$command_line" in
     ;;
   *' config --format json '*)
     log_compose "$@"
-    printf '{"name":"round-linux-test","services":{"signaling":{"deploy":{"replicas":1}}},"volumes":{"caddy_data":{"name":"round-linux-test_caddy_data"},"caddy_config":{"name":"round-linux-test_caddy_config"}}}\n'
-    ;;
-  *' config --quiet '*)
-    log_compose "$@"
     if [[ -s "$fake_root/mutate-original-env-after-config" ]]; then
       original_env=$(cat "$fake_root/mutate-original-env-after-config")
       printf '\nMAX_ROOM_SIZE=99\n' >>"$original_env"
       rm -f -- "$fake_root/mutate-original-env-after-config"
     fi
+    printf '{"name":"round-linux-test","services":{"signaling":{"deploy":{"replicas":1}}},"volumes":{"caddy_data":{"name":"round-linux-test_caddy_data"},"caddy_config":{"name":"round-linux-test_caddy_config"}}}\n'
+    ;;
+  *' config --quiet '*)
+    log_compose "$@"
     ;;
   *' ps --status running -q edge '*) ;;
   *' ps --all -q '*) ;;

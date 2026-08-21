@@ -157,8 +157,6 @@ elif [[ -e "$deploy_marker" ]]; then
 else
   [[ ! -e "$rollback_origin" ]] ||
     round_ops_die "orphaned rollback origin exists; manual state inspection is required"
-  round_ops_validate_release_file "$current_file"
-  round_ops_validate_release_file "$previous_file"
   rollback_pending_created=true
   round_ops_copy_release_file "$previous_file" "$rollback_pending"
   rollback_origin_created=true

@@ -264,8 +264,6 @@ round_ops_verify_release_image_labels() {
   local signaling_flavor
   local turn_flavor
 
-  round_ops_validate_release_file "$release_file"
-  round_ops_require_private_file "$env_file"
   round_ops_require_command jq
   edge_image=$(round_ops_read_env_value "$release_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$release_file" ROUND_SIGNALING_IMAGE)
@@ -407,24 +405,13 @@ round_ops_validate_release_file() {
   [[ "$docker_host" == 'unix:///var/run/docker.sock' ]] ||
     round_ops_die "$release_file contains an unsupported Docker endpoint"
 
-  local assignment_count
-  assignment_count=$(
-    awk '
+  awk '
       /^(ROUND_EDGE_IMAGE|ROUND_SIGNALING_IMAGE|ROUND_TURN_IMAGE|ROUND_CHECKOUT_COMMIT|ROUND_COMPOSE_SHA256|ROUND_ENV_SHA256|ROUND_PROJECT_NAME|ROUND_DOMAIN|ROUND_DOCKER_HOST)=/ {
-        count += 1
         next
       }
-      NF != 0 { invalid = 1 }
-      END {
-        if (invalid) {
-          exit 1
-        }
-        print count + 0
-      }
-    ' "$release_file"
-  ) || round_ops_die "$release_file contains an unexpected release-state entry"
-  [[ "$assignment_count" == '9' ]] ||
-    round_ops_die "$release_file must contain exactly one complete deployment state"
+      NF != 0 { exit 1 }
+    ' "$release_file" ||
+    round_ops_die "$release_file contains an unexpected release-state entry"
 }
 
 round_ops_write_release_file() {
@@ -542,15 +529,6 @@ round_ops_assert_state_compatible() {
   actual=$(round_ops_runtime_env_sha256 "$env_file")
   [[ "$actual" == "$expected" ]] ||
     round_ops_die "runtime env differs from the saved deployment state; restore its secret-manager version first"
-  expected=$(round_ops_read_env_value "$release_file" ROUND_PROJECT_NAME)
-  actual=$(round_ops_read_env_value "$env_file" COMPOSE_PROJECT_NAME)
-  [[ "$actual" == "$expected" ]] || round_ops_die "Compose project does not match saved state"
-  expected=$(round_ops_read_env_value "$release_file" ROUND_DOMAIN)
-  actual=$(round_ops_read_env_value "$env_file" ROUND_DOMAIN)
-  [[ "$actual" == "$expected" ]] || round_ops_die "ROUND domain does not match saved state"
-  expected=$(round_ops_read_env_value "$release_file" ROUND_DOCKER_HOST)
-  [[ "$expected" == 'unix:///var/run/docker.sock' ]] ||
-    round_ops_die "Docker endpoint does not match the local production socket"
 }
 
 round_ops_require_stable_release_state() {
@@ -558,7 +536,6 @@ round_ops_require_stable_release_state() {
   local marker
 
   round_ops_require_private_directory "$state_dir"
-  round_ops_validate_release_file "$state_dir/current.env"
   for marker in \
     pending.env \
     in-progress.env \

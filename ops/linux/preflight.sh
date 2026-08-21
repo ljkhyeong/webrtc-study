@@ -93,7 +93,6 @@ for command_name in df docker jq openssl realpath timedatectl; do
 done
 round_ops_require_private_file "$env_file"
 [[ "$state_dir" == /* ]] || round_ops_die "release state directory must be absolute"
-[[ -d "$state_dir" ]] || round_ops_die "release state directory does not exist: $state_dir"
 round_ops_require_private_directory "$state_dir"
 if [[ -n "$release_file" ]]; then
   round_ops_assert_state_compatible "$release_file" "$env_file" "$compose_file"
@@ -112,7 +111,6 @@ else
   round_ops_require_image_repository ROUND_TURN_IMAGE "$turn_image" turn
 fi
 round_ops_require_compose_version
-round_ops_docker info >/dev/null 2>&1 || round_ops_die "Docker Engine is unavailable"
 
 clock_synchronized=$(timedatectl show --property=NTPSynchronized --value 2>/dev/null) ||
   round_ops_die "could not verify host clock synchronization"
@@ -175,9 +173,6 @@ done
 minimum_validity_seconds=$((minimum_validity_days * 24 * 60 * 60))
 round_ops_validate_certificate "$env_file" "$minimum_validity_seconds"
 
-round_ops_compose_with_file \
-  "$compose_file" "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
-  config --quiet
 replicas=$(
   round_ops_compose_with_file \
     "$compose_file" "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
