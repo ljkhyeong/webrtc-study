@@ -73,7 +73,6 @@ state_root=$(dirname -- "$state_dir")
 round_ops_require_private_directory "$state_root"
 output_dir=$(round_ops_prepare_private_directory "$output_dir")
 round_ops_acquire_lifecycle_lock "$state_root"
-round_ops_docker info >/dev/null 2>&1 || round_ops_die "Docker Engine is unavailable"
 
 current_file="$state_dir/current.env"
 round_ops_require_stable_release_state "$state_dir"
@@ -81,10 +80,11 @@ round_ops_assert_state_compatible "$current_file" "$env_file"
 edge_image=$(round_ops_read_env_value "$current_file" ROUND_EDGE_IMAGE)
 signaling_image=$(round_ops_read_env_value "$current_file" ROUND_SIGNALING_IMAGE)
 turn_image=$(round_ops_read_env_value "$current_file" ROUND_TURN_IMAGE)
-caddy_data_volume=$(round_ops_compose_volume_name \
-  "$env_file" "$edge_image" "$signaling_image" "$turn_image" caddy_data)
-caddy_config_volume=$(round_ops_compose_volume_name \
-  "$env_file" "$edge_image" "$signaling_image" "$turn_image" caddy_config)
+compose_metadata=$(round_ops_compose \
+  "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+  config --format json)
+caddy_data_volume=$(jq -er '.volumes.caddy_data.name' <<<"$compose_metadata")
+caddy_config_volume=$(jq -er '.volumes.caddy_config.name' <<<"$compose_metadata")
 round_ops_docker volume inspect "$caddy_data_volume" >/dev/null
 round_ops_docker volume inspect "$caddy_config_volume" >/dev/null
 
@@ -110,9 +110,11 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-if [[ -n "$(round_ops_compose \
+edge_container_ids=$(round_ops_compose \
   "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
-  ps --status running -q edge)" ]]; then
+  ps --status running -q edge) ||
+  round_ops_die "could not determine whether the edge container is running"
+if [[ -n "$edge_container_ids" ]]; then
   edge_was_running=true
   round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" stop edge
 fi

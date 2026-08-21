@@ -782,32 +782,3 @@ round_ops_compose() {
     "$turn_image" \
     "$@"
 }
-
-round_ops_compose_volume_name() {
-  local env_file=$1
-  local edge_image=$2
-  local signaling_image=$3
-  local turn_image=$4
-  local logical_name=$5
-  round_ops_compose \
-    "$env_file" \
-    "$edge_image" \
-    "$signaling_image" \
-    "$turn_image" \
-    config --format json |
-    jq -er --arg logical_name "$logical_name" '.volumes[$logical_name].name'
-}
-
-round_ops_compose_project_name() {
-  local env_file=$1
-  local edge_image=$2
-  local signaling_image=$3
-  local turn_image=$4
-  round_ops_compose \
-    "$env_file" \
-    "$edge_image" \
-    "$signaling_image" \
-    "$turn_image" \
-    config --format json |
-    jq -er '.name'
-}

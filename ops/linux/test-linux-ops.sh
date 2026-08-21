@@ -314,8 +314,8 @@ case "$command_line" in
   *' config --quiet '*)
     log_compose "$@"
     ;;
-  *' ps --status running -q edge '*) ;;
-  *' ps --all -q '*) ;;
+  *' ps --status running -q edge '*) [[ ! -e "$fake_root/edge-ps-fail" ]] ;;
+  *' ps --all -q '*) [[ ! -e "$fake_root/compose-ps-fail" ]] ;;
   *' pull edge signaling turn '*)
     log_compose "$@"
     if [[ -e "$fake_root/mutate-snapshot-after-pull" ]]; then
@@ -837,6 +837,20 @@ env \
 recipient_file="$fixture_dir/backup-recipients.txt"
 printf 'age1testrecipient\n' >"$recipient_file"
 backup_dir="$fixture_dir/backups"
+failed_backup_dir="$fixture_dir/failed-backups"
+touch "$fixture_dir/edge-ps-fail"
+if PATH="$fake_bin:$PATH" ops/linux/backup-caddy.sh \
+  --state-dir "$state_dir" \
+  --recipient-file "$recipient_file" \
+  --output-dir "$failed_backup_dir" \
+  "$env_b" \
+  >/dev/null 2>&1; then
+  fail 'Caddy backup ignored an edge container status lookup failure'
+fi
+rm -f -- "$fixture_dir/edge-ps-fail"
+if find "$failed_backup_dir" -type f -print -quit | grep -q .; then
+  fail 'failed edge container status lookup left a backup artifact'
+fi
 PATH="$fake_bin:$PATH" ops/linux/backup-caddy.sh \
   --state-dir "$state_dir" \
   --recipient-file "$recipient_file" \
@@ -850,6 +864,17 @@ backup_file=$(printf '%s\n' "$backup_dir"/*.tar.age)
 identity_file="$fixture_dir/backup-identity.txt"
 printf 'AGE-SECRET-KEY-TEST\n' >"$identity_file"
 chmod 0600 "$identity_file"
+touch "$fixture_dir/compose-ps-fail"
+if PATH="$fake_bin:$PATH" ops/linux/restore-caddy.sh \
+  --state-dir "$state_dir" \
+  --identity-file "$identity_file" \
+  --confirm RESTORE_CADDY_VOLUMES \
+  "$backup_file" \
+  "$env_b" \
+  >/dev/null 2>&1; then
+  fail 'Caddy restore ignored a Compose container status lookup failure'
+fi
+rm -f -- "$fixture_dir/compose-ps-fail"
 touch "$fixture_dir/volumes-missing"
 PATH="$fake_bin:$PATH" ops/linux/restore-caddy.sh \
   --state-dir "$state_dir" \

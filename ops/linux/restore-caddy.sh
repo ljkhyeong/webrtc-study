@@ -78,7 +78,6 @@ requested_state_root=$(dirname -- "$state_dir")
 state_root=$(round_ops_prepare_private_directory "$requested_state_root")
 state_dir=$(round_ops_prepare_private_directory "$state_root/$(basename -- "$state_dir")")
 round_ops_acquire_lifecycle_lock "$state_root"
-round_ops_docker info >/dev/null 2>&1 || round_ops_die "Docker Engine is unavailable"
 
 if [[ -e "$backup_file.sha256" ]]; then
   [[ -f "$backup_file.sha256" && ! -L "$backup_file.sha256" ]] ||
@@ -102,21 +101,20 @@ else
   edge_image=$(round_ops_read_env_value "$env_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$env_file" ROUND_SIGNALING_IMAGE)
   turn_image=$(round_ops_read_env_value "$env_file" ROUND_TURN_IMAGE)
-  round_ops_validate_digest_ref ROUND_EDGE_IMAGE "$edge_image"
-  round_ops_validate_digest_ref ROUND_SIGNALING_IMAGE "$signaling_image"
-  round_ops_validate_digest_ref ROUND_TURN_IMAGE "$turn_image"
 fi
 
-[[ -z "$(round_ops_compose \
-  "$env_file" "$edge_image" "$signaling_image" "$turn_image" ps --all -q)" ]] ||
+compose_container_ids=$(round_ops_compose \
+  "$env_file" "$edge_image" "$signaling_image" "$turn_image" ps --all -q) ||
+  round_ops_die "could not determine whether Compose containers still exist"
+[[ -z "$compose_container_ids" ]] ||
   round_ops_die "Compose containers still exist; run docker compose down before restore"
 
-caddy_data_volume=$(round_ops_compose_volume_name \
-  "$env_file" "$edge_image" "$signaling_image" "$turn_image" caddy_data)
-caddy_config_volume=$(round_ops_compose_volume_name \
-  "$env_file" "$edge_image" "$signaling_image" "$turn_image" caddy_config)
-project_name=$(round_ops_compose_project_name \
-  "$env_file" "$edge_image" "$signaling_image" "$turn_image")
+compose_metadata=$(round_ops_compose \
+  "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+  config --format json)
+project_name=$(jq -er '.name' <<<"$compose_metadata")
+caddy_data_volume=$(jq -er '.volumes.caddy_data.name' <<<"$compose_metadata")
+caddy_config_volume=$(jq -er '.volumes.caddy_config.name' <<<"$compose_metadata")
 
 listing_file=$(mktemp)
 verbose_listing_file=$(mktemp)
