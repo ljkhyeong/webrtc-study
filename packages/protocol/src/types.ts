@@ -34,10 +34,10 @@ export interface AnswerDescription {
 }
 
 /**
- * The JSON-safe subset returned by `RTCIceCandidate#toJSON`.
+ * `RTCIceCandidate#toJSON`이 반환하는 JSON 안전 부분집합이다.
  *
- * A null candidate marks end-of-candidates. Nullable fields are retained because
- * browsers use null when the corresponding SDP value is unavailable.
+ * `candidate`가 `null`이면 후보 수집 종료를 뜻한다. 브라우저는 해당 SDP 값을
+ * 사용할 수 없을 때 `null`을 사용하므로 nullable 필드를 유지한다.
  */
 export interface SerializedIceCandidate {
   candidate: string;

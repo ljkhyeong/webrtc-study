@@ -122,10 +122,10 @@ function hasEnded(track: MediaStreamTrack): boolean {
 }
 
 /**
- * Owns camera and microphone tracks while the user is on pre-join.
+ * 사용자가 참여 전 화면에 있는 동안 카메라와 마이크 트랙을 소유한다.
  *
- * React callers should keep this object in a ref and store only getSnapshot()
- * results in state. `takeStream()` transfers track ownership to RoomSession.
+ * React 호출자는 이 객체를 ref에 보관하고 `getSnapshot()` 결과만 상태에 저장해야 한다.
+ * `takeStream()`은 트랙 소유권을 `RoomSession`으로 이전한다.
  */
 export class PrejoinMedia {
   readonly #audioConstraints: MediaTrackConstraints;
@@ -232,8 +232,8 @@ export class PrejoinMedia {
   }
 
   /**
-   * Transfers the current stream without stopping its tracks.
-   * The controller becomes single-use and may safely be disposed afterward.
+   * 트랙을 중지하지 않고 현재 스트림을 이전한다.
+   * 이전 후 컨트롤러는 다시 사용할 수 없으며 안전하게 폐기할 수 있다.
    */
   takeStream(): MediaStream | null {
     if (this.#status === 'checking') {

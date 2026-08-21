@@ -144,25 +144,23 @@ export interface RoomSessionOptions {
   readonly roomId: string;
   readonly displayName: string;
   readonly signalingUrl: string;
-  /** Optional standalone proof forwarded only in `room.join`. */
+  /** 선택적 standalone 증명으로, `room.join`에만 전달한다. */
   readonly hostCapability?: string;
   /**
-   * A stream transferred from pre-join. Passing `null` explicitly joins
-   * without requesting browser media; omitting the option keeps legacy
-   * in-session acquisition.
+   * 참여 전 단계에서 이전받은 스트림이다. `null`을 명시하면 브라우저 미디어를
+   * 요청하지 않고 참여하며, 옵션을 생략하면 기존 세션 내부 획득 방식을 유지한다.
    */
   readonly preparedMediaStream?: MediaStream | null;
   readonly mediaConstraints?: MediaStreamConstraints;
   readonly rtcConfiguration?: RTCConfiguration;
   readonly maxChatMessages?: number;
   /**
-   * Optional timing overrides for recovery tests and constrained deployments.
-   * Production callers normally rely on the bounded defaults.
+   * 복구 테스트와 제약된 배포 환경에서 사용하는 선택적 타이밍 재정의다.
+   * 운영 호출자는 일반적으로 상한이 정해진 기본값을 사용한다.
    */
   readonly recovery?: RoomSessionRecoveryOptions;
   /**
-   * Runs immediately before each signaling WebSocket is created, including
-   * bounded reconnect attempts.
+   * 횟수가 제한된 재연결 시도를 포함해 각 시그널링 WebSocket을 생성하기 직전에 실행한다.
    */
   readonly beforeSignalingConnect?: () => void | Promise<void>;
   readonly webSocketFactory?: (url: string) => WebSocket;
@@ -273,20 +271,20 @@ interface ScreenSenderUpdate {
 
 type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 
-// Normal ICE gathering stays far below this; retain newest candidates on overflow.
+// 일반적인 ICE 후보 수집량은 이 값보다 훨씬 적다. 초과 시 최신 후보를 유지한다.
 const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
 const MAX_PENDING_SIGNAL_REQUESTS = 256;
 const MAX_RETIRED_NEGOTIATION_IDS = 8;
 const DATA_CHANNEL_RATE_WINDOW_MS = 10_000;
-// Allows short UI bursts but caps sustained work at 12 frames per second per peer.
+// 짧은 UI 집중 전송은 허용하되 지속 전송은 피어당 초당 12프레임으로 제한한다.
 const MAX_DATA_CHANNEL_MESSAGES_PER_WINDOW = 120;
 const MAX_PENDING_CHAT_MESSAGES_PER_PEER = 50;
 const MAX_RECEIVED_CHAT_IDS_PER_PEER = 128;
 const MAX_PENDING_ACK_IDS_PER_PEER = 128;
-// Mirror the peer ACK/dedup window for fully retired local IDs. A current
-// reliable, ordered channel cannot overtake this many newer acknowledgements,
-// and detached channels have their handlers removed. Visible or pending IDs
-// remain pinned outside this FIFO bound.
+// 완전히 폐기된 로컬 ID에는 피어 ACK/중복 제거 윈도 크기를 동일하게 적용한다.
+// 현재의 신뢰성·순서 보장 채널에서는 이보다 많은 새 확인 응답이 앞지를 수 없으며,
+// 분리된 채널은 핸들러가 제거된다. 표시 중이거나 대기 중인 ID는 이 FIFO 한도와
+// 별도로 계속 고정한다.
 const MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS = Math.max(
   MAX_RECEIVED_CHAT_IDS_PER_PEER,
   MAX_PENDING_ACK_IDS_PER_PEER,
@@ -306,8 +304,8 @@ const SIGNALING_SESSION_SUPERSEDED_CLOSE_CODE = 4002;
 const SIGNALING_SESSION_SUPERSEDED_REASON = 'Participation session superseded';
 const DEFAULT_SIGNALING_CONNECT_TIMEOUT_MS = 8_000;
 const DEFAULT_ROOM_JOIN_TIMEOUT_MS = 8_000;
-// Longer than the default bounded initial-offer retry backoff (15.5 seconds)
-// so negotiation retries and the connection watchdog do not compete.
+// 협상 재시도와 연결 watchdog이 경쟁하지 않도록 기본 초기 offer 재시도
+// backoff 상한(15.5초)보다 길게 설정한다.
 const DEFAULT_PEER_CONNECTION_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 6;
 const DEFAULT_RECONNECT_INITIAL_DELAY_MS = 500;
@@ -440,7 +438,7 @@ function preferDetailedScreenContent(track: MediaStreamTrack): void {
   try {
     track.contentHint = 'detail';
   } catch {
-    // Some engines expose contentHint without accepting every standardized value.
+    // 일부 엔진은 contentHint를 노출하지만 표준화된 모든 값을 허용하지는 않는다.
   }
 }
 
@@ -482,10 +480,10 @@ function iceUsernameFragmentsFromSdp(sdp: string | undefined): Set<string> {
 }
 
 /**
- * Framework-independent owner of a single room's browser WebRTC resources.
+ * 프레임워크와 무관하게 단일 방의 브라우저 WebRTC 리소스를 소유한다.
  *
- * A session is intentionally single-use. Callers should create a new instance
- * after `leave()` or a fatal signaling error.
+ * 세션은 의도적으로 일회용이다. `leave()` 또는 치명적인 시그널링 오류 후에는
+ * 새 인스턴스를 생성해야 한다.
  */
 export class RoomSession {
   readonly #options: RoomSessionOptions;
@@ -588,13 +586,12 @@ export class RoomSession {
   }
 
   /**
-   * Replaces the ICE configuration used by current and future peer
-   * connections. Existing media and DataChannels are left intact. Set
-   * `restartIce` after rotating TURN credentials so only the deterministic
-   * offer initiator renegotiates current peers.
+   * 현재 및 향후 피어 연결에서 사용하는 ICE 구성을 교체한다. 기존 미디어와
+   * DataChannel은 그대로 유지한다. TURN 자격 증명을 교체한 뒤 `restartIce`를
+   * 설정하면 결정론적으로 정해진 offer 시작자만 현재 피어를 재협상한다.
    *
-   * A refresh that cannot be applied to one or more current peers is reported
-   * as one non-fatal snapshot warning. Calls after terminal cleanup are no-ops.
+   * 하나 이상의 현재 피어에 적용할 수 없는 갱신은 치명적이지 않은 snapshot 경고
+   * 하나로 보고한다. 종료 정리 후 호출은 아무 작업도 하지 않는다.
    */
   updateRtcConfiguration(
     configuration: RTCConfiguration,
@@ -683,7 +680,7 @@ export class RoomSession {
           roomId: this.#options.roomId,
         });
       } catch {
-        // Resource cleanup must continue even if the socket dies during leave.
+        // leave 중 소켓이 종료되더라도 리소스 정리는 계속되어야 한다.
       }
     }
 

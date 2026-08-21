@@ -1,6 +1,6 @@
 export type RoomRefreshTimer = 'participation-grant' | 'turn';
 
-/** Owns background refresh timers for one mounted, non-terminal room session. */
+/** 마운트되어 있고 종료되지 않은 방 세션 하나의 백그라운드 갱신 타이머를 소유한다. */
 export class RoomRefreshLifetime {
   readonly #timers = new Map<RoomRefreshTimer, ReturnType<typeof globalThis.setTimeout>>();
   #active = true;
