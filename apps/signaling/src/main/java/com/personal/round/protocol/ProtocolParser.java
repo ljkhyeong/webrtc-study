@@ -272,7 +272,7 @@ public class ProtocolParser {
 				index++;
 			}
 			else {
-				// Match TextEncoder: an unpaired surrogate becomes U+FFFD.
+				// TextEncoder와 일치하도록 짝이 없는 서로게이트를 U+FFFD로 처리한다.
 				bytes += 3;
 			}
 		}

@@ -2386,7 +2386,7 @@ class SignalingServiceTest {
 						released = true;
 					}
 					catch (InterruptedException ignored) {
-						// Simulate a transport close implementation that ignores interruption.
+						// 인터럽트를 무시하는 전송 계층 close 구현을 모사한다.
 					}
 				}
 				peer.closeStatus().set(invocation.getArgument(0));

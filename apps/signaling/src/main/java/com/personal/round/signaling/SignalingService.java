@@ -79,7 +79,7 @@ public class SignalingService implements SmartLifecycle {
 	private final LinkedHashMap<String, ClientInboundState> inboundClients =
 			new LinkedHashMap<>(16, 0.75f, true);
 	private final Map<String, LinkedHashMap<String, Peer>> rooms = new HashMap<>();
-	// Superseded peers leave room state immediately but retain admission until close returns.
+	// 대체된 피어는 방 상태에서 즉시 제거하지만 close가 반환될 때까지 입장 예약은 유지한다.
 	private final Map<String, Peer> pendingTerminalCleanup = new HashMap<>();
 	private final ExecutorService outboundExecutor;
 	private final ServerMessageEncoder serverMessageEncoder;
@@ -937,7 +937,7 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	private void touchClientInboundStateLocked(Peer peer) {
-		// inboundClients is access-ordered so active traffic stays behind inactive LRU entries.
+		// inboundClients는 접근 순서를 사용해 활성 트래픽 항목을 비활성 LRU 항목 뒤로 보낸다.
 		inboundClients.get(peer.clientKey);
 	}
 
@@ -1049,8 +1049,8 @@ public class SignalingService implements SmartLifecycle {
 	private void enqueueAllLocked(
 			ArrayDeque<PendingOutbound> pendingOutbound,
 			WorkPlan workPlan) {
-		// Pressure-induced departure frames are appended behind the triggering batch. Keeping
-		// this loop breadth-first prevents recursive eviction and preserves causal event order.
+		// 압력으로 발생한 퇴장 프레임은 원인 배치 뒤에 추가한다. 이 루프를 너비 우선으로
+		// 처리하면 재귀적 퇴거를 방지하고 인과적 이벤트 순서를 보존할 수 있다.
 		while (!pendingOutbound.isEmpty()) {
 			PendingOutbound outbound = pendingOutbound.removeFirst();
 			outbound.accepted = enqueueOneLocked(
@@ -1221,7 +1221,7 @@ public class SignalingService implements SmartLifecycle {
 			session.close(status);
 		}
 		catch (IOException ignored) {
-			// The cleanup below is authoritative even if the transport has already disappeared.
+			// 전송 계층이 이미 사라졌더라도 아래 정리 절차가 최종 기준이다.
 		}
 	}
 
@@ -1524,7 +1524,7 @@ public class SignalingService implements SmartLifecycle {
 	private List<Peer> globalPressureVictimsLocked(int messageBytes) {
 		long bytesToRelease = messageBytes
 				- (maxOutboundQueueBytesGlobal - globalOutboundBytes);
-		// connectionSequence makes otherwise equal queue-pressure decisions repeatable.
+		// connectionSequence를 사용해 나머지 조건이 같은 큐 압력 결정을 재현 가능하게 만든다.
 		List<Peer> candidates = connectedPeers.values().stream()
 				.filter(candidate -> releasableOutboundBytes(candidate) > 0)
 				.sorted(Comparator
