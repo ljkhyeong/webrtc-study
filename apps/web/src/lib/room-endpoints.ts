@@ -1,13 +1,20 @@
 import { isValidRoomId } from './room';
 
-export type RoomEndpointLocation = Pick<Location, 'host' | 'protocol'>;
+type RoomEndpointLocation = Pick<Location, 'host' | 'protocol'>;
 
-export interface ResolveRoomEndpointsOptions {
+interface ResolveRoomEndpointsOptions {
   readonly roomId: string;
   readonly authMode?: string | undefined;
   readonly location: RoomEndpointLocation;
   readonly signalingUrl?: string | undefined;
   readonly turnCredentialsUrl?: string | undefined;
+}
+
+interface ResolveNormalizedRoomEndpointsOptions extends Omit<
+  ResolveRoomEndpointsOptions,
+  'authMode'
+> {
+  readonly authMode: RoundAuthMode;
 }
 
 export interface RoomEndpoints {
@@ -22,15 +29,23 @@ const DEFAULT_SIGNALING_PATH = '/signal';
 const DEFAULT_TURN_CREDENTIALS_PATH = '/api/turn-credentials';
 
 export function resolveRoomEndpoints(options: ResolveRoomEndpointsOptions): RoomEndpoints {
+  return resolveNormalizedRoomEndpoints({
+    ...options,
+    authMode: resolveRoundAuthMode(options.authMode),
+  });
+}
+
+export function resolveNormalizedRoomEndpoints(
+  options: ResolveNormalizedRoomEndpointsOptions,
+): RoomEndpoints {
   if (!isValidRoomId(options.roomId)) {
     throw new Error('방 식별자가 올바르지 않습니다.');
   }
 
-  const authMode = resolveRoundAuthMode(options.authMode);
   const signalingOverride = nonBlank(options.signalingUrl);
   const turnCredentialsOverride = nonBlank(options.turnCredentialsUrl);
 
-  if (authMode === 'baton') {
+  if (options.authMode === 'baton') {
     if (signalingOverride !== undefined || turnCredentialsOverride !== undefined) {
       throw new Error(
         'BATON 모드에서는 방 단위 동일 출처 signaling과 TURN 경로만 사용할 수 있습니다.',

@@ -1,11 +1,11 @@
 import { isValidRoomId } from './room';
 
-export interface ParticipationGrantLease {
+interface ParticipationGrantLease {
   readonly expiresAt: number;
   readonly refreshAfterSeconds: number;
 }
 
-export type ParticipationGrantAccessFailure = 'unauthenticated' | 'forbidden' | 'not-found';
+type ParticipationGrantAccessFailure = 'unauthenticated' | 'forbidden' | 'not-found';
 
 export class ParticipationGrantAccessError extends Error {
   constructor(readonly failure: ParticipationGrantAccessFailure) {
@@ -14,7 +14,7 @@ export class ParticipationGrantAccessError extends Error {
   }
 }
 
-export interface BatonRoundEntryContext {
+interface BatonRoundEntryContext {
   readonly version: 1;
   readonly teamId: string;
   readonly seasonId: string;
@@ -22,7 +22,7 @@ export interface BatonRoundEntryContext {
   readonly roomId: string;
 }
 
-export interface ParticipationGrantLeaseManagerOptions {
+interface ParticipationGrantLeaseManagerOptions {
   readonly endpoint: string;
   readonly roomId: string;
   readonly fetcher?: typeof fetch;
@@ -46,7 +46,6 @@ const ENTRY_STORAGE_PREFIX = 'baton-round-entry:v1:';
 const ENTRY_FIELDS = ['resourceId', 'roomId', 'seasonId', 'teamId', 'version'] as const;
 const CANONICAL_UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const HTTP_HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const DISALLOWED_CSRF_HEADER_NAMES = new Set([
   'accept',
   'authorization',
@@ -80,7 +79,10 @@ export class ParticipationGrantLeaseManager {
 
   constructor(options: ParticipationGrantLeaseManagerOptions) {
     this.#endpoint = requireSameOriginPath(options.endpoint);
-    this.#roomId = requireRoomId(options.roomId);
+    if (!isValidRoomId(options.roomId)) {
+      throw new Error('Participation grant room id must be canonical');
+    }
+    this.#roomId = options.roomId;
     const configuredFetcher = options.fetcher ?? globalThis.fetch;
     this.#fetcher =
       typeof configuredFetcher === 'function' && configuredFetcher === globalThis.fetch
@@ -209,13 +211,6 @@ export class ParticipationGrantLeaseManager {
   }
 }
 
-function requireRoomId(roomId: string): string {
-  if (!isValidRoomId(roomId)) {
-    throw new Error('Participation grant room id must be canonical');
-  }
-  return roomId;
-}
-
 function readEntryContext(
   roomId: string,
   configuredStorage: Pick<Storage, 'getItem' | 'removeItem'> | null | undefined,
@@ -237,7 +232,7 @@ function readEntryContext(
   }
 
   try {
-    if (serialized.length < 1 || serialized.length > MAXIMUM_ENTRY_LENGTH) {
+    if (serialized.length > MAXIMUM_ENTRY_LENGTH) {
       throw new Error('invalid entry size');
     }
     const parsed: unknown = JSON.parse(serialized);
@@ -267,10 +262,8 @@ function isValidEntryContext(input: unknown, roomId: string): input is BatonRoun
   if (!isRecord(input)) {
     return false;
   }
-  const fields = Object.keys(input).sort();
   return (
-    fields.length === ENTRY_FIELDS.length &&
-    fields.every((field, index) => field === ENTRY_FIELDS[index]) &&
+    hasExactKeys(input, ENTRY_FIELDS) &&
     input.version === 1 &&
     typeof input.teamId === 'string' &&
     CANONICAL_UUID_PATTERN.test(input.teamId) &&
@@ -308,9 +301,6 @@ async function loadBatonCsrfCredential(
   if (!isRecord(input) || input.authenticated !== true) {
     throw new ParticipationGrantAccessError('unauthenticated');
   }
-  if (typeof input.accountId !== 'string' || !CANONICAL_UUID_PATTERN.test(input.accountId)) {
-    throw new Error('BATON session account is invalid');
-  }
   if (typeof input.csrfHeaderName !== 'string' || !isSafeCsrfHeaderName(input.csrfHeaderName)) {
     throw new Error('BATON session CSRF header is invalid');
   }
@@ -329,14 +319,21 @@ async function loadBatonCsrfCredential(
 
 function isSafeCsrfHeaderName(value: string): boolean {
   const normalized = value.toLowerCase();
-  return (
-    value.length <= 128 &&
-    HTTP_HEADER_NAME_PATTERN.test(value) &&
-    !DISALLOWED_CSRF_HEADER_NAMES.has(normalized) &&
-    !normalized.startsWith('proxy-') &&
-    !normalized.startsWith('sec-') &&
-    !normalized.startsWith('x-forwarded-')
-  );
+  if (
+    value.length > 128 ||
+    DISALLOWED_CSRF_HEADER_NAMES.has(normalized) ||
+    normalized.startsWith('proxy-') ||
+    normalized.startsWith('sec-') ||
+    normalized.startsWith('x-forwarded-')
+  ) {
+    return false;
+  }
+  try {
+    new Headers([[value, '1']]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function validateLease(input: unknown): ParticipationGrantLease {

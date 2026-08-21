@@ -32,7 +32,6 @@ function response(status: number, body?: unknown): Response {
 function authenticatedSession(): Response {
   return response(200, {
     authenticated: true,
-    accountId: '11111111-1111-4111-8111-111111111111',
     csrfHeaderName: 'X-CSRF-TOKEN',
     csrfToken: 'csrf-token',
   });

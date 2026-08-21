@@ -8,7 +8,6 @@ import {
 const ROOM_ID = 'abcd-efgh-jkmp';
 const ENDPOINT = `/round/rooms/${ROOM_ID}/participation-grant/refresh`;
 const SESSION_ENDPOINT = '/api/v1/auth/session';
-const ACCOUNT_ID = '11111111-1111-4111-8111-111111111111';
 
 function response(status: number, body?: unknown): Response {
   return {
@@ -21,10 +20,8 @@ function response(status: number, body?: unknown): Response {
 function sessionResponse(overrides: Record<string, unknown> = {}): Response {
   return response(200, {
     authenticated: true,
-    accountId: ACCOUNT_ID,
     csrfHeaderName: 'X-CSRF-TOKEN',
     csrfToken: 'csrf-token',
-    oidcEnabled: true,
     ...overrides,
   });
 }

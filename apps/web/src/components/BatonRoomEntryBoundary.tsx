@@ -4,7 +4,7 @@ import {
   ParticipationGrantLeaseManager,
 } from '../lib/participation-grant';
 import { pathForRoom } from '../lib/room';
-import { resolveRoomEndpoints } from '../lib/room-endpoints';
+import { resolveNormalizedRoomEndpoints } from '../lib/room-endpoints';
 
 interface BatonRoomEntryBoundaryProps {
   readonly roomId: string;
@@ -35,7 +35,7 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
     setState({ status: 'checking' });
 
     try {
-      const endpoints = resolveRoomEndpoints({
+      const endpoints = resolveNormalizedRoomEndpoints({
         roomId,
         authMode: 'baton',
         location: window.location,
@@ -66,14 +66,13 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
         await activeManager.ensureFresh();
         return true;
       } catch (error) {
-        activeManager.close();
-        if (!active) {
-          return false;
-        }
         if (error instanceof ParticipationGrantAccessError) {
           onAccessFailure(error);
         } else {
-          setState({ status: 'unavailable' });
+          activeManager.close();
+          if (active) {
+            setState({ status: 'unavailable' });
+          }
         }
         return false;
       }
