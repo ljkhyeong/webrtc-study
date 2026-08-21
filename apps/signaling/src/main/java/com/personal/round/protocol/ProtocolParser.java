@@ -1,6 +1,5 @@
 package com.personal.round.protocol;
 
-import java.util.Collection;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
@@ -173,11 +172,8 @@ public class ProtocolParser {
 	}
 
 	private static void exactKeys(ObjectNode input, Set<String> allowedKeys, String path) {
-		Collection<String> propertyNames = input.propertyNames();
-		for (String propertyName : propertyNames) {
-			if (!allowedKeys.contains(propertyName)) {
-				throw fail(path, "contains an unsupported property");
-			}
+		if (!allowedKeys.containsAll(input.propertyNames())) {
+			throw fail(path, "contains an unsupported property");
 		}
 	}
 
