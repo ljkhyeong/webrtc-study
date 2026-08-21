@@ -175,8 +175,11 @@ set -euo pipefail
 fake_root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 case " $* " in
   *' rev-parse HEAD '*) printf '0123456789abcdef0123456789abcdef01234567\n' ;;
-  *' diff '*) [[ ! -e "$fake_root/git-dirty" ]] ;;
-  *' ls-files --others --exclude-standard '*) exit 0 ;;
+  *' status --porcelain=v1 --untracked-files=all --ignore-submodules=all '*)
+    if [[ -e "$fake_root/git-dirty" ]]; then
+      printf ' M tracked-file\n'
+    fi
+    ;;
   *)
     printf 'unexpected fake git invocation: %s\n' "$*" >&2
     exit 1

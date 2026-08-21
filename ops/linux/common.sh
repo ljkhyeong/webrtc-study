@@ -23,18 +23,17 @@ round_ops_require_command() {
 
 round_ops_require_clean_checkout() {
   local repo_root
-  local untracked
+  local status
 
   round_ops_require_command git
   repo_root=$(round_ops_repo_root)
-  git -C "$repo_root" diff --quiet --ignore-submodules -- ||
-    round_ops_die "tracked ROUND files differ from the checked-out commit"
-  git -C "$repo_root" diff --cached --quiet --ignore-submodules -- ||
-    round_ops_die "staged ROUND files differ from the checked-out commit"
-  untracked=$(git -C "$repo_root" ls-files --others --exclude-standard) ||
-    round_ops_die "could not inspect untracked ROUND files"
-  [[ -z "$untracked" ]] ||
-    round_ops_die "untracked ROUND files exist; deploy only a reviewed clean checkout"
+  status=$(git -C "$repo_root" status \
+    --porcelain=v1 \
+    --untracked-files=all \
+    --ignore-submodules=all) ||
+    round_ops_die "could not inspect the ROUND checkout"
+  [[ -z "$status" ]] ||
+    round_ops_die "ROUND files differ from the reviewed checked-out commit"
 }
 
 round_ops_file_mode() {
