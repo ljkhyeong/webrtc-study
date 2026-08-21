@@ -2279,7 +2279,7 @@ describe('RoomSession', () => {
     }
   });
 
-  it('defensively replaces RTC configuration for current and future peers without renegotiation', async () => {
+  it('isolates RTC configuration for current and future peers without renegotiation', async () => {
     const initialUrls = ['stun:initial.example.test'];
     const initialIceServers: RTCIceServer[] = [{ urls: initialUrls }];
     const initialConfiguration: RTCConfiguration = {

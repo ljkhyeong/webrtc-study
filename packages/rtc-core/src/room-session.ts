@@ -399,7 +399,7 @@ function resolveRecoveryOptions(
   };
 }
 
-function cloneRtcConfiguration(
+function snapshotRtcConfiguration(
   configuration: RTCConfiguration | undefined,
 ): RTCConfiguration | undefined {
   if (configuration === undefined) {
@@ -471,21 +471,6 @@ function safeSignalingErrorMessage(code: SignalingErrorCode): string {
   }
 }
 
-function serializeCandidate(candidate: RTCIceCandidate | null): SerializedIceCandidate | null {
-  if (candidate === null) {
-    return null;
-  }
-
-  const serialized = candidate.toJSON();
-
-  return {
-    candidate: serialized.candidate ?? candidate.candidate,
-    sdpMid: serialized.sdpMid ?? null,
-    sdpMLineIndex: serialized.sdpMLineIndex ?? null,
-    usernameFragment: serialized.usernameFragment ?? null,
-  };
-}
-
 function iceUsernameFragmentsFromSdp(sdp: string | undefined): Set<string> {
   const fragments = new Set<string>();
   if (sdp === undefined) {
@@ -498,10 +483,6 @@ function iceUsernameFragmentsFromSdp(sdp: string | undefined): Set<string> {
     }
   }
   return fragments;
-}
-
-function candidateUsernameFragment(candidate: SerializedIceCandidate): string | null {
-  return candidate.usernameFragment ?? null;
 }
 
 /**
@@ -587,7 +568,7 @@ export class RoomSession {
 
     this.#options = { ...options, roomId, displayName };
     this.#recoveryOptions = resolveRecoveryOptions(options.recovery);
-    this.#rtcConfiguration = cloneRtcConfiguration(options.rtcConfiguration);
+    this.#rtcConfiguration = snapshotRtcConfiguration(options.rtcConfiguration);
     if (options.preparedMediaStream !== undefined) {
       this.#localStream = options.preparedMediaStream;
       if (this.#localStream !== null) {
@@ -627,8 +608,7 @@ export class RoomSession {
       return;
     }
 
-    const nextConfiguration = cloneRtcConfiguration(configuration) as RTCConfiguration;
-    this.#rtcConfiguration = nextConfiguration;
+    this.#rtcConfiguration = snapshotRtcConfiguration(configuration);
 
     let failedPeerCount = 0;
     const restartPeers: PeerContext[] = [];
@@ -638,7 +618,7 @@ export class RoomSession {
       }
       try {
         peer.connection.setConfiguration(
-          cloneRtcConfiguration(nextConfiguration) as RTCConfiguration,
+          snapshotRtcConfiguration(this.#rtcConfiguration) as RTCConfiguration,
         );
         if (
           options.restartIce === true &&
@@ -2163,7 +2143,7 @@ export class RoomSession {
     if (candidate === null) {
       return false;
     }
-    const fragment = candidateUsernameFragment(candidate);
+    const fragment = candidate.usernameFragment ?? null;
     return fragment !== null && peer.localIceUsernameFragments.has(fragment);
   }
 
@@ -2225,7 +2205,7 @@ export class RoomSession {
     const factory =
       this.#options.peerConnectionFactory ??
       ((configuration: RTCConfiguration | undefined) => new RTCPeerConnection(configuration));
-    const connection = factory(cloneRtcConfiguration(this.#rtcConfiguration));
+    const connection = factory(snapshotRtcConfiguration(this.#rtcConfiguration));
     const peer: PeerContext = {
       peerId,
       connection,
@@ -2279,7 +2259,8 @@ export class RoomSession {
       ) {
         return;
       }
-      const candidate = serializeCandidate(event.candidate);
+      const candidate =
+        event.candidate === null ? null : (event.candidate.toJSON() as SerializedIceCandidate);
       if (!peer.localDescriptionPublished) {
         peer.pendingLocalCandidates.push(candidate);
         return;
@@ -3819,9 +3800,9 @@ export class RoomSession {
     const screenSharing = this.#screenTrack !== null && this.#screenTrack.readyState === 'live';
     return {
       audioAvailable: audioTracks.length > 0,
-      audioEnabled: audioTracks.length > 0 && audioTracks.some((track) => track.enabled),
+      audioEnabled: audioTracks.some((track) => track.enabled),
       videoAvailable: videoTracks.length > 0,
-      videoEnabled: videoTracks.length > 0 && videoTracks.some((track) => track.enabled),
+      videoEnabled: videoTracks.some((track) => track.enabled),
       videoSource: screenSharing ? 'screen' : 'camera',
     };
   }

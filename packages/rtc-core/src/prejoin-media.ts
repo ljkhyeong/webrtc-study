@@ -94,16 +94,8 @@ function issueFor(kind: InputKind, error: unknown): PrejoinMediaIssue {
   }
 }
 
-function unavailableError(): Error {
-  const error = new Error('Browser media APIs are unavailable');
-  error.name = 'MediaUnavailableError';
-  return error;
-}
-
-function missingTrackError(): Error {
-  const error = new Error('The requested media track was not returned');
-  error.name = 'NotFoundError';
-  return error;
+function missingTrackError(): DOMException {
+  return new DOMException('The requested media track was not returned', 'NotFoundError');
 }
 
 function withSelectedDevice(
@@ -305,7 +297,7 @@ export class PrejoinMedia {
     let acquiredStream: MediaStream | null = null;
     try {
       if (this.#mediaDevices === undefined) {
-        throw unavailableError();
+        throw new Error('Browser media APIs are unavailable');
       }
 
       const constraints =
@@ -634,9 +626,9 @@ export class PrejoinMedia {
       selectedVideoInputId: this.#selectedVideoInputId,
       localMedia: {
         audioAvailable: audioTracks.length > 0,
-        audioEnabled: audioTracks.length > 0 && audioTracks.some((track) => track.enabled),
+        audioEnabled: audioTracks.some((track) => track.enabled),
         videoAvailable: videoTracks.length > 0,
-        videoEnabled: videoTracks.length > 0 && videoTracks.some((track) => track.enabled),
+        videoEnabled: videoTracks.some((track) => track.enabled),
       },
       audioIssue: this.#audioIssue === null ? null : { ...this.#audioIssue },
       videoIssue: this.#videoIssue === null ? null : { ...this.#videoIssue },
