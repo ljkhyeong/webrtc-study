@@ -476,8 +476,9 @@ round_ops_copy_release_file() {
 round_ops_sha256_file() {
   local file=$1
   local digest
-  digest=$(openssl dgst -sha256 "$file" | awk '{ print $NF }') ||
+  digest=$(openssl dgst -sha256 -r "$file") ||
     round_ops_die "could not hash $file"
+  digest=${digest%% *}
   [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || round_ops_die "invalid SHA-256 output for $file"
   printf '%s\n' "$digest"
 }
@@ -491,9 +492,9 @@ round_ops_runtime_env_sha256() {
     awk '
       !/^(ROUND_EDGE_IMAGE|ROUND_SIGNALING_IMAGE|ROUND_TURN_IMAGE)=/ { print }
     ' "$env_file" |
-      openssl dgst -sha256 |
-      awk '{ print $NF }'
+      openssl dgst -sha256 -r
   ) || round_ops_die "could not hash the runtime config in $env_file"
+  digest=${digest%% *}
   [[ "$digest" =~ ^[0-9a-f]{64}$ ]] ||
     round_ops_die "invalid runtime-config SHA-256 output for $env_file"
   printf '%s\n' "$digest"
@@ -611,13 +612,13 @@ round_ops_turn_certificate_fingerprint() {
   local cert_file
   local fingerprint
 
-  round_ops_require_command cut
   repo_root=$(round_ops_repo_root)
   cert_file=$(round_ops_resolve_repo_path \
     "$repo_root" \
     "$(round_ops_read_env_value "$env_file" TURN_TLS_CERT_FILE)")
-  fingerprint=$(openssl x509 -in "$cert_file" -noout -fingerprint -sha256 | cut -d= -f2) ||
+  fingerprint=$(openssl x509 -in "$cert_file" -noout -fingerprint -sha256) ||
     round_ops_die "could not calculate the TURN certificate fingerprint"
+  fingerprint=${fingerprint#*=}
   [[ "$fingerprint" =~ ^([0-9A-F]{2}:){31}[0-9A-F]{2}$ ]] ||
     round_ops_die "TURN certificate returned a malformed fingerprint"
   printf '%s\n' "$fingerprint"
@@ -666,12 +667,13 @@ round_ops_verify_turn_tls_listener() {
     round_ops_die "coturn TLS listener did not present a trusted certificate for $turn_realm"
   fi
   served_fingerprint=$(
-    openssl x509 -in "$peer_output" -noout -fingerprint -sha256 | cut -d= -f2
+    openssl x509 -in "$peer_output" -noout -fingerprint -sha256
   ) || {
     rm -f -- "$peer_output"
     round_ops_die "could not read the certificate served by coturn"
   }
   rm -f -- "$peer_output"
+  served_fingerprint=${served_fingerprint#*=}
   [[ "$served_fingerprint" == "$expected_fingerprint" ]] ||
     round_ops_die "coturn is not serving the configured TURN certificate"
   printf '%s\n' "$expected_fingerprint"
