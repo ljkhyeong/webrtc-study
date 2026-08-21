@@ -1,10 +1,10 @@
-export interface TurnCredentials {
+interface TurnCredentials {
   readonly iceServer: RTCIceServer;
   readonly expiresAt: number;
   readonly refreshDueAtMs: number;
 }
 
-export interface LoadTurnCredentialsOptions {
+interface LoadTurnCredentialsOptions {
   readonly endpoint?: string;
   readonly fetcher?: typeof fetch;
   readonly now?: () => number;
@@ -112,24 +112,23 @@ function validatePayload(input: unknown): TurnCredentialsPayload {
   if (typeof credential !== 'string' || credential.length === 0 || credential.length > 512) {
     throw new Error('TURN credential response contains an invalid credential');
   }
-  if (typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt) || expiresAt < 1) {
+  if (!Number.isSafeInteger(expiresAt) || (expiresAt as number) < 1) {
     throw new Error('TURN credential response contains an invalid expiry');
   }
   if (
-    typeof refreshAfterSeconds !== 'number' ||
     !Number.isSafeInteger(refreshAfterSeconds) ||
-    refreshAfterSeconds < 1 ||
-    refreshAfterSeconds > MAXIMUM_REFRESH_AFTER_SECONDS
+    (refreshAfterSeconds as number) < 1 ||
+    (refreshAfterSeconds as number) > MAXIMUM_REFRESH_AFTER_SECONDS
   ) {
     throw new Error('TURN credential response contains an invalid refresh interval');
   }
 
   return {
-    urls: [...urls],
+    urls,
     username,
     credential,
-    expiresAt,
-    refreshAfterSeconds,
+    expiresAt: expiresAt as number,
+    refreshAfterSeconds: refreshAfterSeconds as number,
   };
 }
 

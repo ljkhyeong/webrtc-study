@@ -11,13 +11,6 @@ interface WebkitFullscreenDocument extends Document {
   webkitExitFullscreen?: () => void | Promise<void>;
 }
 
-function resolvedDocument(documentRef?: Document): Document | undefined {
-  if (documentRef !== undefined) {
-    return documentRef;
-  }
-  return typeof document === 'undefined' ? undefined : document;
-}
-
 export async function enterVideoFullscreen(video: HTMLVideoElement): Promise<boolean> {
   const webkitVideo = video as WebkitFullscreenVideoElement;
 
@@ -58,7 +51,7 @@ export async function exitVideoFullscreen(
   video: HTMLVideoElement,
   documentRef?: Document,
 ): Promise<boolean> {
-  const activeDocument = resolvedDocument(documentRef);
+  const activeDocument = documentRef ?? (typeof document === 'undefined' ? undefined : document);
   const webkitVideo = video as WebkitFullscreenVideoElement;
   const webkitDocument = activeDocument as WebkitFullscreenDocument | undefined;
 

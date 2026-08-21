@@ -10,7 +10,7 @@ const ROOM_ID_LENGTH = ROOM_ID_SEGMENT_LENGTH * ROOM_ID_SEGMENT_COUNT;
 export const DISPLAY_NAME_MAX_LENGTH = 24;
 
 export function createRoomId(
-  randomValues: Uint8Array = crypto.getRandomValues(new Uint8Array(18)),
+  randomValues: Uint8Array = crypto.getRandomValues(new Uint8Array(ROOM_ID_LENGTH)),
 ) {
   const characters = Array.from(
     { length: ROOM_ID_LENGTH },

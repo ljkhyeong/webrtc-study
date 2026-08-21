@@ -17,7 +17,7 @@ export function createWithPreparedMedia<T>(
   }
 }
 
-export interface PreparedMediaFailureCleanup {
+interface PreparedMediaFailureCleanup {
   readonly isCurrent: () => boolean;
   readonly hasSession: () => boolean;
   readonly release: () => void;
