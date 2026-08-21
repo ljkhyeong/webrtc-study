@@ -1,5 +1,4 @@
 import {
-  MAX_DATA_CHANNEL_FRAME_BYTES,
   PROTOCOL_VERSION,
   parsePeerDataMessage,
   parseServerMessage,
@@ -196,7 +195,6 @@ interface PeerContext {
   readonly pendingLocalCandidates: (SerializedIceCandidate | null)[];
   readonly localIceUsernameFragments: Set<string>;
   readonly pendingChatMessages: PendingChatMessage[];
-  pendingChatBytes: number;
   readonly receivedChatIds: Set<string>;
   readonly receivedChatIdOrder: string[];
   readonly pendingAckIds: Set<string>;
@@ -283,8 +281,6 @@ const DATA_CHANNEL_RATE_WINDOW_MS = 10_000;
 // Allows short UI bursts but caps sustained work at 12 frames per second per peer.
 const MAX_DATA_CHANNEL_MESSAGES_PER_WINDOW = 120;
 const MAX_PENDING_CHAT_MESSAGES_PER_PEER = 50;
-const MAX_PENDING_CHAT_BYTES_PER_PEER =
-  MAX_PENDING_CHAT_MESSAGES_PER_PEER * MAX_DATA_CHANNEL_FRAME_BYTES;
 const MAX_RECEIVED_CHAT_IDS_PER_PEER = 128;
 const MAX_PENDING_ACK_IDS_PER_PEER = 128;
 // Mirror the peer ACK/dedup window for fully retired local IDs. A current
@@ -1976,7 +1972,7 @@ export class RoomSession {
       existing?.connection.connectionState === 'failed'
         ? this.#replacePeer(peerId, true, existing.connectionAttempt + 1)
         : this.#ensurePeer(peerId);
-    this.#adoptRemoteNegotiation(peer, negotiationId);
+    this.#replaceNegotiationId(peer, negotiationId ?? null);
     const acceptedNegotiationId = peer.negotiationId;
     peer.remoteOffersInProgress.add(acceptedNegotiationId);
     try {
@@ -2214,7 +2210,6 @@ export class RoomSession {
       pendingLocalCandidates: [],
       localIceUsernameFragments: new Set(),
       pendingChatMessages: [],
-      pendingChatBytes: 0,
       receivedChatIds: new Set(),
       receivedChatIdOrder: [],
       pendingAckIds: new Set(),
@@ -2389,10 +2384,6 @@ export class RoomSession {
       return true;
     }
     return !peer.remoteDescriptionSet && !peer.localDescriptionPublished;
-  }
-
-  #adoptRemoteNegotiation(peer: PeerContext, negotiationId?: string): void {
-    this.#replaceNegotiationId(peer, negotiationId ?? null);
   }
 
   #matchesCurrentNegotiation(peer: PeerContext, negotiationId?: string): boolean {
@@ -2712,13 +2703,9 @@ export class RoomSession {
     for (const pendingChat of pendingChatMessages) {
       pendingChat.sentOnCurrentChannel = false;
     }
-    const pendingChatBytes = existing?.pendingChatBytes ?? 0;
     const receivedChatIdOrder = [...(existing?.receivedChatIdOrder ?? [])];
     const pendingAckIds = new Set(existing?.pendingAckIds ?? []);
     const pendingMediaState = existing?.pendingMediaState ?? null;
-    if (existing !== undefined) {
-      existing.pendingChatBytes = 0;
-    }
     const inboundDataWindowStartedAt = existing?.inboundDataWindowStartedAt ?? null;
     const inboundDataMessagesInWindow = existing?.inboundDataMessagesInWindow ?? 0;
     const inboundDataRateLimitExceeded = existing?.inboundDataRateLimitExceeded ?? false;
@@ -2757,7 +2744,6 @@ export class RoomSession {
     replacement.pendingCandidates.push(...pendingCandidates);
     replacement.pendingCandidateOverflowWarned = pendingCandidateOverflowWarned;
     replacement.pendingChatMessages.push(...pendingChatMessages);
-    replacement.pendingChatBytes = pendingChatBytes;
     for (const messageId of receivedChatIdOrder) {
       replacement.receivedChatIds.add(messageId);
       replacement.receivedChatIdOrder.push(messageId);
@@ -3060,9 +3046,7 @@ export class RoomSession {
     }
     const messageBytes = utf8ByteLength(serializedMessage);
     const saturatedPeer = targetPeers.find(
-      (peer) =>
-        peer.pendingChatMessages.length >= MAX_PENDING_CHAT_MESSAGES_PER_PEER ||
-        peer.pendingChatBytes + messageBytes > MAX_PENDING_CHAT_BYTES_PER_PEER,
+      (peer) => peer.pendingChatMessages.length >= MAX_PENDING_CHAT_MESSAGES_PER_PEER,
     );
     if (saturatedPeer !== undefined) {
       throw new Error(`Chat delivery queue for ${saturatedPeer.peerId} is full`);
@@ -3082,7 +3066,6 @@ export class RoomSession {
         everSent: false,
       };
       peer.pendingChatMessages.push(pendingChat);
-      peer.pendingChatBytes += messageBytes;
     }
     return {
       peers: targetPeers,
@@ -3105,7 +3088,6 @@ export class RoomSession {
       return;
     }
     const [expired] = peer.pendingChatMessages.splice(index, 1) as [PendingChatMessage];
-    peer.pendingChatBytes -= expired.byteLength;
     if (this.#markLocalChatRecipientState(expired.message.id, peerId, 'failed')) {
       this.#emit();
     }
@@ -3184,10 +3166,6 @@ export class RoomSession {
     return channel.bufferedAmount + nextFrameBytes > limit;
   }
 
-  #sendData(peer: PeerContext, channel: RTCDataChannel, message: PeerDataMessage): boolean {
-    return this.#sendSerializedData(peer, channel, serializePeerDataMessage(message));
-  }
-
   #sendSerializedData(
     peer: PeerContext,
     channel: RTCDataChannel,
@@ -3216,7 +3194,6 @@ export class RoomSession {
     }
     const [acknowledged] = peer.pendingChatMessages.splice(index, 1) as [PendingChatMessage];
     globalThis.clearTimeout(acknowledged.timeout);
-    peer.pendingChatBytes -= acknowledged.byteLength;
     return this.#markLocalChatRecipientState(messageId, peer.peerId, 'acknowledged');
   }
 
@@ -3285,7 +3262,6 @@ export class RoomSession {
       this.#markLocalChatRecipientState(pendingChat.message.id, peer.peerId, 'failed');
     }
     peer.pendingChatMessages.length = 0;
-    peer.pendingChatBytes = 0;
   }
 
   #rememberMessage(message: ChatMessage): void {
@@ -3465,11 +3441,6 @@ export class RoomSession {
     peer.pendingLocalRenegotiation = false;
     peer.pendingCandidates.length = 0;
     peer.pendingLocalCandidates.length = 0;
-    for (const pendingChat of peer.pendingChatMessages) {
-      globalThis.clearTimeout(pendingChat.timeout);
-    }
-    peer.pendingChatMessages.length = 0;
-    peer.pendingChatBytes = 0;
     peer.receivedChatIds.clear();
     peer.receivedChatIdOrder.length = 0;
     peer.pendingAckIds.clear();
@@ -3673,25 +3644,30 @@ export class RoomSession {
   }
 
   #send(message: ClientMessage): void {
+    const socket = this.#requireOpenSocket();
+    this.#sendSerialized(socket, serializeClientMessage(message));
+  }
+
+  #requireOpenSocket(): WebSocket {
     const socket = this.#socket;
     if (socket === null || socket.readyState !== socket.OPEN) {
       throw new Error('Signaling socket is not open');
     }
-    socket.send(serializeClientMessage(message));
+    return socket;
+  }
+
+  #sendSerialized(socket: WebSocket, serialized: string): void {
+    socket.send(serialized);
   }
 
   #sendRelay(message: RelayClientMessage): void {
-    const socket = this.#socket;
-    if (socket === null || socket.readyState !== socket.OPEN) {
-      throw new Error('Signaling socket is not open');
-    }
-
+    const socket = this.#requireOpenSocket();
     const requestId = this.#createSignalRequestId();
     const correlatedMessage = { ...message, requestId } as RelayClientMessage;
     const serialized = serializeClientMessage(correlatedMessage);
     this.#rememberSignalRequest(requestId, correlatedMessage);
     try {
-      socket.send(serialized);
+      this.#sendSerialized(socket, serialized);
     } catch (error) {
       this.#pendingSignalRequests.delete(requestId);
       throw error;
