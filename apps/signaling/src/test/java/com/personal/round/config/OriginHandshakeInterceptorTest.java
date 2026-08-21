@@ -44,7 +44,7 @@ class OriginHandshakeInterceptorTest {
 
 	@Test
 	void nullOriginMustBeExplicitlyAllowedOutsideProduction() {
-		OriginPolicy policy = new OriginPolicy(List.of("null"));
+		OriginPolicy policy = new OriginPolicy(List.of("null"), SecurityMode.DEVELOPMENT);
 
 		assertThat(policy.allows("null")).isTrue();
 		assertThat(policy.allows(null)).isFalse();
@@ -53,7 +53,9 @@ class OriginHandshakeInterceptorTest {
 
 	@Test
 	void rejectsInvalidConfiguredOriginsAtStartup() {
-		assertThatThrownBy(() -> new OriginPolicy(List.of("https://study.example/path")))
+		assertThatThrownBy(() -> new OriginPolicy(
+				List.of("https://study.example/path"),
+				SecurityMode.DEVELOPMENT))
 				.isInstanceOf(IllegalArgumentException.class);
 	}
 
@@ -107,7 +109,8 @@ class OriginHandshakeInterceptorTest {
 	}
 
 	private OriginHandshakeInterceptor interceptor(List<String> origins) {
-		return new OriginHandshakeInterceptor(new OriginPolicy(origins));
+		return new OriginHandshakeInterceptor(
+				new OriginPolicy(origins, SecurityMode.DEVELOPMENT));
 	}
 
 	private HandshakeResult handshake(

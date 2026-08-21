@@ -8,7 +8,6 @@ import java.security.GeneralSecurityException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Objects;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.security.crypto.keygen.Base64StringKeyGenerator;
@@ -52,7 +51,6 @@ public class TurnCredentialService {
 	public IssueResult issueFor(
 			String clientAddress,
 			ParticipationGrant grant) {
-		Objects.requireNonNull(grant, "grant must not be null");
 		return issueFor(
 				clientAddress,
 				grant.expiresAt(),
@@ -140,12 +138,6 @@ public class TurnCredentialService {
 	}
 
 	public record RateLimited(long retryAfterSeconds) implements IssueResult {
-
-		public RateLimited {
-			if (retryAfterSeconds < 1) {
-				throw new IllegalArgumentException("retryAfterSeconds must be positive");
-			}
-		}
 	}
 
 	public enum AuthorizationExpired implements IssueResult {

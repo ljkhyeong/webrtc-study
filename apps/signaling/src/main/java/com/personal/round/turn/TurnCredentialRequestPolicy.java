@@ -25,10 +25,6 @@ final class TurnCredentialRequestPolicy {
 		}
 
 		String origin = request.getHeader(HttpHeaders.ORIGIN);
-		if (origin == null || origin.isBlank()) {
-			return false;
-		}
-
 		try {
 			return HttpOrigin.parse(origin)
 					.matches(

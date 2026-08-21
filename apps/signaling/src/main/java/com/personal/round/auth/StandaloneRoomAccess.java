@@ -12,7 +12,7 @@ final class StandaloneRoomAccess implements RoomAccess {
 	private final byte[] expectedHostTokenDigest;
 
 	StandaloneRoomAccess(String hostTokenSha256) {
-		this.expectedHostTokenDigest = hostTokenSha256 == null || hostTokenSha256.isBlank()
+		this.expectedHostTokenDigest = hostTokenSha256 == null
 				? new byte[0]
 				: HexFormat.of().parseHex(hostTokenSha256);
 	}

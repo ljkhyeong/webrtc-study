@@ -71,7 +71,7 @@ public record HttpOrigin(String scheme, String host, int port) {
 	}
 
 	private static String normalizeHost(String host) {
-		if (host == null || host.isBlank()) {
+		if (host == null) {
 			return null;
 		}
 		String unwrapped = host.length() > 1 && host.startsWith("[") && host.endsWith("]")

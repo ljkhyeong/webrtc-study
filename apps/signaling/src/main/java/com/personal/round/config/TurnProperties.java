@@ -83,7 +83,7 @@ public record TurnProperties(
 	}
 
 	public boolean enabled() {
-		return !urls.isEmpty() && !sharedSecret.isBlank();
+		return !urls.isEmpty();
 	}
 
 	@Override
@@ -154,10 +154,7 @@ public record TurnProperties(
 			int port = endpointUri.getPort();
 			return endpointUri.getRawUserInfo() == null
 					&& endpointUri.getHost() != null
-					&& !endpointUri.getHost().isBlank()
 					&& endpointUri.getRawPath().isEmpty()
-					&& endpointUri.getRawQuery() == null
-					&& endpointUri.getRawFragment() == null
 					&& !endpointUri.getRawAuthority().endsWith(":")
 					&& (port == -1 || (port >= 1 && port <= 65_535));
 		}

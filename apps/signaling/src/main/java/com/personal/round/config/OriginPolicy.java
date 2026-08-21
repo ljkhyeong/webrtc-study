@@ -10,10 +10,6 @@ public final class OriginPolicy {
 	private final boolean allowNull;
 	private final boolean allowAny;
 
-	public OriginPolicy(Iterable<String> configuredOrigins) {
-		this(configuredOrigins, SecurityMode.DEVELOPMENT);
-	}
-
 	public OriginPolicy(
 			Iterable<String> configuredOrigins,
 			SecurityMode securityMode) {
