@@ -98,7 +98,7 @@ class BatonJwkOutageIntegrationTest {
 	private static void assertUnavailable(HttpResponse<String> response) {
 		assertThat(response.statusCode()).isEqualTo(503);
 		assertThat(response.headers().firstValue(HttpHeaders.CACHE_CONTROL))
-				.contains("no-store");
+				.hasValueSatisfying(value -> assertThat(value).contains("no-store"));
 		assertThat(response.headers().firstValue(HttpHeaders.WWW_AUTHENTICATE))
 				.isEmpty();
 		assertThat(response.body()).isEmpty();

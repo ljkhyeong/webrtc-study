@@ -26,7 +26,8 @@ class HealthIntegrationTest {
 		HttpResponse<String> response = get("/healthz");
 
 		assertThat(response.statusCode()).isEqualTo(200);
-		assertThat(response.headers().firstValue("cache-control")).contains("no-store");
+		assertThat(response.headers().firstValue("cache-control"))
+				.hasValueSatisfying(value -> assertThat(value).contains("no-store"));
 		assertThat(response.body()).isEqualTo("{\"status\":\"ok\"}");
 	}
 
@@ -59,7 +60,8 @@ class HealthIntegrationTest {
 				.send(request, HttpResponse.BodyHandlers.ofString());
 
 		assertThat(response.statusCode()).isEqualTo(204);
-		assertThat(response.headers().firstValue("cache-control")).contains("no-store");
+		assertThat(response.headers().firstValue("cache-control"))
+				.hasValueSatisfying(value -> assertThat(value).contains("no-store"));
 	}
 
 	private HttpResponse<String> get(String path) throws Exception {

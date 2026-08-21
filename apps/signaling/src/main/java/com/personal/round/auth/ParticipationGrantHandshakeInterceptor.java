@@ -2,7 +2,6 @@ package com.personal.round.auth;
 
 import com.personal.round.config.RoundRoutes;
 import java.util.Map;
-import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.PathContainer;
 import org.springframework.http.server.ServerHttpRequest;
@@ -35,7 +34,6 @@ public final class ParticipationGrantHandshakeInterceptor implements HandshakeIn
 		String pathRoomId = match == null ? null : match.getUriVariables().get("roomId");
 		if (grant == null || !grant.allows(pathRoomId)) {
 			response.setStatusCode(HttpStatus.FORBIDDEN);
-			response.getHeaders().setCacheControl(CacheControl.noStore());
 			return false;
 		}
 		attributes.put(ParticipationGrant.SESSION_ATTRIBUTE, grant);

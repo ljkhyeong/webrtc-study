@@ -39,7 +39,8 @@ class TurnCredentialIntegrationTest {
 		HttpResponse<String> missingOrigin = post("198.51.100.20", null, null);
 
 		assertThat(crossOrigin.statusCode()).isEqualTo(403);
-		assertThat(crossOrigin.headers().firstValue("cache-control")).contains("no-store");
+		assertThat(crossOrigin.headers().firstValue("cache-control"))
+				.hasValueSatisfying(value -> assertThat(value).contains("no-store"));
 		assertThat(forgedOriginWithCrossSiteMetadata.statusCode()).isEqualTo(403);
 		assertThat(missingOrigin.statusCode()).isEqualTo(403);
 
@@ -56,7 +57,8 @@ class TurnCredentialIntegrationTest {
 		JsonNode metricBody = new ObjectMapper().readTree(metric.body());
 
 		assertThat(first.statusCode()).isEqualTo(200);
-		assertThat(first.headers().firstValue("cache-control")).contains("no-store");
+		assertThat(first.headers().firstValue("cache-control"))
+				.hasValueSatisfying(value -> assertThat(value).contains("no-store"));
 		assertThat(second.statusCode()).isEqualTo(200);
 		assertThat(secondCredentials.get("username").asString())
 				.isNotEqualTo(firstCredentials.get("username").asString());
@@ -76,7 +78,8 @@ class TurnCredentialIntegrationTest {
 		assertThat(firstCredentials.has("sharedSecret")).isFalse();
 
 		assertThat(limited.statusCode()).isEqualTo(429);
-		assertThat(limited.headers().firstValue("cache-control")).contains("no-store");
+		assertThat(limited.headers().firstValue("cache-control"))
+				.hasValueSatisfying(value -> assertThat(value).contains("no-store"));
 		assertThat(limited.headers().firstValue("retry-after")
 				.map(Long::parseLong))
 				.hasValueSatisfying(seconds -> assertThat(seconds).isBetween(1L, 60L));
@@ -85,7 +88,7 @@ class TurnCredentialIntegrationTest {
 		assertThat(anotherClient.statusCode()).isEqualTo(200);
 		assertThat(globallyLimited.statusCode()).isEqualTo(429);
 		assertThat(globallyLimited.headers().firstValue("cache-control"))
-				.contains("no-store");
+				.hasValueSatisfying(value -> assertThat(value).contains("no-store"));
 		assertThat(globallyLimited.headers().firstValue("retry-after")
 				.map(Long::parseLong))
 				.hasValueSatisfying(seconds -> assertThat(seconds).isBetween(1L, 60L));

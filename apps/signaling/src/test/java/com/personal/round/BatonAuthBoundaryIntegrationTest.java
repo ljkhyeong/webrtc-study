@@ -190,15 +190,19 @@ class BatonAuthBoundaryIntegrationTest {
 				"same-origin");
 
 		assertThat(missingCookie.statusCode()).isEqualTo(401);
-		assertThat(missingCookie.headers().firstValue("cache-control")).contains("no-store");
+		assertThat(missingCookie.headers().firstValue("cache-control").orElseThrow())
+				.contains("no-store");
 		assertThat(otherRoom.statusCode()).isEqualTo(403);
-		assertThat(otherRoom.headers().firstValue("cache-control")).contains("no-store");
+		assertThat(otherRoom.headers().firstValue("cache-control").orElseThrow())
+				.contains("no-store");
 		assertThat(crossOrigin.statusCode()).isEqualTo(403);
-		assertThat(crossOrigin.headers().firstValue("cache-control")).contains("no-store");
+		assertThat(crossOrigin.headers().firstValue("cache-control").orElseThrow())
+				.contains("no-store");
 
 		assertThat(issued.statusCode()).isEqualTo(200);
 		assertThat(BATON_ISSUER.jwkRequestCount()).isPositive();
-		assertThat(issued.headers().firstValue("cache-control")).contains("no-store");
+		assertThat(issued.headers().firstValue("cache-control").orElseThrow())
+				.contains("no-store");
 		JsonNode credentials = objectMapper.readTree(issued.body());
 		assertThat(credentials.at("/urls/0").asString())
 				.isEqualTo("turn:turn.example.com:3478");
@@ -212,7 +216,7 @@ class BatonAuthBoundaryIntegrationTest {
 				.isBetween(1L, 220L);
 		assertThat(refreshed.statusCode()).isEqualTo(200);
 		assertThat(participantLimited.statusCode()).isEqualTo(429);
-		assertThat(participantLimited.headers().firstValue("cache-control"))
+		assertThat(participantLimited.headers().firstValue("cache-control").orElseThrow())
 				.contains("no-store");
 		assertThat(participantLimited.headers().firstValue("retry-after")
 				.map(Long::parseLong))
@@ -236,10 +240,10 @@ class BatonAuthBoundaryIntegrationTest {
 				"same-origin");
 
 		assertThat(unknownKey.statusCode()).isEqualTo(401);
-		assertThat(unknownKey.headers().firstValue("cache-control"))
+		assertThat(unknownKey.headers().firstValue("cache-control").orElseThrow())
 				.contains("no-store");
 		assertThat(malformedKey.statusCode()).isEqualTo(401);
-		assertThat(malformedKey.headers().firstValue("cache-control"))
+		assertThat(malformedKey.headers().firstValue("cache-control").orElseThrow())
 				.contains("no-store");
 	}
 
@@ -253,7 +257,7 @@ class BatonAuthBoundaryIntegrationTest {
 				"same-origin");
 
 		assertThat(turnResponse.statusCode()).isEqualTo(401);
-		assertThat(turnResponse.headers().firstValue("cache-control"))
+		assertThat(turnResponse.headers().firstValue("cache-control").orElseThrow())
 				.contains("no-store");
 		assertWebSocketRejected(
 				"/rooms/" + ROOM_ID + "/signal",

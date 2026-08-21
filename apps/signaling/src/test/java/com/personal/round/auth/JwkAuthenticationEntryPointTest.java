@@ -13,7 +13,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 class JwkAuthenticationEntryPointTest {
 
 	private final AuthenticationEntryPoint entryPoint =
-			RoundSecurityConfig.noStoreBearerEntryPoint();
+			RoundSecurityConfig.jwkAwareBearerEntryPoint();
 
 	@Test
 	void reportsVerificationInfrastructureFailureAsServiceUnavailable() throws Exception {
@@ -25,7 +25,6 @@ class JwkAuthenticationEntryPointTest {
 				new AuthenticationServiceException("JWK endpoint unavailable"));
 
 		assertThat(response.getStatus()).isEqualTo(503);
-		assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store");
 		assertThat(response.getHeader(HttpHeaders.WWW_AUTHENTICATE)).isNull();
 		assertThat(response.getContentAsByteArray()).isEmpty();
 	}
@@ -40,7 +39,6 @@ class JwkAuthenticationEntryPointTest {
 				new InvalidBearerTokenException("invalid token"));
 
 		assertThat(response.getStatus()).isEqualTo(401);
-		assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store");
 		assertThat(response.getHeader(HttpHeaders.WWW_AUTHENTICATE)).startsWith("Bearer");
 	}
 }

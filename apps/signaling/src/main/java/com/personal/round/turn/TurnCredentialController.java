@@ -9,7 +9,6 @@ import com.personal.round.auth.ParticipationGrantResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import java.security.Principal;
 import java.util.function.Supplier;
-import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -64,27 +63,20 @@ public class TurnCredentialController {
 		}
 		TurnCredentialService.IssueResult result = issuer.get();
 		return switch (result) {
-			case TurnCredentialService.Issued issued -> ResponseEntity.ok()
-					.cacheControl(CacheControl.noStore())
-					.body(issued.credentials());
+			case TurnCredentialService.Issued issued -> ResponseEntity.ok(issued.credentials());
 			case TurnCredentialService.RateLimited rateLimited ->
 					ResponseEntity.status(TOO_MANY_REQUESTS)
 							.header(
 									HttpHeaders.RETRY_AFTER,
 									Long.toString(rateLimited.retryAfterSeconds()))
-							.cacheControl(CacheControl.noStore())
-							.build();
+								.build();
 			case TurnCredentialService.AuthorizationExpired ignored -> forbidden();
 			case TurnCredentialService.Disabled ignored ->
-					ResponseEntity.noContent()
-							.cacheControl(CacheControl.noStore())
-							.build();
+					ResponseEntity.noContent().build();
 		};
 	}
 
 	private static ResponseEntity<TurnCredentials> forbidden() {
-		return ResponseEntity.status(HttpStatus.FORBIDDEN)
-				.cacheControl(CacheControl.noStore())
-				.build();
+		return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 	}
 }

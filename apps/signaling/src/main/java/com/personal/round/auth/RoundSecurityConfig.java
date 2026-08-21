@@ -24,7 +24,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.config.ObjectPostProcessor;
@@ -39,11 +38,9 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
-import org.springframework.security.oauth2.server.resource.web.access.BearerTokenAccessDeniedHandler;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
 
 @Configuration(proxyBeanMethods = false)
@@ -59,7 +56,7 @@ public class RoundSecurityConfig {
 			RoundAuthProperties properties)
 			throws Exception {
 		AuthenticationEntryPoint authenticationEntryPoint =
-				noStoreBearerEntryPoint();
+				jwkAwareBearerEntryPoint();
 		http.securityMatcher(
 						BATON_SIGNAL_SECURITY_PATTERN,
 						BATON_TURN_CREDENTIALS_SECURITY_PATTERN)
@@ -71,8 +68,6 @@ public class RoundSecurityConfig {
 						.withObjectPostProcessor(
 								handleAuthenticationServiceFailures(
 										authenticationEntryPoint)))
-				.exceptionHandling(exceptions -> exceptions
-						.accessDeniedHandler(noStoreBearerAccessDeniedHandler()))
 				.sessionManagement(session -> session.sessionCreationPolicy(STATELESS))
 				.requestCache(cache -> cache.disable())
 				.csrf(csrf -> csrf.ignoringRequestMatchers(
@@ -180,18 +175,16 @@ public class RoundSecurityConfig {
 				.build();
 	}
 
-	static AuthenticationEntryPoint noStoreBearerEntryPoint() {
+	static AuthenticationEntryPoint jwkAwareBearerEntryPoint() {
 		BearerTokenAuthenticationEntryPoint delegate =
 				new BearerTokenAuthenticationEntryPoint();
 		return (request, response, exception) -> {
 			if (exception instanceof AuthenticationServiceException) {
 				response.setStatus(HttpStatus.SERVICE_UNAVAILABLE.value());
-				response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
 				response.setContentLength(0);
 				return;
 			}
 			delegate.commence(request, response, exception);
-			response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
 		};
 	}
 
@@ -208,14 +201,6 @@ public class RoundSecurityConfig {
 				filter.setAuthenticationFailureHandler(failureHandler);
 				return filter;
 			}
-		};
-	}
-
-	private static AccessDeniedHandler noStoreBearerAccessDeniedHandler() {
-		BearerTokenAccessDeniedHandler delegate = new BearerTokenAccessDeniedHandler();
-		return (request, response, exception) -> {
-			delegate.handle(request, response, exception);
-			response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
 		};
 	}
 }
