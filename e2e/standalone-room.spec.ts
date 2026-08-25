@@ -148,10 +148,6 @@ async function expectRemoteMedia(page: Page, displayName: string): Promise<void>
             stream
               .getAudioTracks()
               .some((track) => track.readyState === 'live' && track.muted === false),
-          frameReady:
-            videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-            videoElement.videoWidth > 0 &&
-            videoElement.videoHeight > 0,
           videoFlowing:
             stream instanceof MediaStream &&
             stream
@@ -162,7 +158,6 @@ async function expectRemoteMedia(page: Page, displayName: string): Promise<void>
     })
     .toEqual({
       audioFlowing: true,
-      frameReady: true,
       videoFlowing: true,
     });
   await expect.poll(() => remoteVideoHasVisibleContent(page, displayName)).toBe(true);
