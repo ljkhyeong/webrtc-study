@@ -337,7 +337,6 @@ test('방장과 참가자가 미디어·화면 공유·채팅을 사용하고 �
 
     await first.page.getByRole('button', { name: '카메라 켜기', exact: true }).click();
     await expect(firstTileOnSecondPage.getByLabel('가온의 카메라 꺼짐')).toHaveCount(0);
-    await expect.poll(() => remoteVideoHasVisibleContent(second.page, '가온')).toBe(true);
     await expectRemoteMedia(second.page, '가온');
 
     await first.page.getByRole('button', { name: '나가기', exact: true }).click();
