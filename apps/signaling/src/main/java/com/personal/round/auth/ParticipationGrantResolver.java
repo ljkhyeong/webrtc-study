@@ -29,7 +29,7 @@ public final class ParticipationGrantResolver {
 			String studyId = boundedClaim(jwt.getClaimAsString("study_id"), MAX_STUDY_ID_LENGTH);
 			String roomId = jwt.getClaimAsString("room_id");
 			String tokenId = boundedClaim(jwt.getId(), MAX_TOKEN_ID_LENGTH);
-			String rawRole = boundedClaim(jwt.getClaimAsString("role"), 32);
+			String rawRole = jwt.getClaimAsString("role");
 			Instant issuedAt = jwt.getIssuedAt();
 			Instant expiresAt = jwt.getExpiresAt();
 			if (!RoomIdFormat.isCanonical(roomId)
@@ -40,11 +40,16 @@ public final class ParticipationGrantResolver {
 			if (!expiresAt.isAfter(issuedAt)) {
 				return Optional.empty();
 			}
-			ParticipationGrant.Role role = switch (rawRole) {
-				case "host" -> ParticipationGrant.Role.HOST;
-				case "participant" -> ParticipationGrant.Role.PARTICIPANT;
-				default -> throw new IllegalArgumentException("JWT role claim is invalid");
-			};
+			ParticipationGrant.Role role;
+			if ("host".equals(rawRole)) {
+				role = ParticipationGrant.Role.HOST;
+			}
+			else if ("participant".equals(rawRole)) {
+				role = ParticipationGrant.Role.PARTICIPANT;
+			}
+			else {
+				throw new IllegalArgumentException("JWT role claim is invalid");
+			}
 			return Optional.of(new ParticipationGrant(
 					subject,
 					studyId,
