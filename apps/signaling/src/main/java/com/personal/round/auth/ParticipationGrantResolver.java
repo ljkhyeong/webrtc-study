@@ -40,16 +40,11 @@ public final class ParticipationGrantResolver {
 			if (!expiresAt.isAfter(issuedAt)) {
 				return Optional.empty();
 			}
-			ParticipationGrant.Role role;
-			if ("host".equals(rawRole)) {
-				role = ParticipationGrant.Role.HOST;
-			}
-			else if ("participant".equals(rawRole)) {
-				role = ParticipationGrant.Role.PARTICIPANT;
-			}
-			else {
-				throw new IllegalArgumentException("JWT role claim is invalid");
-			}
+			ParticipationGrant.Role role = switch (rawRole) {
+				case "host" -> ParticipationGrant.Role.HOST;
+				case "participant" -> ParticipationGrant.Role.PARTICIPANT;
+				case null, default -> throw new IllegalArgumentException("JWT role claim is invalid");
+			};
 			return Optional.of(new ParticipationGrant(
 					subject,
 					studyId,
