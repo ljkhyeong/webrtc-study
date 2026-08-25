@@ -1695,9 +1695,6 @@ export class RoomSession {
     socket: WebSocket,
     generation: number,
   ): Promise<void> {
-    if (!this.#isCurrentSocket(socket, generation)) {
-      return;
-    }
     try {
       switch (message.type) {
         case 'room.joined':
@@ -2646,9 +2643,7 @@ export class RoomSession {
       globalThis.clearTimeout(peer.connectionTimeout);
       peer.connectionTimeout = null;
     }
-    if (peer.offerRetryTimer !== null) {
-      this.#cancelOfferRetryTimer(peer);
-    }
+    this.#cancelOfferRetryTimer(peer);
     this.#cancelDisconnectedTimer(peer);
     if (peer.recoveryTimer !== null) {
       globalThis.clearTimeout(peer.recoveryTimer);
@@ -3401,9 +3396,7 @@ export class RoomSession {
       globalThis.clearTimeout(peer.connectionTimeout);
       peer.connectionTimeout = null;
     }
-    if (peer.offerRetryTimer !== null) {
-      this.#cancelOfferRetryTimer(peer);
-    }
+    this.#cancelOfferRetryTimer(peer);
     this.#cancelDisconnectedTimer(peer);
     if (peer.recoveryTimer !== null) {
       globalThis.clearTimeout(peer.recoveryTimer);
