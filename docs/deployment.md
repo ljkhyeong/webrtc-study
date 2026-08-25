@@ -802,17 +802,17 @@ docker compose --env-file ops/production.env config --quiet
 
 CI는 임시 dummy credential과 certificate를 대상으로 동일한 interpolation을 실행하고, 고정된
 custom Caddy runtime을 build하며, rate-limit module 존재 여부를 검증합니다. 정확히 그 binary로
-Caddyfile을 검증하고, 모든 Dockerfile runtime target을 검사하며, BATON 모드 web runtime을
-build·검사한 뒤 standalone image 3개를 build합니다.
+Caddyfile과 Dockerfile 전체를 검사하고, Compose가 참조하는 image target을 확인합니다. 이어서
+BATON 모드 web runtime을 build·검사한 뒤 standalone image 3개를 build합니다.
 
 ```bash
 bash ops/ci/validate-deployment.sh
 ```
 
-최종 Compose image 3개를 build하지 않고 로컬에서 문법과 target을 검사하려면 `--check-only`를
-추가합니다. stock Caddy binary는 rate-limit directive를 해석할 수 없고 Dockerfile 문법
-검사만으로는 내장 auth flavor나 `/round-ui/` asset base를 검증할 수 없으므로, 이 모드도 더
-작은 custom Caddy validation target과 BATON web runtime은 build합니다.
+최종 Compose image 3개를 build하지 않고 로컬에서 배포 구성, Dockerfile 전체와 Compose image
+target 연결을 검사하려면 `--check-only`를 추가합니다. stock Caddy binary는 rate-limit directive를
+해석할 수 없고 Dockerfile 검사만으로는 내장 auth flavor나 `/round-ui/` asset base를 검증할 수
+없으므로, 이 모드도 더 작은 custom Caddy validation target과 BATON web runtime은 build합니다.
 
 로컬 image 검증 host에서는 target 3개를 build하고 stack을 시작합니다.
 

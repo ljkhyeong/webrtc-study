@@ -3,13 +3,12 @@ set -Eeuo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ops/ci/validate-deployment.sh [--check-only]
+사용법: ops/ci/validate-deployment.sh [--check-only]
 
-Validates the production Compose interpolation, shell scripts, Caddyfile, and
-every Dockerfile runtime target. By default it also builds all Compose images.
-Use --check-only to skip the final Compose images. The small custom Caddy
-validation target and BATON web runtime image are always built so their
-contracts are actually checked.
+프로덕션 Compose 보간과 빌드 target, shell script, Caddyfile, Dockerfile 전체를 검증합니다.
+기본 실행은 Compose image 전체도 build합니다. --check-only를 사용하면 마지막 Compose image
+build만 건너뜁니다. 작은 custom Caddy 검증 target과 BATON web runtime image는 실행 계약을
+확인하기 위해 항상 build합니다.
 EOF
 }
 
@@ -233,10 +232,11 @@ docker run --rm \
         ]]
     ' >/dev/null
 
-printf 'Checking Dockerfile runtime targets...\n'
-for target in web-runtime baton-web-runtime signaling-runtime turn-runtime; do
-  docker build --check --target "$target" .
-done
+printf 'Checking the entire Dockerfile...\n'
+docker build --check .
+
+printf 'Checking the production Compose build targets...\n'
+docker compose --env-file ops/production.env.example build --check
 
 baton_web_image=round-baton-web-validation:local
 printf 'Building the BATON browser runtime image...\n'
