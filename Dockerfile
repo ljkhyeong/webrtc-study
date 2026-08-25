@@ -84,7 +84,6 @@ COPY gradle gradle
 COPY apps/signaling/build.gradle apps/signaling/build.gradle
 COPY apps/signaling/src apps/signaling/src
 
-RUN chmod 0755 gradlew
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew --no-daemon :apps:signaling:bootJar \
     && cp apps/signaling/build/libs/signaling-*.jar /workspace/signaling.jar
