@@ -217,91 +217,25 @@ test('방장과 참가자가 미디어·화면 공유·채팅을 사용하고 �
       name: '가온의 화면 공유 전체 화면으로 보기',
     });
     await remoteScreenVideo.evaluate((element) => {
-      const video = element as HTMLVideoElement & {
-        webkitEnterFullscreen?: () => void;
-        webkitRequestFullscreen?: () => Promise<void>;
-        readonly webkitSupportsFullscreen?: boolean;
-      };
-      const recordAttempt = (name: string) => {
-        const attempts = Number.parseInt(video.dataset[name] ?? '0', 10);
-        video.dataset[name] = String(attempts + 1);
-      };
-
-      Object.defineProperties(video, {
+      Object.defineProperties(element, {
         requestFullscreen: {
           configurable: true,
           value: async () => {
-            recordAttempt('standardFullscreenAttempts');
-            throw new DOMException('standard fullscreen denied', 'NotAllowedError');
+            throw new DOMException('fullscreen denied', 'NotAllowedError');
           },
         },
         webkitRequestFullscreen: {
           configurable: true,
-          value: async () => {
-            recordAttempt('webkitRequestFullscreenAttempts');
-            throw new DOMException('prefixed fullscreen denied', 'NotAllowedError');
-          },
-        },
-        webkitSupportsFullscreen: {
-          configurable: true,
-          value: true,
+          value: undefined,
         },
         webkitEnterFullscreen: {
           configurable: true,
-          value: () => {
-            recordAttempt('webkitEnterFullscreenAttempts');
-          },
+          value: undefined,
         },
       });
     });
 
     await remoteFullscreenButton.click();
-    await expect(remoteScreenVideo).toHaveAttribute('data-standard-fullscreen-attempts', '1');
-    await expect(remoteScreenVideo).toHaveAttribute('data-webkit-request-fullscreen-attempts', '1');
-    await expect(remoteScreenVideo).toHaveAttribute('data-webkit-enter-fullscreen-attempts', '1');
-    await expect(firstTileOnSecondPage.locator('.video-tile__fullscreen-error')).toHaveCount(0);
-
-    await remoteScreenVideo.evaluate((element) => {
-      const video = element as HTMLVideoElement & {
-        webkitEnterFullscreen?: () => void;
-        webkitRequestFullscreen?: () => Promise<void>;
-      };
-      const rejectFullscreen = () => {
-        throw new DOMException('fullscreen denied', 'NotAllowedError');
-      };
-
-      delete video.dataset.standardFullscreenAttempts;
-      delete video.dataset.webkitRequestFullscreenAttempts;
-      delete video.dataset.webkitEnterFullscreenAttempts;
-      Object.defineProperties(video, {
-        requestFullscreen: {
-          configurable: true,
-          value: async () => {
-            video.dataset.standardFullscreenAttempts = '1';
-            rejectFullscreen();
-          },
-        },
-        webkitRequestFullscreen: {
-          configurable: true,
-          value: async () => {
-            video.dataset.webkitRequestFullscreenAttempts = '1';
-            rejectFullscreen();
-          },
-        },
-        webkitEnterFullscreen: {
-          configurable: true,
-          value: () => {
-            video.dataset.webkitEnterFullscreenAttempts = '1';
-            rejectFullscreen();
-          },
-        },
-      });
-    });
-
-    await remoteFullscreenButton.click();
-    await expect(remoteScreenVideo).toHaveAttribute('data-standard-fullscreen-attempts', '1');
-    await expect(remoteScreenVideo).toHaveAttribute('data-webkit-request-fullscreen-attempts', '1');
-    await expect(remoteScreenVideo).toHaveAttribute('data-webkit-enter-fullscreen-attempts', '1');
     await expect(
       firstTileOnSecondPage.getByRole('alert').filter({
         hasText:

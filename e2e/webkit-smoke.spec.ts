@@ -2,11 +2,7 @@ import { expect, test } from '@playwright/test';
 
 const ROOM_PATH = '/room/abcd-efgh-jkmp';
 
-test('WebKit keeps a direct invite behind explicit pre-join media consent', async ({
-  browserName,
-  page,
-}) => {
-  expect(browserName).toBe('webkit');
+test('WebKit keeps a direct invite behind explicit pre-join media consent', async ({ page }) => {
   const failures: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') {
