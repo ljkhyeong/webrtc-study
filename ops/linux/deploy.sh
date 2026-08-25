@@ -39,7 +39,7 @@ esac
 env_file=$1
 repo_root=$(round_ops_repo_root)
 cd "$repo_root"
-for command_name in cmp git openssl realpath; do
+for command_name in cmp openssl realpath; do
   round_ops_require_command "$command_name"
 done
 round_ops_require_private_file "$env_file"
