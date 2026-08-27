@@ -71,15 +71,18 @@ Micrometer는 다음 signaling meter를 게시합니다.
 - `round.signaling.rooms.active`
 - `round.signaling.peers.connected`
 - `round.signaling.peers.joined`
+- `round.signaling.outbound.queue.bytes`
 - `round.signaling.joins.rejected`
-  (`reason=room_full|already_joined|unauthorized_room`)
+  (`reason=room_full|already_joined|unauthorized_room|invalid_host_capability`)
 - `round.signaling.frames.invalid`
 - `round.signaling.frames.rate_limited`
 - `round.signaling.frames.client_rate_limited`
 - `round.signaling.frames.overloaded`
+- `round.signaling.frames.byte_limited` (`scope=session|client|global`)
 - `round.signaling.connections.rejected`
   (`reason=server_capacity|client_capacity|participation_token_capacity|participant_room_capacity|missing_reservation|missing_room_access`)
 - `round.signaling.outbound.queue.overflows`
+- `round.signaling.outbound.queue.global_overflows`
 - `round.signaling.heartbeat.closes`
 - `round.signaling.authorization.closes`
 - `round.turn.credentials.issued`

@@ -83,6 +83,8 @@ npm run test:e2e
 | `MAX_SIGNALING_CONNECTIONS`                           | `1000`                  | 서버 전체 signaling 연결 제한   |
 | `MAX_SIGNALING_CONNECTIONS_PER_CLIENT`                | `12`                    | IP별 동시 signaling 연결 제한   |
 | `HEARTBEAT_INTERVAL_MS`                               | `30000`                 | 연결 상태 확인 주기(ms)         |
+| `UNJOINED_SOCKET_TIMEOUT_MS`                          | `15000`                 | 미입장 socket 종료 기한(ms)     |
+| `UNJOINED_SOCKET_SWEEP_MS`                            | `1000`                  | 미입장 socket 검사 주기(ms)     |
 | `SIGNALING_SHUTDOWN_CLOSE_TIMEOUT_MS`                 | `5000`                  | 종료 시 전체 close 제한(ms)     |
 | `SIGNALING_ABUSE_WINDOW_MS`                           | `10000`                 | 수신 프레임 고정 윈도우(ms)     |
 | `SIGNALING_MAX_FRAMES_PER_SESSION`                    | `600`                   | 윈도우당 세션 프레임 제한       |
@@ -111,7 +113,8 @@ npm run test:e2e
 프레임 수와 수신 바이트 제한은 세션, IP 합산, 서버 전체 순서로 함께 적용됩니다. 세션
 초과 연결은 닫고 IP 또는 서버 전체 제한을 넘은 프레임은 다른 클라이언트에 영향을 주지
 않도록 버립니다. IP 합산 제한은 세션 제한 이상이어야 하고, 서버 전체 제한은 고정
-윈도우 경계 차이를 고려해 IP 합산 제한의 두 배 이상이어야 합니다. 송신 큐는 peer별
+윈도우 경계 차이를 고려해 IP 합산 제한의 두 배 이상이어야 합니다. 미입장 socket 검사
+주기는 100~1,000ms 범위이며 미입장 종료 기한을 넘을 수 없습니다. 송신 큐는 peer별
 프레임·바이트 제한과 서버 전체 64MiB 바이트 제한을 함께 적용합니다. TURN 발급 제한도
 같은 전역 여유 규칙을 사용합니다.
 마지막 연결이 끊겨도 IP별 프레임 상태는 현재 abuse window가 끝날 때까지 유지되므로 같은
