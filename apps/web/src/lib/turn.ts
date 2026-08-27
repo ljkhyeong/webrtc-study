@@ -1,3 +1,5 @@
+import { hasOnlyKeys, isJsonObject } from './json-validation';
+
 interface TurnCredentials {
   readonly iceServer: RTCIceServer;
   readonly expiresAt: number;
@@ -83,8 +85,8 @@ export async function loadTurnCredentials(
 
 function validatePayload(input: unknown): TurnCredentialsPayload {
   if (
-    !isRecord(input) ||
-    !hasExactKeys(input, ['urls', 'username', 'credential', 'expiresAt', 'refreshAfterSeconds'])
+    !isJsonObject(input) ||
+    !hasOnlyKeys(input, ['urls', 'username', 'credential', 'expiresAt', 'refreshAfterSeconds'])
   ) {
     throw new Error('TURN credential response must contain only credential lease metadata');
   }
@@ -130,13 +132,4 @@ function validatePayload(input: unknown): TurnCredentialsPayload {
     expiresAt: expiresAt as number,
     refreshAfterSeconds: refreshAfterSeconds as number,
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const actual = Object.keys(value);
-  return actual.length === expected.length && expected.every((key) => Object.hasOwn(value, key));
 }

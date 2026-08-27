@@ -1,4 +1,5 @@
 import { isValidRoomId } from './room';
+import { hasOnlyKeys, isJsonObject } from './json-validation';
 
 interface ParticipationGrantLease {
   readonly expiresAt: number;
@@ -259,11 +260,11 @@ function browserSessionStorage(): Pick<Storage, 'getItem' | 'removeItem'> | null
 }
 
 function isValidEntryContext(input: unknown, roomId: string): input is BatonRoundEntryContext {
-  if (!isRecord(input)) {
+  if (!isJsonObject(input)) {
     return false;
   }
   return (
-    hasExactKeys(input, ENTRY_FIELDS) &&
+    hasOnlyKeys(input, ENTRY_FIELDS) &&
     input.version === 1 &&
     typeof input.teamId === 'string' &&
     CANONICAL_UUID_PATTERN.test(input.teamId) &&
@@ -298,7 +299,7 @@ async function loadBatonCsrfCredential(
   }
 
   const input: unknown = await response.json();
-  if (!isRecord(input) || input.authenticated !== true) {
+  if (!isJsonObject(input) || input.authenticated !== true) {
     throw new ParticipationGrantAccessError('unauthenticated');
   }
   if (typeof input.csrfHeaderName !== 'string' || !isSafeCsrfHeaderName(input.csrfHeaderName)) {
@@ -337,7 +338,7 @@ function isSafeCsrfHeaderName(value: string): boolean {
 }
 
 function validateLease(input: unknown): ParticipationGrantLease {
-  if (!isRecord(input) || !hasExactKeys(input, ['expiresAt', 'refreshAfterSeconds'])) {
+  if (!isJsonObject(input) || !hasOnlyKeys(input, ['expiresAt', 'refreshAfterSeconds'])) {
     throw new Error('Participation grant refresh response must contain only lease metadata');
   }
 
@@ -371,13 +372,4 @@ function requireSameOriginPath(endpoint: string): string {
     throw new Error('Participation grant refresh endpoint must be a same-origin path');
   }
   return normalized;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const actual = Object.keys(value);
-  return actual.length === expected.length && expected.every((key) => Object.hasOwn(value, key));
 }
