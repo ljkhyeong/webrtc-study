@@ -276,6 +276,7 @@ const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
 const MAX_PENDING_SIGNAL_REQUESTS = 256;
 const MAX_RETIRED_NEGOTIATION_IDS = 8;
 const DATA_CHANNEL_RATE_WINDOW_MS = 10_000;
+const DATA_CHANNEL_LABEL = 'round-room';
 // 짧은 UI 집중 전송은 허용하되 지속 전송은 피어당 초당 12프레임으로 제한한다.
 const MAX_DATA_CHANNEL_MESSAGES_PER_WINDOW = 120;
 const MAX_PENDING_CHAT_MESSAGES_PER_PEER = 50;
@@ -1897,7 +1898,7 @@ export class RoomSession {
     if (peer.channel === null) {
       this.#attachDataChannel(
         peer,
-        peer.connection.createDataChannel('round-room', {
+        peer.connection.createDataChannel(DATA_CHANNEL_LABEL, {
           ordered: true,
         }),
       );
@@ -2266,10 +2267,18 @@ export class RoomSession {
     };
 
     connection.ondatachannel = (event) => {
-      if (!this.#isCurrentPeer(peer)) {
+      const channel = event.channel;
+      if (
+        !this.#isCurrentPeer(peer) ||
+        channel.label !== DATA_CHANNEL_LABEL ||
+        channel.ordered !== true ||
+        channel.maxRetransmits !== null ||
+        channel.maxPacketLifeTime !== null
+      ) {
+        this.#detachAndCloseChannel(channel);
         return;
       }
-      this.#attachDataChannel(peer, event.channel);
+      this.#attachDataChannel(peer, channel);
     };
 
     connection.onsignalingstatechange = () => {

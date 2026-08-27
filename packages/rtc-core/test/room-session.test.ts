@@ -216,6 +216,10 @@ class FakeMediaStream {
 }
 
 class FakeDataChannel {
+  readonly label: string;
+  readonly ordered: boolean;
+  readonly maxRetransmits: number | null;
+  readonly maxPacketLifeTime: number | null;
   readyState: RTCDataChannelState = 'open';
   bufferedAmount = 0;
   bufferedAmountLowThreshold = 0;
@@ -226,6 +230,13 @@ class FakeDataChannel {
   onclose: ((event: Event) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
   onbufferedamountlow: ((event: Event) => void) | null = null;
+
+  constructor(label = 'round-room', options: RTCDataChannelInit = { ordered: true }) {
+    this.label = label;
+    this.ordered = options.ordered ?? true;
+    this.maxRetransmits = options.maxRetransmits ?? null;
+    this.maxPacketLifeTime = options.maxPacketLifeTime ?? null;
+  }
 
   send(data: string): void {
     const error = this.sendErrors.shift();
@@ -348,8 +359,8 @@ class FakePeerConnection {
     this.removedSenders.push(fakeSender);
   }
 
-  createDataChannel(): RTCDataChannel {
-    const channel = new FakeDataChannel();
+  createDataChannel(label: string, options?: RTCDataChannelInit): RTCDataChannel {
+    const channel = new FakeDataChannel(label, options);
     this.channels.push(channel);
     return channel as unknown as RTCDataChannel;
   }
@@ -999,6 +1010,12 @@ describe('RoomSession', () => {
     const peer = harness.peerConnections[0];
     expect(peer?.addedTracks).toHaveLength(2);
     expect(peer?.channels).toHaveLength(1);
+    expect(peer?.channels[0]).toMatchObject({
+      label: 'round-room',
+      ordered: true,
+      maxRetransmits: null,
+      maxPacketLifeTime: null,
+    });
     expect(harness.socket.messagesOfType('rtc.offer')).toEqual([
       {
         v: PROTOCOL_VERSION,
@@ -1016,6 +1033,35 @@ describe('RoomSession', () => {
       'self',
       'peer-a',
     ]);
+  });
+
+  it('closes incoming DataChannels that do not match the reliable ordered chat contract', async () => {
+    const harness = createHarness({ createId: () => 'message-after-invalid-channel' });
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const peer = harness.peerConnections[0];
+    const originalChannel = peer?.channels[0];
+    if (peer === undefined || originalChannel === undefined) {
+      throw new Error('Expected an initial DataChannel');
+    }
+
+    const invalidChannels = [
+      new FakeDataChannel('unexpected-channel'),
+      new FakeDataChannel('round-room', { ordered: false }),
+      new FakeDataChannel('round-room', { maxRetransmits: 1 }),
+      new FakeDataChannel('round-room', { maxPacketLifeTime: 1_000 }),
+    ];
+    for (const channel of invalidChannels) {
+      peer.ondatachannel?.({ channel } as unknown as RTCDataChannelEvent);
+    }
+
+    expect(invalidChannels.every((channel) => channel.readyState === 'closed')).toBe(true);
+    harness.session.sendChat('keep the valid channel');
+    expect(
+      originalChannel.sent
+        .map((raw) => JSON.parse(raw) as { type: string; id?: string })
+        .filter((message) => message.type === 'chat.message'),
+    ).toEqual([expect.objectContaining({ id: 'message-after-invalid-channel' })]);
+    await harness.session.leave();
   });
 
   it('removes only the peer targeted by a correlated TARGET_NOT_FOUND error', async () => {
