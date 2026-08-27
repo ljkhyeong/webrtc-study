@@ -238,13 +238,12 @@ docker build --check .
 printf 'Checking the production Compose build targets...\n'
 production_build_targets=$(
   jq -er '
-    [.services | to_entries[]
-      | select(.value.build != null)
-      | .value.build.target] as $targets
-    | if ($targets | length) > 0
-        and all($targets[]; type == "string" and length > 0)
-      then $targets[]
-      else error("production Compose build targets are missing")
+    .services[]
+    | select(.build != null)
+    | .build.target
+    | if type == "string" and length > 0
+      then .
+      else error("production Compose build target is missing")
       end
   ' <<<"$production_config"
 )
