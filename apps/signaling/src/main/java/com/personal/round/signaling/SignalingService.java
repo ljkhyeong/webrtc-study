@@ -146,9 +146,7 @@ public class SignalingService implements SmartLifecycle {
 		try {
 			WorkPlan workPlan = new WorkPlan();
 			if (reservation == null) {
-				log.error(
-						"WebSocket session {} reached signaling without an admission reservation",
-						session.getId());
+				log.error("WebSocket connection reached signaling without an admission reservation");
 				metrics.recordConnectionRejectedMissingReservation();
 				workPlan.close(session, ADMISSION_REQUIRED);
 				execute(workPlan);
@@ -156,9 +154,7 @@ public class SignalingService implements SmartLifecycle {
 			}
 			RoomAccess roomAccess = roomAccessPolicy.resolve(session).orElse(null);
 			if (roomAccess == null) {
-				log.warn(
-						"WebSocket session {} reached signaling without verified room access",
-						session.getId());
+				log.warn("WebSocket connection reached signaling without verified room access");
 				metrics.recordConnectionRejectedMissingRoomAccess();
 				workPlan.close(session, ROOM_ACCESS_REQUIRED);
 				execute(workPlan);
