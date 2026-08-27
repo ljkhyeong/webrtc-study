@@ -3076,7 +3076,7 @@ class SignalingServiceTest {
 	}
 
 	@Test
-	void releasesAdmissionReservationsOnDisconnectConnectRejectionAndStop()
+	void releasesAdmissionReservationsOnConnectRejectionDisconnectAndStop()
 			throws Exception {
 		service.stop();
 		SignalingProperties properties =
@@ -3087,15 +3087,6 @@ class SignalingServiceTest {
 				TestProperties.signalingWithConnectionLimits(1, 3, 3),
 				new SignalingMetrics(new SimpleMeterRegistry()),
 				new ClientAddressKeyResolver());
-		TestPeer unclaimed = peer("reserved-unclaimed");
-		attachReservation(
-				unclaimed,
-				acceptedReservation(policy.reserve(
-						new InetSocketAddress("192.0.2.29", 41_000),
-						null)));
-		service.releaseUnclaimedReservation(unclaimed.session());
-		assertThat(policy.activeReservationCount()).isZero();
-
 		TestPeer accepted = peer("reserved-accepted");
 		TestPeer rejected = peer("reserved-rejected");
 		attachReservation(

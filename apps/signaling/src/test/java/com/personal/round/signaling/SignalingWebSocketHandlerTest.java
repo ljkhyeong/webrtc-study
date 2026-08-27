@@ -1,6 +1,5 @@
 package com.personal.round.signaling;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.AdditionalMatchers.aryEq;
@@ -129,14 +128,4 @@ class SignalingWebSocketHandlerTest {
 				malformedMultibytePayload.getBytes(StandardCharsets.UTF_8).length);
 	}
 
-	@Test
-	void releasesAnUnclaimedReservationWhenConnectFails() {
-		when(service.connect(session)).thenThrow(new IllegalStateException("connect failed"));
-
-		assertThatThrownBy(() -> handler.afterConnectionEstablished(session))
-				.isInstanceOf(IllegalStateException.class);
-
-		verify(service).releaseUnclaimedReservation(session);
-		verify(service).connect(session);
-	}
 }

@@ -33,12 +33,7 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 
 	@Override
 	public void afterConnectionEstablished(WebSocketSession session) {
-		try {
-			signalingService.connect(session);
-		}
-		finally {
-			signalingService.releaseUnclaimedReservation(session);
-		}
+		signalingService.connect(session);
 	}
 
 	@Override

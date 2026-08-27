@@ -223,13 +223,6 @@ public class SignalingService implements SmartLifecycle {
 		}
 	}
 
-	void releaseUnclaimedReservation(WebSocketSession session) {
-		ConnectionAdmissionPolicy.Reservation reservation = takeReservation(session);
-		if (reservation != null) {
-			reservation.close();
-		}
-	}
-
 	public boolean isAcceptingConnections() {
 		return acceptingConnections;
 	}
