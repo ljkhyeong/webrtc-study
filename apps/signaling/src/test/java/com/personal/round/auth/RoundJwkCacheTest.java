@@ -106,7 +106,7 @@ class RoundJwkCacheTest {
 
 		@Override
 		public void close() {
-			// No external resource is owned by this test source.
+			// 이 테스트 소스는 외부 자원을 소유하지 않는다.
 		}
 	}
 }

@@ -35,6 +35,6 @@ public final class OriginHandshakeInterceptor implements HandshakeInterceptor {
 			ServerHttpResponse response,
 			WebSocketHandler wsHandler,
 			Exception exception) {
-		// No resources are allocated during the handshake.
+		// 핸드셰이크 중에는 할당한 자원이 없다.
 	}
 }

@@ -46,6 +46,6 @@ public final class ParticipationGrantHandshakeInterceptor implements HandshakeIn
 			ServerHttpResponse response,
 			WebSocketHandler wsHandler,
 			Exception exception) {
-		// The immutable grant is owned by the WebSocket session after a successful upgrade.
+		// 업그레이드가 성공하면 불변 참여권의 소유권이 WebSocket 세션으로 넘어간다.
 	}
 }

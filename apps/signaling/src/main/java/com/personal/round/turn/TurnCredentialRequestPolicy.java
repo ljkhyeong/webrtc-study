@@ -6,11 +6,10 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 
 /**
- * Rejects browser-driven cross-origin credential issuance before it consumes quota.
+ * 브라우저에서 시작된 교차 출처 자격 증명 발급 요청이 할당량을 사용하기 전에 거부한다.
  *
- * <p>This is a browser boundary defense, not client authentication. In BATON mode, Spring Security
- * and the room participation grant provide authentication and authorization; this policy remains
- * as a same-origin defense before TURN quota is consumed.
+ * <p>이 정책은 브라우저 경계 방어이며 클라이언트 인증이 아니다. BATON 모드에서는 Spring Security와
+ * 방 참여권이 인증과 권한 부여를 담당한다. 이 정책은 TURN 할당량 사용 전 동일 출처 방어로 유지한다.
  */
 @Component
 final class TurnCredentialRequestPolicy {

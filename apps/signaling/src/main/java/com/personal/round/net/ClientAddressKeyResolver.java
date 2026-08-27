@@ -7,12 +7,11 @@ import java.util.Arrays;
 import org.springframework.stereotype.Component;
 
 /**
- * Produces one abuse-control key from the effective remote address.
+ * 유효 원격 주소에서 남용 제어용 키 하나를 만든다.
  *
- * <p>IPv4 clients retain their full address. IPv6 clients share one key per /64 so rotating
- * interface identifiers cannot reset connection, signaling-frame, or TURN issuance limits.
- * Non-numeric and malformed values fail closed into one shared unknown-client bucket without
- * triggering DNS resolution.
+ * <p>IPv4 클라이언트는 전체 주소를 유지한다. IPv6 클라이언트는 /64마다 하나의 키를 공유하므로
+ * 인터페이스 식별자를 회전해도 연결, 시그널링 프레임, TURN 발급 제한을 초기화할 수 없다. 숫자 형식이
+ * 아니거나 잘못된 값은 DNS 조회를 시작하지 않고 하나의 공유 미확인 클라이언트 버킷에 보수적으로 묶는다.
  */
 @Component
 public final class ClientAddressKeyResolver {
