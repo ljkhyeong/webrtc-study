@@ -363,13 +363,20 @@ function validateLease(input: unknown): ParticipationGrantLease {
 
 function requireSameOriginPath(endpoint: string): string {
   const normalized = endpoint.trim();
+  const currentOrigin = globalThis.location?.origin ?? 'https://round.invalid';
+  let resolved: URL;
+  try {
+    resolved = new URL(normalized, currentOrigin);
+  } catch {
+    throw new Error('Participation grant refresh endpoint must be a same-origin path');
+  }
   if (
-    !normalized.startsWith('/') ||
-    normalized.startsWith('//') ||
-    normalized.includes('?') ||
-    normalized.includes('#')
+    resolved.origin !== currentOrigin ||
+    resolved.pathname !== normalized ||
+    resolved.search !== '' ||
+    resolved.hash !== ''
   ) {
     throw new Error('Participation grant refresh endpoint must be a same-origin path');
   }
-  return normalized;
+  return resolved.pathname;
 }

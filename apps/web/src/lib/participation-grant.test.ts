@@ -295,6 +295,7 @@ describe('BATON participation grant lease manager', () => {
   it.each([
     'https://baton.example/round/rooms/abcd-efgh-jkmp/participation-grant/refresh',
     '//baton.example/round/rooms/abcd-efgh-jkmp/participation-grant/refresh',
+    '/round\\rooms/abcd-efgh-jkmp/participation-grant/refresh',
     '/round/rooms/abcd-efgh-jkmp/participation-grant/refresh?token=secret',
   ])('rejects a non-same-origin or decorated endpoint %s', (endpoint) => {
     expect(
