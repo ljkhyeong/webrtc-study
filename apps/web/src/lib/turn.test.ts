@@ -55,6 +55,7 @@ describe('TURN credential loading', () => {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
       method: 'POST',
+      redirect: 'error',
       signal: expect.any(AbortSignal),
     });
   });
@@ -74,6 +75,7 @@ describe('TURN credential loading', () => {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
       method: 'POST',
+      redirect: 'error',
       signal: expect.any(AbortSignal),
     });
     expect(endpoint).not.toMatch(/[?#]/);

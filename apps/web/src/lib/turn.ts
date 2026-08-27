@@ -48,6 +48,7 @@ export async function loadTurnCredentials(
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
       method: 'POST',
+      redirect: 'error',
       signal,
     });
 
