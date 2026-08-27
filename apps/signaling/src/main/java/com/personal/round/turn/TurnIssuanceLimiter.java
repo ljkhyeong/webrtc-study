@@ -80,13 +80,13 @@ final class TurnIssuanceLimiter {
 			return rejection;
 		}
 
-		if (clientWindow == null) {
-			clientWindow = new IssuanceWindow(nowMillis);
-			clientWindows.put(clientKey, clientWindow);
-		}
-		if (participantKey != null && participantWindow == null) {
-			participantWindow = new IssuanceWindow(nowMillis);
-			participantWindows.put(participantKey, participantWindow);
+		clientWindow = clientWindows.computeIfAbsent(
+				clientKey,
+				ignored -> new IssuanceWindow(nowMillis));
+		if (participantKey != null) {
+			participantWindow = participantWindows.computeIfAbsent(
+					participantKey,
+					ignored -> new IssuanceWindow(nowMillis));
 		}
 		if (globalWindow == null) {
 			globalWindow = new IssuanceWindow(nowMillis);
