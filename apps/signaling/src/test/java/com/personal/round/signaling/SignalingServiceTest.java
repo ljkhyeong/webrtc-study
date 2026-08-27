@@ -1922,6 +1922,9 @@ class SignalingServiceTest {
 			healthy.awaitTextMessage();
 			assertThat(healthy.closeStatus().get()).isNull();
 			assertThat(service.connectedPeerCount()).isOne();
+			assertThat(meterRegistry.get("round.signaling.outbound.queue.overflows")
+					.counter()
+					.count()).isEqualTo(2);
 			assertThat(meterRegistry.get("round.signaling.outbound.queue.global_overflows")
 					.counter()
 					.count()).isEqualTo(1);

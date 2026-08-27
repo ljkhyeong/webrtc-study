@@ -81,8 +81,8 @@ Micrometer는 다음 signaling meter를 게시합니다.
 - `round.signaling.frames.byte_limited` (`scope=session|client|global`)
 - `round.signaling.connections.rejected`
   (`reason=server_capacity|client_capacity|participation_token_capacity|participant_room_capacity|missing_reservation|missing_room_access`)
-- `round.signaling.outbound.queue.overflows`
-- `round.signaling.outbound.queue.global_overflows`
+- `round.signaling.outbound.queue.overflows` (peer별 또는 전체 송신 큐 제한으로 닫힌 peer 수)
+- `round.signaling.outbound.queue.global_overflows` (전체 송신 바이트 한도에 걸린 frame 수)
 - `round.signaling.heartbeat.closes`
 - `round.signaling.authorization.closes`
 - `round.turn.credentials.issued`

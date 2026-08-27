@@ -111,11 +111,11 @@ public final class SignalingMetrics {
 				.description("WebSocket sessions rejected because verified room access was missing")
 				.register(registry);
 		queueOverflows = Counter.builder("round.signaling.outbound.queue.overflows")
-				.description("Peers closed because their outbound queue overflowed")
+				.description("Peers closed by per-peer or server-wide outbound queue limits")
 				.register(registry);
 		globalQueueOverflows = Counter.builder(
 						"round.signaling.outbound.queue.global_overflows")
-				.description("Peers closed to preserve the server-wide outbound byte budget")
+				.description("Outbound frames that encountered the server-wide byte budget")
 				.register(registry);
 		heartbeatCloses = Counter.builder("round.signaling.heartbeat.closes")
 				.description("Peers closed after failing the heartbeat check")

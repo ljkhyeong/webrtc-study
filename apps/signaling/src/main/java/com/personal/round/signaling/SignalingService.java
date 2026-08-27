@@ -1069,33 +1069,37 @@ public class SignalingService implements SmartLifecycle {
 		boolean peerOverflow = peer.outboundFrameCount >= MAX_OUTBOUND_QUEUE_SIZE
 				|| messageBytes > maxOutboundQueueBytes - peer.outboundBytes;
 		if (peerOverflow) {
-			metrics.recordQueueOverflow();
-			disconnectAndCloseLocked(
-					peer,
-					OUTBOUND_QUEUE_OVERFLOW,
-					workPlan,
-					pendingOutbound);
+			if (disconnectAndCloseLocked(
+						peer,
+						OUTBOUND_QUEUE_OVERFLOW,
+						workPlan,
+						pendingOutbound)) {
+				metrics.recordQueueOverflow();
+			}
 			return false;
 		}
 		if (messageBytes > maxOutboundQueueBytesGlobal - globalOutboundBytes) {
-			metrics.recordQueueOverflow();
 			metrics.recordGlobalQueueOverflow();
 			for (Peer victim : globalPressureVictimsLocked(messageBytes)) {
-				disconnectAndCloseLocked(
-						victim,
-						OUTBOUND_QUEUE_OVERFLOW,
-						workPlan,
-						pendingOutbound);
+				if (disconnectAndCloseLocked(
+							victim,
+							OUTBOUND_QUEUE_OVERFLOW,
+							workPlan,
+							pendingOutbound)) {
+					metrics.recordQueueOverflow();
+				}
 				if (!peer.connected) {
 					return false;
 				}
 			}
 			if (messageBytes > maxOutboundQueueBytesGlobal - globalOutboundBytes) {
-				disconnectAndCloseLocked(
-						peer,
-						OUTBOUND_QUEUE_OVERFLOW,
-						workPlan,
-						pendingOutbound);
+				if (disconnectAndCloseLocked(
+							peer,
+							OUTBOUND_QUEUE_OVERFLOW,
+							workPlan,
+							pendingOutbound)) {
+					metrics.recordQueueOverflow();
+				}
 				return false;
 			}
 		}
