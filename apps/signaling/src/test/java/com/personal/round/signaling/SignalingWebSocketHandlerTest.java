@@ -1,5 +1,6 @@
 package com.personal.round.signaling;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.AdditionalMatchers.aryEq;
@@ -53,18 +54,22 @@ class SignalingWebSocketHandlerTest {
 	}
 
 	@Test
-	void closesTextFramesLargerThan64KiB() throws Exception {
-		String oversized = "x".repeat(64 * 1024 + 1);
+	void closesMultibyteTextFrameThatExceedsTheUtf8ByteLimit() throws Exception {
+		String oversized = "한".repeat(ProtocolParser.MAX_SIGNALING_FRAME_BYTES / 3 + 1);
+		assertThat(oversized.length())
+				.isLessThan(ProtocolParser.MAX_SIGNALING_FRAME_BYTES);
+		assertThat(oversized.getBytes(StandardCharsets.UTF_8).length)
+				.isGreaterThan(ProtocolParser.MAX_SIGNALING_FRAME_BYTES);
 
 		handler.handleMessage(session, new TextMessage(oversized));
 
-		var order = inOrder(service, session);
+		var order = inOrder(service);
 		order.verify(service).recordInvalidFrame();
 		order.verify(service).disconnectAndClose(
 				session,
 				new CloseStatus(1009, "Message exceeds 64 KiB"));
-		verify(session, never()).close(any(CloseStatus.class));
-		verify(service, org.mockito.Mockito.never()).handle(any(), any());
+		verify(service, never()).acceptInboundFrame(any(), anyInt());
+		verify(service, never()).handle(any(), any());
 	}
 
 	@Test
