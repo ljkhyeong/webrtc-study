@@ -5,7 +5,10 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VideoTile, type ParticipantView } from './VideoTile';
 
-function remoteParticipant(stream: MediaStream): ParticipantView {
+function remoteParticipant(
+  stream: MediaStream,
+  videoSource: ParticipantView['videoSource'] = 'camera',
+): ParticipantView {
   return {
     peerId: 'peer-1',
     displayName: '스터디원',
@@ -13,7 +16,7 @@ function remoteParticipant(stream: MediaStream): ParticipantView {
     isLocal: false,
     audioEnabled: true,
     videoEnabled: true,
-    videoSource: 'camera',
+    videoSource,
     connectionState: 'connected',
     stream,
   };
@@ -36,7 +39,7 @@ function deferredPlayback(): {
   return { promise, reject };
 }
 
-describe('VideoTile autoplay recovery', () => {
+describe('VideoTile browser behavior', () => {
   beforeEach(() => {
     Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
       configurable: true,
@@ -115,6 +118,45 @@ describe('VideoTile autoplay recovery', () => {
       expect(
         container.querySelector('button[aria-label="스터디원의 소리와 영상 재생"]'),
       ).toBeNull();
+    } finally {
+      await act(async () => {
+        root.unmount();
+        await flushMicrotasks();
+      });
+    }
+  });
+
+  it('opens the rendered video with the Safari native fullscreen API', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const webkitEnterFullscreen = vi.fn();
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+
+    try {
+      await act(async () => {
+        root.render(<VideoTile participant={remoteParticipant({} as MediaStream, 'screen')} />);
+        await flushMicrotasks();
+      });
+
+      const video = container.querySelector<HTMLVideoElement>('video');
+      const fullscreenButton = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="스터디원의 화면 공유 전체 화면으로 보기"]',
+      );
+      expect(video).not.toBeNull();
+      expect(fullscreenButton).not.toBeNull();
+      Object.defineProperties(video, {
+        webkitSupportsFullscreen: { configurable: true, value: true },
+        webkitEnterFullscreen: { configurable: true, value: webkitEnterFullscreen },
+      });
+
+      await act(async () => {
+        fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicrotasks();
+      });
+
+      expect(webkitEnterFullscreen).toHaveBeenCalledOnce();
+      expect(container.querySelector('[role="alert"]')).toBeNull();
     } finally {
       await act(async () => {
         root.unmount();
