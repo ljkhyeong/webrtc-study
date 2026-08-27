@@ -8,10 +8,6 @@ import com.personal.round.config.TurnProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import jakarta.validation.ConstraintViolation;
-import jakarta.validation.Validation;
-import jakarta.validation.Validator;
-import jakarta.validation.ValidatorFactory;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -19,7 +15,6 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -28,7 +23,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
 class TurnCredentialServiceTest {
@@ -37,15 +31,6 @@ class TurnCredentialServiceTest {
 	private static final List<String> TURN_URLS = List.of(
 			"turn:turn.example.com:3478?transport=udp",
 			"turns:turn.example.com:5349?transport=tcp");
-	private static final ValidatorFactory VALIDATOR_FACTORY =
-			Validation.buildDefaultValidatorFactory();
-	private static final Validator VALIDATOR = VALIDATOR_FACTORY.getValidator();
-
-	@AfterAll
-	static void closeValidatorFactory() {
-		VALIDATOR_FACTORY.close();
-	}
-
 	@Test
 	void createsUniqueCoturnRestCredentialsForClientsBehindTheSameNat() throws Exception {
 		TurnProperties properties = enabledProperties();
@@ -128,7 +113,7 @@ class TurnCredentialServiceTest {
 	}
 
 	@Test
-	void isDisabledOnlyWhenBothSecretAndUrlsAreAbsent() {
+	void isDisabledWhenTurnConfigurationIsAbsent() {
 		TurnProperties disabled = TestProperties.turn(List.of(), "");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
@@ -136,34 +121,6 @@ class TurnCredentialServiceTest {
 
 		assertThat(service.issueFor("192.0.2.10"))
 				.isSameAs(TurnCredentialService.Disabled.INSTANCE);
-
-		TurnProperties missingUrls = TestProperties.turn(List.of(), SHARED_SECRET);
-		assertThat(violations(missingUrls))
-				.extracting(ConstraintViolation::getMessage)
-				.anySatisfy(message -> assertThat(message)
-						.contains("configured together"))
-				.allSatisfy(message -> assertThat(message)
-						.doesNotContain(SHARED_SECRET));
-
-		TurnProperties missingSecret = TestProperties.turn(
-				List.of("turn:turn.example.com:3478"), "");
-		assertThat(violations(missingSecret))
-				.extracting(ConstraintViolation::getMessage)
-				.anySatisfy(message -> assertThat(message)
-						.contains("configured together"));
-	}
-
-	@Test
-	void rejectsCredentialBearingOrInvalidTurnUrlsWithoutEchoingThem() {
-		TurnProperties properties = TestProperties.turn(
-				List.of("turn:user:password@turn.example.com:3478"), SHARED_SECRET);
-
-		assertThat(violations(properties))
-				.extracting(ConstraintViolation::getMessage)
-				.anySatisfy(message -> assertThat(message)
-						.contains("credential-free"))
-				.allSatisfy(message -> assertThat(message)
-						.doesNotContain("password"));
 	}
 
 	@Test
@@ -554,67 +511,8 @@ class TurnCredentialServiceTest {
 				.doesNotContain("abcd-efgh-jkmp", "sensitive-member");
 	}
 
-	@Test
-	void validatesRateLimitConfigurationWithoutEchoingSensitiveValues() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 0, 8, 10_000);
-		Set<ConstraintViolation<TurnProperties>> violations = violations(properties);
-
-		assertThat(violations)
-				.extracting(violation -> violation.getPropertyPath().toString())
-				.contains("rateLimitMaxRequests");
-		assertThat(violations)
-				.extracting(ConstraintViolation::getMessage)
-				.allSatisfy(message -> assertThat(message)
-						.doesNotContain(SHARED_SECRET));
-	}
-
-	@Test
-	void validatesGlobalRateLimitConfigurationWithoutEchoingSensitiveValues() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 12, 0, 10_000);
-		Set<ConstraintViolation<TurnProperties>> violations = violations(properties);
-
-		assertThat(violations)
-				.extracting(violation -> violation.getPropertyPath().toString())
-				.contains("rateLimitGlobalMaxRequests");
-		assertThat(violations)
-				.extracting(ConstraintViolation::getMessage)
-				.allSatisfy(message -> assertThat(message)
-						.doesNotContain(SHARED_SECRET));
-	}
-
-	@Test
-	void validatesParticipantRateLimitAndStateCapacity() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 12, 0, 24, 10_000, 0);
-
-		assertThat(violations(properties))
-				.extracting(violation -> violation.getPropertyPath().toString())
-				.contains(
-						"rateLimitParticipantMaxRequests",
-						"rateLimitMaxParticipants");
-	}
-
-	@Test
-	void requiresGlobalQuotaForTwoMisalignedClientWindows() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 4, 7, 10_000);
-
-		assertThat(violations(properties))
-				.extracting(ConstraintViolation::getMessage)
-				.contains(
-						"round.turn.rate-limit-global-max-requests must be at least twice "
-								+ "rate-limit-max-requests");
-	}
-
 	private static TurnProperties enabledProperties() {
 		return TestProperties.turn(TURN_URLS, SHARED_SECRET);
-	}
-
-	private static Set<ConstraintViolation<TurnProperties>> violations(
-			TurnProperties properties) {
-		return VALIDATOR.validate(properties);
 	}
 
 	private static String hmac(String username, String secret) throws Exception {

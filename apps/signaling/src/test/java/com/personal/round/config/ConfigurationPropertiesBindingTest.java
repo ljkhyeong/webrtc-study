@@ -336,6 +336,27 @@ class ConfigurationPropertiesBindingTest {
 	}
 
 	@Test
+	void rejectsIncompleteTurnConfigurationDuringContextStartup() {
+		contextRunner
+				.withPropertyValues("round.turn.shared-secret=configured-secret")
+				.run(context -> assertThat(context.getStartupFailure())
+						.hasStackTraceContaining(
+								"round.turn.urls and round.turn.shared-secret must be configured together"));
+	}
+
+	@Test
+	void rejectsTurnGlobalRateLimitBelowTwoClientWindowsDuringContextStartup() {
+		contextRunner
+				.withPropertyValues(
+						"round.turn.rate-limit-max-requests=4",
+						"round.turn.rate-limit-global-max-requests=7")
+				.run(context -> assertThat(context.getStartupFailure())
+						.hasStackTraceContaining(
+								"round.turn.rate-limit-global-max-requests must be at least twice "
+										+ "rate-limit-max-requests"));
+	}
+
+	@Test
 	void turnCrossFieldValidationDoesNotExposeSecretOrUrlValues() {
 		String secret = "must-not-appear-in-validation-errors";
 		String credentialBearingUrl = "turn:user:password@turn.example.com:3478";
