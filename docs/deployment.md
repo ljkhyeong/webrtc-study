@@ -1087,10 +1087,16 @@ header와 URI를 완전히 생략합니다.
   restic처럼 검증된 암호화 backup 도구를 scheduled off-host 전송에 사용하는 것을 권장합니다.
   ROUND script는 의도적으로 archive를 upload하거나 prune하지 않습니다.
 
-  restore 명령은 파괴적이며 정확한 확인 token을 요구합니다. 검사 전에 lifecycle lock을 잡고,
-  실행 중이거나 중지된 Compose container 집합이 있으면 거부하며, 선택적인 checksum과 archive
-  path를 검증하고, 새 host에 없는 named volume을 만듭니다. 검사할 수 있도록 ROUND는 중지된
-  상태로 둡니다.
+  복원 명령은 파괴적이며 정확한 확인 token을 요구합니다. 먼저 lifecycle lock을 잡은 뒤 외부의
+  암호화 백업을 상태 디렉터리 아래 mode `0600` 스냅샷 하나로 복사합니다. 선택적인 checksum,
+  archive 경로 검사와 실제 추출은 모두 이 스냅샷의 같은 byte를 사용합니다. 실행 중이거나 중지된
+  Compose container 집합이 있으면 거부하고, 새 host에 없는 named volume은 검사 후 만듭니다.
+
+  `current.env`가 없는 신규 host에서는 깨끗한 checkout의 HEAD를 source commit으로 사용하고,
+  env의 세 이미지가 digest reference인지 확인합니다. 실제 root 복원 helper로 실행할 edge 이미지는
+  정확한 ROUND package 저장소를 사용하며, 그 source commit의 서명된 출처 증명과 `edge` role,
+  `VITE_ICE_TRANSPORT_POLICY`에 맞는 flavor를 확인하고 exact digest를 pull한 뒤에만 실행합니다.
+  복원 뒤 내용을 검사할 수 있도록 ROUND는 중지된 상태로 둡니다.
 
   ```bash
   docker compose --env-file /etc/round/production.env down

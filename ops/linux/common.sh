@@ -234,6 +234,43 @@ round_ops_inspect_image_labels() {
   printf '%s\n' "$label_fields"
 }
 
+round_ops_verify_restore_helper_image() {
+  local image_ref=$1
+  local source_commit=$2
+  local expected_flavor=$3
+  local labels
+  local label_fields
+  local image_role
+  local image_flavor
+
+  round_ops_require_image_repository ROUND_EDGE_IMAGE "$image_ref" edge
+  round_ops_verify_signed_provenance "$source_commit" "$image_ref"
+  round_ops_docker pull "$image_ref" >/dev/null ||
+    round_ops_die "복원 헬퍼 이미지를 가져오지 못했습니다: $image_ref"
+
+  labels=$(round_ops_docker image inspect --format '{{json .Config.Labels}}' "$image_ref") ||
+    round_ops_die "복원 헬퍼 이미지 label을 확인하지 못했습니다: $image_ref"
+  label_fields=$(jq -er '
+    select(type == "object")
+    | [
+        .["io.round.image.role"],
+        .["io.round.image.flavor"]
+      ]
+    | select(all(.[];
+        type == "string"
+        and length > 0
+        and (test("[\\r\\n\\t]") | not)
+      ))
+    | @tsv
+  ' <<<"$labels") ||
+    round_ops_die "복원 헬퍼 이미지에 올바른 role/flavor label이 없습니다"
+  IFS=$'\t' read -r image_role image_flavor <<<"$label_fields"
+  [[ "$image_role" == edge ]] ||
+    round_ops_die "복원 헬퍼 이미지에 edge 역할이 없습니다"
+  [[ "$image_flavor" == "$expected_flavor" ]] ||
+    round_ops_die "복원 헬퍼 이미지 flavor가 VITE_ICE_TRANSPORT_POLICY와 일치하지 않습니다"
+}
+
 round_ops_verify_release_image_labels() {
   local release_file=$1
   local env_file=$2

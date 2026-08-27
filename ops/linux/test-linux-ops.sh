@@ -227,8 +227,16 @@ EOF
 cat >"$fake_bin/age" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+fake_root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 if [[ " $* " == *' --decrypt '* ]]; then
-  cat "${@: -1}"
+  input_file=${@: -1}
+  printf 'decrypt %s\n' "$input_file" >>"$fake_root/age.log"
+  if [[ -s "$fake_root/mutate-backup-after-decrypt" ]]; then
+    original_backup=$(<"$fake_root/mutate-backup-after-decrypt")
+    printf 'changed external backup\n' >"$original_backup"
+    rm -f -- "$fake_root/mutate-backup-after-decrypt"
+  fi
+  cat "$input_file"
   exit 0
 fi
 output=
@@ -301,9 +309,15 @@ case "$command_line" in
         ;;
       *) exit 1 ;;
     esac
-    printf '{"org.opencontainers.image.source":"%s","org.opencontainers.image.revision":"%s","org.opencontainers.image.version":"%s","io.round.release.tag-object":"%s","io.round.image.role":"%s","io.round.image.flavor":"%s"}\n' \
-      "$source_label" "$revision_label" "$version_label" "$tag_object_label" \
-      "$role_label" "$flavor_label"
+    if [[ "$image_ref" == *'/round-edge@'* && \
+       -e "$fake_root/omit-edge-release-metadata" ]]; then
+      printf '{"io.round.image.role":"%s","io.round.image.flavor":"%s"}\n' \
+        "$role_label" "$flavor_label"
+    else
+      printf '{"org.opencontainers.image.source":"%s","org.opencontainers.image.revision":"%s","org.opencontainers.image.version":"%s","io.round.release.tag-object":"%s","io.round.image.role":"%s","io.round.image.flavor":"%s"}\n' \
+        "$source_label" "$revision_label" "$version_label" "$tag_object_label" \
+        "$role_label" "$flavor_label"
+    fi
     ;;
   *' config --format json '*)
     log_compose "$@"
@@ -343,6 +357,7 @@ case "$command_line" in
   *' up -d --wait --no-build --no-deps edge '*) log_compose "$@" ;;
   *' stop edge '*) log_compose "$@" ;;
   *' down --remove-orphans '*) log_compose "$@" ;;
+  *' pull ghcr.io/ljkhyeong/round-edge@sha256:'*) log_compose "$@" ;;
   *' volume inspect '*)
     [[ ! -e "$fake_root/volumes-missing" ]]
     ;;
@@ -851,6 +866,35 @@ backup_file=$(printf '%s\n' "$backup_dir"/*.tar.age)
 identity_file="$fixture_dir/backup-identity.txt"
 printf 'AGE-SECRET-KEY-TEST\n' >"$identity_file"
 chmod 0600 "$identity_file"
+
+mutable_backup="$fixture_dir/mutable-caddy.tar.age"
+cp -- "$backup_file" "$mutable_backup"
+cp -- "$backup_file.sha256" "$mutable_backup.sha256"
+printf '%s\n' "$mutable_backup" >"$fixture_dir/mutate-backup-after-decrypt"
+: >"$fixture_dir/age.log"
+PATH="$fake_bin:$PATH" ops/linux/restore-caddy.sh \
+  --state-dir "$state_dir" \
+  --identity-file "$identity_file" \
+  --confirm RESTORE_CADDY_VOLUMES \
+  "$mutable_backup" \
+  "$env_b" \
+  >/dev/null
+grep -Fxq 'changed external backup' "$mutable_backup" ||
+  fail 'restore snapshot test did not mutate the external backup'
+[[ "$(wc -l <"$fixture_dir/age.log" | tr -d ' ')" == '3' ]] ||
+  fail 'restore did not decrypt the expected archive streams'
+restore_snapshot=$(awk 'NR == 1 { print $2 }' "$fixture_dir/age.log")
+[[ "$restore_snapshot" != "$mutable_backup" ]] ||
+  fail 'restore decrypted the external backup path instead of its snapshot'
+if awk -v expected="$restore_snapshot" '$2 != expected { exit 1 }' \
+  "$fixture_dir/age.log"; then
+  :
+else
+  fail 'restore used different encrypted bytes between validation and extraction'
+fi
+[[ ! -e "$restore_snapshot" ]] ||
+  fail 'restore left its encrypted backup snapshot behind'
+
 touch "$fixture_dir/compose-ps-fail"
 if PATH="$fake_bin:$PATH" ops/linux/restore-caddy.sh \
   --state-dir "$state_dir" \
@@ -862,16 +906,66 @@ if PATH="$fake_bin:$PATH" ops/linux/restore-caddy.sh \
   fail 'Caddy restore ignored a Compose container status lookup failure'
 fi
 rm -f -- "$fixture_dir/compose-ps-fail"
-touch "$fixture_dir/volumes-missing"
-PATH="$fake_bin:$PATH" ops/linux/restore-caddy.sh \
-  --state-dir "$state_dir" \
+
+fresh_restore_root="$fixture_dir/fresh-restore-root"
+fresh_restore_state_dir="$fresh_restore_root/releases"
+mkdir -p "$fresh_restore_state_dir"
+chmod 0700 "$fresh_restore_root" "$fresh_restore_state_dir"
+touch "$fixture_dir/wrong-edge-role"
+: >"$fixture_dir/docker.log"
+if PATH="$fake_bin:$PATH" ops/linux/restore-caddy.sh \
+  --state-dir "$fresh_restore_state_dir" \
   --identity-file "$identity_file" \
   --confirm RESTORE_CADDY_VOLUMES \
   "$backup_file" \
-  "$env_b" \
+  "$env_a" \
+  >/dev/null 2>&1; then
+  fail 'fresh-host restore accepted an image without the edge role'
+fi
+rm -f -- "$fixture_dir/wrong-edge-role"
+if grep -Fq -- '--entrypoint sh' "$fixture_dir/docker.log"; then
+  fail 'untrusted fresh-host helper image reached archive extraction'
+fi
+
+touch "$fixture_dir/edge-flavor-relay"
+: >"$fixture_dir/docker.log"
+if PATH="$fake_bin:$PATH" ops/linux/restore-caddy.sh \
+  --state-dir "$fresh_restore_state_dir" \
+  --identity-file "$identity_file" \
+  --confirm RESTORE_CADDY_VOLUMES \
+  "$backup_file" \
+  "$env_a" \
+  >/dev/null 2>&1; then
+  fail 'fresh-host restore accepted an edge helper with the wrong flavor'
+fi
+rm -f -- "$fixture_dir/edge-flavor-relay"
+if grep -Fq -- '--entrypoint sh' "$fixture_dir/docker.log"; then
+  fail 'wrong-flavor fresh-host helper image reached archive extraction'
+fi
+
+touch "$fixture_dir/volumes-missing"
+touch "$fixture_dir/omit-edge-release-metadata"
+: >"$fixture_dir/docker.log"
+: >"$fixture_dir/gh.log"
+PATH="$fake_bin:$PATH" ops/linux/restore-caddy.sh \
+  --state-dir "$fresh_restore_state_dir" \
+  --identity-file "$identity_file" \
+  --confirm RESTORE_CADDY_VOLUMES \
+  "$backup_file" \
+  "$env_a" \
   >/dev/null
+rm -f -- "$fixture_dir/omit-edge-release-metadata"
 grep -Fq 'volume-create volume create' "$fixture_dir/docker.log" ||
   fail 'fresh-host restore did not create missing Compose volumes'
+[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '1' ]] ||
+  fail 'fresh-host restore did not verify the edge helper provenance'
+[[ "$(grep -c '^image-inspect .*round-edge@' "$fixture_dir/docker.log")" == '1' ]] ||
+  fail 'fresh-host restore did not verify the edge helper release role'
+grep -Fq 'pull ghcr.io/ljkhyeong/round-edge@sha256:' "$fixture_dir/docker.log" ||
+  fail 'fresh-host restore did not pull the verified edge helper digest'
+if find "$fresh_restore_root" -maxdepth 1 -name '.restore-backup.*' -print -quit | grep -q .; then
+  fail 'fresh-host restore left its encrypted backup snapshot behind'
+fi
 
 grep -Fq 'Persistent=true' ops/linux/systemd/round-turn-certificate-reconcile.timer
 grep -Fq 'OnFailure=round-ops-failure@%n.service' \
