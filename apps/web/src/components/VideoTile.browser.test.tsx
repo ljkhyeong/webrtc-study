@@ -22,12 +22,6 @@ function remoteParticipant(
   };
 }
 
-async function flushMicrotasks(): Promise<void> {
-  for (let index = 0; index < 8; index += 1) {
-    await Promise.resolve();
-  }
-}
-
 function deferredPlayback(): {
   readonly promise: Promise<void>;
   readonly reject: (error: unknown) => void;
@@ -53,18 +47,21 @@ describe('VideoTile browser behavior', () => {
   });
 
   it('offers a user gesture after autoplay is rejected and clears it after playback succeeds', async () => {
+    const autoplay = deferredPlayback();
     const play = vi
       .spyOn(HTMLMediaElement.prototype, 'play')
-      .mockRejectedValueOnce(new DOMException('Autoplay blocked', 'NotAllowedError'))
+      .mockImplementationOnce(() => autoplay.promise)
       .mockResolvedValueOnce(undefined);
     const container = document.createElement('div');
     document.body.append(container);
     const root = createRoot(container);
 
     try {
-      await act(async () => {
+      act(() => {
         root.render(<VideoTile participant={remoteParticipant({} as MediaStream)} />);
-        await flushMicrotasks();
+      });
+      await act(async () => {
+        autoplay.reject(new DOMException('Autoplay blocked', 'NotAllowedError'));
       });
 
       const recoveryButton = container.querySelector<HTMLButtonElement>(
@@ -75,7 +72,6 @@ describe('VideoTile browser behavior', () => {
 
       await act(async () => {
         recoveryButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicrotasks();
       });
 
       expect(play).toHaveBeenCalledTimes(2);
@@ -83,9 +79,8 @@ describe('VideoTile browser behavior', () => {
         container.querySelector('button[aria-label="스터디원의 소리와 영상 재생"]'),
       ).toBeNull();
     } finally {
-      await act(async () => {
+      act(() => {
         root.unmount();
-        await flushMicrotasks();
       });
     }
   });
@@ -101,17 +96,16 @@ describe('VideoTile browser behavior', () => {
     const root = createRoot(container);
 
     try {
-      await act(async () => {
+      act(() => {
         root.render(<VideoTile participant={remoteParticipant({} as MediaStream)} />);
-        await flushMicrotasks();
       });
-      await act(async () => {
+      expect(play).toHaveBeenCalledTimes(1);
+      act(() => {
         root.render(<VideoTile participant={remoteParticipant({} as MediaStream)} />);
-        await flushMicrotasks();
       });
+      expect(play).toHaveBeenCalledTimes(2);
       await act(async () => {
         firstPlayback.reject(new DOMException('Old source aborted', 'AbortError'));
-        await flushMicrotasks();
       });
 
       expect(play).toHaveBeenCalledTimes(2);
@@ -119,25 +113,24 @@ describe('VideoTile browser behavior', () => {
         container.querySelector('button[aria-label="스터디원의 소리와 영상 재생"]'),
       ).toBeNull();
     } finally {
-      await act(async () => {
+      act(() => {
         root.unmount();
-        await flushMicrotasks();
       });
     }
   });
 
   it('opens the rendered video with the Safari native fullscreen API', async () => {
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     const webkitEnterFullscreen = vi.fn();
     const container = document.createElement('div');
     document.body.append(container);
     const root = createRoot(container);
 
     try {
-      await act(async () => {
+      act(() => {
         root.render(<VideoTile participant={remoteParticipant({} as MediaStream, 'screen')} />);
-        await flushMicrotasks();
       });
+      expect(play).toHaveBeenCalledOnce();
 
       const video = container.querySelector<HTMLVideoElement>('video');
       const fullscreenButton = container.querySelector<HTMLButtonElement>(
@@ -152,15 +145,13 @@ describe('VideoTile browser behavior', () => {
 
       await act(async () => {
         fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicrotasks();
       });
 
       expect(webkitEnterFullscreen).toHaveBeenCalledOnce();
       expect(container.querySelector('[role="alert"]')).toBeNull();
     } finally {
-      await act(async () => {
+      act(() => {
         root.unmount();
-        await flushMicrotasks();
       });
     }
   });
