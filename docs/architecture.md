@@ -36,6 +36,10 @@ WebRTC 패킷을 중계하며, 그 미디어 내용을 Java 애플리케이션�
 소유합니다. 채팅은 휘발성 peer-to-peer 데이터로 유지됩니다. Java signaling 서비스는 이
 frame을 검사, 중계, 확인 응답 또는 저장하지 않습니다.
 
+채팅 DataChannel은 `round-room` label, `ordered=true`, 재전송 횟수와 수명 제한이 없는
+신뢰성 전송 계약을 사용합니다. 원격 피어가 이 계약과 다른 channel을 열면 브라우저는 해당
+channel을 즉시 닫고 현재의 정상 channel을 유지합니다.
+
 로컬 메시지는 대상인 모든 피어의 현재 `RoomSession`이 메시지를 검증·기록하고
 `chat.ack`를 반환할 때까지 `pending`으로 남습니다. 이 확인 응답은 애플리케이션이
 수락했다는 뜻이지, 사람이 메시지를 읽었다는 뜻은 아닙니다. 모든 대상의 확인 응답을 받으면
@@ -49,6 +53,9 @@ frame을 검사, 중계, 확인 응답 또는 저장하지 않습니다.
 256 KiB를 넘기 전에 일반 채팅을 일시 중지하고, 64 KiB에서 `bufferedamountlow`가 발생한
 뒤 재개합니다. 개수가 제한된 ACK 제어 frame은 병합된 최신 미디어 상태와 대기 중인 채팅보다
 먼저 전송합니다.
+
+채팅 frame의 `sentAt`은 표시와 wire 호환성을 위한 wall clock epoch이고, 피어별 수신량
+제한 구간은 시스템 시각 변경에 영향받지 않는 monotonic clock을 사용합니다.
 
 `chat.ack`는 기존에 추가된 peer protocol frame이며 Java signaling protocol version을
 변경하지 않습니다. ROUND는 현재 이 기능을 협상하지 않고 web client를 원자적으로
@@ -107,6 +114,10 @@ BATON account에 다른 login identity를 연결해도 provider나 profile claim
 | 참여권 갱신        | `/round/rooms/{roomId}/participation-grant/refresh` | BATON 소유, ROUND로 proxy하지 않음     |
 | WebSocket 시그널링 | `/round/rooms/{roomId}/signal`                      | `/rooms/{roomId}/signal`               |
 | TURN 자격 증명     | `/round/rooms/{roomId}/turn-credentials`            | `/api/rooms/{roomId}/turn-credentials` |
+
+방 URL parser는 붙여 넣기 입력을 정리하는 함수와 분리되어 소문자 canonical room ID가 들어간
+`/room/{roomId}`만 수락합니다. 참여권 갱신 endpoint는 표준 `URL` 해석 결과가 현재 출처의
+원래 path와 정확히 같을 때만 사용하며, 참여권과 TURN 요청은 redirect를 따르지 않습니다.
 
 ROUND는 `RS256`만 허용하며 BATON의 JWK Set을 사용해 서명, issuer, audience, 만료, 모든 필수
 claim을 로컬에서 검증합니다. audience 목록에는 설정한 값(기본 `round`)이 정확히 하나만
