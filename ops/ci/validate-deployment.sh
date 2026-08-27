@@ -89,7 +89,7 @@ export TURN_SHARED_SECRET TURN_TLS_CERT_FILE TURN_TLS_KEY_FILE
 export ROUND_ACCESS_USER ROUND_ACCESS_PASSWORD_HASH
 
 printf 'Validating Compose interpolation with temporary dummy fixtures...\n'
-docker compose --env-file ops/production.env.example config --quiet
+production_config=$(docker compose --env-file ops/production.env.example config --format json)
 
 printf 'Validating the macOS pilot Compose override...\n'
 macos_pilot_config=$(
@@ -236,7 +236,21 @@ printf 'Checking the entire Dockerfile...\n'
 docker build --check .
 
 printf 'Checking the production Compose build targets...\n'
-docker compose --env-file ops/production.env.example build --check
+production_build_targets=$(
+  jq -er '
+    [.services | to_entries[]
+      | select(.value.build != null)
+      | .value.build.target] as $targets
+    | if ($targets | length) > 0
+        and all($targets[]; type == "string" and length > 0)
+      then $targets[]
+      else error("production Compose build targets are missing")
+      end
+  ' <<<"$production_config"
+)
+while IFS= read -r target; do
+  docker build --check --target "$target" .
+done <<<"$production_build_targets"
 
 baton_web_image=round-baton-web-validation:local
 printf 'Building the BATON browser runtime image...\n'
