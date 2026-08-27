@@ -124,13 +124,19 @@ for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
     fail(`${jobName}은 GitHub-hosted ubuntu-latest runner를 사용해야 합니다.`);
   }
 
+  const permissions = exactKeys(
+    job.permissions,
+    ['attestations', 'contents', 'id-token', 'packages'],
+    `${jobName}.permissions`,
+  );
+
   for (const [permission, expected] of [
     ['contents', 'read'],
     ['packages', 'write'],
     ['attestations', 'write'],
     ['id-token', 'write'],
   ]) {
-    if (job.permissions?.[permission] !== expected) {
+    if (permissions[permission] !== expected) {
       fail(`${jobName}은 ${permission}: ${expected} 권한만 부여해야 합니다.`);
     }
   }
