@@ -131,7 +131,8 @@ public record TurnProperties(
 	private static boolean isCredentialFreeTurnUrl(String url) {
 		try {
 			URI turnUri = new URI(url);
-			if (!isTurnScheme(turnUri.getScheme())
+			String scheme = turnUri.getScheme();
+			if (!("turn".equalsIgnoreCase(scheme) || "turns".equalsIgnoreCase(scheme))
 					|| !turnUri.isOpaque()
 					|| turnUri.getRawFragment() != null) {
 				return false;
@@ -161,9 +162,5 @@ public record TurnProperties(
 		catch (URISyntaxException exception) {
 			return false;
 		}
-	}
-
-	private static boolean isTurnScheme(String scheme) {
-		return "turn".equalsIgnoreCase(scheme) || "turns".equalsIgnoreCase(scheme);
 	}
 }
