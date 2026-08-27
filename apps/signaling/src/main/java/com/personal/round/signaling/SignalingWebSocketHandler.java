@@ -59,7 +59,9 @@ public class SignalingWebSocketHandler extends AbstractWebSocketHandler {
 			signalingService.sendInvalidMessage(session, exception.getMessage());
 		}
 		catch (RuntimeException exception) {
-			log.error("Unexpected signaling failure", exception);
+			log.error(
+					"Unexpected signaling failure ({})",
+					exception.getClass().getSimpleName());
 			signalingService.sendInternalError(session);
 		}
 	}
