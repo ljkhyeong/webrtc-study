@@ -1,12 +1,12 @@
-# 배포 대상, credential 사용 workflow, host 생명주기 script는 default branch로 승격하기 전에
-# 명시적인 owner review가 필요합니다.
+# 이 목록은 민감 경로의 검토 담당자를 안내합니다. 저장소 설정에서 CODEOWNERS 검토를
+# 강제하지 않으면 병합을 막는 신뢰 경계가 아닙니다.
 /.github/CODEOWNERS @ljkhyeong
 /.github/workflows/ @ljkhyeong
-/.github/workflows/external-turn-probe.yml @ljkhyeong
-/.github/workflows/external-turn-monitor.yml @ljkhyeong
-/ops/turn/probe.sh @ljkhyeong
-/ops/turn/verify-tls.sh @ljkhyeong
-/ops/turn/resolve-external-*.sh @ljkhyeong
-/ops/turn/external-pilot-target.properties @ljkhyeong
-/ops/ci/*external-turn*.mjs @ljkhyeong
+/.dockerignore @ljkhyeong
+/Dockerfile @ljkhyeong
+/compose*.yml @ljkhyeong
+/ops/*.env.example @ljkhyeong
+/ops/caddy/ @ljkhyeong
+/ops/ci/ @ljkhyeong
 /ops/linux/ @ljkhyeong
+/ops/turn/ @ljkhyeong
