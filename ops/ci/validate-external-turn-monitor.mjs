@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseDocument } from 'yaml';
+import { createWorkflowContract, parseWorkflow } from './workflow-contract.mjs';
 
 const repoRoot = new URL('../../', import.meta.url);
 const workflowUrl = process.argv[2]
@@ -16,63 +15,16 @@ function fail(message) {
   throw new Error(`외부 TURN monitor 검증: ${message}`);
 }
 
-function record(value, label) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    fail(`${label} must be a mapping`);
-  }
-  return value;
-}
-
-function exactKeys(value, expected, label) {
-  const result = record(value, label);
-  assert.deepEqual(Object.keys(result).sort(), [...expected].sort(), `${label} keys changed`);
-  return result;
-}
-
-function exactStructuralKeys(value, expected, label) {
-  const result = record(value, label);
-  const keys = Object.keys(result).filter((key) => key !== 'name' && key !== 'description');
-  assert.deepEqual(keys.sort(), [...expected].sort(), `${label} keys changed`);
-  return result;
-}
-
-function exactRun(step, expectedKeys, expectedRun, label) {
-  exactStructuralKeys(step, expectedKeys, label);
-  assert.equal(step.shell, 'bash', `${label} shell changed`);
-  assert.equal(step.run.trim(), expectedRun, `${label} command changed`);
-}
-
-function secretAccesses(value, path = '', accesses = []) {
-  if (typeof value === 'string') {
-    if (/\bsecrets\b/.test(value)) {
-      accesses.push({ path, value });
-    }
-    return accesses;
-  }
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => secretAccesses(item, `${path}[${index}]`, accesses));
-    return accesses;
-  }
-  if (value !== null && typeof value === 'object') {
-    for (const [key, item] of Object.entries(value)) {
-      secretAccesses(item, path === '' ? key : `${path}.${key}`, accesses);
-    }
-  }
-  return accesses;
-}
-
-const source = readFileSync(workflowUrl, 'utf8');
-const document = parseDocument(source, {
-  prettyErrors: true,
-  schema: 'core',
-  uniqueKeys: true,
-});
-if (document.errors.length > 0) {
-  fail(document.errors.map((error) => error.message).join('; '));
-}
+const {
+  collectSecretAccesses,
+  exactKeys,
+  exactStructuralKeys,
+  record,
+  runStep: exactRun,
+} = createWorkflowContract(fail);
 
 const workflow = exactStructuralKeys(
-  document.toJS({ maxAliasCount: 0 }),
+  parseWorkflow(workflowUrl, fail),
   ['concurrency', 'jobs', 'on', 'permissions'],
   'workflow',
 );
@@ -207,7 +159,7 @@ assert.deepEqual(
     WORKFLOW_SHA: '${{ github.sha }}',
   },
 );
-assert.deepEqual(secretAccesses(workflow), [
+assert.deepEqual(collectSecretAccesses(workflow), [
   {
     path: 'jobs.probe.steps[2].env.TURN_PROBE_CA_PEM',
     value: '${{ secrets.TURN_PROBE_CA_PEM }}',

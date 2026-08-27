@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { parseDocument } from 'yaml';
+import { createWorkflowContract, parseWorkflow } from './workflow-contract.mjs';
 
 const repoRoot = new URL('../../', import.meta.url);
 const workflowUrl = process.argv[2]
@@ -16,29 +15,13 @@ function fail(message) {
   throw new Error(`외부 TURN workflow 검증: ${message}`);
 }
 
-function requireRecord(value, label) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    fail(`${label} must be a mapping`);
-  }
-  return value;
-}
-
-function requireExactKeys(value, expected, label) {
-  const record = requireRecord(value, label);
-  assert.deepEqual(
-    Object.keys(record).sort(),
-    [...expected].sort(),
-    `${label} has an unexpected key`,
-  );
-  return record;
-}
-
-function requireExactStructuralKeys(value, expected, label) {
-  const record = requireRecord(value, label);
-  const keys = Object.keys(record).filter((key) => key !== 'name' && key !== 'description');
-  assert.deepEqual(keys.sort(), [...expected].sort(), `${label} has an unexpected key`);
-  return record;
-}
+const {
+  collectSecretAccesses,
+  exactKeys: requireExactKeys,
+  exactStructuralKeys: requireExactStructuralKeys,
+  record: requireRecord,
+  runStep: requireRunStep,
+} = createWorkflowContract(fail);
 
 function requireSteps(job, expectedCount, label) {
   if (!Array.isArray(job.steps)) {
@@ -48,25 +31,6 @@ function requireSteps(job, expectedCount, label) {
   return job.steps.map((step, index) => requireRecord(step, `${label} step ${index + 1}`));
 }
 
-function collectSecretAccesses(value, path = '', accesses = []) {
-  if (typeof value === 'string') {
-    if (/\bsecrets\b/.test(value)) {
-      accesses.push({ path, value });
-    }
-    return accesses;
-  }
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => collectSecretAccesses(item, `${path}[${index}]`, accesses));
-    return accesses;
-  }
-  if (value !== null && typeof value === 'object') {
-    for (const [key, item] of Object.entries(value)) {
-      collectSecretAccesses(item, path === '' ? key : `${path}.${key}`, accesses);
-    }
-  }
-  return accesses;
-}
-
 function requireCheckout(step, expectedWith, label) {
   requireExactStructuralKeys(step, ['uses', 'with'], label);
   assert.equal(step.uses, checkoutAction, `${label} action changed`);
@@ -74,24 +38,8 @@ function requireCheckout(step, expectedWith, label) {
   assert.deepEqual(withOptions, expectedWith, `${label}.with changed`);
 }
 
-function requireRunStep(step, expectedKeys, expectedRun, label) {
-  requireExactStructuralKeys(step, expectedKeys, label);
-  assert.equal(step.shell, 'bash', `${label} shell changed`);
-  assert.equal(step.run.trim(), expectedRun, `${label} command changed`);
-}
-
-const workflowSource = readFileSync(workflowUrl, 'utf8');
-const document = parseDocument(workflowSource, {
-  prettyErrors: true,
-  schema: 'core',
-  uniqueKeys: true,
-});
-if (document.errors.length > 0) {
-  fail(document.errors.map((error) => error.message).join('; '));
-}
-
 const workflow = requireExactStructuralKeys(
-  document.toJS({ maxAliasCount: 0 }),
+  parseWorkflow(workflowUrl, fail),
   ['concurrency', 'jobs', 'on', 'permissions'],
   fileURLToPath(workflowUrl),
 );
