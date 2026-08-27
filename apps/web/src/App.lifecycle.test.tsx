@@ -288,7 +288,7 @@ describe('ActiveRoom mounted lifecycle', () => {
 
     const stopCallsBeforeTerminalSnapshot = stopSpy.mock.calls.length;
     const closeCallsBeforeTerminalSnapshot = closeSpy.mock.calls.length;
-    // RoomSession translates signaling close code 4002 into this terminal snapshot.
+    // RoomSession은 시그널링 종료 코드 4002를 이 종료 상태 스냅샷으로 변환한다.
     currentSnapshot = roomSnapshot('error', {
       code: 'connection-superseded',
       message: 'Participation session superseded',

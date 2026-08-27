@@ -245,7 +245,7 @@ function readEntryContext(
     try {
       storage.removeItem(key);
     } catch {
-      // 브라우저 개인정보 보호 설정 때문에 정리가 차단되어도 잘못된 locator는 계속 거부한다.
+      // 브라우저 개인정보 보호 설정 때문에 정리가 차단되어도 잘못된 위치 정보는 계속 거부한다.
     }
     throw new Error('BATON ROUND entry context is invalid', { cause: error });
   }

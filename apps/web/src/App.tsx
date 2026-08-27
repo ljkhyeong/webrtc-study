@@ -404,7 +404,7 @@ function storeDisplayName(displayName: string) {
   try {
     localStorage.setItem(DISPLAY_NAME_STORAGE_KEY, displayName);
   } catch {
-    // Storage can be unavailable in strict privacy modes; the room still works.
+    // 강한 개인정보 보호 설정에서 저장소를 사용할 수 없어도 방은 계속 동작한다.
   }
 }
 
@@ -616,7 +616,7 @@ export function ActiveRoom({
       try {
         await ensureFreshParticipationGrant();
       } catch {
-        // The shared helper exposes a bounded user warning and schedules a retry.
+        // 공용 도우미가 제한된 사용자 경고를 반환하고 재시도를 예약한다.
       }
     };
 
@@ -812,9 +812,8 @@ export function ActiveRoom({
     return () => {
       isCurrentSession = false;
       unsubscribe();
-      // React StrictMode immediately re-runs effects in development. Deferring
-      // disposal lets the second setup reuse the single-use session and the
-      // transferred pre-join tracks instead of stopping them between setups.
+      // React StrictMode는 개발 환경에서 effect를 즉시 다시 실행한다. 정리를 미루면
+      // 두 번째 설정이 일회용 세션과 전달받은 입장 전 track을 재사용할 수 있다.
       queueMicrotask(() => {
         const session = sessionRef.current;
         if (lifecycleRef.current !== lifecycle) {

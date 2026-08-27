@@ -19,7 +19,7 @@ export async function enterVideoFullscreen(video: HTMLVideoElement): Promise<boo
       await video.requestFullscreen();
       return true;
     } catch {
-      // A browser can expose the standard API while rejecting it at runtime.
+      // 브라우저가 표준 API를 제공하더라도 실행 중에는 호출을 거부할 수 있다.
     }
   }
 
@@ -28,7 +28,7 @@ export async function enterVideoFullscreen(video: HTMLVideoElement): Promise<boo
       await webkitVideo.webkitRequestFullscreen();
       return true;
     } catch {
-      // Some Safari versions still support only the native video fallback.
+      // 일부 Safari 버전은 브라우저 자체 비디오 전체 화면만 지원한다.
     }
   }
 
@@ -40,7 +40,7 @@ export async function enterVideoFullscreen(video: HTMLVideoElement): Promise<boo
       webkitVideo.webkitEnterFullscreen();
       return true;
     } catch {
-      // Report failure only after every compatible API has been attempted.
+      // 호환되는 모든 API를 시도한 뒤에만 실패를 반환한다.
     }
   }
 
@@ -60,7 +60,7 @@ export async function exitVideoFullscreen(
       await activeDocument.exitFullscreen();
       return true;
     } catch {
-      // Continue to prefixed APIs when the standard exit path is rejected.
+      // 표준 종료 경로가 거부되면 벤더 접두 API를 계속 시도한다.
     }
   }
 
@@ -72,7 +72,7 @@ export async function exitVideoFullscreen(
       await webkitDocument.webkitExitFullscreen();
       return true;
     } catch {
-      // Native video fullscreen may still own the active presentation.
+      // 현재 표시는 브라우저 자체 비디오 전체 화면이 소유하고 있을 수 있다.
     }
   }
 
@@ -84,7 +84,7 @@ export async function exitVideoFullscreen(
       webkitVideo.webkitExitFullscreen();
       return true;
     } catch {
-      // Report failure only after every compatible API has been attempted.
+      // 호환되는 모든 API를 시도한 뒤에만 실패를 반환한다.
     }
   }
 
