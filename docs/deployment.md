@@ -697,31 +697,49 @@ record를 host의 외부 alerting agent에 연결합니다. 로컬 journal만으
 
 ## 불변 릴리스 이미지 게시
 
-release candidate를 merge하고 일반 branch CI가 성공하면 annotated SemVer tag를 만듭니다.
-브라우저 bundle에 compile할 comma-separated 프로덕션 STUN URL을 tag message의 정확히 하나의
-`ROUND_STUN_URLS=` 줄에 넣습니다. 예를 들어 프로덕션 TURN hostname을 다음과 같이 사용합니다.
+릴리스 후보를 기본 브랜치에 병합하고 해당 push의 `.github/workflows/ci.yml`이 성공한 뒤,
+기본 브랜치의 현재 HEAD에 annotated SemVer tag를 만듭니다. 브라우저 bundle에 compile할
+comma-separated 프로덕션 STUN URL은 tag message의 정확히 하나의 `ROUND_STUN_URLS=` 줄에
+넣습니다. 예를 들어 프로덕션 TURN hostname은 다음과 같이 게시합니다.
 
 ```bash
 git tag -a v0.1.0-rc.1 \
   -m "ROUND v0.1.0-rc.1" \
   -m "ROUND_STUN_URLS=stun:turn.example.com:3478"
 git push origin v0.1.0-rc.1
+
+gh api --method POST 'repos/{owner}/{repo}/dispatches' --input - <<'JSON'
+{
+  "event_type": "release-images",
+  "client_payload": {
+    "release_tag": "v0.1.0-rc.1"
+  }
+}
+JSON
 ```
 
-release workflow는 lightweight tag, trigger한 commit을 더는 가리키지 않는 tag, 강제 tag 변경,
-형식이 잘못된 STUN URI 목록, 이미 존재하는 release 또는 full SHA image tag를 거부합니다.
-annotated tag object의 Git ID를 기록하고 promotion 직전에 object가 변경되지 않았는지
-검증합니다. 브라우저 build input을 이 object에 보관하면 변경 가능한 repository 변수가 run의
-결과를 조용히 바꾸는 것을 방지할 수 있습니다. queue에 있거나 수동으로 다시 실행한 workflow가
-교체된 tag object를 보지 못하도록 repository tag ruleset으로 `v*` tag의 변경과 삭제를
-보호합니다.
+태그 push만으로는 릴리스가 시작되지 않습니다. `repository_dispatch`는 기본 브랜치에 있는
+조정자 workflow 정의와 dispatch 시점의 기본 브랜치 `GITHUB_SHA`를 사용합니다. 읽기 권한만
+가진 사전 검사는 payload의 태그가 annotated tag이고 그 SHA가 dispatch 시점 기본 브랜치
+HEAD와 같은지 확인합니다. 이어서 정확히 그 SHA와 기본 브랜치, `push` event,
+`.github/workflows/ci.yml` 경로가 모두 일치하는 성공 run 하나가 있는지 확인합니다. 이 계약을
+통과한 SHA만 각 이미지 build job이 checkout합니다. 릴리스 workflow는 이미 성공한 CI를
+재사용하며 `npm ci`, `npm run check`, 배포 검사를 다시 실행하지 않습니다.
 
-`.github/workflows/release-images.yml`은 저장소 및 배포 검사를 다시 실행한 뒤 digest-only
-reference로 Linux AMD64 및 ARM64 manifest를 build합니다. 모든 build가 완료되고 모든 최종
-tag가 여전히 사용되지 않았는지 확인한 뒤 digest 5개를 승격하고, 승격한 tag 10개가 예상 build
-digest를 가리키는지 검증합니다. release workflow run은 저장소 단위로 직렬화되어 release
-queue에 유지됩니다. 이전 승격 실패가 entrypoint tag를 노출하지 않도록 사용자가 접하는
-프로덕션 edge를 마지막에 승격합니다.
+기본 브랜치가 태그 생성 뒤 먼저 진행되면 기존 태그를 이동하지 말고, 새 HEAD의 CI가 성공한 뒤
+새 SemVer 태그로 다시 시작합니다. 사전 검사는 형식이 잘못된 STUN URI 목록과 이미 존재하는
+릴리스 또는 full SHA 이미지 태그도 거부합니다. annotated tag object의 Git ID를 기록하고
+승격 직전에 같은 객체인지 다시 확인하므로 실행 도중 이동하거나 삭제한 태그는 게시할 수
+없습니다. 이 절차는 repository tag ruleset이나 branch protection이 강제된다고 가정하지
+않습니다. `.github/CODEOWNERS`는 민감 경로의 검토 담당자를 안내하지만 저장소 설정에서 검토를
+강제하지 않으면 병합 신뢰 경계가 아닙니다.
+
+`.github/workflows/release-images.yml`은 검증된 source SHA에서 digest-only reference로 Linux
+AMD64 및 ARM64 manifest를 build합니다. 모든 build가 완료되고 모든 최종 tag가 여전히 사용되지
+않았는지 확인한 뒤 digest 5개를 승격하고, 승격한 tag 10개가 예상 build digest를 가리키는지
+검증합니다. release workflow run은 저장소 단위로 직렬화되어 release queue에 유지됩니다.
+이전 승격 실패가 entrypoint tag를 노출하지 않도록 사용자가 접하는 프로덕션 edge를 마지막에
+승격합니다.
 
 ```text
 ghcr.io/<owner>/round-edge:<tag>
@@ -747,6 +765,16 @@ referrer로 게시합니다. 증명은 해당 digest가 `ljkhyeong/webrtc-study`
 역할과 세 image의 release 묶음 일치를 소유합니다. 같은 사실을 양쪽에서 중복 검증하지 않습니다.
 annotated tag ref 자체는 서명 검증 입력이 아니므로 tag-object 일치는 계속 레이블 정책으로
 검사합니다.
+
+GitHub artifact attestation은 공개 저장소에서 사용할 수 있고, 비공개 또는 internal 저장소에서는
+GitHub Enterprise Cloud 소유 구조에서만 사용할 수 있습니다. 현재 `ljkhyeong/webrtc-study`는
+비공개 개인 저장소이므로 이 제공 조건을 충족하지 않습니다. 저장소를 공개로 전환하거나 GitHub
+Enterprise Cloud 조직 소유로 이전하고 attestation 사용 가능 여부를 확인하기 전에는
+`release-images`를 운영 릴리스에 실행하지 않습니다.
+
+이 선행 조건이 충족되지 않았다는 이유로 `actions/attest`, 서명 출처 검증 또는 배포의 안전 실패
+경계를 제거하지 않습니다. 별도 공개 Sigstore/cosign 체계로 임의 전환하지도 않으며, 지원 구조가
+준비될 때까지 릴리스를 중단합니다.
 
 배포 전에 프로덕션 host에 현재 `gh` CLI를 설치하고 GitHub 인증과 GHCR 인증을 모두 준비합니다.
 `--bundle-from-oci`는 증명 bundle을 GitHub API 대신 GHCR에서 읽지만 `gh` 자체 인증 요구를

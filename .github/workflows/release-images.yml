@@ -1,9 +1,9 @@
 name: 컨테이너 이미지 릴리스
 
 on:
-  push:
-    tags:
-      - 'v*'
+  repository_dispatch:
+    types:
+      - release-images
 
 permissions:
   contents: read
@@ -23,9 +23,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      actions: read
       contents: read
       packages: read
     outputs:
+      release_sha: ${{ steps.release-inputs.outputs.release_sha }}
+      release_tag: ${{ steps.release-inputs.outputs.release_tag }}
       stun_urls: ${{ steps.release-inputs.outputs.stun_urls }}
       tag_object: ${{ steps.release-inputs.outputs.tag_object }}
 
@@ -41,15 +44,17 @@ jobs:
         id: release-inputs
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          TAG_PUSH_FORCED: ${{ github.event.forced }}
+          COORDINATOR_REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.client_payload.release_tag }}
         run: |
           set -euo pipefail
 
-          if [[ "$TAG_PUSH_FORCED" == 'true' ]]; then
-            printf '릴리스 태그 강제 갱신은 게시할 수 없습니다.\n' >&2
+          [[ "$COORDINATOR_REF" == "refs/heads/${DEFAULT_BRANCH}" ]] || {
+            printf '릴리스 coordinator는 기본 브랜치에서만 실행할 수 있습니다.\n' >&2
             exit 1
-          fi
+          }
           if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
             printf '릴리스 태그는 build metadata가 없는 SemVer를 사용해야 합니다. 예: v0.1.0 또는 v0.1.0-rc.1\n' >&2
             exit 1
@@ -75,8 +80,32 @@ jobs:
 
           tag_commit="$(git rev-parse "${tag_ref}^{commit}")"
           if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
-            printf '릴리스 태그 %s가 이벤트 커밋 %s가 아니라 %s를 가리킵니다.\n' \
+            printf '릴리스 태그 %s는 repository_dispatch 시점의 기본 브랜치 HEAD %s를 가리켜야 하지만 %s를 가리킵니다.\n' \
               "$RELEASE_TAG" "$GITHUB_SHA" "$tag_commit" >&2
+            exit 1
+          fi
+
+          ci_runs="$(
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+              -f "head_sha=${tag_commit}" \
+              -f "branch=${DEFAULT_BRANCH}" \
+              -f event=push \
+              -f status=completed \
+              -f per_page=100
+          )"
+          if ! jq -e \
+              --arg branch "$DEFAULT_BRANCH" \
+              --arg sha "$tag_commit" \
+              'any(.workflow_runs[];
+                  .head_branch == $branch
+                    and .head_sha == $sha
+                    and .event == "push"
+                    and .conclusion == "success"
+                    and .path == ".github/workflows/ci.yml")' \
+              <<<"$ci_runs" >/dev/null; then
+            printf '기본 브랜치의 릴리스 SHA %s에 성공한 CI push run이 없습니다.\n' \
+              "$tag_commit" >&2
             exit 1
           fi
 
@@ -113,6 +142,8 @@ jobs:
 
           printf 'stun_urls=%s\n' "$stun_urls" >> "$GITHUB_OUTPUT"
           printf 'tag_object=%s\n' "$tag_object" >> "$GITHUB_OUTPUT"
+          printf 'release_sha=%s\n' "$tag_commit" >> "$GITHUB_OUTPUT"
+          printf 'release_tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Docker Buildx 설정
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
@@ -127,8 +158,8 @@ jobs:
       - name: 모든 최종 태그가 미사용 상태인지 확인
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ steps.release-inputs.outputs.release_tag }}
+          RELEASE_SHA: ${{ steps.release-inputs.outputs.release_sha }}
         run: |
           set -euo pipefail
 
@@ -166,45 +197,9 @@ jobs:
             assert_tag_absent "$reference"
           done
 
-  verify:
-    name: 릴리스 후보 검증
-    needs: preflight
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: 저장소 체크아웃
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-
-      - name: Node.js 설정
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Java 설정
-        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: gradle
-
-      - name: 의존성 설치
-        run: npm ci
-
-      - name: 저장소 검사 실행
-        run: npm run check
-
-      - name: 배포 설정 검증
-        run: bash ops/ci/validate-deployment.sh --check-only
-
   build-edge:
     name: 웹 edge 이미지 digest build
-    needs:
-      - preflight
-      - verify
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -221,6 +216,7 @@ jobs:
       - name: 저장소 체크아웃
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
           persist-credentials: false
 
       - name: QEMU 설정
@@ -250,8 +246,8 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE_NAMESPACE }}/round-edge,push-by-digest=true,name-canonical=true,push=true
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ needs.preflight.outputs.release_sha }}
+            org.opencontainers.image.version=${{ needs.preflight.outputs.release_tag }}
             io.round.image.role=edge
             io.round.image.flavor=standalone
             io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
@@ -282,8 +278,8 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE_NAMESPACE }}/round-edge,push-by-digest=true,name-canonical=true,push=true
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}-relay
+            org.opencontainers.image.revision=${{ needs.preflight.outputs.release_sha }}
+            org.opencontainers.image.version=${{ needs.preflight.outputs.release_tag }}-relay
             io.round.image.role=edge
             io.round.image.flavor=relay
             io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
@@ -314,8 +310,8 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE_NAMESPACE }}/round-baton-web,push-by-digest=true,name-canonical=true,push=true
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ needs.preflight.outputs.release_sha }}
+            org.opencontainers.image.version=${{ needs.preflight.outputs.release_tag }}
             io.round.auth-mode=baton
             io.round.image.role=edge
             io.round.image.flavor=baton
@@ -335,9 +331,7 @@ jobs:
 
   build-signaling:
     name: 시그널링 이미지 digest build
-    needs:
-      - preflight
-      - verify
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -352,6 +346,7 @@ jobs:
       - name: 저장소 체크아웃
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
           persist-credentials: false
 
       - name: QEMU 설정
@@ -378,8 +373,8 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE_NAMESPACE }}/round-signaling,push-by-digest=true,name-canonical=true,push=true
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ needs.preflight.outputs.release_sha }}
+            org.opencontainers.image.version=${{ needs.preflight.outputs.release_tag }}
             io.round.image.role=signaling
             io.round.image.flavor=shared
             io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
@@ -398,9 +393,7 @@ jobs:
 
   build-turn:
     name: TURN 이미지 digest build
-    needs:
-      - preflight
-      - verify
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -415,6 +408,7 @@ jobs:
       - name: 저장소 체크아웃
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
           persist-credentials: false
 
       - name: QEMU 설정
@@ -441,8 +435,8 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE_NAMESPACE }}/round-turn,push-by-digest=true,name-canonical=true,push=true
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ needs.preflight.outputs.release_sha }}
+            org.opencontainers.image.version=${{ needs.preflight.outputs.release_tag }}
             io.round.image.role=turn
             io.round.image.flavor=shared
             io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
@@ -476,6 +470,7 @@ jobs:
       - name: 저장소와 태그 체크아웃
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
@@ -484,7 +479,7 @@ jobs:
         shell: bash
         env:
           EXPECTED_TAG_OBJECT: ${{ needs.preflight.outputs.tag_object }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
         run: |
           set -euo pipefail
 
@@ -518,8 +513,8 @@ jobs:
           RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
           SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
           TURN_DIGEST: ${{ needs.build-turn.outputs.digest }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.preflight.outputs.release_sha }}
         run: |
           set -euo pipefail
 
@@ -575,8 +570,8 @@ jobs:
           RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
           SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
           TURN_DIGEST: ${{ needs.build-turn.outputs.digest }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.preflight.outputs.release_sha }}
         run: |
           set -euo pipefail
 
@@ -609,8 +604,8 @@ jobs:
           RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
           SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
           TURN_DIGEST: ${{ needs.build-turn.outputs.digest }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.preflight.outputs.release_sha }}
         run: |
           set -euo pipefail
 

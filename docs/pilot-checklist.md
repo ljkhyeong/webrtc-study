@@ -18,7 +18,11 @@ standalone** 또는 **macOS pilot**이라고 명시한 항목은 해당 토폴�
 ## 릴리스 후보
 
 - [ ] 릴리스 commit은 변경할 수 없으며 tag가 지정되어 있습니다.
-- [ ] tag로 시작하는 릴리스 workflow가 통과하고 일반 edge, relay-only edge, signaling, TURN
+- [ ] GitHub artifact attestation 제공 범위를 확인했습니다. 저장소가 공개이거나, 비공개 또는
+      internal 저장소라면 GitHub Enterprise Cloud 소유 구조여야 합니다. 현재와 같은 비공개 개인
+      저장소에서는 이 조건을 충족하기 전 `release-images`를 실행하지 않습니다.
+- [ ] 기본 브랜치 HEAD의 annotated tag와 동일 SHA의 CI 성공을 확인한 뒤 `release-images`
+      `repository_dispatch` 조정자가 통과하고 일반 edge, relay-only edge, signaling, TURN
       manifest digest를 기록합니다.
 - [ ] 깨끗한 checkout에서 `npm run check`가 통과합니다.
 - [ ] 프로덕션 Compose 구성이 누락된 변수 없이 rendering됩니다.
