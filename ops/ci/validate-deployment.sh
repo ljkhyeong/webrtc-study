@@ -289,5 +289,8 @@ if "$check_only"; then
 fi
 
 printf 'Building all production Compose images...\n'
-docker compose --env-file ops/production.env.example build --pull
+ROUND_EDGE_IMAGE=round-edge-validation:local \
+ROUND_SIGNALING_IMAGE=round-signaling-validation:local \
+ROUND_TURN_IMAGE=round-turn-validation:local \
+  docker compose --env-file ops/production.env.example build --pull
 printf 'Deployment validation passed.\n'

@@ -1,15 +1,17 @@
 # syntax=docker/dockerfile:1.7
 
-ARG NODE_IMAGE=node:22.23.0-alpine3.24
-ARG CADDY_BUILDER_IMAGE=caddy:2.11.4-builder-alpine
-ARG CADDY_IMAGE=caddy:2.11.4-alpine
+ARG NODE_IMAGE=node:22.23.0-alpine3.24@sha256:ab07539e0988b63558ff621f5fbe1077054c39d9809112974fb79993949d41cd
+ARG CADDY_BUILDER_IMAGE=caddy:2.11.4-builder-alpine@sha256:7bac9be4072f7c4db2ccc7350750e0705004bf02da2ac7d96b1469ca4f28bb7c
+ARG CADDY_IMAGE=caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
 ARG CADDY_VERSION=v2.11.4
 ARG CADDY_RATE_LIMIT_MODULE=github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db
-ARG JAVA_BUILD_IMAGE=eclipse-temurin:21.0.11_10-jdk-alpine-3.23
-ARG JAVA_RUNTIME_IMAGE=eclipse-temurin:21.0.11_10-jre-alpine-3.23
-ARG COTURN_IMAGE=coturn/coturn:4.14.0-r0-alpine
+ARG JAVA_BUILD_IMAGE=eclipse-temurin:21.0.11_10-jdk-alpine-3.23@sha256:1ff763083f2993d57d0bf374ab10bb3e2cb873af6c13a04458ebbd3e0337dc76
+ARG JAVA_RUNTIME_IMAGE=eclipse-temurin:21.0.11_10-jre-alpine-3.23@sha256:3f08b13888f595cc49edabea7250ba69499ba25602b267da591720769400e08c
+ARG COTURN_IMAGE=coturn/coturn:4.17.2-r0-alpine@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f
+ARG NPM_VERSION=11.7.0
 
 FROM ${NODE_IMAGE} AS web-source
+ARG NPM_VERSION
 WORKDIR /workspace
 
 COPY package.json package-lock.json ./
@@ -18,7 +20,8 @@ COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/rtc-core/package.json packages/rtc-core/package.json
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --no-audit --no-fund
+    npm install --global "npm@${NPM_VERSION}" --no-audit --no-fund \
+    && npm ci --no-audit --no-fund
 
 COPY tsconfig.base.json ./
 COPY packages/protocol packages/protocol

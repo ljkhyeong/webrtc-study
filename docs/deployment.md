@@ -828,6 +828,11 @@ render된 secret을 출력하지 않고 interpolation을 검증합니다.
 docker compose --env-file ops/production.env config --quiet
 ```
 
+CI와 Docker build는 `package.json`의 `packageManager`와 같은 npm 11.7.0을 사용합니다.
+`Dockerfile`과 `compose.yml`의 base 이미지 기본값은 사람이 읽을 수 있는 태그와 다중 아키텍처
+index digest를 함께 고정합니다. base 이미지를 올릴 때는 태그와 digest, 그리고
+`ops/production.env.example`의 선택 override 예시를 같은 변경에서 맞춥니다.
+
 CI는 임시 dummy credential과 certificate를 대상으로 동일한 interpolation을 실행하고, 고정된
 custom Caddy runtime을 build하며, rate-limit module 존재 여부를 검증합니다. 정확히 그 binary로
 Caddyfile과 Dockerfile 전체를 검사하고, Compose가 참조하는 image target을 확인합니다. 이어서
@@ -970,7 +975,7 @@ printf '\n'
 export ROUND_ACCESS_USER ROUND_ACCESS_PASSWORD
 ROUND_URL=https://round.example.com \
 TURN_PROBE_HOST=turn.example.com \
-TURN_PROBE_IMAGE=coturn/coturn@sha256:d3a11e8f6d9e1b0454531e307684a072bdd36c36b28daafb4f082aa1e5ebd2e4 \
+TURN_PROBE_IMAGE=coturn/coturn@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f \
 ops/turn/probe.sh
 unset ROUND_ACCESS_PASSWORD
 ```

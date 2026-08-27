@@ -61,7 +61,7 @@ transport_list=${TURN_PROBE_TRANSPORTS:-udp,tcp,tls}
 udp_port=${TURN_PROBE_UDP_PORT:-3478}
 tls_port=${TURN_PROBE_TLS_PORT:-5349}
 probe_timeout=${TURN_PROBE_TIMEOUT_SECONDS:-20}
-probe_image=${TURN_PROBE_IMAGE:-coturn/coturn:4.14.0-r0-alpine}
+probe_image=${TURN_PROBE_IMAGE:-coturn/coturn:4.17.2-r0-alpine@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f}
 tls_ca_file=${TURN_PROBE_CA_FILE:-}
 export LC_ALL=C
 

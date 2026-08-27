@@ -14,9 +14,9 @@ services:
       dockerfile: Dockerfile
       target: web-runtime
       args:
-        NODE_IMAGE: ${NODE_IMAGE:-node:22.23.0-alpine3.24}
-        CADDY_BUILDER_IMAGE: ${CADDY_BUILDER_IMAGE:-caddy:2.11.4-builder-alpine}
-        CADDY_IMAGE: ${CADDY_IMAGE:-caddy:2.11.4-alpine}
+        NODE_IMAGE: ${NODE_IMAGE:-node:22.23.0-alpine3.24@sha256:ab07539e0988b63558ff621f5fbe1077054c39d9809112974fb79993949d41cd}
+        CADDY_BUILDER_IMAGE: ${CADDY_BUILDER_IMAGE:-caddy:2.11.4-builder-alpine@sha256:7bac9be4072f7c4db2ccc7350750e0705004bf02da2ac7d96b1469ca4f28bb7c}
+        CADDY_IMAGE: ${CADDY_IMAGE:-caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648}
         VITE_STUN_URLS: ${VITE_STUN_URLS:?VITE_STUN_URLS를 설정하세요}
         VITE_ICE_TRANSPORT_POLICY: ${VITE_ICE_TRANSPORT_POLICY:-all}
     environment:
@@ -62,8 +62,8 @@ services:
       dockerfile: Dockerfile
       target: signaling-runtime
       args:
-        JAVA_BUILD_IMAGE: ${JAVA_BUILD_IMAGE:-eclipse-temurin:21.0.11_10-jdk-alpine-3.23}
-        JAVA_RUNTIME_IMAGE: ${JAVA_RUNTIME_IMAGE:-eclipse-temurin:21.0.11_10-jre-alpine-3.23}
+        JAVA_BUILD_IMAGE: ${JAVA_BUILD_IMAGE:-eclipse-temurin:21.0.11_10-jdk-alpine-3.23@sha256:1ff763083f2993d57d0bf374ab10bb3e2cb873af6c13a04458ebbd3e0337dc76}
+        JAVA_RUNTIME_IMAGE: ${JAVA_RUNTIME_IMAGE:-eclipse-temurin:21.0.11_10-jre-alpine-3.23@sha256:3f08b13888f595cc49edabea7250ba69499ba25602b267da591720769400e08c}
     environment:
       HOST: 0.0.0.0
       PORT: '8787'
@@ -124,7 +124,7 @@ services:
       dockerfile: Dockerfile
       target: turn-runtime
       args:
-        COTURN_IMAGE: ${COTURN_IMAGE:-coturn/coturn:4.14.0-r0-alpine}
+        COTURN_IMAGE: ${COTURN_IMAGE:-coturn/coturn:4.17.2-r0-alpine@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f}
     network_mode: host
     environment:
       TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:?TURN_EXTERNAL_IP를 공개 IPv4 주소로 설정하세요}

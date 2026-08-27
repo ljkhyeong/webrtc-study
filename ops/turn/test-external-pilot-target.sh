@@ -23,7 +23,7 @@ write_target() {
   printf '%s\n' \
     "ROUND_URL=$round_url" \
     "TURN_PROBE_HOST=$turn_host" \
-    "TURN_PROBE_IMAGE=$image_repository@sha256:d3a11e8f6d9e1b0454531e307684a072bdd36c36b28daafb4f082aa1e5ebd2e4" \
+    "TURN_PROBE_IMAGE=$image_repository@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f" \
     >"$path"
 }
 
@@ -39,7 +39,7 @@ committed_actual=$(bash "$resolver" "$repo_root/ops/turn/external-pilot-target.p
 committed_expected=$(printf '%s\n' \
   'round_url=https://round.b4ton.com' \
   'turn_host=turn.b4ton.com' \
-  'probe_image=coturn/coturn@sha256:d3a11e8f6d9e1b0454531e307684a072bdd36c36b28daafb4f082aa1e5ebd2e4')
+  'probe_image=coturn/coturn@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f')
 [[ "$committed_actual" == "$committed_expected" ]] ||
   fail 'committed b4ton target outputs were not exact'
 
@@ -52,7 +52,7 @@ actual=$(bash "$resolver" "$valid_target")
 expected=$(printf '%s\n' \
   'round_url=https://round.pilot.test:443' \
   'turn_host=turn.pilot.test' \
-  'probe_image=coturn/coturn@sha256:d3a11e8f6d9e1b0454531e307684a072bdd36c36b28daafb4f082aa1e5ebd2e4')
+  'probe_image=coturn/coturn@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f')
 [[ "$actual" == "$expected" ]] || fail 'valid target outputs were not exact'
 
 reserved_round_target=$test_root/reserved-round.properties
@@ -82,7 +82,7 @@ printf '%s\n' \
   'ROUND_URL=https://round.pilot.test' \
   'ROUND_URL=https://other.pilot.test' \
   'TURN_PROBE_HOST=turn.pilot.test' \
-  'TURN_PROBE_IMAGE=coturn/coturn@sha256:d3a11e8f6d9e1b0454531e307684a072bdd36c36b28daafb4f082aa1e5ebd2e4' \
+  'TURN_PROBE_IMAGE=coturn/coturn@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f' \
   >"$duplicate_target"
 assert_rejected "$duplicate_target" 'duplicate target property was accepted'
 
@@ -90,7 +90,7 @@ unknown_target=$test_root/unknown.properties
 printf '%s\n' \
   'ROUND_URL=https://round.pilot.test' \
   'TURN_PROBE_HOST=turn.pilot.test' \
-  'TURN_PROBE_IMAGE=coturn/coturn@sha256:d3a11e8f6d9e1b0454531e307684a072bdd36c36b28daafb4f082aa1e5ebd2e4' \
+  'TURN_PROBE_IMAGE=coturn/coturn@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f' \
   'UNEXPECTED=value' \
   >"$unknown_target"
 assert_rejected "$unknown_target" 'unknown target property was accepted'
