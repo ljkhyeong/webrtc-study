@@ -47,17 +47,12 @@ export function sanitizeDisplayName(value: string) {
 }
 
 export function roomIdFromPath(pathname: string) {
-  const match = /^\/room\/([^/]+)\/?$/.exec(pathname);
+  const match = /^\/room\/([^/]+)$/.exec(pathname);
   if (!match) {
     return null;
   }
-
-  try {
-    const roomId = normalizeRoomId(decodeURIComponent(match[1]!));
-    return isValidRoomId(roomId) ? roomId : null;
-  } catch {
-    return null;
-  }
+  const roomId = match[1]!;
+  return isValidRoomId(roomId) ? roomId : null;
 }
 
 export function pathForRoom(roomId: string) {

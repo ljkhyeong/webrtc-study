@@ -24,7 +24,10 @@ describe('room helpers', () => {
   it('parses only complete room routes', () => {
     expect(roomIdFromPath('/room/abcd-efgh-jkmp')).toBe('abcd-efgh-jkmp');
     expect(roomIdFromPath('/room/short')).toBeNull();
-    expect(roomIdFromPath('/room/%E0%A4%A')).toBeNull();
+    expect(roomIdFromPath('/room/abcd-efgh-jkmp-extra')).toBeNull();
+    expect(roomIdFromPath('/room/ABCD-EFGH-JKMP')).toBeNull();
+    expect(roomIdFromPath('/room/abcd%2Defgh-jkmp')).toBeNull();
+    expect(roomIdFromPath('/room/abcd-efgh-jkmp/')).toBeNull();
     expect(roomIdFromPath('/settings')).toBeNull();
     expect(pathForRoom('abcd-efgh-jkmp')).toBe('/room/abcd-efgh-jkmp');
   });
