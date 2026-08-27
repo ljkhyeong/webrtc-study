@@ -3641,7 +3641,8 @@ export class RoomSession {
 
   #sendRelay(message: RelayClientMessage): void {
     const socket = this.#requireOpenSocket();
-    const requestId = this.#createSignalRequestId();
+    this.#signalRequestSequence += 1;
+    const requestId = `signal-${this.#socketGeneration}-${this.#signalRequestSequence.toString(36)}`;
     const correlatedMessage = { ...message, requestId } as RelayClientMessage;
     const serialized = serializeClientMessage(correlatedMessage);
     this.#rememberSignalRequest(requestId, correlatedMessage);
@@ -3651,11 +3652,6 @@ export class RoomSession {
       this.#pendingSignalRequests.delete(requestId);
       throw error;
     }
-  }
-
-  #createSignalRequestId(): string {
-    this.#signalRequestSequence += 1;
-    return `signal-${this.#socketGeneration}-${this.#signalRequestSequence.toString(36)}`;
   }
 
   #rememberSignalRequest(requestId: string, message: RelayClientMessage): void {
