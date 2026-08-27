@@ -470,7 +470,8 @@ function createHarness(
     getDisplayMedia?: (constraints: DisplayMediaStreamOptions) => Promise<MediaStream>;
     preparedMediaStream?: MediaStream | null;
     createId?: () => string;
-    now?: () => number;
+    wallClockNow?: () => number;
+    monotonicNow?: () => number;
     displayName?: string;
     hostCapability?: string;
     maxChatMessages?: number;
@@ -519,7 +520,8 @@ function createHarness(
       ? { preparedMediaStream: overrides.preparedMediaStream ?? null }
       : {}),
     ...(overrides.createId === undefined ? {} : { createId: overrides.createId }),
-    ...(overrides.now === undefined ? {} : { now: overrides.now }),
+    ...(overrides.wallClockNow === undefined ? {} : { wallClockNow: overrides.wallClockNow }),
+    ...(overrides.monotonicNow === undefined ? {} : { monotonicNow: overrides.monotonicNow }),
     ...(overrides.maxChatMessages === undefined
       ? {}
       : { maxChatMessages: overrides.maxChatMessages }),
@@ -3755,7 +3757,7 @@ describe('RoomSession', () => {
   it('fans chat out and scopes duplicate message ids to each peer', async () => {
     const harness = createHarness({
       createId: () => 'message-local',
-      now: () => 1_234,
+      wallClockNow: () => 1_234,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const channel = harness.peerConnections[0]?.channels[0];
@@ -3840,7 +3842,7 @@ describe('RoomSession', () => {
   it('reports partial delivery without resending to a peer that already received the message', async () => {
     const harness = createHarness({
       createId: () => 'message-partial',
-      now: () => 1_300,
+      wallClockNow: () => 1_300,
     });
     await joinSession(harness, [
       { peerId: 'peer-a', displayName: 'Ara' },
@@ -3923,7 +3925,7 @@ describe('RoomSession', () => {
   it('waits for every recipient acknowledgement and ignores early or unknown acknowledgements', async () => {
     const harness = createHarness({
       createId: () => 'message-acknowledged',
-      now: () => 1_400,
+      wallClockNow: () => 1_400,
     });
     await joinSession(harness, [
       { peerId: 'peer-a', displayName: 'Ara' },
@@ -3958,7 +3960,7 @@ describe('RoomSession', () => {
   it('rejects a reused local message id before mutating history or peer queues', async () => {
     const harness = createHarness({
       createId: () => 'message-collision',
-      now: () => 1_500,
+      wallClockNow: () => 1_500,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const channel = harness.peerConnections[0]?.channels[0];
@@ -3984,7 +3986,7 @@ describe('RoomSession', () => {
     const harness = createHarness({
       createId: () => 'message-completed-collision',
       maxChatMessages: 1,
-      now: () => 1_550,
+      wallClockNow: () => 1_550,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const channel = harness.peerConnections[0]?.channels[0];
@@ -4030,7 +4032,8 @@ describe('RoomSession', () => {
     const harness = createHarness({
       createId: () => generatedIds[idIndex++] ?? 'unexpected-message-id',
       maxChatMessages: 1,
-      now: () => now,
+      wallClockNow: () => now,
+      monotonicNow: () => now,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const peer = harness.peerConnections[0];
@@ -4155,7 +4158,7 @@ describe('RoomSession', () => {
     try {
       const harness = createHarness({
         createId: () => 'message-timeout',
-        now: () => 1_700,
+        wallClockNow: () => 1_700,
       });
       await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
       await answerPeer(harness, 'peer-a');
@@ -4329,8 +4332,12 @@ describe('RoomSession', () => {
   it('rate-limits DataChannel work per peer and expires the warning with its fixed window', async () => {
     vi.useFakeTimers();
     try {
-      let now = 10_000;
-      const harness = createHarness({ now: () => now });
+      let wallClockNow = 50_000;
+      let monotonicNow = 10_000;
+      const harness = createHarness({
+        wallClockNow: () => wallClockNow,
+        monotonicNow: () => monotonicNow,
+      });
       await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
       const channel = harness.peerConnections[0]?.channels[0];
       expect(channel).toBeDefined();
@@ -4346,7 +4353,7 @@ describe('RoomSession', () => {
         id: 'message-over-limit',
         senderId: 'peer-a',
         text: 'must be dropped',
-        sentAt: now,
+        sentAt: wallClockNow,
       });
 
       expect(harness.session.getSnapshot()).toMatchObject({
@@ -4357,31 +4364,29 @@ describe('RoomSession', () => {
         },
       });
 
-      now -= 1;
-      channel.receive({
-        type: 'chat.message',
-        id: 'message-after-clock-rollback',
-        senderId: 'peer-a',
-        text: 'must remain limited',
-        sentAt: now,
-      });
-      expect(harness.session.getSnapshot().messages).toEqual([]);
+      wallClockNow = 40_000;
+      expect(harness.session.sendChat('wall clock rollback')).toMatchObject({ sentAt: 40_000 });
+      expect(harness.session.getSnapshot().warning).toEqual(
+        expect.objectContaining({ code: 'data-channel-rate-limit' }),
+      );
 
-      now = 19_999;
+      monotonicNow = 19_999;
       await vi.advanceTimersByTimeAsync(9_999);
       channel.receive({
         type: 'chat.message',
         id: 'message-before-window-boundary',
         senderId: 'peer-a',
         text: 'must remain limited at 9999ms',
-        sentAt: now,
+        sentAt: wallClockNow,
       });
-      expect(harness.session.getSnapshot()).toMatchObject({
-        messages: [],
-        warning: { code: 'data-channel-rate-limit' },
-      });
+      expect(harness.session.getSnapshot().messages).not.toContainEqual(
+        expect.objectContaining({ id: 'message-before-window-boundary' }),
+      );
+      expect(harness.session.getSnapshot().warning).toEqual(
+        expect.objectContaining({ code: 'data-channel-rate-limit' }),
+      );
 
-      now = 20_000;
+      monotonicNow = 20_000;
       await vi.advanceTimersByTimeAsync(1);
       expect(harness.session.getSnapshot().warning).toBeNull();
 
@@ -4390,52 +4395,18 @@ describe('RoomSession', () => {
         id: 'message-after-window',
         senderId: 'peer-a',
         text: 'accepted after reset',
-        sentAt: now,
+        sentAt: wallClockNow,
       });
 
-      expect(harness.session.getSnapshot().messages).toEqual([
-        {
-          id: 'message-after-window',
-          senderId: 'peer-a',
-          senderName: 'Ara',
-          text: 'accepted after reset',
-          sentAt: now,
-          isLocal: false,
-          deliveryState: 'received',
-        },
-      ]);
-      await harness.session.leave();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('reschedules rate-limit expiry until a rolled-back clock reaches the window boundary', async () => {
-    vi.useFakeTimers();
-    try {
-      let now = 10_000;
-      const harness = createHarness({ now: () => now });
-      await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
-      await answerPeer(harness, 'peer-a');
-      const peer = harness.peerConnections[0];
-      const channel = peer?.channels[0];
-      peer?.setConnectionState('connected');
-      if (channel === undefined) {
-        throw new Error('Expected an initial DataChannel');
-      }
-
-      exceedInboundDataBudget(channel);
-      now = 9_999;
-      await vi.advanceTimersByTimeAsync(10_000);
-
-      expect(harness.session.getSnapshot().warning).toEqual(
-        expect.objectContaining({ code: 'data-channel-rate-limit' }),
-      );
-
-      now = 20_000;
-      await vi.advanceTimersByTimeAsync(10_000);
-
-      expect(harness.session.getSnapshot().warning).toBeNull();
+      expect(harness.session.getSnapshot().messages).toContainEqual({
+        id: 'message-after-window',
+        senderId: 'peer-a',
+        senderName: 'Ara',
+        text: 'accepted after reset',
+        sentAt: wallClockNow,
+        isLocal: false,
+        deliveryState: 'received',
+      });
       await harness.session.leave();
     } finally {
       vi.useRealTimers();
@@ -4446,7 +4417,7 @@ describe('RoomSession', () => {
     vi.useFakeTimers();
     try {
       let now = 10_000;
-      const harness = createHarness({ now: () => now });
+      const harness = createHarness({ monotonicNow: () => now });
       await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
       const channel = harness.peerConnections[0]?.channels[0];
       if (channel === undefined) {
@@ -4473,7 +4444,7 @@ describe('RoomSession', () => {
     try {
       let now = 10_000;
       const harness = createHarness({
-        now: () => now,
+        monotonicNow: () => now,
         recovery: { peerRecoveryTimeoutMs: 30 },
       });
       await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
@@ -4542,7 +4513,7 @@ describe('RoomSession', () => {
     vi.useFakeTimers();
     try {
       let now = 10_000;
-      const harness = createHarness({ now: () => now });
+      const harness = createHarness({ monotonicNow: () => now });
       await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
       const channel = harness.peerConnections[0]?.channels[0];
       if (channel === undefined) {
@@ -4712,7 +4683,7 @@ describe('RoomSession', () => {
   it('flushes chat queued while the data channel is connecting exactly once', async () => {
     const harness = createHarness({
       createId: () => 'message-queued',
-      now: () => 2_345,
+      wallClockNow: () => 2_345,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const channel = harness.peerConnections[0]?.channels[0];
@@ -4751,7 +4722,7 @@ describe('RoomSession', () => {
   it('queues chat for a newly announced peer until its incoming data channel opens', async () => {
     const harness = createHarness({
       createId: () => 'message-before-offer',
-      now: () => 3_456,
+      wallClockNow: () => 3_456,
     });
     await joinSession(harness);
 
@@ -4791,7 +4762,7 @@ describe('RoomSession', () => {
   it('preserves pending chat across a send exception and completes it after channel recovery', async () => {
     const harness = createHarness({
       createId: () => 'message-send-retry',
-      now: () => 3_500,
+      wallClockNow: () => 3_500,
     });
     await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
     await answerPeer(harness, 'z-peer');
@@ -4854,7 +4825,7 @@ describe('RoomSession', () => {
     try {
       const harness = createHarness({
         createId: () => 'message-ack-before-retransmit',
-        now: () => 3_550,
+        wallClockNow: () => 3_550,
         recovery: { peerRecoveryTimeoutMs: 30 },
       });
       await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
@@ -4899,7 +4870,7 @@ describe('RoomSession', () => {
   it('recreates a closed channel and flushes chat that was waiting for it', async () => {
     const harness = createHarness({
       createId: () => 'message-channel-close',
-      now: () => 3_600,
+      wallClockNow: () => 3_600,
     });
     await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
     await answerPeer(harness, 'z-peer');
@@ -4964,7 +4935,7 @@ describe('RoomSession', () => {
     try {
       const harness = createHarness({
         createId: () => 'message-stuck-channel',
-        now: () => 3_625,
+        wallClockNow: () => 3_625,
         recovery: { peerRecoveryTimeoutMs: 30 },
       });
       await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
@@ -5044,7 +5015,7 @@ describe('RoomSession', () => {
     try {
       const harness = createHarness({
         createId: () => 'message-second-stuck-channel',
-        now: () => 3_630,
+        wallClockNow: () => 3_630,
         recovery: {
           peerConnectionTimeoutMs: 20,
           peerRecoveryTimeoutMs: 30,
@@ -5105,7 +5076,7 @@ describe('RoomSession', () => {
   it('waits for the designated remote initiator after a responder channel closes', async () => {
     const harness = createHarness({
       createId: () => 'message-responder-close',
-      now: () => 3_650,
+      wallClockNow: () => 3_650,
     });
     await joinSession(harness, [{ peerId: 'a-peer', displayName: 'Ara' }], 'z-self');
     await answerPeer(harness, 'a-peer');
@@ -5137,7 +5108,7 @@ describe('RoomSession', () => {
     let sequence = 0;
     const harness = createHarness({
       createId: () => `message-${sequence++}`,
-      now: () => 3_700,
+      wallClockNow: () => 3_700,
     });
     await joinSession(harness, [
       { peerId: 'peer-a', displayName: 'Ara' },
@@ -5181,7 +5152,7 @@ describe('RoomSession', () => {
     let sequence = 0;
     const harness = createHarness({
       createId: () => `message-open-${sequence++}`,
-      now: () => 3_725,
+      wallClockNow: () => 3_725,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const channel = harness.peerConnections[0]?.channels[0];
@@ -5209,7 +5180,7 @@ describe('RoomSession', () => {
   it('pauses chat at the DataChannel high-water mark and resumes at low-water', async () => {
     const harness = createHarness({
       createId: () => 'message-backpressured',
-      now: () => 3_740,
+      wallClockNow: () => 3_740,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const channel = harness.peerConnections[0]?.channels[0];
@@ -5249,7 +5220,7 @@ describe('RoomSession', () => {
     let sequence = 0;
     const harness = createHarness({
       createId: () => `message-buffered-${sequence++}`,
-      now: () => 3_745,
+      wallClockNow: () => 3_745,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const channel = harness.peerConnections[0]?.channels[0];
@@ -5283,7 +5254,7 @@ describe('RoomSession', () => {
   it('prioritizes acknowledgements within the bounded control-frame reserve', async () => {
     const harness = createHarness({
       createId: () => 'message-waiting-behind-acks',
-      now: () => 3_746,
+      wallClockNow: () => 3_746,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const channel = harness.peerConnections[0]?.channels[0];
@@ -5340,7 +5311,7 @@ describe('RoomSession', () => {
     const harness = createHarness({
       createId: () => `message-evicted-${sequence++}`,
       maxChatMessages: 1,
-      now: () => 3_750,
+      wallClockNow: () => 3_750,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const channel = harness.peerConnections[0]?.channels[0];
@@ -5386,7 +5357,7 @@ describe('RoomSession', () => {
     const harness = createHarness({
       createId: () => generatedIds[idIndex++] ?? 'unexpected-message-id',
       maxChatMessages: 1,
-      now: () => 3_800,
+      wallClockNow: () => 3_800,
     });
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const channel = harness.peerConnections[0]?.channels[0];
@@ -5620,7 +5591,7 @@ describe('RoomSession', () => {
     let hookCallCount = 0;
     const harness = createHarness({
       createId: () => 'message-before-reconnect',
-      now: () => 4_567,
+      wallClockNow: () => 4_567,
       beforeSignalingConnect: () => {
         hookCallCount += 1;
         return hookCallCount === 2 ? reconnectGate.promise : undefined;
@@ -5893,7 +5864,7 @@ describe('RoomSession', () => {
     try {
       const harness = createHarness({
         createId: () => 'message-during-recovery',
-        now: () => 5_678,
+        wallClockNow: () => 5_678,
         recovery: {
           peerDisconnectedGraceMs: 20,
           peerRecoveryTimeoutMs: 100,

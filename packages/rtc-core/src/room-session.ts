@@ -183,7 +183,10 @@ export interface RoomSessionOptions {
   readonly mediaDevices?: Pick<MediaDevices, 'getUserMedia'> &
     Partial<Pick<MediaDevices, 'getDisplayMedia'>>;
   readonly mediaStreamFactory?: () => MediaStream;
-  readonly now?: () => number;
+  /** 채팅 전송 메시지의 유닉스 시각 `sentAt`을 만드는 시스템 시계다. */
+  readonly wallClockNow?: () => number;
+  /** DataChannel 수신 제한 구간에 사용하는 단조 증가 시계다. */
+  readonly monotonicNow?: () => number;
   readonly createId?: () => string;
 }
 
@@ -1183,7 +1186,7 @@ export class RoomSession {
       type: 'chat.message',
       id: messageId,
       senderId: this.#selfId,
-      sentAt: this.#now(),
+      sentAt: this.#wallClockNow(),
       text: normalizedText,
     };
     const serializedMessage = serializePeerDataMessage(wireMessage);
@@ -2935,13 +2938,10 @@ export class RoomSession {
   }
 
   #consumeInboundDataBudget(peer: PeerContext): boolean {
-    const now = this.#now();
+    const now = this.#monotonicNow();
     const windowStartedAt = peer.inboundDataWindowStartedAt;
     let warningCleared = false;
-    if (
-      windowStartedAt === null ||
-      (now >= windowStartedAt && now - windowStartedAt >= DATA_CHANNEL_RATE_WINDOW_MS)
-    ) {
+    if (windowStartedAt === null || now - windowStartedAt >= DATA_CHANNEL_RATE_WINDOW_MS) {
       warningCleared = this.#resetInboundDataWindow(peer, now);
     }
 
@@ -2989,9 +2989,7 @@ export class RoomSession {
       return;
     }
 
-    const now = this.#now();
-    const elapsed = now >= windowStartedAt ? now - windowStartedAt : 0;
-    const delay = Math.max(0, DATA_CHANNEL_RATE_WINDOW_MS - elapsed);
+    const delay = Math.max(0, windowStartedAt + DATA_CHANNEL_RATE_WINDOW_MS - this.#monotonicNow());
     peer.inboundDataWindowExpiryTimer = globalThis.setTimeout(() => {
       peer.inboundDataWindowExpiryTimer = null;
       if (
@@ -3002,14 +3000,6 @@ export class RoomSession {
         return;
       }
 
-      const currentNow = this.#now();
-      if (
-        currentNow < windowStartedAt ||
-        currentNow - windowStartedAt < DATA_CHANNEL_RATE_WINDOW_MS
-      ) {
-        this.#scheduleInboundDataWindowExpiry(peer);
-        return;
-      }
       if (this.#resetInboundDataWindow(peer, null)) {
         this.#emit();
       }
@@ -3823,8 +3813,12 @@ export class RoomSession {
     }
   }
 
-  #now(): number {
-    return (this.#options.now ?? Date.now)();
+  #wallClockNow(): number {
+    return this.#options.wallClockNow?.() ?? Date.now();
+  }
+
+  #monotonicNow(): number {
+    return this.#options.monotonicNow?.() ?? globalThis.performance.now();
   }
 }
 
