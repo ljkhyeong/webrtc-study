@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SIGNALING_ERROR_CODES } from '@round/protocol';
+import { ChatSendError } from '@round/rtc-core';
 import { describe, expect, it, vi } from 'vitest';
 import {
   App,
@@ -290,6 +291,15 @@ describe('App pre-join boundary', () => {
     expect(message).not.toContain('RTCDataChannel');
     expect(message).not.toContain('internal-peer-id');
     expect(message).not.toContain('secret diagnostic');
+  });
+
+  it('maps typed chat delivery failures without inspecting internal error text', () => {
+    expect(chatErrorMessage(new ChatSendError('peer-unavailable', 'arbitrary detail'))).toContain(
+      '연결 가능한 참가자',
+    );
+    expect(chatErrorMessage(new ChatSendError('queue-full', 'arbitrary detail'))).toContain(
+      '전송 대기열',
+    );
   });
 
   it('localizes a superseded BATON session without exposing the close reason', () => {

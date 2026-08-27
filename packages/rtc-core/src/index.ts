@@ -11,10 +11,12 @@ export {
 } from './prejoin-media.js';
 
 export {
+  ChatSendError,
   RoomSession,
   createRoomSession,
   type ChatDeliveryState,
   type ChatMessage,
+  type ChatSendErrorCode,
   type LocalMediaSnapshot,
   type ModerationNotice,
   type ParticipantSnapshot,

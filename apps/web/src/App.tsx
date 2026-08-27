@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SignalingErrorCode } from '@round/protocol';
 import {
+  ChatSendError,
   createRoomSession,
   type RoomIssue,
   type RoomIssueCode,
@@ -263,12 +264,16 @@ export function roomWarningMessage(issue: RoomIssue | null | undefined): string 
 }
 
 export function chatErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : '';
-  if (message.startsWith('Chat delivery to ')) {
-    return '연결 가능한 참가자가 없어 메시지를 보내지 못했습니다. 입력한 내용은 그대로 두었습니다.';
-  }
-  if (message.startsWith('Chat delivery queue for ')) {
-    return '메시지 전송 대기열이 가득 찼습니다. 잠시 후 다시 시도해 주세요.';
+  if (error instanceof ChatSendError) {
+    switch (error.code) {
+      case 'peer-unavailable':
+        return '연결 가능한 참가자가 없어 메시지를 보내지 못했습니다. 입력한 내용은 그대로 두었습니다.';
+      case 'queue-full':
+        return '메시지 전송 대기열이 가득 찼습니다. 잠시 후 다시 시도해 주세요.';
+      case 'room-not-active':
+      case 'message-id-conflict':
+        break;
+    }
   }
   return '메시지를 보내지 못했습니다. 잠시 후 다시 시도해 주세요.';
 }

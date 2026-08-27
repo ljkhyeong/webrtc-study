@@ -111,6 +111,19 @@ export interface ChatMessage {
   readonly deliveryState: ChatDeliveryState;
 }
 
+export type ChatSendErrorCode =
+  'room-not-active' | 'message-id-conflict' | 'peer-unavailable' | 'queue-full';
+
+export class ChatSendError extends Error {
+  constructor(
+    readonly code: ChatSendErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ChatSendError';
+  }
+}
+
 export interface RoomSessionSnapshot {
   readonly roomId: string;
   readonly status: RoomSessionStatus;
@@ -1152,7 +1165,7 @@ export class RoomSession {
 
   sendChat(text: string): ChatMessage {
     if (this.#status !== 'active' || this.#selfId === null) {
-      throw new Error('Chat is only available after joining the room');
+      throw new ChatSendError('room-not-active', 'Chat is only available after joining the room');
     }
 
     const normalizedText = text.trim();
@@ -1161,7 +1174,10 @@ export class RoomSession {
       this.#activeLocalMessageIds.has(messageId) ||
       this.#recentlyRetiredLocalMessageIds.has(messageId)
     ) {
-      throw new Error(`Chat message id ${messageId} is already in use`);
+      throw new ChatSendError(
+        'message-id-conflict',
+        `Chat message id ${messageId} is already in use`,
+      );
     }
     const wireMessage: ChatDataMessage = {
       type: 'chat.message',
@@ -3034,7 +3050,8 @@ export class RoomSession {
       return peer === undefined ? [] : [peer];
     });
     if (recipientIds.length > 0 && targetPeers.length === 0) {
-      throw new Error(
+      throw new ChatSendError(
+        'peer-unavailable',
         `Chat delivery to ${recipientIds[0]} is unavailable while the peer connection is failed`,
       );
     }
@@ -3043,7 +3060,10 @@ export class RoomSession {
       (peer) => peer.pendingChatMessages.length >= MAX_PENDING_CHAT_MESSAGES_PER_PEER,
     );
     if (saturatedPeer !== undefined) {
-      throw new Error(`Chat delivery queue for ${saturatedPeer.peerId} is full`);
+      throw new ChatSendError(
+        'queue-full',
+        `Chat delivery queue for ${saturatedPeer.peerId} is full`,
+      );
     }
 
     for (const peer of targetPeers) {
