@@ -177,37 +177,31 @@ public class SignalingService implements SmartLifecycle {
 					accepted = false;
 				}
 				else {
-					if (!connectedPeers.containsKey(session.getId())) {
-						String clientKey = reservation.clientKey();
-						ClientInboundState clientInboundState =
-								retainClientInboundStateLocked(clientKey);
-						if (clientInboundState == null) {
-							metrics.recordConnectionRejectedServerCapacity();
-							workPlan.close(session, CONNECTION_LIMIT);
-							accepted = false;
-						}
-						else {
-							SessionCloseDecision closeDecision = new SessionCloseDecision();
-							session.getAttributes().put(CLOSE_DECISION_ATTRIBUTE, closeDecision);
-							connectedPeers.put(
-									session.getId(),
-									new Peer(
-											UUID.randomUUID().toString(),
-											session,
-											nowNanos,
-											nextConnectionSequence++,
-											reservation,
-											roomAccess,
-											accessLease,
-											closeDecision,
-											clientKey,
-											clientInboundState));
-							reservationTransferred = true;
-							refreshMetricsLocked();
-							accepted = true;
-						}
+					String clientKey = reservation.clientKey();
+					ClientInboundState clientInboundState =
+							retainClientInboundStateLocked(clientKey);
+					if (clientInboundState == null) {
+						metrics.recordConnectionRejectedServerCapacity();
+						workPlan.close(session, CONNECTION_LIMIT);
+						accepted = false;
 					}
 					else {
+						SessionCloseDecision closeDecision = new SessionCloseDecision();
+						session.getAttributes().put(CLOSE_DECISION_ATTRIBUTE, closeDecision);
+						connectedPeers.put(
+								session.getId(),
+								new Peer(
+										UUID.randomUUID().toString(),
+										session,
+										nowNanos,
+										nextConnectionSequence++,
+										reservation,
+										roomAccess,
+										accessLease,
+										closeDecision,
+										clientKey,
+										clientInboundState));
+						reservationTransferred = true;
 						refreshMetricsLocked();
 						accepted = true;
 					}
@@ -234,7 +228,7 @@ public class SignalingService implements SmartLifecycle {
 			long nowMillis = clock.millis();
 			long nowNanos = monotonicTicker.getAsLong();
 			Peer peer = connectedPeers.get(session.getId());
-			if (peer != null && peer.connected) {
+			if (peer != null) {
 				if (closeForExpiredAuthorizationLocked(
 						peer,
 						nowMillis,
@@ -243,7 +237,7 @@ public class SignalingService implements SmartLifecycle {
 					peer = null;
 				}
 			}
-			if (peer != null && peer.connected) {
+			if (peer != null) {
 				touchClientInboundStateLocked(peer);
 				WindowDecision sessionDecision = peer.inboundWindow.tryAcquire(
 						nowNanos,
@@ -650,7 +644,7 @@ public class SignalingService implements SmartLifecycle {
 					workPlan);
 			return;
 		}
-		removePeerFromRoom(peer, workPlan);
+		removePeerFromRoom(peer, workPlan, null);
 	}
 
 	private void relay(Peer peer, ClientMessage.Relay message, WorkPlan workPlan) {
@@ -827,14 +821,7 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	private boolean disconnectLocked(String sessionId, WorkPlan workPlan) {
-		return disconnectLocked(sessionId, workPlan, true);
-	}
-
-	private boolean disconnectLocked(
-			String sessionId,
-			WorkPlan workPlan,
-			boolean releaseReservation) {
-		return disconnectLocked(sessionId, workPlan, releaseReservation, null);
+		return disconnectLocked(sessionId, workPlan, true, null);
 	}
 
 	private boolean disconnectLocked(
@@ -843,7 +830,7 @@ public class SignalingService implements SmartLifecycle {
 			boolean releaseReservation,
 			ArrayDeque<PendingOutbound> pendingOutbound) {
 		Peer peer = connectedPeers.remove(sessionId);
-		if (peer != null && peer.connected) {
+		if (peer != null) {
 			peer.connected = false;
 			if (releaseReservation) {
 				peer.releaseReservation();
@@ -854,7 +841,6 @@ public class SignalingService implements SmartLifecycle {
 			releaseClientInboundStateLocked(peer);
 			clearOutboundLocked(peer);
 			removePeerFromRoom(peer, workPlan, pendingOutbound);
-			refreshMetricsLocked();
 			return true;
 		}
 		return false;
@@ -947,15 +933,12 @@ public class SignalingService implements SmartLifecycle {
 		});
 	}
 
-	private void removePeerFromRoom(Peer peer, WorkPlan workPlan) {
-		removePeerFromRoom(peer, workPlan, null);
-	}
-
 	private void removePeerFromRoom(
 			Peer peer,
 			WorkPlan workPlan,
 			ArrayDeque<PendingOutbound> pendingOutbound) {
 		if (peer.roomId == null) {
+			refreshMetricsLocked();
 			return;
 		}
 
