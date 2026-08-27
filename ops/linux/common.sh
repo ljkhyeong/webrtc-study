@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
-# Shared, source-only helpers for the Linux deployment commands. Keep this file
-# free of side effects so validation tests can exercise each boundary without
-# touching a real Compose project.
+# Linux 배포 명령이 source하는 공통 함수입니다. 검증 테스트가 실제 Compose 프로젝트를
+# 건드리지 않고 각 경계를 실행할 수 있도록 이 파일에는 실행 부작용을 두지 않습니다.
 
 round_ops_error() {
   printf 'round linux ops: %s\n' "$*" >&2

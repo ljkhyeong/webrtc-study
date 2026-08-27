@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Certbot runs every executable in /etc/letsencrypt/renewal-hooks/deploy only
-# after a lineage was renewed successfully. Unrelated lineage renewals are safe:
-# the reload command treats an unchanged ROUND certificate fingerprint as a
-# listener-verified no-op.
+# Certbot은 인증서 계보를 성공적으로 갱신한 뒤
+# /etc/letsencrypt/renewal-hooks/deploy의 실행 파일을 모두 호출합니다. ROUND와 무관한
+# 인증서 갱신이 발생해도 reload 명령은 ROUND 인증서 지문이 그대로이면 리스너를 확인한 뒤 종료합니다.
 umask 077
 env_file=${ROUND_ENV_FILE:-/etc/round/production.env}
 release_state_dir=${ROUND_RELEASE_STATE_DIR:-/var/lib/round/releases}
