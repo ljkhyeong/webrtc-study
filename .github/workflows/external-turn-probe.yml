@@ -111,7 +111,41 @@ jobs:
           TURN_PROBE_HOST: ${{ needs.release.outputs.turn_host }}
           TURN_PROBE_IMAGE: ${{ needs.release.outputs.probe_image }}
           WORKFLOW_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          evidence_file="$RUNNER_TEMP/round-external-turn-pilot-evidence.json"
+          jq -n \
+            --arg releaseTag "$RELEASE_TAG" \
+            --arg releaseCommit "$RELEASE_SHA" \
+            --arg tagObject "$TAG_OBJECT_SHA" \
+            --arg workflowCommit "$WORKFLOW_SHA" \
+            --arg runUrl "$RUN_URL" \
+            --arg roundUrl "$ROUND_URL" \
+            --arg turnHost "$TURN_PROBE_HOST" \
+            --arg probeImage "$TURN_PROBE_IMAGE" \
+            '{
+              schemaVersion: 1,
+              evidenceType: "round.external-turn-pilot",
+              result: "passed",
+              deploymentIdentityVerified: false,
+              release: {
+                tag: $releaseTag,
+                commit: $releaseCommit,
+                tagObject: $tagObject
+              },
+              workflow: {
+                commit: $workflowCommit,
+                runUrl: $runUrl
+              },
+              target: {
+                roundUrl: $roundUrl,
+                turnHost: $turnHost
+              },
+              probe: {
+                image: $probeImage,
+                transports: ["udp", "tcp", "tls"]
+              }
+            }' >"$evidence_file"
           {
             printf '### 외부 TURN 파일럿 probe\n\n'
             printf -- '- 운영자 선언 release: `%s` (`%s`)\n' "$RELEASE_TAG" "$RELEASE_SHA"
@@ -122,4 +156,14 @@ jobs:
             printf -- '- 전송 방식: 인증된 UDP, TCP 및 TLS relay\n'
             printf -- '- 결과: GitHub-hosted 외부 runner에서 통과\n'
             printf -- '- 범위: deployment identity를 자동 검증하지 않음\n'
+            printf -- '- 실행: %s\n' "$RUN_URL"
+            printf -- '- 기계 판독 증거: `round-external-turn-pilot-evidence` artifact\n'
           } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: 파일럿 증거 업로드
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: round-external-turn-pilot-evidence
+          path: ${{ runner.temp }}/round-external-turn-pilot-evidence.json
+          if-no-files-found: error
+          retention-days: 90

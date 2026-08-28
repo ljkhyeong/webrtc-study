@@ -196,6 +196,9 @@ standalone** 또는 **macOS pilot**이라고 명시한 항목은 해당 토폴�
 - [ ] 수동 `External TURN pilot probe` workflow가 운영자가 선언한 annotated 릴리스 tag에서
       통과합니다. 실행 요약에는 tag object, 릴리스와 workflow commit, 정확한 target, probe 이미지
       digest, 인증된 UDP, TCP, TLS 결과를 기록합니다.
+- [ ] `round-external-turn-pilot-evidence` JSON artifact를 보관합니다. `result=passed`, 실행 URL,
+      릴리스·workflow commit, target, probe 이미지와 세 전송 방식이 기록되고,
+      `deploymentIdentityVerified=false`인지 확인합니다.
 - [ ] 기록한 릴리스와 tag object를 배포 revision 또는 immutable 이미지 게시 증거와 별도로
       대조합니다. `v*` tag ruleset은 릴리스 tag의 갱신과 삭제를 막습니다.
 - [ ] TLS probe가 certificate chain과 `TURN_PROBE_HOST`를 모두 검증합니다. 신뢰하지 않는

@@ -1025,7 +1025,9 @@ tag, 현재 default branch에서 도달할 수 없는 release, example 목적지
 읽고 UDP, TCP, TLS를 검사합니다.
 
 run summary에는 운영자가 선언한 tag, tag object SHA, release commit, workflow commit,
-public target, probe image digest를 기록합니다. 실행 중인 service revision을 조회하지
+public target, probe image digest를 기록합니다. 같은 값과 실행 URL, UDP/TCP/TLS 결과는
+`round-external-turn-pilot-evidence` JSON artifact로도 90일간 보관합니다. JSON의
+`deploymentIdentityVerified`는 항상 `false`입니다. 실행 중인 service revision을 조회하지
 **않으므로** 선언한 release가 배포되었음을 입증하지는 않습니다. run을 pilot 증거로 인정하기
 전에 이 식별자를 배포 platform 또는 immutable image 게시 기록과 비교하고 `v*` tag ruleset으로
 release tag의 변경과 삭제를 보호합니다. workflow run URL과 이 독립적인 배포 identity 증거를

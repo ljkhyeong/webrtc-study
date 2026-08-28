@@ -10,6 +10,7 @@ const workflowUrl = process.argv[2]
   ? pathToFileURL(resolve(process.argv[2]))
   : new URL('.github/workflows/external-turn-probe.yml', repoRoot);
 const checkoutAction = 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803';
+const uploadArtifactAction = 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 
 function fail(message) {
   throw new Error(`외부 TURN workflow 검증: ${message}`);
@@ -153,8 +154,8 @@ assert.deepEqual(requireExactKeys(releaseStep.env, ['RELEASE_TAG'], 'release ref
   RELEASE_TAG: '${{ inputs.release_tag }}',
 });
 
-const probeSteps = requireSteps(probe, 4, 'probe job');
-const [probeCheckout, caStep, relayStep, summaryStep] = probeSteps;
+const probeSteps = requireSteps(probe, 5, 'probe job');
+const [probeCheckout, caStep, relayStep, summaryStep, uploadStep] = probeSteps;
 requireCheckout(probeCheckout, { 'persist-credentials': false }, 'probe checkout');
 
 requireRunStep(
@@ -204,6 +205,39 @@ requireRunStep(
   summaryStep,
   ['env', 'run', 'shell'],
   [
+    'evidence_file="$RUNNER_TEMP/round-external-turn-pilot-evidence.json"',
+    'jq -n \\',
+    '  --arg releaseTag "$RELEASE_TAG" \\',
+    '  --arg releaseCommit "$RELEASE_SHA" \\',
+    '  --arg tagObject "$TAG_OBJECT_SHA" \\',
+    '  --arg workflowCommit "$WORKFLOW_SHA" \\',
+    '  --arg runUrl "$RUN_URL" \\',
+    '  --arg roundUrl "$ROUND_URL" \\',
+    '  --arg turnHost "$TURN_PROBE_HOST" \\',
+    '  --arg probeImage "$TURN_PROBE_IMAGE" \\',
+    "  '{",
+    '    schemaVersion: 1,',
+    '    evidenceType: "round.external-turn-pilot",',
+    '    result: "passed",',
+    '    deploymentIdentityVerified: false,',
+    '    release: {',
+    '      tag: $releaseTag,',
+    '      commit: $releaseCommit,',
+    '      tagObject: $tagObject',
+    '    },',
+    '    workflow: {',
+    '      commit: $workflowCommit,',
+    '      runUrl: $runUrl',
+    '    },',
+    '    target: {',
+    '      roundUrl: $roundUrl,',
+    '      turnHost: $turnHost',
+    '    },',
+    '    probe: {',
+    '      image: $probeImage,',
+    '      transports: ["udp", "tcp", "tls"]',
+    '    }',
+    '  }\' >"$evidence_file"',
     '{',
     "  printf '### 외부 TURN 파일럿 probe\\n\\n'",
     '  printf -- \'- 운영자 선언 release: `%s` (`%s`)\\n\' "$RELEASE_TAG" "$RELEASE_SHA"',
@@ -214,6 +248,8 @@ requireRunStep(
     "  printf -- '- 전송 방식: 인증된 UDP, TCP 및 TLS relay\\n'",
     "  printf -- '- 결과: GitHub-hosted 외부 runner에서 통과\\n'",
     "  printf -- '- 범위: deployment identity를 자동 검증하지 않음\\n'",
+    '  printf -- \'- 실행: %s\\n\' "$RUN_URL"',
+    "  printf -- '- 기계 판독 증거: `round-external-turn-pilot-evidence` artifact\\n'",
     '} >>"$GITHUB_STEP_SUMMARY"',
   ].join('\n'),
   'summary step',
@@ -225,6 +261,7 @@ assert.deepEqual(
       'RELEASE_SHA',
       'RELEASE_TAG',
       'ROUND_URL',
+      'RUN_URL',
       'TAG_OBJECT_SHA',
       'TURN_PROBE_HOST',
       'TURN_PROBE_IMAGE',
@@ -236,10 +273,26 @@ assert.deepEqual(
     RELEASE_SHA: '${{ needs.release.outputs.release_sha }}',
     RELEASE_TAG: '${{ inputs.release_tag }}',
     ROUND_URL: '${{ needs.release.outputs.round_url }}',
+    RUN_URL: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}',
     TAG_OBJECT_SHA: '${{ needs.release.outputs.tag_object_sha }}',
     TURN_PROBE_HOST: '${{ needs.release.outputs.turn_host }}',
     TURN_PROBE_IMAGE: '${{ needs.release.outputs.probe_image }}',
     WORKFLOW_SHA: '${{ github.sha }}',
+  },
+);
+requireExactStructuralKeys(uploadStep, ['uses', 'with'], 'evidence upload step');
+assert.equal(uploadStep.uses, uploadArtifactAction, 'evidence upload action changed');
+assert.deepEqual(
+  requireExactKeys(
+    uploadStep.with,
+    ['if-no-files-found', 'name', 'path', 'retention-days'],
+    'evidence upload options',
+  ),
+  {
+    name: 'round-external-turn-pilot-evidence',
+    path: '${{ runner.temp }}/round-external-turn-pilot-evidence.json',
+    'if-no-files-found': 'error',
+    'retention-days': 90,
   },
 );
 assert.deepEqual(collectSecretAccesses(workflow), [
