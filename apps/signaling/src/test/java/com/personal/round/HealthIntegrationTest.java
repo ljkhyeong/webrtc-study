@@ -2,11 +2,13 @@ package com.personal.round;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.personal.round.signaling.SignalingService;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
@@ -20,6 +22,9 @@ class HealthIntegrationTest {
 
 	@LocalServerPort
 	private int port;
+
+	@Autowired
+	private SignalingService signalingService;
 
 	@Test
 	void exposesNoStoreHealthEndpoint() throws Exception {
@@ -44,6 +49,21 @@ class HealthIntegrationTest {
 		assertThat(metric.body()).contains("\"name\":\"round.signaling.rooms.active\"");
 		assertThat(prometheus.statusCode()).isEqualTo(200);
 		assertThat(prometheus.body()).contains("round_signaling_rooms_active");
+	}
+
+	@Test
+	void reportsReadinessAsUnavailableWhileSignalingIsStopped() throws Exception {
+		try {
+			signalingService.stop();
+
+			HttpResponse<String> readiness = get("/actuator/health/readiness");
+
+			assertThat(readiness.statusCode()).isEqualTo(503);
+			assertThat(readiness.body()).contains("\"status\":\"OUT_OF_SERVICE\"");
+		}
+		finally {
+			signalingService.start();
+		}
 	}
 
 	@Test
