@@ -1,7 +1,7 @@
 package com.personal.round.auth;
 
-import static com.personal.round.config.RoundRoutes.BATON_SIGNAL_SECURITY_PATTERN;
-import static com.personal.round.config.RoundRoutes.BATON_TURN_CREDENTIALS_SECURITY_PATTERN;
+import static com.personal.round.config.RoundRoutes.BATON_SIGNAL_TEMPLATE;
+import static com.personal.round.config.RoundRoutes.BATON_TURN_CREDENTIALS_TEMPLATE;
 import static com.personal.round.config.RoundRoutes.STANDALONE_SIGNAL;
 import static com.personal.round.config.RoundRoutes.STANDALONE_TURN_CREDENTIALS;
 import static org.springframework.security.config.Customizer.withDefaults;
@@ -58,8 +58,8 @@ public class RoundSecurityConfig {
 		AuthenticationEntryPoint authenticationEntryPoint =
 				jwkAwareBearerEntryPoint();
 		http.securityMatcher(
-						BATON_SIGNAL_SECURITY_PATTERN,
-						BATON_TURN_CREDENTIALS_SECURITY_PATTERN)
+						BATON_SIGNAL_TEMPLATE,
+						BATON_TURN_CREDENTIALS_TEMPLATE)
 				.authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
 				.oauth2ResourceServer(oauth2 -> oauth2
 						.bearerTokenResolver(new CookieBearerTokenResolver(properties.cookieName()))
@@ -71,7 +71,7 @@ public class RoundSecurityConfig {
 				.sessionManagement(session -> session.sessionCreationPolicy(STATELESS))
 				.requestCache(cache -> cache.disable())
 				.csrf(csrf -> csrf.ignoringRequestMatchers(
-						BATON_TURN_CREDENTIALS_SECURITY_PATTERN))
+						BATON_TURN_CREDENTIALS_TEMPLATE))
 				.logout(logout -> logout.disable());
 		return http.build();
 	}

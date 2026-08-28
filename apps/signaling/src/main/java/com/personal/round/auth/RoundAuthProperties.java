@@ -63,7 +63,7 @@ public record RoundAuthProperties(
 	@AssertTrue(message = "BATON auth mode requires an __Secure- cookie name")
 	public boolean isBatonCookieNameSecure() {
 		return !batonMode()
-				|| (StringUtils.hasText(cookieName) && cookieName.startsWith("__Secure-"));
+				|| (cookieName != null && cookieName.startsWith("__Secure-"));
 	}
 
 	@AssertTrue(message = "BATON auth issuer and jwk-set-uri must use HTTPS or loopback HTTP")
@@ -74,7 +74,7 @@ public record RoundAuthProperties(
 
 	@AssertTrue(message = "BATON auth mode must not configure a standalone host token")
 	public boolean isStandaloneHostTokenModeSafe() {
-		return !batonMode() || !StringUtils.hasText(standaloneHostTokenSha256);
+		return !batonMode() || standaloneHostTokenSha256 == null;
 	}
 
 	@Override
