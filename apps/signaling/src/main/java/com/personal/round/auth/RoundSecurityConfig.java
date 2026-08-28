@@ -12,6 +12,8 @@ import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jose.util.health.HealthStatus;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.DispatcherType;
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -126,10 +128,19 @@ public class RoundSecurityConfig {
 
 	@Bean
 	@ConditionalOnProperty(name = "round.auth.mode", havingValue = "baton")
-	JwtDecoder batonJwtDecoder(RoundAuthProperties properties, Clock clock)
+	JwtDecoder batonJwtDecoder(
+			RoundAuthProperties properties,
+			Clock clock,
+			MeterRegistry meterRegistry)
 			throws MalformedURLException {
 		AtomicReference<HealthStatus> lastJwkSourceHealth =
 				new AtomicReference<>(HealthStatus.HEALTHY);
+		Gauge.builder(
+					"round.auth.jwk.source.healthy",
+					lastJwkSourceHealth,
+					health -> health.get() == HealthStatus.HEALTHY ? 1 : 0)
+				.description("BATON JWK 원격 소스의 최근 상태입니다. 정상이면 1, 장애면 0입니다.")
+				.register(meterRegistry);
 		JWKSource<SecurityContext> jwkSource = buildJwkSource(
 				JWKSourceBuilder.<SecurityContext>create(
 						URI.create(properties.jwkSetUri()).toURL())

@@ -9,6 +9,7 @@ import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
@@ -57,6 +59,9 @@ class BatonJwkOutageIntegrationTest {
 	@LocalServerPort
 	private int port;
 
+	@Autowired
+	private MeterRegistry meterRegistry;
+
 	@DynamicPropertySource
 	static void batonIssuerProperties(DynamicPropertyRegistry registry) {
 		registry.add("round.auth.issuer", BATON_ISSUER::issuer);
@@ -71,6 +76,7 @@ class BatonJwkOutageIntegrationTest {
 	@Test
 	void keepsConsecutiveAuthenticationFailuresUnavailableAfterTheJwkRateLimit()
 			throws Exception {
+		assertThat(jwkSourceHealthy()).isEqualTo(1);
 		HttpResponse<String> first = requestTurnCredentials();
 		HttpResponse<String> second = requestTurnCredentials();
 		HttpResponse<String> rateLimited = requestTurnCredentials();
@@ -79,6 +85,11 @@ class BatonJwkOutageIntegrationTest {
 		assertUnavailable(second);
 		assertUnavailable(rateLimited);
 		assertThat(BATON_ISSUER.jwkRequestCount()).isEqualTo(2);
+		assertThat(jwkSourceHealthy()).isZero();
+	}
+
+	private double jwkSourceHealthy() {
+		return meterRegistry.get("round.auth.jwk.source.healthy").gauge().value();
 	}
 
 	private HttpResponse<String> requestTurnCredentials() throws Exception {

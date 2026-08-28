@@ -85,6 +85,7 @@ Micrometer는 다음 signaling meter를 게시합니다.
 - `round.signaling.outbound.queue.global_overflows` (전체 송신 바이트 한도에 걸린 frame 수)
 - `round.signaling.heartbeat.closes`
 - `round.signaling.authorization.closes`
+- `round.auth.jwk.source.healthy` (BATON JWK 원격 소스가 정상이면 `1`, 장애면 `0`)
 - `round.turn.credentials.issued`
 - `round.turn.credentials.rate_limited`
   (`scope=client|participant|global|client_state_capacity|participant_state_capacity`)

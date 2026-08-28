@@ -12,6 +12,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
@@ -50,6 +51,7 @@ class RoundJwtDecoderIntegrationTest {
 	private JwtDecoder decoder;
 	private AtomicBoolean jwkUnavailable;
 	private AtomicInteger jwkRequestCount;
+	private SimpleMeterRegistry meterRegistry;
 
 	@BeforeEach
 	void setUp() throws Exception {
@@ -83,6 +85,7 @@ class RoundJwtDecoderIntegrationTest {
 
 		String baseUrl = "http://127.0.0.1:" + jwkServer.getAddress().getPort();
 		issuer = baseUrl + "/issuer";
+		meterRegistry = new SimpleMeterRegistry();
 		RoundAuthProperties properties = new RoundAuthProperties(
 				RoundAuthProperties.Mode.BATON,
 				"__Secure-round_access",
@@ -93,13 +96,17 @@ class RoundJwtDecoderIntegrationTest {
 				Duration.ofMinutes(5));
 		decoder = new RoundSecurityConfig().batonJwtDecoder(
 				properties,
-				Clock.fixed(NOW, ZoneOffset.UTC));
+				Clock.fixed(NOW, ZoneOffset.UTC),
+				meterRegistry);
 	}
 
 	@AfterEach
 	void tearDown() {
 		if (jwkServer != null) {
 			jwkServer.stop(0);
+		}
+		if (meterRegistry != null) {
+			meterRegistry.close();
 		}
 	}
 
