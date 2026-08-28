@@ -174,6 +174,13 @@ rotation에는 폐기할 key로 서명된 짧은 참여권이 모두 만료될 �
 ROUND는 비어 있고 no-store인 `503`을 반환합니다. alerting에서는 이를 credential 거부가
 아니라 인증 infrastructure 장애로 분류해야 합니다.
 
+비공개 monitoring plane에서 `round.auth.jwk.source.healthy`를 수집하고 값이 지속적으로 `0`일 때
+외부 alert을 보냅니다. 단일 scrape 실패나 짧은 key 회전 구간만으로 경보하지 말고, 운영
+scrape 주기에서 연속 2회 이상 `0`인 상태를 기본 문턱으로 사용합니다. 이 gauge는 정상 원격
+JWK source이면 `1`, 마지막 원격 조회가 실패했으면 `0`이며 잘못된 credential의 `401` 건수를
+대신하지 않습니다. alert 수신처를 정하기 전에는 이 지표를 운영 경보로 연결했다고 주장하지
+않습니다.
+
 BATON 모드에서 ROUND는 진행 중인 handshake와 활성 socket을 모두 계산합니다. 같은 `jti`는
 하나의 reservation을 소유할 수 있고, 같은 `(room_id, sub)`는 두 개를 소유할 수 있어 새로
 발급한 참여권을 사용하는 reconnect 하나가 기존 socket과 겹칠 수 있습니다. 같은 참여권을

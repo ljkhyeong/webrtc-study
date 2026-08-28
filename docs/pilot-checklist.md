@@ -319,6 +319,9 @@ BATON이 소유한 edge와 별도로 배포한 ROUND instance를 대상으로 �
 - [ ] Java signaling 포트는 BATON edge와 monitoring plane에서만 접근할 수 있습니다.
       `/actuator/prometheus`와 `/actuator/metrics/**`는 private이며 공개 health 규칙은 전송 계층
       전용 `GET /healthz`만 노출합니다.
+- [ ] `round.auth.jwk.source.healthy`가 정상 원격 JWK source에서 `1`이고 실제 JWK endpoint 장애
+      뒤 `0`이 되는지 확인합니다. 운영 scrape에서 연속 2회 이상 `0`일 때 외부 alert을 보내며,
+      잘못된 credential의 `401`과 인증 infrastructure 장애의 `503`을 같은 경보로 합치지 않습니다.
 - [ ] BATON 페이지의 `Permissions-Policy`는 자체 camera, microphone, display-capture 사용을
       허용하고 `connect-src`는 정책 범위를 관계없는 Origin으로 넓히지 않으면서 방 범위 WSS
       endpoint를 허용합니다.
