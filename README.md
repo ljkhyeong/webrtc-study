@@ -60,10 +60,12 @@ npm run test:e2e
 `chromium-full-media` 프로젝트는 fake 카메라·마이크·화면 스트림을 사용해 직접 초대 입장,
 원격 미디어 연결, 화면 공유 전환, 방장의 원격 미디어 끄기, DataChannel 채팅과 수신 ACK,
 퇴장을 확인합니다. `webkit-smoke` 프로젝트는 실제 Playwright WebKit 엔진에서 직접 초대와
-명시적 장치 동의 경계를 확인하며 카메라·마이크를 자동 허용하지 않습니다. BATON 참여권,
-실제 TURN relay, 실장치의 화면 선택 UI, iPhone/iPad의 Safari·모바일 검증은 이 테스트
-범위에 포함되지 않으며 파일럿 체크리스트를 별도로 통과해야 합니다. 실패 진단 자료는
-`output/playwright/`에 저장됩니다.
+명시적 장치 동의 경계, 미디어 없이 입장한 두 참가자의 DataChannel 채팅과 퇴장을 확인하며
+카메라·마이크를 자동 허용하지 않습니다. Chromium과 WebKit의 mobile layout 프로젝트는
+대표 모바일 viewport에서 채팅 작성 영역과 통화 제어가 겹치거나 가로로 넘치지 않는지
+검사합니다. BATON 참여권, 실제 TURN relay, 실장치의 화면 선택 UI, iPhone/iPad의 실제
+Safari 검증은 이 테스트 범위에 포함되지 않으며 파일럿 체크리스트를 별도로 통과해야 합니다.
+실패 진단 자료는 `output/playwright/`에 저장됩니다.
 
 ## 환경 변수
 

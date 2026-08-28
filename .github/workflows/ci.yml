@@ -82,7 +82,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Chromium 전체 미디어 smoke 테스트 실행
-        run: npx playwright test --project=chromium-full-media
+        run: npx playwright test --project=chromium-full-media --project=chromium-mobile-layout
 
       - name: BATON production edge 권한 부여 테스트 실행
         run: npm run test:e2e:baton-edge
@@ -130,7 +130,7 @@ jobs:
         run: npx playwright install --with-deps webkit
 
       - name: WebKit 호환성 smoke 테스트 실행
-        run: npx playwright test --project=webkit-smoke
+        run: npx playwright test --project=webkit-smoke --project=webkit-mobile-layout
 
       - name: WebKit 진단 자료 업로드
         if: failure()

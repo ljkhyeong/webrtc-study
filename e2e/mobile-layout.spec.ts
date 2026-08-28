@@ -1,0 +1,53 @@
+import { expect, test } from '@playwright/test';
+
+const ROOM_PATH = '/room/abcd-efgh-jkmp';
+
+test('모바일에서 방 입장과 채팅 제어가 화면 안에 유지된다', async ({ page }) => {
+  const failures: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') {
+      failures.push(`console.error: ${message.text()}`);
+    }
+  });
+  page.on('pageerror', (error) => failures.push(`pageerror: ${error.message}`));
+
+  await page.goto(ROOM_PATH);
+  await page.getByLabel('내 이름').fill('모바일 스터디원');
+  await page.getByRole('button', { name: '입장 준비' }).click();
+  await page.getByRole('button', { name: '미디어 없이 입장' }).click();
+
+  const controlDock = page.getByRole('contentinfo', { name: '통화 제어' });
+  await expect(controlDock).toBeVisible();
+  await page.getByRole('button', { name: '채팅 열기' }).click();
+  await expect(page.getByRole('textbox', { name: '메시지' })).toBeVisible();
+  await expect(
+    page.getByRole('complementary').getByRole('button', { name: '채팅 닫기' }),
+  ).toBeVisible();
+  await expect(controlDock).toBeVisible();
+
+  const layout = await page.evaluate(() => {
+    const dock = document.querySelector<HTMLElement>('.control-dock')?.getBoundingClientRect();
+    const messageInput = document
+      .querySelector<HTMLElement>('.chat-composer textarea')
+      ?.getBoundingClientRect();
+    const sendButton = document
+      .querySelector<HTMLElement>('.chat-composer button')
+      ?.getBoundingClientRect();
+    return {
+      documentFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      dockFits:
+        dock !== undefined && dock.left >= 0 && dock.right <= document.documentElement.clientWidth,
+      composerControlsAboveDock:
+        messageInput !== undefined &&
+        sendButton !== undefined &&
+        dock !== undefined &&
+        Math.max(messageInput.bottom, sendButton.bottom) <= dock.top + 1,
+    };
+  });
+  expect(layout).toEqual({
+    documentFits: true,
+    dockFits: true,
+    composerControlsAboveDock: true,
+  });
+  expect(failures).toEqual([]);
+});

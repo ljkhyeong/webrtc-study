@@ -42,6 +42,20 @@ export default defineConfig({
         ...devices['Desktop Safari'],
       },
     },
+    {
+      name: 'chromium-mobile-layout',
+      testMatch: /mobile-layout\.spec\.ts/,
+      use: {
+        ...devices['Pixel 7'],
+      },
+    },
+    {
+      name: 'webkit-mobile-layout',
+      testMatch: /mobile-layout\.spec\.ts/,
+      use: {
+        ...devices['iPhone 13'],
+      },
+    },
   ],
   webServer: {
     command: 'npm run dev',
