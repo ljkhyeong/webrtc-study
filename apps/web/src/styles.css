@@ -958,6 +958,7 @@ textarea:focus-visible {
 }
 
 .room-shell {
+  position: relative;
   display: grid;
   width: 100%;
   min-height: 100svh;
@@ -965,6 +966,43 @@ textarea:focus-visible {
   overflow: hidden;
   color: var(--paper);
   background: var(--night);
+}
+
+.room-copy-recovery {
+  position: absolute;
+  z-index: 30;
+  top: 82px;
+  left: 28px;
+  display: grid;
+  width: min(620px, calc(100% - 56px));
+  padding: 14px 16px;
+  border: 1px solid rgb(222 149 149 / 55%);
+  border-radius: 10px;
+  gap: 5px;
+  color: #f8e5e5;
+  background: rgb(48 26 31 / 96%);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 28%);
+}
+
+.room-copy-recovery strong {
+  font-size: 0.82rem;
+}
+
+.room-copy-recovery span {
+  color: #d7c5c8;
+  font-size: 0.72rem;
+}
+
+.room-copy-recovery input {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 7px;
+  color: var(--paper);
+  background: rgb(255 255 255 / 7%);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.72rem;
 }
 
 .room-header {
@@ -2133,6 +2171,13 @@ textarea:focus-visible {
 
   .room-header {
     padding: 0 14px;
+  }
+
+  .room-copy-recovery {
+    top: 66px;
+    right: 10px;
+    left: 10px;
+    width: auto;
   }
 
   .room-header .wordmark span,

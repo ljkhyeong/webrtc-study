@@ -35,6 +35,10 @@ interface ChatMessageIdentity {
   readonly senderId: string;
 }
 
+type InviteCopyState =
+  | { readonly status: 'idle' | 'success' }
+  | { readonly status: 'error'; readonly inviteUrl: string };
+
 interface RoomViewProps {
   roomId: string;
   status: RoomSessionStatus;
@@ -190,7 +194,7 @@ export function RoomView({
 }: RoomViewProps) {
   const [chatOpen, setChatOpen] = useState(false);
   const [message, setMessage] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [inviteCopyState, setInviteCopyState] = useState<InviteCopyState>({ status: 'idle' });
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [unseenDeliveryIssueCount, setUnseenDeliveryIssueCount] = useState(0);
   const previousLastMessage = useRef<ChatMessageIdentity | null>(
@@ -200,6 +204,18 @@ export function RoomView({
   const hasObservedMessages = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatCompositionActive = useRef(false);
+  const chatButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreChatFocus = useRef(false);
+  const inviteCopyResetTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (inviteCopyResetTimer.current !== null) {
+        window.clearTimeout(inviteCopyResetTimer.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const currentLocalDeliveryStates = collectLocalDeliveryStates(messages);
@@ -224,6 +240,10 @@ export function RoomView({
 
   useEffect(() => {
     if (!chatOpen) {
+      if (restoreChatFocus.current) {
+        restoreChatFocus.current = false;
+        chatButtonRef.current?.focus();
+      }
       return;
     }
 
@@ -233,13 +253,19 @@ export function RoomView({
   }, [chatOpen, messages]);
 
   const handleCopy = async () => {
+    if (inviteCopyResetTimer.current !== null) {
+      window.clearTimeout(inviteCopyResetTimer.current);
+    }
+    const inviteUrl = canonicalRoomUrl(roomId, window.location.href);
     try {
-      const inviteUrl = canonicalRoomUrl(roomId, window.location.href);
       await navigator.clipboard.writeText(inviteUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
+      setInviteCopyState({ status: 'success' });
+      inviteCopyResetTimer.current = window.setTimeout(() => {
+        setInviteCopyState({ status: 'idle' });
+        inviteCopyResetTimer.current = null;
+      }, 1800);
     } catch {
-      setCopied(false);
+      setInviteCopyState({ status: 'error', inviteUrl });
     }
   };
 
@@ -257,6 +283,11 @@ export function RoomView({
 
   const toggleChat = () => {
     setChatOpen((open) => !open);
+  };
+
+  const closeChat = () => {
+    restoreChatFocus.current = true;
+    setChatOpen(false);
   };
 
   const isActive = status === 'active';
@@ -282,7 +313,7 @@ export function RoomView({
           <button className="room-code" type="button" onClick={handleCopy}>
             <span>ROOM</span>
             <strong>{roomId}</strong>
-            {copied ? <CheckIcon /> : <CopyIcon />}
+            {inviteCopyState.status === 'success' ? <CheckIcon /> : <CopyIcon />}
           </button>
         </div>
 
@@ -302,6 +333,24 @@ export function RoomView({
         </div>
       </header>
 
+      {inviteCopyState.status === 'success' ? (
+        <p className="sr-only" role="status" aria-live="polite">
+          초대 링크를 복사했습니다.
+        </p>
+      ) : null}
+      {inviteCopyState.status === 'error' ? (
+        <div className="room-copy-recovery" role="alert">
+          <strong>초대 링크를 복사하지 못했습니다.</strong>
+          <span>아래 주소를 직접 선택해 복사해 주세요.</span>
+          <input
+            aria-label="초대 링크 수동 복사"
+            readOnly
+            value={inviteCopyState.inviteUrl}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+        </div>
+      ) : null}
+
       <main className="room-workspace">
         <section className={`video-stage video-stage--${gridSize}`} aria-label="스터디 참가자 영상">
           {participants.map((participant) => (
@@ -318,7 +367,7 @@ export function RoomView({
             <div className="waiting-note">
               <span>링크를 공유하면 이 자리에 스터디원이 나타납니다.</span>
               <button type="button" onClick={handleCopy}>
-                {copied ? '링크 복사됨' : '초대 링크 복사'}
+                {inviteCopyState.status === 'success' ? '링크 복사됨' : '초대 링크 복사'}
               </button>
             </div>
           ) : null}
@@ -414,7 +463,7 @@ export function RoomView({
               <span>ROOM CHAT</span>
               <strong>스터디 대화</strong>
             </div>
-            <button type="button" aria-label="채팅 닫기" onClick={toggleChat}>
+            <button type="button" aria-label="채팅 닫기" onClick={closeChat}>
               <CloseIcon />
             </button>
           </header>
@@ -550,6 +599,7 @@ export function RoomView({
           <span>{screenSharing ? '공유 중지' : '화면 공유'}</span>
         </button>
         <button
+          ref={chatButtonRef}
           className={`control-button${chatOpen ? ' control-button--active' : ''}`}
           type="button"
           aria-label={chatButtonLabel}
