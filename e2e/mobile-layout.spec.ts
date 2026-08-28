@@ -18,6 +18,9 @@ test('모바일에서 방 입장과 채팅 제어가 화면 안에 유지된다'
 
   const controlDock = page.getByRole('contentinfo', { name: '통화 제어' });
   await expect(controlDock).toBeVisible();
+  await page.locator('summary', { hasText: '진단' }).click();
+  const diagnosticsPanel = page.getByRole('region', { name: '연결 진단' });
+  await expect(diagnosticsPanel).toBeVisible();
   await page.getByRole('button', { name: '채팅 열기' }).click();
   await expect(page.getByRole('textbox', { name: '메시지' })).toBeVisible();
   await expect(
@@ -33,10 +36,17 @@ test('모바일에서 방 입장과 채팅 제어가 화면 안에 유지된다'
     const sendButton = document
       .querySelector<HTMLElement>('.chat-composer button')
       ?.getBoundingClientRect();
+    const diagnostics = document
+      .querySelector<HTMLElement>('.connection-diagnostics__panel')
+      ?.getBoundingClientRect();
     return {
       documentFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
       dockFits:
         dock !== undefined && dock.left >= 0 && dock.right <= document.documentElement.clientWidth,
+      diagnosticsFits:
+        diagnostics !== undefined &&
+        diagnostics.left >= 0 &&
+        diagnostics.right <= document.documentElement.clientWidth,
       composerControlsAboveDock:
         messageInput !== undefined &&
         sendButton !== undefined &&
@@ -47,6 +57,7 @@ test('모바일에서 방 입장과 채팅 제어가 화면 안에 유지된다'
   expect(layout).toEqual({
     documentFits: true,
     dockFits: true,
+    diagnosticsFits: true,
     composerControlsAboveDock: true,
   });
   expect(failures).toEqual([]);

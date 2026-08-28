@@ -25,6 +25,10 @@ function roomViewProps(): Parameters<typeof RoomView>[0] {
     onDisableParticipantAudio: vi.fn(),
     onDisableParticipantVideo: vi.fn(),
     onSendMessage: vi.fn(() => true),
+    onCollectConnectionDiagnostics: vi.fn(async () => ({
+      status: 'active' as const,
+      connections: [],
+    })),
     onSelectDevices: vi.fn(),
     onReconnect: vi.fn(),
     onLeave: vi.fn(),
@@ -84,5 +88,49 @@ describe('RoomView 브라우저 동작', () => {
 
     await act(async () => close?.click());
     expect(document.activeElement).toBe(toggle);
+  });
+
+  it('개인정보가 없는 연결 진단을 요청 시 수집하고 복사한다', async () => {
+    const onCollectConnectionDiagnostics = vi.fn(async () => ({
+      status: 'active' as const,
+      connections: [
+        {
+          connectionNumber: 1,
+          connectionState: 'connected' as const,
+          localCandidateType: 'relay' as const,
+          remoteCandidateType: 'srflx' as const,
+          roundTripTimeMs: 34,
+          packetLossPercent: 2,
+          jitterMs: 18,
+        },
+      ],
+    }));
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    act(() =>
+      root.render(<RoomView {...roomViewProps()} {...{ onCollectConnectionDiagnostics }} />),
+    );
+    const details = container.querySelector<HTMLDetailsElement>('.connection-diagnostics');
+
+    await act(async () => {
+      if (details !== null) {
+        details.open = true;
+        details.dispatchEvent(new Event('toggle', { bubbles: true }));
+      }
+    });
+
+    expect(onCollectConnectionDiagnostics).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('TURN 중계');
+    expect(container.textContent).toContain('34ms');
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.connection-diagnostics__copy')?.click();
+    });
+
+    expect(writeText).toHaveBeenCalledWith(expect.not.stringContaining('peerId'));
+    expect(writeText).toHaveBeenCalledWith(expect.not.stringContaining('roomId'));
   });
 });

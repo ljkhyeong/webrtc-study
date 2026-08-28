@@ -92,6 +92,21 @@ export interface ParticipantSnapshot {
   readonly videoSource: VideoSource;
 }
 
+export interface PeerConnectionDiagnostics {
+  readonly connectionNumber: number;
+  readonly connectionState: PeerConnectionStatus;
+  readonly localCandidateType: RTCIceCandidateType | null;
+  readonly remoteCandidateType: RTCIceCandidateType | null;
+  readonly roundTripTimeMs: number | null;
+  readonly packetLossPercent: number | null;
+  readonly jitterMs: number | null;
+}
+
+export interface RoomConnectionDiagnostics {
+  readonly status: RoomSessionStatus;
+  readonly connections: readonly PeerConnectionDiagnostics[];
+}
+
 export interface ModerationNotice {
   readonly id: string;
   readonly sequence: number;
@@ -600,6 +615,84 @@ export class RoomSession {
 
   getRemoteStream(peerId: string): MediaStream | null {
     return this.#remoteStreams.get(peerId) ?? null;
+  }
+
+  /**
+   * 현재 피어 연결의 개인정보를 제외한 진단 정보를 요청 시점에 한 번 수집한다.
+   * candidate 주소, 방 코드, peer ID는 결과에 포함하지 않는다.
+   */
+  async collectConnectionDiagnostics(): Promise<RoomConnectionDiagnostics> {
+    const peers = [...this.#peers.values()].filter(
+      (peer) => !peer.closed && peer.connection.connectionState !== 'closed',
+    );
+    const connections = await Promise.all(
+      peers.map(async (peer, index): Promise<PeerConnectionDiagnostics> => {
+        const report = await peer.connection.getStats();
+        const entries = [...report.values()];
+        const transport = entries.find(
+          (stats): stats is RTCTransportStats => stats.type === 'transport',
+        );
+        const selectedCandidatePair =
+          (transport?.selectedCandidatePairId === undefined
+            ? undefined
+            : report.get(transport.selectedCandidatePairId)) ??
+          entries.find(
+            (stats) =>
+              stats.type === 'candidate-pair' &&
+              (stats as RTCIceCandidatePairStats).state === 'succeeded' &&
+              (stats as RTCIceCandidatePairStats).nominated === true,
+          );
+        const candidatePair =
+          selectedCandidatePair?.type === 'candidate-pair'
+            ? (selectedCandidatePair as RTCIceCandidatePairStats)
+            : undefined;
+        const localCandidate =
+          candidatePair === undefined
+            ? undefined
+            : (report.get(candidatePair.localCandidateId) as
+                (RTCStats & { readonly candidateType?: RTCIceCandidateType }) | undefined);
+        const remoteCandidate =
+          candidatePair === undefined
+            ? undefined
+            : (report.get(candidatePair.remoteCandidateId) as
+                (RTCStats & { readonly candidateType?: RTCIceCandidateType }) | undefined);
+
+        let packetsReceived = 0;
+        let packetsLost = 0;
+        let maximumJitterSeconds: number | null = null;
+        for (const stats of entries) {
+          if (stats.type !== 'inbound-rtp') {
+            continue;
+          }
+          const inbound = stats as RTCInboundRtpStreamStats;
+          packetsReceived += inbound.packetsReceived ?? 0;
+          packetsLost += inbound.packetsLost ?? 0;
+          if (
+            inbound.jitter !== undefined &&
+            (maximumJitterSeconds === null || inbound.jitter > maximumJitterSeconds)
+          ) {
+            maximumJitterSeconds = inbound.jitter;
+          }
+        }
+        const totalPackets = packetsReceived + packetsLost;
+
+        return {
+          connectionNumber: index + 1,
+          connectionState: peer.connection.connectionState,
+          localCandidateType: localCandidate?.candidateType ?? null,
+          remoteCandidateType: remoteCandidate?.candidateType ?? null,
+          roundTripTimeMs:
+            candidatePair?.currentRoundTripTime === undefined
+              ? null
+              : Math.round(candidatePair.currentRoundTripTime * 1_000),
+          packetLossPercent:
+            totalPackets <= 0 ? null : Math.round((packetsLost / totalPackets) * 1_000) / 10,
+          jitterMs: maximumJitterSeconds === null ? null : Math.round(maximumJitterSeconds * 1_000),
+        };
+      }),
+    );
+
+    return { status: this.#status, connections };
   }
 
   /**

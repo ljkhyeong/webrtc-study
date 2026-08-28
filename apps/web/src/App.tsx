@@ -5,6 +5,7 @@ import {
   createRoomSession,
   type RoomIssue,
   type RoomIssueCode,
+  type RoomConnectionDiagnostics,
   type RoomSession,
   type RoomSessionSnapshot,
   type RoomSessionStatus,
@@ -1009,6 +1010,13 @@ export function ActiveRoom({
         }
       }}
       onSendMessage={handleSendMessage}
+      onCollectConnectionDiagnostics={async (): Promise<RoomConnectionDiagnostics> => {
+        const session = sessionRef.current;
+        if (session === null) {
+          throw new Error('Room session is unavailable');
+        }
+        return session.collectConnectionDiagnostics();
+      }}
       onSelectDevices={onReconnect}
       onReconnect={onReconnect}
       onLeave={handleLeave}

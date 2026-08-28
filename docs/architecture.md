@@ -57,6 +57,12 @@ channel을 즉시 닫고 현재의 정상 channel을 유지합니다.
 채팅 frame의 `sentAt`은 표시와 wire 호환성을 위한 wall clock epoch이고, 피어별 수신량
 제한 구간은 시스템 시각 변경에 영향받지 않는 monotonic clock을 사용합니다.
 
+사용자가 연결 진단을 열면 `RoomSession`은 각 `RTCPeerConnection`의 표준 `getStats()`를 한 번
+호출합니다. 화면에는 연결 상태, local·remote candidate 유형, 왕복 지연, 패킷 손실률, 수신
+jitter 최댓값만 표시합니다. 방 코드, peer ID, 표시 이름, candidate 주소와 포트는 진단 결과에
+포함하지 않으며 서버로 전송하거나 주기적으로 수집하지 않습니다. 따라서 운영 지원에 필요한
+TURN 사용 여부와 품질 정보는 복사할 수 있지만 참가자의 네트워크 주소는 노출하지 않습니다.
+
 `chat.ack`는 기존에 추가된 peer protocol frame이며 Java signaling protocol version을
 변경하지 않습니다. ROUND는 현재 이 기능을 협상하지 않고 web client를 원자적으로
 배포합니다. pilot 참가자는 web release 후 모두 새로고침해야 합니다. ACK를 구현하지 않은

@@ -30,6 +30,10 @@ function renderRoom(overrides: Partial<Parameters<typeof RoomView>[0]> = {}) {
       onDisableParticipantAudio={vi.fn()}
       onDisableParticipantVideo={vi.fn()}
       onSendMessage={vi.fn(() => true)}
+      onCollectConnectionDiagnostics={vi.fn(async () => ({
+        status: 'active' as const,
+        connections: [],
+      }))}
       onSelectDevices={vi.fn()}
       onReconnect={vi.fn()}
       onLeave={vi.fn()}

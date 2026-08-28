@@ -338,6 +338,7 @@ class FakePeerConnection {
   setRemoteDescriptionDelayMs = 0;
   answerIceUsernameFragment: string | null = null;
   setConfigurationError: Error | null = null;
+  statsReport = new Map<string, RTCStats>() as unknown as RTCStatsReport;
   closed = false;
 
   constructor(readonly initialConfiguration: RTCConfiguration | undefined) {}
@@ -426,6 +427,10 @@ class FakePeerConnection {
     if (this.setConfigurationError !== null) {
       throw this.setConfigurationError;
     }
+  }
+
+  async getStats(): Promise<RTCStatsReport> {
+    return this.statsReport;
   }
 
   close(): void {
@@ -1035,6 +1040,103 @@ describe('RoomSession', () => {
       'self',
       'peer-a',
     ]);
+  });
+
+  it('collects connection diagnostics without peer or network addresses', async () => {
+    const harness = createHarness();
+    await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
+    const peer = harness.peerConnections[0];
+    if (peer === undefined) {
+      throw new Error('Expected a peer connection');
+    }
+    peer.setConnectionState('connected');
+    peer.statsReport = new Map<string, RTCStats>([
+      [
+        'transport',
+        {
+          id: 'transport',
+          timestamp: 1,
+          type: 'transport',
+          dtlsState: 'connected',
+          selectedCandidatePairId: 'selected-pair',
+        } as RTCTransportStats,
+      ],
+      [
+        'selected-pair',
+        {
+          id: 'selected-pair',
+          timestamp: 1,
+          type: 'candidate-pair',
+          localCandidateId: 'local-candidate',
+          remoteCandidateId: 'remote-candidate',
+          state: 'succeeded',
+          transportId: 'transport',
+          currentRoundTripTime: 0.034,
+        } as RTCIceCandidatePairStats,
+      ],
+      [
+        'local-candidate',
+        {
+          id: 'local-candidate',
+          timestamp: 1,
+          type: 'local-candidate',
+          candidateType: 'relay',
+          address: '192.0.2.10',
+        } as RTCStats,
+      ],
+      [
+        'remote-candidate',
+        {
+          id: 'remote-candidate',
+          timestamp: 1,
+          type: 'remote-candidate',
+          candidateType: 'srflx',
+          address: '198.51.100.20',
+        } as RTCStats,
+      ],
+      [
+        'audio-inbound',
+        {
+          id: 'audio-inbound',
+          timestamp: 1,
+          type: 'inbound-rtp',
+          packetsReceived: 990,
+          packetsLost: 10,
+          jitter: 0.012,
+        } as RTCInboundRtpStreamStats,
+      ],
+      [
+        'video-inbound',
+        {
+          id: 'video-inbound',
+          timestamp: 1,
+          type: 'inbound-rtp',
+          packetsReceived: 480,
+          packetsLost: 20,
+          jitter: 0.018,
+        } as RTCInboundRtpStreamStats,
+      ],
+    ]) as unknown as RTCStatsReport;
+
+    const diagnostics = await harness.session.collectConnectionDiagnostics();
+
+    expect(diagnostics).toEqual({
+      status: 'active',
+      connections: [
+        {
+          connectionNumber: 1,
+          connectionState: 'connected',
+          localCandidateType: 'relay',
+          remoteCandidateType: 'srflx',
+          roundTripTimeMs: 34,
+          packetLossPercent: 2,
+          jitterMs: 18,
+        },
+      ],
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain('peer-a');
+    expect(JSON.stringify(diagnostics)).not.toContain('192.0.2.10');
+    expect(JSON.stringify(diagnostics)).not.toContain('198.51.100.20');
   });
 
   it('closes incoming DataChannels that do not match the reliable ordered chat contract', async () => {

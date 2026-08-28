@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { ChatDeliveryState, ChatMessage, RoomSessionStatus } from '@round/rtc-core';
+import { useEffect, useRef, useState, type FormEvent, type SyntheticEvent } from 'react';
+import type {
+  ChatDeliveryState,
+  ChatMessage,
+  PeerConnectionDiagnostics,
+  PeerConnectionStatus,
+  RoomConnectionDiagnostics,
+  RoomSessionStatus,
+} from '@round/rtc-core';
 import {
   CameraIcon,
   CameraOffIcon,
@@ -39,6 +46,10 @@ type InviteCopyState =
   | { readonly status: 'idle' | 'success' }
   | { readonly status: 'error'; readonly inviteUrl: string };
 
+type ConnectionDiagnosticsState =
+  | { readonly status: 'idle' | 'loading' | 'error' }
+  | { readonly status: 'ready'; readonly value: RoomConnectionDiagnostics };
+
 interface RoomViewProps {
   roomId: string;
   status: RoomSessionStatus;
@@ -64,6 +75,7 @@ interface RoomViewProps {
   onDisableParticipantAudio: (peerId: string) => void;
   onDisableParticipantVideo: (peerId: string) => void;
   onSendMessage: (text: string) => boolean;
+  onCollectConnectionDiagnostics: () => Promise<RoomConnectionDiagnostics>;
   onSelectDevices: () => void;
   onReconnect: () => void;
   onLeave: () => void;
@@ -163,6 +175,68 @@ function chatMessageIdentity(message: ChatMessage | undefined): ChatMessageIdent
   return message === undefined ? null : { id: message.id, senderId: message.senderId };
 }
 
+const connectionStateLabels: Record<PeerConnectionStatus, string> = {
+  new: '연결 준비',
+  connecting: '연결 중',
+  connected: '연결됨',
+  disconnected: '연결 끊김',
+  failed: '연결 실패',
+  closed: '연결 종료',
+  negotiating: '협상 중',
+};
+
+const candidateTypeLabels: Record<RTCIceCandidateType, string> = {
+  host: '직접 경로',
+  srflx: '공인 주소 경로',
+  prflx: '피어 반사 경로',
+  relay: 'TURN 중계',
+};
+
+function diagnosticValue(value: number | null, unit: string) {
+  return value === null ? '측정 전' : `${value}${unit}`;
+}
+
+function candidateTypeLabel(type: RTCIceCandidateType | null) {
+  return type === null ? '확인 전' : candidateTypeLabels[type];
+}
+
+function ConnectionDiagnosticItem({
+  diagnostic,
+}: {
+  readonly diagnostic: PeerConnectionDiagnostics;
+}) {
+  return (
+    <article className="connection-diagnostics__item">
+      <strong>연결 {diagnostic.connectionNumber}</strong>
+      <dl>
+        <div>
+          <dt>상태</dt>
+          <dd>{connectionStateLabels[diagnostic.connectionState]}</dd>
+        </div>
+        <div>
+          <dt>경로</dt>
+          <dd>
+            {candidateTypeLabel(diagnostic.localCandidateType)} →{' '}
+            {candidateTypeLabel(diagnostic.remoteCandidateType)}
+          </dd>
+        </div>
+        <div>
+          <dt>왕복 지연</dt>
+          <dd>{diagnosticValue(diagnostic.roundTripTimeMs, 'ms')}</dd>
+        </div>
+        <div>
+          <dt>패킷 손실</dt>
+          <dd>{diagnosticValue(diagnostic.packetLossPercent, '%')}</dd>
+        </div>
+        <div>
+          <dt>최대 jitter</dt>
+          <dd>{diagnosticValue(diagnostic.jitterMs, 'ms')}</dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
 export function RoomView({
   roomId,
   status,
@@ -188,6 +262,7 @@ export function RoomView({
   onDisableParticipantAudio,
   onDisableParticipantVideo,
   onSendMessage,
+  onCollectConnectionDiagnostics,
   onSelectDevices,
   onReconnect,
   onLeave,
@@ -197,6 +272,12 @@ export function RoomView({
   const [inviteCopyState, setInviteCopyState] = useState<InviteCopyState>({ status: 'idle' });
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [unseenDeliveryIssueCount, setUnseenDeliveryIssueCount] = useState(0);
+  const [connectionDiagnostics, setConnectionDiagnostics] = useState<ConnectionDiagnosticsState>({
+    status: 'idle',
+  });
+  const [diagnosticsCopyState, setDiagnosticsCopyState] = useState<'idle' | 'success' | 'error'>(
+    'idle',
+  );
   const previousLastMessage = useRef<ChatMessageIdentity | null>(
     chatMessageIdentity(messages.at(-1)),
   );
@@ -290,6 +371,37 @@ export function RoomView({
     setChatOpen(false);
   };
 
+  const collectConnectionDiagnostics = async () => {
+    setConnectionDiagnostics({ status: 'loading' });
+    setDiagnosticsCopyState('idle');
+    try {
+      setConnectionDiagnostics({
+        status: 'ready',
+        value: await onCollectConnectionDiagnostics(),
+      });
+    } catch {
+      setConnectionDiagnostics({ status: 'error' });
+    }
+  };
+
+  const handleDiagnosticsToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
+    if (event.currentTarget.open && connectionDiagnostics.status === 'idle') {
+      void collectConnectionDiagnostics();
+    }
+  };
+
+  const copyConnectionDiagnostics = async () => {
+    if (connectionDiagnostics.status !== 'ready') {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(connectionDiagnostics.value, null, 2));
+      setDiagnosticsCopyState('success');
+    } catch {
+      setDiagnosticsCopyState('error');
+    }
+  };
+
   const isActive = status === 'active';
   const terminalConnectionError = !isActive && Boolean(errorMessage);
   const partialPeerFailure = isActive && Boolean(peerRecoveryMessage);
@@ -300,6 +412,8 @@ export function RoomView({
     : `채팅 열기${unreadMessageCount > 0 ? `, 새 메시지 ${unreadMessageCount}개` : ''}${
         unseenDeliveryIssueCount > 0 ? `, 보낸 메시지 전송 문제 ${unseenDeliveryIssueCount}건` : ''
       }`;
+  const readyConnectionDiagnostics =
+    connectionDiagnostics.status === 'ready' ? connectionDiagnostics.value : null;
 
   return (
     <div className={`room-shell${chatOpen ? ' room-shell--chat-open' : ''}`}>
@@ -330,6 +444,56 @@ export function RoomView({
             <UsersIcon />
             {participants.length}
           </span>
+          <details className="connection-diagnostics" onToggle={handleDiagnosticsToggle}>
+            <summary>진단</summary>
+            <section className="connection-diagnostics__panel" aria-label="연결 진단">
+              <header>
+                <div>
+                  <span>CONNECTION</span>
+                  <strong>연결 진단</strong>
+                </div>
+                <button type="button" onClick={() => void collectConnectionDiagnostics()}>
+                  새로고침
+                </button>
+              </header>
+              <p className="connection-diagnostics__privacy">
+                현재 연결에서 한 번만 수집하며 IP 주소, 방 코드, 참가자 식별자는 포함하지 않습니다.
+              </p>
+              {connectionDiagnostics.status === 'error' ? (
+                <p role="alert">연결 진단을 수집하지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
+              ) : connectionDiagnostics.status === 'idle' ? (
+                <p>연결 진단을 열면 현재 상태를 한 번 수집합니다.</p>
+              ) : readyConnectionDiagnostics === null ? (
+                <p role="status">연결 상태를 확인하고 있습니다.</p>
+              ) : (
+                <>
+                  {readyConnectionDiagnostics.connections.length === 0 ? (
+                    <p>진단할 원격 연결이 없습니다.</p>
+                  ) : (
+                    <div className="connection-diagnostics__list">
+                      {readyConnectionDiagnostics.connections.map((diagnostic) => (
+                        <ConnectionDiagnosticItem
+                          key={diagnostic.connectionNumber}
+                          diagnostic={diagnostic}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    className="connection-diagnostics__copy"
+                    type="button"
+                    onClick={() => void copyConnectionDiagnostics()}
+                  >
+                    {diagnosticsCopyState === 'success' ? '진단 정보 복사됨' : '진단 정보 복사'}
+                  </button>
+                  {diagnosticsCopyState === 'error' ? (
+                    <p role="alert">클립보드에 복사하지 못했습니다.</p>
+                  ) : null}
+                  <pre tabIndex={0}>{JSON.stringify(readyConnectionDiagnostics, null, 2)}</pre>
+                </>
+              )}
+            </section>
+          </details>
         </div>
       </header>
 
