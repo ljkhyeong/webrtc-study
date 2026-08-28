@@ -4,6 +4,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,6 +18,8 @@ import org.springframework.stereotype.Component;
 public final class ClientAddressKeyResolver {
 
 	static final String UNKNOWN_CLIENT = "<unknown>";
+	private static final Pattern IPV6_LITERAL_CHARACTERS =
+			Pattern.compile("[0-9A-Fa-f:.]+");
 
 	public String resolve(InetSocketAddress remoteAddress) {
 		if (remoteAddress == null) {
@@ -49,7 +52,8 @@ public final class ClientAddressKeyResolver {
 		if (ipv4 != null) {
 			return key(ipv4);
 		}
-		if (!candidate.contains(":") || !candidate.matches("[0-9A-Fa-f:.]+")) {
+		if (!candidate.contains(":")
+				|| !IPV6_LITERAL_CHARACTERS.matcher(candidate).matches()) {
 			return UNKNOWN_CLIENT;
 		}
 		try {
