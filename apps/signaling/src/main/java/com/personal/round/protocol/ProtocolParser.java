@@ -110,8 +110,9 @@ public class ProtocolParser {
 		ObjectNode description = object(payload.get("description"), "$.payload.description");
 		exactKeys(description, Set.of("type", "sdp"), "$.payload.description");
 		textLiteral(description.get("type"), expectedType, "$.payload.description.type");
-		if (description.has("sdp")) {
-			boundedUtf8String(description.get("sdp"), MAX_SDP_BYTES, "$.payload.description.sdp");
+		JsonNode sdp = description.get("sdp");
+		if (sdp != null) {
+			boundedUtf8String(sdp, MAX_SDP_BYTES, "$.payload.description.sdp");
 		}
 		return new ClientMessage.Relay(
 				"rtc." + expectedType,
@@ -201,10 +202,11 @@ public class ProtocolParser {
 			String key,
 			int maximumLength,
 			String path) {
-		if (!parent.has(key)) {
+		JsonNode input = parent.get(key);
+		if (input == null) {
 			return null;
 		}
-		return nonBlankString(parent.get(key), maximumLength, path);
+		return nonBlankString(input, maximumLength, path);
 	}
 
 	private static String nonBlankString(JsonNode input, int maximumLength, String path) {
@@ -291,10 +293,11 @@ public class ProtocolParser {
 			String key,
 			int maximumLength,
 			String path) {
-		if (!parent.has(key) || parent.get(key).isNull()) {
+		JsonNode input = parent.get(key);
+		if (input == null || input.isNull()) {
 			return;
 		}
-		boundedString(parent.get(key), maximumLength, path);
+		boundedString(input, maximumLength, path);
 	}
 
 	private static void nullableOptionalInteger(
@@ -303,10 +306,10 @@ public class ProtocolParser {
 			int minimum,
 			int maximum,
 			String path) {
-		if (!parent.has(key) || parent.get(key).isNull()) {
+		JsonNode input = parent.get(key);
+		if (input == null || input.isNull()) {
 			return;
 		}
-		JsonNode input = parent.get(key);
 		if (!input.canConvertToInt()) {
 			throw fail(path, "must be null or an integer between " + minimum + " and " + maximum);
 		}
