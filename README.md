@@ -64,9 +64,24 @@ npm run test:e2e
 명시적 장치 동의 경계, 미디어 없이 입장한 두 참가자의 DataChannel 채팅과 퇴장을 확인하며
 카메라·마이크를 자동 허용하지 않습니다. Chromium과 WebKit의 mobile layout 프로젝트는
 대표 모바일 viewport에서 채팅 작성 영역과 통화 제어가 겹치거나 가로로 넘치지 않는지
-검사합니다. BATON 참여권, 실제 TURN relay, 실장치의 화면 선택 UI, iPhone/iPad의 실제
-Safari 검증은 이 테스트 범위에 포함되지 않으며 파일럿 체크리스트를 별도로 통과해야 합니다.
-실패 진단 자료는 `output/playwright/`에 저장됩니다.
+검사합니다. BATON 참여권, 실제 TURN relay와 실장치의 화면 선택 UI는 이 테스트 범위에 포함되지
+않으며 파일럿 체크리스트를 별도로 통과해야 합니다. 실패 진단 자료는 `output/playwright/`에
+저장됩니다.
+
+실제 iOS Safari의 기본 화면과 미디어 없이 입장하는 흐름은 BrowserStack Automate에서 선택적으로
+검사합니다. 저장소 Actions secret에 `BROWSERSTACK_USERNAME`과 `BROWSERSTACK_ACCESS_KEY`를
+등록한 뒤 **실제 iOS Safari 검사** workflow를 수동 실행합니다. 일반 push나 PR에서는 실행하지
+않으므로 실장치 사용 시간을 소모하지 않습니다. 로컬에서도 같은 secret과 실행 식별자를 환경
+변수로 전달해 실행할 수 있습니다.
+
+```bash
+GITHUB_RUN_ID=local GITHUB_RUN_ATTEMPT=1 npm run test:e2e:ios-safari
+```
+
+이 자동 검사는 iPhone 14와 iOS 18 조합의 화면 넘침, 입장, 진단 패널과 채팅 제어만 확인합니다.
+실제 카메라·마이크, TURN relay, 2~6명 통화, 백그라운드 복귀는 BrowserStack 결과로 대체하지 않고
+파일럿 체크리스트에서 별도로 확인합니다. 장치 조합이 BrowserStack에서 폐기되면 공식 지원 목록을
+확인한 뒤 `browserstack.yml`을 변경합니다.
 
 ## 환경 변수
 
