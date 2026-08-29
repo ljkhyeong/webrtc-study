@@ -33,6 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.SmartLifecycle;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.crypto.keygen.BytesKeyGenerator;
 import org.springframework.security.crypto.keygen.KeyGenerators;
 import org.springframework.stereotype.Service;
@@ -104,7 +105,6 @@ public class SignalingService implements SmartLifecycle {
 	private final UsageWindow globalInboundWindow = new UsageWindow();
 	private long globalOutboundBytes;
 	private long nextConnectionSequence;
-	private volatile boolean acceptingConnections;
 	private volatile boolean running;
 
 	public SignalingService(
@@ -172,7 +172,7 @@ public class SignalingService implements SmartLifecycle {
 					workPlan.close(session, PARTICIPATION_GRANT_EXPIRED);
 					accepted = false;
 				}
-				else if (!acceptingConnections) {
+				else if (!running) {
 					workPlan.close(session, SERVER_SHUTDOWN);
 					accepted = false;
 				}
@@ -218,7 +218,7 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	public boolean isAcceptingConnections() {
-		return acceptingConnections;
+		return running;
 	}
 
 	public boolean acceptInboundFrame(WebSocketSession session, int payloadBytes) {
@@ -371,6 +371,7 @@ public class SignalingService implements SmartLifecycle {
 		execute(workPlan);
 	}
 
+	@Scheduled(fixedDelayString = "${round.signaling.heartbeat-interval}")
 	public void heartbeatSweep() {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
@@ -427,6 +428,7 @@ public class SignalingService implements SmartLifecycle {
 		disconnectAndCloseLocked(peer, HEARTBEAT_TIMEOUT, workPlan);
 	}
 
+	@Scheduled(fixedDelayString = "${round.signaling.unjoined-sweep-interval}")
 	public void expireUnjoinedSessions() {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
@@ -1209,7 +1211,6 @@ public class SignalingService implements SmartLifecycle {
 					return;
 				}
 				running = true;
-				acceptingConnections = true;
 			}
 		}
 	}
@@ -1222,14 +1223,12 @@ public class SignalingService implements SmartLifecycle {
 			List<WebSocketSession> sessions;
 			synchronized (monitor) {
 				if (!running
-						&& !acceptingConnections
 						&& connectedPeers.isEmpty()
 						&& pendingTerminalCleanup.isEmpty()
 						&& inboundClients.isEmpty()
 						&& rooms.isEmpty()) {
 					return;
 				}
-				acceptingConnections = false;
 				running = false;
 				sessions = connectedPeers.values().stream()
 						.map(peer -> peer.session)
