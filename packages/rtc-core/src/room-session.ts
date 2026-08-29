@@ -1,7 +1,7 @@
 import {
   PROTOCOL_VERSION,
   parsePeerDataMessage,
-  parseServerMessage,
+  parseServerMessageText,
   serializeClientMessage,
   serializePeerDataMessage,
   utf8ByteLength,
@@ -520,6 +520,7 @@ function iceUsernameFragmentsFromSdp(sdp: string | undefined): Set<string> {
 export class RoomSession {
   readonly #options: RoomSessionOptions;
   readonly #recoveryOptions: ResolvedRecoveryOptions;
+  readonly #serializedJoinMessage: string;
   readonly #listeners = new Set<RoomSessionListener>();
   readonly #participants = new Map<string, MutableParticipant>();
   readonly #peers = new Map<string, PeerContext>();
@@ -576,12 +577,6 @@ export class RoomSession {
     const roomId = options.roomId.trim();
     const displayName = options.displayName.trim();
 
-    if (roomId.length === 0) {
-      throw new Error('roomId must not be empty');
-    }
-    if (displayName.length === 0) {
-      throw new Error('displayName must not be empty');
-    }
     if (options.signalingUrl.trim().length === 0) {
       throw new Error('signalingUrl must not be empty');
     }
@@ -594,6 +589,15 @@ export class RoomSession {
 
     this.#options = { ...options, roomId, displayName };
     this.#recoveryOptions = resolveRecoveryOptions(options.recovery);
+    this.#serializedJoinMessage = serializeClientMessage({
+      v: PROTOCOL_VERSION,
+      type: 'room.join',
+      roomId,
+      payload: {
+        displayName,
+        ...(options.hostCapability === undefined ? {} : { hostCapability: options.hostCapability }),
+      },
+    });
     this.#rtcConfiguration = snapshotRtcConfiguration(options.rtcConfiguration);
     if (options.preparedMediaStream !== undefined) {
       this.#localStream = options.preparedMediaStream;
@@ -1442,17 +1446,7 @@ export class RoomSession {
       }, this.#recoveryOptions.roomJoinTimeoutMs);
 
       try {
-        this.#send({
-          v: PROTOCOL_VERSION,
-          type: 'room.join',
-          roomId: this.#options.roomId,
-          payload: {
-            displayName: this.#options.displayName,
-            ...(this.#options.hostCapability === undefined
-              ? {}
-              : { hostCapability: this.#options.hostCapability }),
-          },
-        });
+        this.#requireOpenSocket().send(this.#serializedJoinMessage);
       } catch (error) {
         settleError(error);
       }
@@ -1748,17 +1742,9 @@ export class RoomSession {
       return;
     }
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(event.data);
-    } catch {
-      this.#setWarning('invalid-signal-message', 'Ignored malformed signaling JSON');
-      return;
-    }
-
     let message: ServerMessage;
     try {
-      message = parseServerMessage(parsed);
+      message = parseServerMessageText(event.data);
     } catch (error) {
       this.#setWarning('invalid-signal-message', getErrorMessage(error));
       return;

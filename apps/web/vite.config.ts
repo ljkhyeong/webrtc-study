@@ -26,6 +26,7 @@ export function createViteConfig({ mode }: ConfigEnv): UserConfig {
     envDir: repositoryRoot,
     resolve: {
       alias: {
+        '@round/protocol': path.resolve(currentDirectory, '../../packages/protocol/src/index.ts'),
         '@round/rtc-core': path.resolve(currentDirectory, '../../packages/rtc-core/src/index.ts'),
       },
     },

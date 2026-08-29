@@ -85,6 +85,25 @@ export function parseClientMessage(input: unknown): ClientMessage {
 export function parseServerMessage(input: unknown): ServerMessage {
   const message = record(input, '$');
   serializeFrame(message);
+  return validateServerMessage(message);
+}
+
+export function parseServerMessageText(raw: string): ServerMessage {
+  if (raw.length > MAX_SIGNALING_FRAME_BYTES || utf8ByteLength(raw) > MAX_SIGNALING_FRAME_BYTES) {
+    fail('$', `message must contain at most ${MAX_SIGNALING_FRAME_BYTES} UTF-8 bytes`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    fail('$', 'must be valid JSON');
+  }
+
+  return validateServerMessage(record(parsed, '$'));
+}
+
+function validateServerMessage(message: UnknownRecord): ServerMessage {
   literal(message.v, PROTOCOL_VERSION, '$.v');
 
   switch (message.type) {

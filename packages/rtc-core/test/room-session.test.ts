@@ -788,20 +788,20 @@ describe('RoomSession', () => {
     expect(harness.session.getLocalStream()).toBeNull();
   });
 
-  it('validates an outbound signaling message before writing to the socket', async () => {
-    const harness = createHarness({
-      displayName: 'J'.repeat(65),
-    });
-    const joining = expect(harness.session.join()).rejects.toThrow(
-      'must contain at most 64 characters',
-    );
+  it('validates room entry before requesting media or opening a socket', () => {
+    const getUserMedia = vi.fn();
+    const onSocketCreated = vi.fn();
 
-    await flushMicrotasks();
-    harness.socket.open();
-    await joining;
+    expect(() =>
+      createHarness({
+        displayName: 'J'.repeat(65),
+        getUserMedia,
+        onSocketCreated,
+      }),
+    ).toThrow('must contain at most 64 characters');
 
-    expect(harness.socket.sent).toEqual([]);
-    expect(harness.session.getSnapshot().status).toBe('error');
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(onSocketCreated).not.toHaveBeenCalled();
   });
 
   it('adopts prepared pre-join media without requesting it again and stops it on leave', async () => {

@@ -8,6 +8,7 @@
     "noEmit": true,
     "types": ["vite/client"],
     "paths": {
+      "@round/protocol": ["../../packages/protocol/src/index.ts"],
       "@round/rtc-core": ["../../packages/rtc-core/src/index.ts"]
     }
   },

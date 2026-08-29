@@ -9,6 +9,7 @@ import {
   ProtocolValidationError,
   parseClientMessage,
   parseServerMessage,
+  parseServerMessageText,
   serializeClientMessage,
   utf8ByteLength,
 } from '../src/index.js';
@@ -724,5 +725,17 @@ describe('server message validation', () => {
     expect(() => parseServerMessage(message)).toThrow(
       `serialized message must contain at most ${MAX_SIGNALING_FRAME_BYTES} UTF-8 bytes`,
     );
+  });
+
+  it('rejects an oversized raw server frame before parsing JSON', () => {
+    const raw = `${' '.repeat(MAX_SIGNALING_FRAME_BYTES)}{}`;
+
+    expect(() => parseServerMessageText(raw)).toThrow(
+      `message must contain at most ${MAX_SIGNALING_FRAME_BYTES} UTF-8 bytes`,
+    );
+  });
+
+  it('rejects malformed server JSON', () => {
+    expect(() => parseServerMessageText('{')).toThrow('must be valid JSON');
   });
 });
