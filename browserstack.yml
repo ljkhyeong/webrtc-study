@@ -1,0 +1,21 @@
+userName: ${BROWSERSTACK_USERNAME}
+accessKey: ${BROWSERSTACK_ACCESS_KEY}
+projectName: ROUND
+buildName: round-ios-safari
+buildIdentifier: ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+
+platforms:
+  - browserName: safari
+    osVersion: 18
+    deviceName: iPhone 14
+    playwrightConfigOptions:
+      name: ios-safari
+      testMatch: '**/mobile-layout.spec.ts'
+
+parallelsPerPlatform: 1
+browserstackLocal: true
+browserStackLocalOptions:
+  forceLocal: true
+debug: true
+networkLogs: true
+testReporting: true

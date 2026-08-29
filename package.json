@@ -24,6 +24,7 @@
     "test:e2e": "playwright test",
     "test:e2e:baton": "playwright test --config playwright.baton.config.ts",
     "test:e2e:baton-edge": "bash ops/ci/run-baton-edge-e2e.sh",
+    "test:e2e:ios-safari": "npx --yes browserstack-node-sdk@1.68.0 playwright test --config playwright.browserstack.config.ts",
     "check": "npm run format:check && npm run typecheck && npm run test && npm run build",
     "format": "prettier --write --ignore-unknown .",
     "format:check": "prettier --check --ignore-unknown ."
