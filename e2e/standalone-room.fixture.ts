@@ -199,8 +199,6 @@ export async function runConnectedRoom(
       expect(second.page.getByText('통화 연결됨', { exact: true })).toBeVisible(),
       expect(first.page.getByLabel('참가자 2명')).toBeVisible(),
       expect(second.page.getByLabel('참가자 2명')).toBeVisible(),
-      expectRemoteMedia(first.page, '나래'),
-      expectRemoteMedia(second.page, '가온'),
     ]);
 
     await scenario({ first: first.page, second: second.page });

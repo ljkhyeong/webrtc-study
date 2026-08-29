@@ -8,6 +8,7 @@ import {
 
 test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) => {
   await runConnectedRoom(browser, baseURL, async ({ first, second }) => {
+    await expectRemoteMedia(second, '가온');
     const firstTileOnSecondPage = participantTile(second, '가온');
 
     await first.getByRole('button', { name: '화면 공유 시작' }).click();
