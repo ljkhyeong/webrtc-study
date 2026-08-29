@@ -163,24 +163,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          assert_tag_absent() {
-            local reference="$1"
-            local inspect_output
-
-            if inspect_output="$(docker buildx imagetools inspect "$reference" 2>&1)"; then
-              printf '기존 이미지 태그를 덮어쓰지 않습니다: %s\n' "$reference" >&2
-              return 1
-            fi
-            if grep -Eqi '(manifest unknown|name unknown|(^|: )not found([[:space:]]|$))' <<< "$inspect_output"; then
-              printf '미사용 이미지 태그를 확인했습니다: %s\n' "$reference"
-              return 0
-            fi
-
-            printf '이미지 태그가 미사용 상태임을 증명하지 못했습니다: %s\n%s\n' \
-              "$reference" "$inspect_output" >&2
-            return 1
-          }
-
           references=(
             "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}"
             "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}"
@@ -191,9 +173,7 @@ jobs:
             "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}"
             "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}"
           )
-          for reference in "${references[@]}"; do
-            assert_tag_absent "$reference"
-          done
+          bash ops/ci/assert-image-tags-absent.sh "${references[@]}"
 
   build-edge:
     name: 웹 edge 이미지 digest build
@@ -452,23 +432,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          assert_tag_absent() {
-            local reference="$1"
-            local inspect_output
-
-            if inspect_output="$(docker buildx imagetools inspect "$reference" 2>&1)"; then
-              printf '기존 이미지 태그를 덮어쓰지 않습니다: %s\n' "$reference" >&2
-              return 1
-            fi
-            if grep -Eqi '(manifest unknown|name unknown|(^|: )not found([[:space:]]|$))' <<< "$inspect_output"; then
-              return 0
-            fi
-
-            printf '이미지 태그가 미사용 상태임을 증명하지 못했습니다: %s\n%s\n' \
-              "$reference" "$inspect_output" >&2
-            return 1
-          }
-
           references=(
             "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}"
             "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}"
@@ -479,9 +442,7 @@ jobs:
             "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}"
             "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}"
           )
-          for reference in "${references[@]}"; do
-            assert_tag_absent "$reference"
-          done
+          bash ops/ci/assert-image-tags-absent.sh "${references[@]}"
 
           digest_sources=(
             "${IMAGE_NAMESPACE}/round-edge@${EDGE_DIGEST}"

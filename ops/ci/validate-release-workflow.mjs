@@ -54,6 +54,11 @@ assert.deepEqual(
 );
 
 const serializedWorkflow = JSON.stringify(workflow);
+assert.equal(
+  (serializedWorkflow.match(/bash ops\/ci\/assert-image-tags-absent\.sh/g) ?? []).length,
+  2,
+  '최종 태그 미사용 검사는 공통 스크립트를 두 단계에서 실행해야 합니다.',
+);
 if (serializedWorkflow.includes('github.ref_name')) {
   fail('repository_dispatch가 제공하지 않는 github.ref_name을 사용하면 안 됩니다.');
 }
