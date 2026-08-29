@@ -1,0 +1,60 @@
+groups:
+  - name: round-availability
+    interval: 30s
+    rules:
+      - alert: RoundSignalingUnavailable
+        expr: up{job="round-signaling", environment="production"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: ROUND signaling 지표 수집 중단
+          description: signaling 또는 Alloy에서 2분 동안 지표를 수집하지 못했습니다.
+
+      - alert: RoundTurnCredentialProviderError
+        expr: increase(round_turn_credentials_provider_errors_total{job="round-signaling"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Cloudflare TURN 자격 증명 발급 실패
+          description: 최근 5분 동안 Cloudflare TURN 공급자 오류가 발생했습니다.
+
+      - alert: RoundBatonJwkSourceUnhealthy
+        expr: round_auth_jwk_source_healthy{job="round-signaling"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: BATON JWK 원본 사용 불가
+          description: signaling이 정상 JWK 원본을 사용하지 못하고 있습니다.
+
+  - name: round-capacity
+    interval: 30s
+    rules:
+      - alert: RoundSignalingOverloaded
+        expr: sum(increase(round_signaling_frames_overloaded_total{job="round-signaling"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: signaling 전체 프레임 처리 한도 도달
+          description: 최근 5분 동안 서버 전체 프레임 한도로 메시지가 버려졌습니다.
+
+      - alert: RoundSignalingQueueOverflow
+        expr: sum(increase(round_signaling_outbound_queue_overflows_total{job="round-signaling"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: signaling 송신 대기열 초과
+          description: 최근 5분 동안 송신 대기열 한도로 연결이 종료되었습니다.
+
+      - alert: RoundSignalingCapacityReached
+        expr: sum(increase(round_signaling_connections_rejected_total{job="round-signaling", reason="server_capacity"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: signaling 연결 수용 한도 도달
+          description: 최근 5분 동안 서버 연결 한도로 새 WebSocket 연결을 거부했습니다.

@@ -192,6 +192,10 @@ standalone** 또는 **macOS pilot**이라고 명시한 항목은 해당 토폴�
       실행이 성공했습니다.
 - [ ] Cloudflare R2 snapshot을 host 밖의 임시 디렉터리로 복원해 checksum과 Caddy archive 입력
       검사를 통과했습니다. repository password와 R2 key는 백업 대상에 포함되지 않습니다.
+- [ ] `observability` profile의 Alloy가 signaling의 비공개 Prometheus endpoint를 수집하고 Grafana
+      Explore에서 `up{job="round-signaling", environment="production"} == 1`을 확인했습니다.
+- [ ] `ops/observability/round-alerts.yml`을 가져오고 연락처를 연결했습니다. signaling 또는 Alloy가
+      멈춘 경우 No data 상태를 포함해 실제 테스트 알림이 도착합니다.
 - [ ] 방과 peer의 활성 수, 거부한 연결과 입장, 잘못되었거나 session/client/global 제한을 받은
       frame, queue overflow, heartbeat 종료를 방 ID, 이름, SDP, ICE candidate, chat text를 기록하지
       않고 관측할 수 있습니다.

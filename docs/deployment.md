@@ -87,9 +87,10 @@ ops/linux/preflight.sh /etc/round/production.env
 ops/linux/deploy.sh /etc/round/production.env
 ```
 
-배포는 `edge`, `signaling` 이미지만 pull하고 health check가 통과한 뒤 현재 release 상태를
-`/var/lib/round/releases/current.env`에 기록합니다. 중단된 배포 marker가 있으면 새 배포를
-시도하기 전에 rollback으로 복구합니다.
+배포는 `edge`, `signaling` 이미지를 pull하고 health check가 통과한 뒤 현재 release 상태를
+`/var/lib/round/releases/current.env`에 기록합니다. `observability` profile을 사용하면 고정된
+Alloy 이미지도 함께 pull합니다. 중단된 배포 marker가 있으면 새 배포를 시도하기 전에
+rollback으로 복구합니다.
 
 ```bash
 ops/linux/rollback.sh \
@@ -98,6 +99,42 @@ ops/linux/rollback.sh \
 ```
 
 롤백하면 활성 WebSocket이 닫힐 수 있으므로 사용자가 다시 입장할 수 있는 시간에 수행합니다.
+
+## Grafana Cloud 지표와 경보
+
+Grafana Alloy는 signaling의 비공개 `/actuator/prometheus`를 30초마다 수집하고 Grafana Cloud
+Metrics로 `remote_write`합니다. Alloy 관리 UI나 signaling actuator port는 host에 공개하지
+않습니다. Alloy의 WAL은 `alloy_data` volume에 저장해 일시적인 전송 장애 뒤 다시 보냅니다.
+
+Grafana Cloud에서 stack의 Prometheus remote write URL과 사용자 ID를 확인하고, 해당 stack에
+`metrics:write`만 허용한 access policy token을 만듭니다. `/etc/round/production.env`에 다음 값을
+넣고 profile을 활성화합니다.
+
+```dotenv
+COMPOSE_PROFILES=observability
+GRAFANA_CLOUD_PROMETHEUS_URL=https://<Grafana Cloud Metrics 주소>/api/prom/push
+GRAFANA_CLOUD_PROMETHEUS_USER=<Metrics instance 사용자 ID>
+GRAFANA_CLOUD_API_TOKEN=<metrics:write token>
+```
+
+preflight와 정식 배포를 실행한 뒤 Grafana Explore에서 다음 식이 `1`인지 확인합니다.
+
+```promql
+up{job="round-signaling", environment="production"}
+```
+
+Grafana Alerting의 rule 가져오기에서
+`ops/observability/round-alerts.yml`을 Prometheus 규칙으로 가져오고 Grafana Cloud Metrics data
+source를 선택합니다. `RoundSignalingUnavailable`은 Alloy 자체가 멈춰 시계열이 사라지는 경우도
+감지해야 하므로 No data 상태를 Alerting으로 설정합니다. 나머지 규칙은 다음 상황만 다룹니다.
+
+- Cloudflare TURN 공급자 오류
+- BATON JWK 원본 장애
+- 전체 프레임 한도, 송신 대기열, 연결 수용 한도 도달
+
+마지막으로 운영 연락처를 contact point에 연결하고 테스트 알림을 보냅니다. token, remote write
+사용자 ID와 URL은 로그나 저장소에 기록하지 않으며 token은 `metrics:write` 외 권한을 부여하지
+않습니다.
 
 ## 로컬과 macOS 파일럿
 

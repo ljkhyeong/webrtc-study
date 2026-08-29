@@ -113,6 +113,11 @@ Safari 검증은 이 테스트 범위에 포함되지 않으며 파일럿 체크
 | `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS`      | `24`                    | 구간당 서버 전체 최대 발급 수   |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`              | `10000`                 | rate-limit 상태 최대 IP 수      |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS`         | `10000`                 | BATON 참가자 상태 최대 수       |
+| `COMPOSE_PROFILES`                                    | `none`                  | `observability`이면 Alloy 실행  |
+| `GRAFANA_ALLOY_IMAGE`                                 | Alloy 1.18.1 digest     | 검토한 Alloy 불변 이미지        |
+| `GRAFANA_CLOUD_PROMETHEUS_URL`                        | 없음                    | Metrics remote write URL        |
+| `GRAFANA_CLOUD_PROMETHEUS_USER`                       | 없음                    | Metrics instance 사용자 ID      |
+| `GRAFANA_CLOUD_API_TOKEN`                             | 없음                    | `metrics:write` 전용 token      |
 
 프레임 수와 수신 바이트 제한은 세션, IP 합산, 서버 전체 순서로 함께 적용됩니다. 세션
 초과 연결은 닫고 IP 또는 서버 전체 제한을 넘은 프레임은 다른 클라이언트에 영향을 주지
