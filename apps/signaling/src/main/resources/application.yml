@@ -21,7 +21,7 @@ management:
       group:
         liveness:
           include: livenessState
-          additional-path: "server:/healthz"
+          additional-path: 'server:/healthz'
         readiness:
           include: readinessState,signaling
   endpoints:
