@@ -75,9 +75,14 @@ umask 077
 
 TURN_CLOUDFLARE_KEY_ID=ci-key
 TURN_CLOUDFLARE_API_TOKEN=ci-token
+GRAFANA_CLOUD_PROMETHEUS_URL=https://prometheus.example.invalid/api/prom/push
+GRAFANA_CLOUD_PROMETHEUS_USER=12345
+GRAFANA_CLOUD_API_TOKEN=ci-token
 ROUND_ACCESS_USER=round-ci
 ROUND_ACCESS_PASSWORD_HASH='$2a$12$RJKd/exBEqUGjd.mtH9URu8H/TGJgwahZV8tA.xhPCM/4rdHfpmYS'
 export TURN_CLOUDFLARE_KEY_ID TURN_CLOUDFLARE_API_TOKEN
+export GRAFANA_CLOUD_PROMETHEUS_URL GRAFANA_CLOUD_PROMETHEUS_USER
+export GRAFANA_CLOUD_API_TOKEN
 export ROUND_ACCESS_USER ROUND_ACCESS_PASSWORD_HASH
 
 printf 'Validating Compose interpolation with temporary dummy fixtures...\n'
@@ -88,6 +93,29 @@ jq -e '
   and (.networks.backend.internal == true)
   and ((.networks.egress.internal // false) == false)
 ' <<<"$production_config" >/dev/null
+observability_config=$(
+  COMPOSE_PROFILES=observability \
+    docker compose --env-file ops/production.env.example config --format json
+)
+jq -e '
+  ((.services | keys) == ["alloy", "edge", "signaling"])
+  and ((.services.alloy.networks | keys | sort) == ["backend", "egress"])
+  and ((.services.alloy.ports // []) == [])
+  and (.services.alloy.image
+    == "grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33")
+  and (.configs.alloy_config.content | contains("/actuator/prometheus"))
+  and (.configs.alloy_config.content | contains("prometheus.remote_write"))
+' <<<"$observability_config" >/dev/null
+alloy_config_file="$fixture_dir/config.alloy"
+jq -er '.configs.alloy_config.content' <<<"$observability_config" >"$alloy_config_file"
+printf 'Validating the Grafana Alloy configuration...\n'
+docker run --rm \
+  -e GRAFANA_CLOUD_PROMETHEUS_URL \
+  -e GRAFANA_CLOUD_PROMETHEUS_USER \
+  -e GRAFANA_CLOUD_API_TOKEN \
+  -v "$alloy_config_file:/etc/alloy/config.alloy:ro" \
+  "$(jq -er '.services.alloy.image' <<<"$observability_config")" \
+  validate /etc/alloy/config.alloy
 
 printf 'Validating the macOS pilot Compose override...\n'
 macos_pilot_config=$(

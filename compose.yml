@@ -121,6 +121,42 @@ services:
       retries: 5
     logging: *default-logging
 
+  alloy:
+    profiles:
+      - observability
+    image: ${GRAFANA_ALLOY_IMAGE:-grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33}
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=127.0.0.1:12345
+    environment:
+      GRAFANA_CLOUD_PROMETHEUS_URL: ${GRAFANA_CLOUD_PROMETHEUS_URL:-}
+      GRAFANA_CLOUD_PROMETHEUS_USER: ${GRAFANA_CLOUD_PROMETHEUS_USER:-}
+      GRAFANA_CLOUD_API_TOKEN: ${GRAFANA_CLOUD_API_TOKEN:-}
+    configs:
+      - source: alloy_config
+        target: /etc/alloy/config.alloy
+    volumes:
+      - alloy_data:/var/lib/alloy/data
+    networks:
+      - backend
+      - egress
+    depends_on:
+      signaling:
+        condition: service_healthy
+    cpus: '0.5'
+    mem_limit: 256m
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    logging: *default-logging
+
 networks:
   edge:
   backend:
@@ -130,3 +166,36 @@ networks:
 volumes:
   caddy_data:
   caddy_config:
+  alloy_data:
+
+configs:
+  alloy_config:
+    content: |
+      logging {
+        level  = "info"
+        format = "logfmt"
+      }
+
+      prometheus.scrape "round_signaling" {
+        targets = [{
+          __address__      = "signaling:8787",
+          __metrics_path__ = "/actuator/prometheus",
+          application      = "round-signaling",
+          environment      = "production",
+          job              = "round-signaling",
+        }]
+        forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+        scrape_interval = "30s"
+        scrape_timeout  = "10s"
+      }
+
+      prometheus.remote_write "grafana_cloud" {
+        endpoint {
+          url = sys.env("GRAFANA_CLOUD_PROMETHEUS_URL")
+
+          basic_auth {
+            username = sys.env("GRAFANA_CLOUD_PROMETHEUS_USER")
+            password = sys.env("GRAFANA_CLOUD_API_TOKEN")
+          }
+        }
+      }

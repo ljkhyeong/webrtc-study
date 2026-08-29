@@ -30,10 +30,16 @@ write_env() {
   local ice_transport_policy=${4:-all}
   local image_namespace=${5:-ghcr.io/ljkhyeong}
   local turn_provider=${6:-cloudflare}
+  local compose_profiles=${7:-none}
   cat >"$destination" <<EOF
 COMPOSE_PROJECT_NAME=round-linux-test
+COMPOSE_PROFILES=$compose_profiles
 ROUND_EDGE_IMAGE=$image_namespace/round-edge@sha256:$edge_digest
 ROUND_SIGNALING_IMAGE=$image_namespace/round-signaling@sha256:$signaling_digest
+GRAFANA_ALLOY_IMAGE=grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33
+GRAFANA_CLOUD_PROMETHEUS_URL=https://prometheus.example.invalid/api/prom/push
+GRAFANA_CLOUD_PROMETHEUS_USER=12345
+GRAFANA_CLOUD_API_TOKEN=test-token
 ROUND_DOMAIN=round.round.invalid
 ALLOWED_ORIGINS=https://round.round.invalid
 VITE_ICE_TRANSPORT_POLICY=$ice_transport_policy
@@ -315,6 +321,7 @@ case "$command_line" in
       done
     fi
     ;;
+  *' pull alloy '*) log_compose "$@" ;;
   *' up -d --wait --no-build --remove-orphans '*)
     log_compose "$@"
     if [[ -e "$fake_root/fail-up" ]]; then
@@ -510,6 +517,21 @@ grep -Eq -- '--env-file .*/\.deploy-snapshot\.[^/]+/runtime\.env' "$fixture_dir/
 if find "$fixture_dir" -type d -name '.deploy-snapshot.*' -print -quit | grep -q .; then
   fail 'successful deployment left a transaction snapshot behind'
 fi
+if grep -Fq 'pull alloy' "$fixture_dir/docker.log"; then
+  fail 'disabled observability profile pulled Alloy'
+fi
+
+observability_env="$fixture_dir/production-observability.env"
+write_env \
+  "$observability_env" "$digest_a" "$digest_b" all ghcr.io/ljkhyeong cloudflare observability
+observability_state_dir="$fixture_dir/observability-releases"
+mkdir "$observability_state_dir"
+chmod 0700 "$observability_state_dir"
+: >"$fixture_dir/docker.log"
+PATH="$fake_bin:$PATH" \
+  ops/linux/deploy.sh --state-dir "$observability_state_dir" "$observability_env" >/dev/null
+grep -Fq 'pull alloy' "$fixture_dir/docker.log" ||
+  fail 'enabled observability profile did not pull Alloy'
 
 printf 'ghcr.io/ljkhyeong/round-edge@sha256:%s\n' "$digest_a" \
   >"$fixture_dir/fail-provenance-reference"

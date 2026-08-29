@@ -117,6 +117,7 @@ ice_transport_policy=$(round_ops_read_env_value "$env_file" VITE_ICE_TRANSPORT_P
 turn_provider=$(round_ops_read_env_value "$env_file" TURN_PROVIDER)
 turn_key_id=$(round_ops_read_env_value "$env_file" TURN_CLOUDFLARE_KEY_ID)
 turn_api_token=$(round_ops_read_env_value "$env_file" TURN_CLOUDFLARE_API_TOKEN)
+compose_profiles=$(round_ops_read_env_value "$env_file" COMPOSE_PROFILES)
 access_password_hash=$(round_ops_read_env_value "$env_file" ROUND_ACCESS_PASSWORD_HASH)
 [[ "$allowed_origins" == "https://$round_domain" ]] ||
   round_ops_die "ALLOWED_ORIGINS must equal the exact ROUND_DOMAIN HTTPS origin"
@@ -130,6 +131,23 @@ access_password_hash=$(round_ops_read_env_value "$env_file" ROUND_ACCESS_PASSWOR
   round_ops_die "TURN_PROVIDER must be cloudflare in production"
 [[ -n "$turn_key_id" && -n "$turn_api_token" ]] ||
   round_ops_die "Cloudflare TURN key ID and API token must be configured"
+case "$compose_profiles" in
+  none) ;;
+  observability)
+    alloy_image=$(round_ops_read_env_value "$env_file" GRAFANA_ALLOY_IMAGE)
+    round_ops_validate_digest_ref GRAFANA_ALLOY_IMAGE "$alloy_image"
+    [[ "${alloy_image%@sha256:*}" == 'grafana/alloy:v1.18.1' ]] ||
+      round_ops_die "GRAFANA_ALLOY_IMAGE must use the reviewed grafana/alloy:v1.18.1 repository and tag"
+    grafana_prometheus_url=$(
+      round_ops_read_env_value "$env_file" GRAFANA_CLOUD_PROMETHEUS_URL
+    )
+    round_ops_read_env_value "$env_file" GRAFANA_CLOUD_PROMETHEUS_USER >/dev/null
+    round_ops_read_env_value "$env_file" GRAFANA_CLOUD_API_TOKEN >/dev/null
+    [[ "$grafana_prometheus_url" == https://* ]] ||
+      round_ops_die "GRAFANA_CLOUD_PROMETHEUS_URL must use HTTPS"
+    ;;
+  *) round_ops_die "COMPOSE_PROFILES must be none or observability" ;;
+esac
 [[ "$access_password_hash" =~ ^\'\$2[ab]\$12\$[./A-Za-z0-9]{53}\'$ ]] ||
   round_ops_die "ROUND_ACCESS_PASSWORD_HASH must be a single-quoted bcrypt cost-12 hash"
 
@@ -141,4 +159,4 @@ replicas=$(
 )
 [[ "$replicas" == '1' ]] || round_ops_die "signaling must remain a single replica"
 
-printf 'ROUND Linux preflight passed for immutable images, host clock, disk, Compose, and Cloudflare TURN.\n'
+printf 'ROUND Linux preflight passed for immutable images, host clock, disk, Compose, Cloudflare TURN, and optional Grafana Cloud.\n'
