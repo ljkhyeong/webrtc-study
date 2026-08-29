@@ -20,6 +20,7 @@ output
 **/.env.*
 ops/production.env
 ops/macos-pilot.env
+ops/restic-r2.env
 ops/macos-pilot.credentials
 ops/certs
 **/*.pem

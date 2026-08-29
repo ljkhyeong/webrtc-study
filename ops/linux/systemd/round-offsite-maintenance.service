@@ -1,0 +1,22 @@
+[Unit]
+Description=ROUND Cloudflare R2 백업 보존 정책과 무결성 검사
+After=network-online.target
+Wants=network-online.target
+OnFailure=round-ops-failure@%n.service
+ConditionPathIsExecutable=/usr/bin/restic
+AssertPathExists=/etc/round/restic-r2.env
+AssertPathExists=/etc/round/restic-password
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/round/restic-r2.env
+Environment=RESTIC_CACHE_DIR=/var/cache/round-restic
+CacheDirectory=round-restic
+CacheDirectoryMode=0700
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=2h
+ExecStart=/usr/bin/restic --retry-lock 5m forget --host round-production --tag round-caddy --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune
+ExecStart=/usr/bin/restic --retry-lock 5m check

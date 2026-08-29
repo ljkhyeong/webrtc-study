@@ -1,5 +1,6 @@
 production.env
 macos-pilot.env
+restic-r2.env
 macos-pilot.credentials
 certs/*
 !certs/.gitignore

@@ -869,4 +869,15 @@ if find "$fresh_restore_root" -maxdepth 1 -name '.restore-backup.*' -print -quit
   fail 'fresh-host restore left its encrypted backup snapshot behind'
 fi
 
+grep -Fq 'ExecStart=/usr/bin/restic --retry-lock 5m backup' \
+  ops/linux/systemd/round-offsite-backup.service
+grep -Fq -- '--keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune' \
+  ops/linux/systemd/round-offsite-maintenance.service
+grep -Fq 'ExecStart=/usr/bin/restic --retry-lock 5m check' \
+  ops/linux/systemd/round-offsite-maintenance.service
+grep -Fq 'Persistent=true' ops/linux/systemd/round-offsite-backup.timer
+grep -Fq 'Persistent=true' ops/linux/systemd/round-offsite-maintenance.timer
+grep -Fq 'd /var/backups/round 0700 root root 30d' \
+  ops/linux/tmpfiles.d/round-backups.conf
+
 printf 'ROUND Linux operations tests passed.\n'

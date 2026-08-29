@@ -53,6 +53,10 @@ grep -Fxq 'ops/macos-pilot.env' .dockerignore || {
   printf 'deployment validation: ops/macos-pilot.env must be listed in .dockerignore\n' >&2
   exit 1
 }
+grep -Fxq 'ops/restic-r2.env' .dockerignore || {
+  printf 'deployment validation: ops/restic-r2.env must be listed in .dockerignore\n' >&2
+  exit 1
+}
 grep -Fxq 'ops/macos-pilot.credentials' .dockerignore || {
   printf 'deployment validation: ops/macos-pilot.credentials must be listed in .dockerignore\n' >&2
   exit 1

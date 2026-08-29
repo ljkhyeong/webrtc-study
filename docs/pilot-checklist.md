@@ -188,6 +188,10 @@ standalone** 또는 **macOS pilot**이라고 명시한 항목은 해당 토폴�
       브라우저 재시도 동작을 확인합니다.
 - [ ] key 회전 후 새 credential 발급과 기존 통화 유지 여부를 확인하고 폐기한 API token이 더 이상
       사용되지 않습니다.
+- [ ] `round-offsite-backup.timer`와 `round-offsite-maintenance.timer`가 활성화되어 있고 최근
+      실행이 성공했습니다.
+- [ ] Cloudflare R2 snapshot을 host 밖의 임시 디렉터리로 복원해 checksum과 Caddy archive 입력
+      검사를 통과했습니다. repository password와 R2 key는 백업 대상에 포함되지 않습니다.
 - [ ] 방과 peer의 활성 수, 거부한 연결과 입장, 잘못되었거나 session/client/global 제한을 받은
       frame, queue overflow, heartbeat 종료를 방 ID, 이름, SDP, ICE candidate, chat text를 기록하지
       않고 관측할 수 있습니다.

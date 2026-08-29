@@ -1,0 +1,11 @@
+[Unit]
+Description=매주 ROUND 외부 백업 정리와 무결성 검사 실행
+
+[Timer]
+OnCalendar=Sun *-*-* 04:15:00
+RandomizedDelaySec=30m
+Persistent=true
+Unit=round-offsite-maintenance.service
+
+[Install]
+WantedBy=timers.target

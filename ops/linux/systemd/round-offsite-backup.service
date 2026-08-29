@@ -1,0 +1,26 @@
+[Unit]
+Description=ROUND Caddy 상태를 Cloudflare R2에 백업
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=round-ops-failure@%n.service
+ConditionPathIsExecutable=/usr/bin/restic
+AssertPathExists=/opt/round/ops/linux/backup-caddy.sh
+AssertPathExists=/etc/round/production.env
+AssertPathExists=/etc/round/backup-recipients.txt
+AssertPathExists=/etc/round/restic-r2.env
+AssertPathExists=/etc/round/restic-password
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/round/restic-r2.env
+Environment=RESTIC_CACHE_DIR=/var/cache/round-restic
+CacheDirectory=round-restic
+CacheDirectoryMode=0700
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=30min
+ExecStart=/bin/bash /opt/round/ops/linux/backup-caddy.sh --recipient-file /etc/round/backup-recipients.txt --output-dir /var/backups/round /etc/round/production.env
+ExecStart=/usr/bin/restic --retry-lock 5m backup --host round-production --tag round-caddy --skip-if-unchanged /var/backups/round

@@ -27,6 +27,11 @@ RemainAfterExit=yes
 EOF
 
 SYSTEMD_UNIT_PATH="$fixture_dir:" systemd-analyze verify \
-  'round-ops-failure@round-backup.service.service'
+  round-offsite-backup.service \
+  round-offsite-backup.timer \
+  round-offsite-maintenance.service \
+  round-offsite-maintenance.timer \
+  'round-ops-failure@round-offsite-backup.service.service' \
+  'round-ops-failure@round-offsite-maintenance.service.service'
 
 printf 'ROUND systemd unit verification passed.\n'

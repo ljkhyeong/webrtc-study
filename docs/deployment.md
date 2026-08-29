@@ -161,13 +161,65 @@ pair가 relay인지 확인합니다. UDP가 제한된 네트워크에서는 Clou
 
 ## Caddy 상태 백업과 복원
 
-Caddy의 ACME 상태는 named volume에 저장됩니다. 기존 도구는 age로 암호화한 로컬 백업을
-생성하고 checksum을 함께 기록합니다.
+Caddy의 ACME 상태는 named volume에 저장됩니다. 기존 도구가 age로 암호화한 로컬 백업과
+checksum을 만들고, restic이 이를 Cloudflare R2의 암호화 repository에 다시 보관합니다.
+R2는 S3 호환 endpoint인 `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`을 사용합니다.
+
+먼저 restic을 설치하고 백업 전용 R2 bucket과 object read/write key를 만듭니다. 환경 예시와
+repository password를 root 전용 파일로 설치합니다. repository password를 잃으면 복구할 수
+없으므로 host 밖의 비밀 저장소에도 보관합니다.
+
+```bash
+install -m 0600 ops/restic-r2.env.example /etc/round/restic-r2.env
+install -m 0600 /dev/null /etc/round/restic-password
+openssl rand -base64 48 | tee /etc/round/restic-password >/dev/null
+systemd-run --wait --pipe \
+  --unit=round-restic-init \
+  --property=EnvironmentFile=/etc/round/restic-r2.env \
+  /usr/bin/restic init
+```
+
+`restic-r2.env`의 `ACCOUNT_ID`, `BUCKET_NAME`, access key ID와 secret access key를 실제 값으로
+교체한 뒤 초기화합니다. bucket 생성 권한은 필요하지 않으며 해당 bucket의 object 읽기·쓰기
+범위만 부여합니다.
+
+systemd 단위를 설치하고 매일 백업과 매주 보존·무결성 검사를 켭니다.
+
+```bash
+install -m 0644 ops/linux/systemd/round-offsite-* /etc/systemd/system/
+install -m 0644 ops/linux/tmpfiles.d/round-backups.conf /etc/tmpfiles.d/round-backups.conf
+systemd-tmpfiles --create /etc/tmpfiles.d/round-backups.conf
+systemctl daemon-reload
+systemctl enable --now round-offsite-backup.timer round-offsite-maintenance.timer
+systemctl start round-offsite-backup.service
+systemctl status round-offsite-backup.service
+```
+
+매일 작업은 로컬 age 백업을 만든 뒤 `restic backup`을 실행합니다. 매주 작업은 최근 14개 일별,
+8개 주별, 12개 월별 snapshot을 보존하면서 `forget --prune`과 `restic check`를 실행합니다.
+prune 중에는 repository가 잠기므로 일일 백업과 겹치지 않게 시간을 분리했습니다.
+로컬 age 백업은 systemd-tmpfiles가 30일 뒤 정리하고 장기 보존은 R2 snapshot이 담당합니다.
 
 ```bash
 ops/linux/backup-caddy.sh \
   --recipient-file /etc/round/backup-recipients.txt \
   /etc/round/production.env
+```
+
+R2 snapshot 확인과 테스트 복원:
+
+```bash
+systemd-run --wait --pipe \
+  --unit=round-restic-snapshots \
+  --property=EnvironmentFile=/etc/round/restic-r2.env \
+  /usr/bin/restic snapshots --host round-production --tag round-caddy
+
+install -d -m 0700 /var/lib/round/restore-test
+systemd-run --wait --pipe \
+  --unit=round-restic-restore-test \
+  --property=EnvironmentFile=/etc/round/restic-r2.env \
+  /usr/bin/restic restore latest --host round-production --tag round-caddy \
+    --target /var/lib/round/restore-test
 ```
 
 복원은 모든 ROUND Compose 컨테이너를 내린 뒤 명시적 확인 문자열과 age identity를 요구합니다.
@@ -180,8 +232,10 @@ ops/linux/restore-caddy.sh \
   /etc/round/production.env
 ```
 
-백업과 복원은 Cloudflare TURN key를 포함하지 않습니다. 운영 환경 파일은 별도의 비밀 관리
-절차로 복구해야 합니다.
+백업과 복원은 Cloudflare TURN key, R2 key, restic password를 포함하지 않습니다. 운영 환경
+파일과 세 비밀은 별도의 비밀 관리 절차로 복구해야 합니다. 실제 재해 복구 가능성을 확인하려면
+최소 분기마다 R2에서 별도 디렉터리로 복원하고 checksum과 `restore-caddy.sh` 입력 검사를
+통과시킵니다.
 
 ## BATON 배포 경계
 
