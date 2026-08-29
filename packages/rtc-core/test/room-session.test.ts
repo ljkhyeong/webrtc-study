@@ -6,11 +6,7 @@ import {
   utf8ByteLength,
   type SignalingErrorCode,
 } from '@round/protocol';
-import {
-  createRoomSession,
-  type RoomSession,
-  type RoomSessionRecoveryOptions,
-} from '../src/index.js';
+import { RoomSession, type RoomSessionRecoveryOptions } from '../src/index.js';
 
 const ROOM_ID = 'abcd-efgh-jkmp';
 const OTHER_ROOM_ID = 'bcde-fghj-kmnp';
@@ -493,7 +489,7 @@ function createHarness(
   const videoTrack = new FakeTrack('video');
   const localStream = new FakeMediaStream([audioTrack, videoTrack]);
 
-  const session = createRoomSession({
+  const session = new RoomSession({
     roomId: ROOM_ID,
     displayName: overrides.displayName ?? 'Jin',
     signalingUrl: 'ws://localhost:8787',

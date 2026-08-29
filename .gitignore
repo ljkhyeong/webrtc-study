@@ -12,6 +12,4 @@ build/
 .env.*
 !.env.example
 
-apps/web/playwright-report/
-apps/web/test-results/
 .playwright-cli/

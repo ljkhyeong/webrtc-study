@@ -13,7 +13,6 @@ export {
 export {
   ChatSendError,
   RoomSession,
-  createRoomSession,
   type ChatDeliveryState,
   type ChatMessage,
   type ChatSendErrorCode,

@@ -6,12 +6,12 @@ import type { RoomSession, RoomSessionOptions, RoomSessionSnapshot } from '@roun
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rtcCoreMock = vi.hoisted(() => ({
-  createRoomSession: vi.fn(),
+  RoomSession: vi.fn(),
 }));
 
 vi.mock('@round/rtc-core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@round/rtc-core')>()),
-  createRoomSession: rtcCoreMock.createRoomSession,
+  RoomSession: rtcCoreMock.RoomSession,
 }));
 
 import { App } from './App';
@@ -97,8 +97,8 @@ describe('BATON room entry boundary', () => {
     container = document.createElement('div');
     document.body.append(container);
     root = null;
-    rtcCoreMock.createRoomSession.mockReset();
-    rtcCoreMock.createRoomSession.mockImplementation((options: RoomSessionOptions) => {
+    rtcCoreMock.RoomSession.mockReset();
+    rtcCoreMock.RoomSession.mockImplementation(function (options: RoomSessionOptions) {
       const snapshot = activeRoomSnapshot();
       return {
         disableParticipantMedia: vi.fn(),
@@ -237,7 +237,7 @@ describe('BATON room entry boundary', () => {
     expect(fetcher.mock.calls.filter(([input]) => input === TURN_ENDPOINT)).toHaveLength(1);
     expect(container.textContent).not.toContain('TURN 서버 정보를 받지 못했습니다.');
     expect(container.textContent).not.toContain('스터디 참여 권한을 확인하지 못했습니다.');
-    expect(rtcCoreMock.createRoomSession).toHaveBeenCalledOnce();
+    expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce();
     expect(fetcher.mock.calls.filter(([input]) => input === GRANT_ENDPOINT)).toHaveLength(1);
     expect(fetcher.mock.calls.filter(([input]) => input === '/api/v1/auth/session')).toHaveLength(
       1,
@@ -290,8 +290,8 @@ describe('BATON room entry boundary', () => {
       await flushMicrotasks(32);
     });
 
-    expect(rtcCoreMock.createRoomSession).toHaveBeenCalledOnce();
-    const session = rtcCoreMock.createRoomSession.mock.results[0]?.value as RoomSession;
+    expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce();
+    const session = rtcCoreMock.RoomSession.mock.results[0]?.value as RoomSession;
     expect(session.join).toHaveBeenCalled();
   });
 
@@ -376,7 +376,7 @@ describe('BATON room entry boundary', () => {
         await flushMicrotasks(32);
       });
 
-      expect(rtcCoreMock.createRoomSession).toHaveBeenCalledOnce();
+      expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce();
       expect(grantRequests).toBe(1);
 
       await act(async () => {

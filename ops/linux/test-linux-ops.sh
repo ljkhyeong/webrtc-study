@@ -129,16 +129,6 @@ cat >"$fake_bin/timedatectl" <<'EOF'
 #!/usr/bin/env bash
 printf 'yes\n'
 EOF
-cat >"$fake_bin/timeout" <<'EOF'
-#!/usr/bin/env bash
-fake_root=$(cd -- "$(dirname -- "$0")/.." && pwd)
-[[ ! -e "$fake_root/tls-fail" ]] || exit 124
-if [[ -e "$fake_root/tls-fail-once" ]]; then
-  rm -f -- "$fake_root/tls-fail-once"
-  exit 124
-fi
-cat "$fake_root/turn-cert.pem"
-EOF
 cat >"$fake_bin/df" <<'EOF'
 #!/usr/bin/env bash
 printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
@@ -196,7 +186,7 @@ done
   ljkhyeong/webrtc-study/.github/workflows/release-images.yml ]]
 [[ "$source_digest" == 0123456789abcdef0123456789abcdef01234567 ]]
 [[ "$bundle_from_oci" == true && "$deny_self_hosted" == true ]]
-[[ "$image_ref" =~ ^ghcr\.io/ljkhyeong/round-(edge|signaling|turn)@sha256:[0-9a-f]{64}$ ]]
+[[ "$image_ref" =~ ^ghcr\.io/ljkhyeong/round-(edge|signaling)@sha256:[0-9a-f]{64}$ ]]
 printf 'attestation-verify %s\n' "$image_ref" >>"$fake_root/gh.log"
 if [[ -f "$fake_root/fail-provenance-reference" && \
       "$image_ref" == "$(cat "$fake_root/fail-provenance-reference")" ]]; then
@@ -255,7 +245,7 @@ log_compose() {
 case "$command_line" in
   *' compose version --short '*) printf '2.24.4\n' ;;
   *" info --format {{.DockerRootDir}} "*) printf '%s/docker-root\n' "$fake_root" ;;
-  *' info '*) [[ ! -e "$fake_root/docker-info-fail" ]] ;;
+  *' info '*) true ;;
   *' image inspect --format '*)
     template=$4
     image_ref=$5
@@ -329,7 +319,6 @@ case "$command_line" in
       exit 42
     fi
     ;;
-  *' up -d --wait --no-build --no-deps --force-recreate turn '*) log_compose "$@" ;;
   *' up -d --wait --no-build --no-deps edge '*) log_compose "$@" ;;
   *' stop edge '*) log_compose "$@" ;;
   *' down --remove-orphans '*) log_compose "$@" ;;
@@ -351,7 +340,6 @@ EOF
 chmod 0700 \
   "$fake_bin/uname" \
   "$fake_bin/timedatectl" \
-  "$fake_bin/timeout" \
   "$fake_bin/df" \
   "$fake_bin/flock" \
   "$fake_bin/git" \

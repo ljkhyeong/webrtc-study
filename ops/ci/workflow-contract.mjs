@@ -32,37 +32,5 @@ export function createWorkflowContract(fail) {
     return result;
   }
 
-  function exactStructuralKeys(value, expected, label) {
-    const result = record(value, label);
-    const keys = Object.keys(result).filter((key) => key !== 'name' && key !== 'description');
-    assert.deepEqual(keys.sort(), [...expected].sort(), `${label}: 키 구성이 변경되었습니다.`);
-    return result;
-  }
-
-  function collectSecretAccesses(value, path = '', accesses = []) {
-    if (typeof value === 'string') {
-      if (/\bsecrets\b/.test(value)) {
-        accesses.push({ path, value });
-      }
-      return accesses;
-    }
-    if (Array.isArray(value)) {
-      value.forEach((item, index) => collectSecretAccesses(item, `${path}[${index}]`, accesses));
-      return accesses;
-    }
-    if (value !== null && typeof value === 'object') {
-      for (const [key, item] of Object.entries(value)) {
-        collectSecretAccesses(item, path === '' ? key : `${path}.${key}`, accesses);
-      }
-    }
-    return accesses;
-  }
-
-  function runStep(step, expectedKeys, expectedRun, label) {
-    exactStructuralKeys(step, expectedKeys, label);
-    assert.equal(step.shell, 'bash', `${label}: shell이 변경되었습니다.`);
-    assert.equal(step.run.trim(), expectedRun, `${label}: 명령이 변경되었습니다.`);
-  }
-
-  return { collectSecretAccesses, exactKeys, exactStructuralKeys, record, runStep };
+  return { exactKeys, record };
 }

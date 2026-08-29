@@ -2,11 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SignalingErrorCode } from '@round/protocol';
 import {
   ChatSendError,
-  createRoomSession,
+  RoomSession,
   type RoomIssue,
   type RoomIssueCode,
   type RoomConnectionDiagnostics,
-  type RoomSession,
   type RoomSessionSnapshot,
   type RoomSessionStatus,
   type ScreenShareStartResult,
@@ -743,33 +742,35 @@ export function ActiveRoom({
 
             let session = sessionRef.current;
             if (session === null) {
-              session = createWithPreparedMedia(takePreparedMediaStream, (preparedMediaStream) =>
-                createRoomSession({
-                  roomId,
-                  displayName,
-                  signalingUrl: resolvedEndpoints.signalingUrl,
-                  rtcConfiguration: loaded.configuration,
-                  preparedMediaStream,
-                  ...(hostCapability === undefined ? {} : { hostCapability }),
-                  ...(participationGrantLeaseManager === null
-                    ? {}
-                    : {
-                        beforeSignalingConnect: () => ensureFreshParticipationGrantRef.current(),
-                      }),
-                  mediaConstraints: {
-                    audio: {
-                      autoGainControl: true,
-                      echoCancellation: true,
-                      noiseSuppression: true,
+              session = createWithPreparedMedia(
+                takePreparedMediaStream,
+                (preparedMediaStream) =>
+                  new RoomSession({
+                    roomId,
+                    displayName,
+                    signalingUrl: resolvedEndpoints.signalingUrl,
+                    rtcConfiguration: loaded.configuration,
+                    preparedMediaStream,
+                    ...(hostCapability === undefined ? {} : { hostCapability }),
+                    ...(participationGrantLeaseManager === null
+                      ? {}
+                      : {
+                          beforeSignalingConnect: () => ensureFreshParticipationGrantRef.current(),
+                        }),
+                    mediaConstraints: {
+                      audio: {
+                        autoGainControl: true,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                      },
+                      video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 360 },
+                        frameRate: { ideal: 15, max: 15 },
+                        facingMode: 'user',
+                      },
                     },
-                    video: {
-                      width: { ideal: 640 },
-                      height: { ideal: 360 },
-                      frameRate: { ideal: 15, max: 15 },
-                      facingMode: 'user',
-                    },
-                  },
-                }),
+                  }),
               );
               sessionRef.current = session;
             }

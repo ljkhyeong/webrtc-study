@@ -13,12 +13,12 @@ import { ParticipationGrantLeaseManager } from './lib/participation-grant';
 import { RoomRefreshLifetime, type RoomRefreshTimer } from './lib/room-refresh-lifetime';
 
 const rtcCoreMock = vi.hoisted(() => ({
-  createRoomSession: vi.fn(),
+  RoomSession: vi.fn(),
 }));
 
 vi.mock('@round/rtc-core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@round/rtc-core')>()),
-  createRoomSession: rtcCoreMock.createRoomSession,
+  RoomSession: rtcCoreMock.RoomSession,
 }));
 
 vi.mock('./components/RoomView', () => ({
@@ -93,7 +93,7 @@ describe('ActiveRoom mounted lifecycle', () => {
     container = document.createElement('div');
     document.body.append(container);
     root = null;
-    rtcCoreMock.createRoomSession.mockReset();
+    rtcCoreMock.RoomSession.mockReset();
     vi.stubEnv('VITE_ROUND_AUTH_MODE', 'baton');
     vi.stubEnv('VITE_SIGNALING_URL', '');
     vi.stubEnv('VITE_TURN_CREDENTIALS_URL', '');
@@ -213,7 +213,7 @@ describe('ActiveRoom mounted lifecycle', () => {
       }),
       updateRtcConfiguration: vi.fn(),
     } as unknown as RoomSession;
-    rtcCoreMock.createRoomSession.mockImplementation((options: RoomSessionOptions) => {
+    rtcCoreMock.RoomSession.mockImplementation(function (options: RoomSessionOptions) {
       sessionState.options = options;
       return session;
     });
@@ -236,7 +236,7 @@ describe('ActiveRoom mounted lifecycle', () => {
       await flushMicrotasks(24);
     });
 
-    expect(rtcCoreMock.createRoomSession).toHaveBeenCalledTimes(1);
+    expect(rtcCoreMock.RoomSession).toHaveBeenCalledTimes(1);
     const mountedSessionOptions = sessionState.options;
     if (mountedSessionOptions === null) {
       throw new Error('Expected StrictMode handoff to create one room session');

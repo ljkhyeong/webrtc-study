@@ -3900,7 +3900,3 @@ export class RoomSession {
     return this.#options.monotonicNow?.() ?? globalThis.performance.now();
   }
 }
-
-export function createRoomSession(options: RoomSessionOptions): RoomSession {
-  return new RoomSession(options);
-}
