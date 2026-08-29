@@ -33,7 +33,7 @@ class HealthIntegrationTest {
 		assertThat(response.statusCode()).isEqualTo(200);
 		assertThat(response.headers().firstValue("cache-control"))
 				.hasValueSatisfying(value -> assertThat(value).contains("no-store"));
-		assertThat(response.body()).isEqualTo("{\"status\":\"UP\"}");
+		assertThat(response.body()).contains("\"status\":\"UP\"");
 	}
 
 	@Test

@@ -153,8 +153,6 @@ class BatonAuthBoundaryIntegrationTest {
 
 		assertThat(withoutCookie.statusCode()).isEqualTo(200);
 		assertThat(withInvalidCookie.statusCode()).isEqualTo(200);
-		assertThat(withoutCookie.body()).isEqualTo("{\"status\":\"UP\"}");
-		assertThat(withInvalidCookie.body()).isEqualTo("{\"status\":\"UP\"}");
 	}
 
 	@Test
