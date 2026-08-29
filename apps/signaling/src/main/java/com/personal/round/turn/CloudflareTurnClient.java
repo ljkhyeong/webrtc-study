@@ -101,6 +101,12 @@ public class CloudflareTurnClient {
 		public Credentials {
 			urls = List.copyOf(urls);
 		}
+
+		@Override
+		public String toString() {
+			return "Credentials[urls=%s, username=[redacted], credential=[redacted]]"
+					.formatted(urls);
+		}
 	}
 
 	private record CredentialRequest(long ttl) {

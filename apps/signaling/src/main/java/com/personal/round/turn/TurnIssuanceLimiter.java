@@ -44,19 +44,19 @@ final class TurnIssuanceLimiter {
 		Rejected rejection = null;
 
 		if (participantWindow != null
-				&& participantWindow.issued >= maxRequestsPerParticipant) {
+				&& participantWindow.attempts >= maxRequestsPerParticipant) {
 			rejection = laterRejection(
 					rejection,
 					participantWindow.retryAfterMillis(nowMillis, windowMillis),
 					TurnCredentialRateLimitScope.PARTICIPANT);
 		}
-		if (clientWindow != null && clientWindow.issued >= maxRequestsPerClient) {
+		if (clientWindow != null && clientWindow.attempts >= maxRequestsPerClient) {
 			rejection = laterRejection(
 					rejection,
 					clientWindow.retryAfterMillis(nowMillis, windowMillis),
 					TurnCredentialRateLimitScope.CLIENT);
 		}
-		if (globalWindow != null && globalWindow.issued >= maxRequestsGlobal) {
+		if (globalWindow != null && globalWindow.attempts >= maxRequestsGlobal) {
 			rejection = laterRejection(
 					rejection,
 					globalWindow.retryAfterMillis(nowMillis, windowMillis),
@@ -91,11 +91,11 @@ final class TurnIssuanceLimiter {
 		if (globalWindow == null) {
 			globalWindow = new IssuanceWindow(nowMillis);
 		}
-		clientWindow.issued++;
+		clientWindow.attempts++;
 		if (participantWindow != null) {
-			participantWindow.issued++;
+			participantWindow.attempts++;
 		}
-		globalWindow.issued++;
+		globalWindow.attempts++;
 		return Acquired.INSTANCE;
 	}
 
@@ -147,7 +147,7 @@ final class TurnIssuanceLimiter {
 	private static final class IssuanceWindow {
 
 		private final long startedAtMillis;
-		private int issued;
+		private int attempts;
 
 		private IssuanceWindow(long startedAtMillis) {
 			this.startedAtMillis = startedAtMillis;

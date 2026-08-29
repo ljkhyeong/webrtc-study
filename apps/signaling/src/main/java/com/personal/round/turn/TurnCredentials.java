@@ -12,4 +12,10 @@ public record TurnCredentials(
 	public TurnCredentials {
 		urls = List.copyOf(urls);
 	}
+
+	@Override
+	public String toString() {
+		return "TurnCredentials[urls=%s, username=[redacted], credential=[redacted], expiresAt=%d, refreshAfterSeconds=%d]"
+				.formatted(urls, expiresAt, refreshAfterSeconds);
+	}
 }

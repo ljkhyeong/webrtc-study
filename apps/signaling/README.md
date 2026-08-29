@@ -109,9 +109,9 @@ credential 발급에는 다음과 같은 추가 제한형 rate-limit 설정을 �
 | 환경 변수                                             |  기본값 | 목적                                               |
 | ----------------------------------------------------- | ------: | -------------------------------------------------- |
 | `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`           |   `600` | 고정 발급 구간                                     |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`             |    `12` | 구간당 유효 client 주소의 성공한 발급 수           |
-| `TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS` |     `6` | 구간당 BATON `(room_id, sub)`의 발급 수            |
-| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS`      |    `24` | 구간당 이 서버 전체의 성공한 발급 수               |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`             |    `12` | 구간당 유효 client 주소의 발급 시도 수             |
+| `TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS` |     `6` | 구간당 BATON `(room_id, sub)`의 발급 시도 수       |
+| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS`      |    `24` | 구간당 이 서버 전체의 발급 시도 수                 |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`              | `10000` | 메모리에 유지하는 유효 client window의 최대 개수   |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS`         | `10000` | 메모리에 유지하는 BATON 참가자-방 window 최대 개수 |
 
@@ -119,7 +119,8 @@ credential 발급에는 다음과 같은 추가 제한형 rate-limit 설정을 �
 참가자 6명 모두의 최초 발급과 예정된 갱신을 수용하며, 서버 전체 24회는 여유를 제공합니다. 서버
 전체 quota는 client별 quota의 두 배 이상이어야 하므로 한 client가 어긋난 고정 window 경계에서
 이를 소진할 수 없습니다. 운영자가 credential TTL이나 브라우저 갱신 시점을 변경하면 발급
-window와 quota도 검토하고 일반적으로 함께 맞춰야 합니다. BATON 모드에서 발급한 credential은
+window와 quota도 검토하고 일반적으로 함께 맞춰야 합니다. 제공자 요청이 실패한 시도도 같은
+quota를 사용하므로 장애 중인 제공자를 반복 호출하지 않습니다. BATON 모드에서 발급한 credential은
 참여권의 `exp`를 상한으로 추가 적용하므로 더 긴 TURN TTL로 참여권의 권한을 연장할 수 없습니다.
 BATON은 client 및 서버 전체 제한과 같은 원자적 판정에서 검증된 `(room_id, sub)`에도 기본 6회
 window를 적용합니다. 새 `jti` 값이나 client 주소로는 이를 초기화할 수 없습니다. Standalone은

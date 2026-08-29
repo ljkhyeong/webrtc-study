@@ -3,6 +3,7 @@ package com.personal.round.turn;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.personal.round.auth.ParticipationGrant;
@@ -121,8 +122,9 @@ class TurnCredentialServiceTest {
 	}
 
 	@Test
-	void reportsProviderFailureWithoutIssuingCredentials() {
-		TurnProperties properties = enabledProperties();
+	void countsProviderFailuresTowardTheAttemptRateLimit() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				KEY_ID, API_TOKEN, 1, 2, 10_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		CloudflareTurnClient client = mock(CloudflareTurnClient.class);
 		when(client.issue(anyLong())).thenThrow(
@@ -136,10 +138,15 @@ class TurnCredentialServiceTest {
 
 		assertThat(service.issueFor("192.0.2.10"))
 				.isSameAs(TurnCredentialService.ProviderUnavailable.INSTANCE);
+		assertThat(service.issueFor("192.0.2.10"))
+				.isInstanceOf(TurnCredentialService.RateLimited.class);
+		verify(client).issue(anyLong());
 		assertThat(registry.get("round.turn.credentials.provider.errors").counter().count())
 				.isOne();
 		assertThat(registry.get("round.turn.credentials.issued").counter().count())
 				.isZero();
+		assertThat(metricCount(registry, "round.turn.credentials.rate_limited"))
+				.isOne();
 	}
 
 	@Test

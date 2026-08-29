@@ -123,9 +123,9 @@ GITHUB_RUN_ID=local GITHUB_RUN_ATTEMPT=1 npm run test:e2e:ios-safari
 | `TURN_CLOUDFLARE_API_TOKEN`                           | 없음                    | Cloudflare TURN API token       |
 | `TURN_CREDENTIAL_TTL_SECONDS`                         | `600`                   | TURN credential 수명(초)        |
 | `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`           | `600`                   | IP별 발급 제한 구간(초)         |
-| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`             | `12`                    | 구간당 IP별 최대 발급 수        |
-| `TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS` | `6`                     | BATON 참가자·방별 최대 발급 수  |
-| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS`      | `24`                    | 구간당 서버 전체 최대 발급 수   |
+| `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`             | `12`                    | 구간당 IP별 최대 발급 시도 수   |
+| `TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS` | `6`                     | BATON 참가자·방별 발급 시도 수  |
+| `TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS`      | `24`                    | 구간당 서버 전체 발급 시도 수   |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`              | `10000`                 | rate-limit 상태 최대 IP 수      |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS`         | `10000`                 | BATON 참가자 상태 최대 수       |
 | `COMPOSE_PROFILES`                                    | `none`                  | `observability`이면 Alloy 실행  |
