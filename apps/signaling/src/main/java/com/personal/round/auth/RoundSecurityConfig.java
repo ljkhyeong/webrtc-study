@@ -22,7 +22,12 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import org.springframework.boot.actuate.endpoint.web.WebServerNamespace;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
+import org.springframework.boot.micrometer.metrics.actuate.endpoint.MetricsEndpoint;
+import org.springframework.boot.micrometer.metrics.autoconfigure.export.prometheus.PrometheusScrapeEndpoint;
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -44,6 +49,7 @@ import org.springframework.security.oauth2.server.resource.web.authentication.Be
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 @Configuration(proxyBeanMethods = false)
 public class RoundSecurityConfig {
@@ -85,11 +91,7 @@ public class RoundSecurityConfig {
 		http.authorizeHttpRequests(authorize -> authorize
 						.dispatcherTypeMatchers(DispatcherType.ERROR)
 						.permitAll()
-						.requestMatchers(
-								"/healthz",
-								"/actuator/health/**",
-								"/actuator/metrics/**",
-								"/actuator/prometheus")
+						.requestMatchers(publicActuatorEndpointMatchers())
 						.permitAll()
 						.anyRequest()
 						.denyAll())
@@ -110,11 +112,9 @@ public class RoundSecurityConfig {
 						.permitAll()
 						.requestMatchers(
 								STANDALONE_SIGNAL,
-								STANDALONE_TURN_CREDENTIALS,
-								"/healthz",
-								"/actuator/health/**",
-								"/actuator/metrics/**",
-								"/actuator/prometheus")
+								STANDALONE_TURN_CREDENTIALS)
+						.permitAll()
+						.requestMatchers(publicActuatorEndpointMatchers())
 						.permitAll()
 						.anyRequest()
 						.denyAll())
@@ -124,6 +124,18 @@ public class RoundSecurityConfig {
 						STANDALONE_TURN_CREDENTIALS))
 				.logout(logout -> logout.disable());
 		return http.build();
+	}
+
+	private static RequestMatcher[] publicActuatorEndpointMatchers() {
+		return new RequestMatcher[] {
+			EndpointRequest.to(
+					HealthEndpoint.class,
+					MetricsEndpoint.class,
+					PrometheusScrapeEndpoint.class),
+			EndpointRequest.toAdditionalPaths(
+					WebServerNamespace.SERVER,
+					HealthEndpoint.class)
+		};
 	}
 
 	@Bean
