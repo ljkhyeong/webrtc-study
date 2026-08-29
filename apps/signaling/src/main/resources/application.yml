@@ -5,6 +5,10 @@ server:
   shutdown: graceful
 
 spring:
+  http:
+    clients:
+      connect-timeout: 3s
+      read-timeout: 5s
   lifecycle:
     timeout-per-shutdown-phase: 10s
 

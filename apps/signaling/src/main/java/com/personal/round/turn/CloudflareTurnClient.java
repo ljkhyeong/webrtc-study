@@ -1,12 +1,9 @@
 package com.personal.round.turn;
 
 import com.personal.round.config.TurnProperties;
-import java.time.Duration;
 import java.util.List;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -15,30 +12,15 @@ import org.springframework.web.client.RestClientException;
 public class CloudflareTurnClient {
 
 	private static final String API_BASE_URL = "https://rtc.live.cloudflare.com";
-	private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
-	private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
 
 	private final RestClient restClient;
 	private final TurnProperties properties;
 
-	@Autowired
-	public CloudflareTurnClient(TurnProperties properties) {
-		this(defaultClientBuilder(), properties);
-	}
-
-	CloudflareTurnClient(
+	public CloudflareTurnClient(
 			RestClient.Builder restClientBuilder,
 			TurnProperties properties) {
 		this.restClient = restClientBuilder.baseUrl(API_BASE_URL).build();
 		this.properties = properties;
-	}
-
-	private static RestClient.Builder defaultClientBuilder() {
-		SimpleClientHttpRequestFactory requestFactory =
-				new SimpleClientHttpRequestFactory();
-		requestFactory.setConnectTimeout(CONNECT_TIMEOUT);
-		requestFactory.setReadTimeout(READ_TIMEOUT);
-		return RestClient.builder().requestFactory(requestFactory);
 	}
 
 	public Credentials issue(long ttlSeconds) {
