@@ -123,6 +123,40 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	}
 
 	@Test
+	void heartbeatPongDeadlineStartsWhenTheQueuedPingIsActuallySent()
+			throws Exception {
+		CountDownLatch firstSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseFirstSend = new CountDownLatch(1);
+		TestPeer slow = peer("heartbeat-sent-deadline", firstSendEntered, releaseFirstSend);
+		connect(slow);
+		long heartbeatIntervalMillis = properties(6).heartbeatInterval().toMillis();
+
+		try {
+			service.handle(slow.session(), join("Slow peer"));
+			assertThat(firstSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+			service.heartbeatSweep();
+			monotonicTicker.advanceMillis(heartbeatIntervalMillis - 1);
+			releaseFirstSend.countDown();
+			slow.awaitPing();
+
+			monotonicTicker.advanceMillis(1);
+			service.heartbeatSweep();
+			assertThat(slow.closeStatus().get()).isNull();
+
+			monotonicTicker.advanceMillis(heartbeatIntervalMillis - 1);
+			service.heartbeatSweep();
+
+			slow.awaitClosed();
+			assertThat(slow.closeStatus().get())
+					.isEqualTo(new CloseStatus(4000, "Heartbeat timeout"));
+		}
+		finally {
+			releaseFirstSend.countDown();
+		}
+	}
+
+	@Test
 	void sendFailureDisconnectsOnceAndBroadcastsPeerLeft() throws Exception {
 		TestPeer ada = peer("ada");
 		TestPeer grace = peer("grace");

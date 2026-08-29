@@ -363,8 +363,7 @@ public class SignalingService implements SmartLifecycle {
 							|| peer.heartbeatState == HeartbeatState.AWAITING_PONG)
 					&& MessageDigest.isEqual(peer.expectedPongPayload, pongPayload)) {
 				peer.heartbeatState = HeartbeatState.READY;
-				peer.pingQueuedAtNanos = UNSET_NANOS;
-				peer.pingSentAtNanos = UNSET_NANOS;
+				peer.heartbeatPhaseStartedAtNanos = UNSET_NANOS;
 				peer.expectedPongPayload = null;
 			}
 		}
@@ -396,15 +395,14 @@ public class SignalingService implements SmartLifecycle {
 								new PingMessage(ByteBuffer.wrap(challenge)),
 								workPlan)) {
 							peer.heartbeatState = HeartbeatState.PING_QUEUED;
-							peer.pingQueuedAtNanos = nowNanos;
-							peer.pingSentAtNanos = UNSET_NANOS;
+							peer.heartbeatPhaseStartedAtNanos = nowNanos;
 							peer.expectedPongPayload = challenge;
 						}
 					}
 					case PING_QUEUED -> {
 						if (elapsedAtLeast(
 								nowNanos,
-								peer.pingQueuedAtNanos,
+								peer.heartbeatPhaseStartedAtNanos,
 								heartbeatIntervalNanos)) {
 							closeForHeartbeatTimeoutLocked(peer, workPlan);
 						}
@@ -412,7 +410,7 @@ public class SignalingService implements SmartLifecycle {
 					case AWAITING_PONG -> {
 						if (elapsedAtLeast(
 								nowNanos,
-								peer.pingSentAtNanos,
+								peer.heartbeatPhaseStartedAtNanos,
 								heartbeatIntervalNanos)) {
 							closeForHeartbeatTimeoutLocked(peer, workPlan);
 						}
@@ -1168,7 +1166,7 @@ public class SignalingService implements SmartLifecycle {
 				if (frame.message() instanceof PingMessage
 						&& peer.heartbeatState == HeartbeatState.PING_QUEUED) {
 					peer.heartbeatState = HeartbeatState.AWAITING_PONG;
-					peer.pingSentAtNanos = monotonicTicker.getAsLong();
+					peer.heartbeatPhaseStartedAtNanos = monotonicTicker.getAsLong();
 				}
 			}
 
@@ -1314,8 +1312,7 @@ public class SignalingService implements SmartLifecycle {
 		private boolean connected = true;
 		private boolean draining;
 		private HeartbeatState heartbeatState = HeartbeatState.READY;
-		private long pingQueuedAtNanos = UNSET_NANOS;
-		private long pingSentAtNanos = UNSET_NANOS;
+		private long heartbeatPhaseStartedAtNanos = UNSET_NANOS;
 		private byte[] expectedPongPayload;
 		private String roomId;
 		private String displayName;
