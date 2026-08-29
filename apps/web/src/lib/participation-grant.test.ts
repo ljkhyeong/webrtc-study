@@ -57,10 +57,7 @@ describe('BATON participation grant lease manager', () => {
       storage: null,
     });
 
-    await expect(manager.ensureFresh()).resolves.toEqual({
-      expiresAt: 1_780_000_000,
-      refreshAfterSeconds: 240,
-    });
+    await expect(manager.ensureFresh()).resolves.toBeUndefined();
     expect(fetcher).toHaveBeenNthCalledWith(1, SESSION_ENDPOINT, {
       cache: 'no-store',
       credentials: 'same-origin',
@@ -114,10 +111,7 @@ describe('BATON participation grant lease manager', () => {
       });
 
       for (const manager of [defaultManager, injectedManager]) {
-        await expect(manager.ensureFresh()).resolves.toEqual({
-          expiresAt: 1_780_000_000,
-          refreshAfterSeconds: 240,
-        });
+        await expect(manager.ensureFresh()).resolves.toBeUndefined();
       }
       expect(receiverSensitiveFetcher).toHaveBeenCalledTimes(4);
       expect(receiverSensitiveFetcher.mock.contexts).toEqual([

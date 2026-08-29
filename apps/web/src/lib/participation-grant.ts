@@ -33,7 +33,6 @@ interface ParticipationGrantLeaseManagerOptions {
 }
 
 interface ParticipationGrantLeaseState {
-  readonly lease: ParticipationGrantLease;
   readonly refreshDueAtMs: number;
 }
 
@@ -74,7 +73,7 @@ export class ParticipationGrantLeaseManager {
   readonly #timeoutMs: number;
 
   #state: ParticipationGrantLeaseState | null = null;
-  #refreshing: Promise<ParticipationGrantLease> | null = null;
+  #refreshing: Promise<void> | null = null;
   #refreshController: AbortController | null = null;
   #closed = false;
 
@@ -94,13 +93,13 @@ export class ParticipationGrantLeaseManager {
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
-  ensureFresh(): Promise<ParticipationGrantLease> {
+  ensureFresh(): Promise<void> {
     if (this.#closed) {
       return Promise.reject(new Error('Participation grant refresh manager is closed'));
     }
     const nowMs = this.#now();
     if (this.#state !== null && nowMs < this.#state.refreshDueAtMs) {
-      return Promise.resolve(this.#state.lease);
+      return Promise.resolve();
     }
     if (this.#refreshing !== null) {
       return this.#refreshing;
@@ -131,7 +130,7 @@ export class ParticipationGrantLeaseManager {
     this.#refreshController = null;
   }
 
-  async #requestRefresh(): Promise<ParticipationGrantLease> {
+  async #requestRefresh(): Promise<void> {
     const controller = new AbortController();
     this.#refreshController = controller;
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.#timeoutMs)]);
@@ -183,10 +182,8 @@ export class ParticipationGrantLeaseManager {
       this.#assertOpen();
       const receivedAtMs = this.#now();
       this.#state = {
-        lease,
         refreshDueAtMs: receivedAtMs + lease.refreshAfterSeconds * 1_000,
       };
-      return lease;
     } catch (error) {
       if (
         error instanceof DOMException &&

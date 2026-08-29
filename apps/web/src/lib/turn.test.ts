@@ -47,7 +47,6 @@ describe('TURN credential loading', () => {
         username: '7200:random-user',
         credential: 'signed-credential',
       },
-      expiresAt: 7_200,
       refreshDueAtMs: 1_240_000,
     });
 
@@ -141,7 +140,6 @@ describe('TURN credential loading', () => {
         now,
       }),
     ).resolves.toMatchObject({
-      expiresAt: 1,
       refreshDueAtMs: 26_000,
     });
   });

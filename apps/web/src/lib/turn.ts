@@ -2,7 +2,6 @@ import { hasOnlyKeys, isJsonObject } from './json-validation';
 
 interface TurnCredentials {
   readonly iceServer: RTCIceServer;
-  readonly expiresAt: number;
   readonly refreshDueAtMs: number;
 }
 
@@ -67,7 +66,6 @@ export async function loadTurnCredentials(
         username: payload.username,
         credential: payload.credential,
       },
-      expiresAt: payload.expiresAt,
       refreshDueAtMs: receivedAtMs + payload.refreshAfterSeconds * 1_000,
     };
   } catch (error) {
