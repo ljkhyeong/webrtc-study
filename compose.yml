@@ -102,6 +102,7 @@ services:
       - '8787'
     networks:
       - backend
+      - egress
     deploy:
       replicas: 1
     mem_limit: 512m
@@ -124,6 +125,7 @@ networks:
   edge:
   backend:
     internal: true
+  egress:
 
 volumes:
   caddy_data:

@@ -71,9 +71,9 @@ token을 알 수 없습니다.
 ## 방화벽과 네트워크
 
 운영 host의 inbound는 Caddy용 80/TCP, 443/TCP, 443/UDP만 허용합니다. signaling 8787은
-Compose 내부 network에만 노출합니다. 자체 TURN용 3478, 5349, UDP relay 범위는 열지 않습니다.
-
-signaling container는 Cloudflare credential API에 대한 outbound HTTPS가 필요합니다. 실제
+`backend` network에서 edge에만 노출합니다. signaling container는 Cloudflare credential API
+호출에 별도의 `egress` network를 사용하지만 host port를 발행하지 않습니다. 자체 TURN용
+3478, 5349, UDP relay 범위는 열지 않습니다. 실제
 WebRTC relay 트래픽은 브라우저와 Cloudflare 사이를 이동합니다.
 
 ## 배포

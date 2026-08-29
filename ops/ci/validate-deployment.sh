@@ -82,6 +82,12 @@ export ROUND_ACCESS_USER ROUND_ACCESS_PASSWORD_HASH
 
 printf 'Validating Compose interpolation with temporary dummy fixtures...\n'
 production_config=$(docker compose --env-file ops/production.env.example config --format json)
+jq -e '
+  ((.services.signaling.networks | keys | sort) == ["backend", "egress"])
+  and ((.services.edge.networks | keys | sort) == ["backend", "edge"])
+  and (.networks.backend.internal == true)
+  and ((.networks.egress.internal // false) == false)
+' <<<"$production_config" >/dev/null
 
 printf 'Validating the macOS pilot Compose override...\n'
 macos_pilot_config=$(
