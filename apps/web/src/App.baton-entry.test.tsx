@@ -37,10 +37,10 @@ function authenticatedSession(): Response {
   });
 }
 
-async function flushMicrotasks(rounds = 16): Promise<void> {
-  for (let index = 0; index < rounds; index += 1) {
-    await Promise.resolve();
-  }
+async function waitForState(assertion: () => void): Promise<void> {
+  await act(async () => {
+    await vi.waitFor(assertion);
+  });
 }
 
 function buttonWithText(container: HTMLElement, text: string): HTMLButtonElement | null {
@@ -52,16 +52,22 @@ function buttonWithText(container: HTMLElement, text: string): HTMLButtonElement
 }
 
 async function enterPrejoin(container: HTMLElement, displayName = '림'): Promise<void> {
-  const input = container.querySelector<HTMLInputElement>('#display-name');
-  expect(input).not.toBeNull();
+  let input: HTMLInputElement | null = null;
+  await waitForState(() => {
+    input = container.querySelector<HTMLInputElement>('#display-name');
+    expect(input).not.toBeNull();
+  });
   await act(async () => {
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
     valueSetter?.call(input, displayName);
     input?.dispatchEvent(new Event('input', { bubbles: true }));
-    await flushMicrotasks();
-    buttonWithText(container, '입장 준비')?.click();
-    await flushMicrotasks();
   });
+  await act(async () => {
+    buttonWithText(container, '입장 준비')?.click();
+  });
+  await waitForState(() =>
+    expect(container.textContent).toContain('입장 전에 장치를 확인해 주세요.'),
+  );
 }
 
 function activeRoomSnapshot(): RoomSessionSnapshot {
@@ -155,7 +161,6 @@ describe('BATON room entry boundary', () => {
     if (root !== null) {
       await act(async () => {
         root?.unmount();
-        await flushMicrotasks();
       });
     }
     container.remove();
@@ -194,10 +199,11 @@ describe('BATON room entry boundary', () => {
     await act(async () => {
       root = createRoot(container);
       root.render(<App />);
-      await flushMicrotasks();
     });
 
-    expect(container.textContent).toContain('스터디 참여 권한을 확인하고 있습니다.');
+    await waitForState(() =>
+      expect(container.textContent).toContain('스터디 참여 권한을 확인하고 있습니다.'),
+    );
     expect(container.textContent).not.toContain('입장 전에 장치를 확인해 주세요.');
     expect(buttonWithText(container, '장치 확인')).toBeNull();
     expect(getUserMedia).not.toHaveBeenCalled();
@@ -209,10 +215,11 @@ describe('BATON room entry boundary', () => {
           refreshAfterSeconds: 240,
         }),
       );
-      await flushMicrotasks();
     });
 
-    expect(container.querySelector<HTMLInputElement>('#display-name')?.value).toBe('');
+    await waitForState(() =>
+      expect(container.querySelector<HTMLInputElement>('#display-name')?.value).toBe(''),
+    );
     await enterPrejoin(container);
     expect(localStorage.setItem).not.toHaveBeenCalled();
 
@@ -221,23 +228,21 @@ describe('BATON room entry boundary', () => {
 
     await act(async () => {
       buttonWithText(container, '장치 확인')?.click();
-      await flushMicrotasks(24);
     });
 
-    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    await waitForState(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
     expect(fetcher.mock.invocationCallOrder[1]).toBeLessThan(
       getUserMedia.mock.invocationCallOrder[0]!,
     );
 
     await act(async () => {
       buttonWithText(container, '미디어 없이 입장')?.click();
-      await flushMicrotasks(32);
     });
 
+    await waitForState(() => expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce());
     expect(fetcher.mock.calls.filter(([input]) => input === TURN_ENDPOINT)).toHaveLength(1);
     expect(container.textContent).not.toContain('TURN 서버 정보를 받지 못했습니다.');
     expect(container.textContent).not.toContain('스터디 참여 권한을 확인하지 못했습니다.');
-    expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce();
     expect(fetcher.mock.calls.filter(([input]) => input === GRANT_ENDPOINT)).toHaveLength(1);
     expect(fetcher.mock.calls.filter(([input]) => input === '/api/v1/auth/session')).toHaveLength(
       1,
@@ -275,7 +280,6 @@ describe('BATON room entry boundary', () => {
           <App />
         </StrictMode>,
       );
-      await flushMicrotasks(32);
     });
     await enterPrejoin(container);
     expect(container.textContent).toContain('입장 전에 장치를 확인해 주세요.');
@@ -283,16 +287,11 @@ describe('BATON room entry boundary', () => {
       const joinButton = buttonWithText(container, '미디어 없이 입장');
       expect(joinButton).not.toBeNull();
       joinButton?.click();
-      await flushMicrotasks(64);
-    });
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
-      await flushMicrotasks(32);
     });
 
-    expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce();
+    await waitForState(() => expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce());
     const session = rtcCoreMock.RoomSession.mock.results[0]?.value as RoomSession;
-    expect(session.join).toHaveBeenCalled();
+    await waitForState(() => expect(session.join).toHaveBeenCalled());
   });
 
   it('rechecks an expired entry lease before requesting camera or microphone access', async () => {
@@ -319,18 +318,18 @@ describe('BATON room entry boundary', () => {
     await act(async () => {
       root = createRoot(container);
       root.render(<App />);
-      await flushMicrotasks();
     });
     await enterPrejoin(container);
 
     nowMs = 1_001;
     await act(async () => {
       buttonWithText(container, '장치 확인')?.click();
-      await flushMicrotasks(24);
     });
 
-    expect(grantRequests).toBe(2);
-    expect(container.textContent).toContain('이 스터디룸에 참여할 수 없습니다.');
+    await waitForState(() => {
+      expect(grantRequests).toBe(2);
+      expect(container.textContent).toContain('이 스터디룸에 참여할 수 없습니다.');
+    });
     expect(container.textContent).not.toContain('revoked membership');
     expect(getUserMedia).not.toHaveBeenCalled();
   });
@@ -368,29 +367,29 @@ describe('BATON room entry boundary', () => {
       await act(async () => {
         root = createRoot(container);
         root.render(<App />);
-        await flushMicrotasks();
       });
       await enterPrejoin(container);
       await act(async () => {
         buttonWithText(container, '미디어 없이 입장')?.click();
-        await flushMicrotasks(32);
       });
 
-      expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce();
-      expect(grantRequests).toBe(1);
+      await waitForState(() => {
+        expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce();
+        expect(grantRequests).toBe(1);
+      });
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1_000);
-        await flushMicrotasks(24);
       });
 
-      expect(grantRequests).toBe(2);
-      expect(container.textContent).toContain('BATON 로그인이 필요합니다.');
+      await waitForState(() => {
+        expect(grantRequests).toBe(2);
+        expect(container.textContent).toContain('BATON 로그인이 필요합니다.');
+      });
       expect(container.textContent).not.toContain('expired provider detail');
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(30_000);
-        await flushMicrotasks();
       });
       expect(grantRequests).toBe(2);
     } finally {
@@ -398,7 +397,6 @@ describe('BATON room entry boundary', () => {
         await act(async () => {
           root?.unmount();
           root = null;
-          await flushMicrotasks();
         });
       }
       vi.clearAllTimers();
@@ -413,9 +411,9 @@ describe('BATON room entry boundary', () => {
     await act(async () => {
       root = createRoot(container);
       root.render(<App />);
-      await flushMicrotasks();
     });
 
+    await waitForState(() => expect(container.textContent).toContain('BATON 로그인이 필요합니다.'));
     const loginLink = container.querySelector<HTMLAnchorElement>('a[href^="/login?"]');
     expect(loginLink?.getAttribute('href')).toBe(
       `/login?returnTo=${encodeURIComponent(ROOM_PATH)}`,
@@ -440,10 +438,11 @@ describe('BATON room entry boundary', () => {
     await act(async () => {
       root = createRoot(container);
       root.render(<App />);
-      await flushMicrotasks();
     });
 
-    expect(container.textContent).toContain('이 스터디룸에 참여할 수 없습니다.');
+    await waitForState(() =>
+      expect(container.textContent).toContain('이 스터디룸에 참여할 수 없습니다.'),
+    );
     expect(container.textContent).not.toContain('membership detail');
     expect(container.querySelector('a[href^="/login?"]')).toBeNull();
     expect(container.querySelector('a[href="/"]')).not.toBeNull();
@@ -463,10 +462,11 @@ describe('BATON room entry boundary', () => {
     await act(async () => {
       root = createRoot(container);
       root.render(<App />);
-      await flushMicrotasks();
     });
 
-    expect(container.textContent).toContain('이 스터디룸을 더 이상 찾을 수 없습니다.');
+    await waitForState(() =>
+      expect(container.textContent).toContain('이 스터디룸을 더 이상 찾을 수 없습니다.'),
+    );
     expect(container.textContent).not.toContain('room mapping detail');
     expect(buttonWithText(container, '장치 확인')).toBeNull();
     expect(getUserMedia).not.toHaveBeenCalled();
@@ -480,10 +480,11 @@ describe('BATON room entry boundary', () => {
     await act(async () => {
       root = createRoot(container);
       root.render(<App />);
-      await flushMicrotasks();
     });
 
-    expect(container.textContent).toContain('BATON에서 스터디룸을 열어 주세요.');
+    await waitForState(() =>
+      expect(container.textContent).toContain('BATON에서 스터디룸을 열어 주세요.'),
+    );
     expect(container.textContent).not.toContain('새 스터디룸 만들기');
     expect(container.textContent).not.toContain('초대 코드로 참가');
     expect(fetcher).not.toHaveBeenCalled();

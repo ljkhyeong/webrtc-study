@@ -79,10 +79,10 @@ function pendingUntilAborted(signal: AbortSignal): Promise<Response> {
   });
 }
 
-async function flushMicrotasks(rounds = 12): Promise<void> {
-  for (let index = 0; index < rounds; index += 1) {
-    await Promise.resolve();
-  }
+async function waitForState(assertion: () => void): Promise<void> {
+  await act(async () => {
+    await vi.waitFor(assertion);
+  });
 }
 
 describe('ActiveRoom mounted lifecycle', () => {
@@ -107,7 +107,6 @@ describe('ActiveRoom mounted lifecycle', () => {
     if (root !== null) {
       await act(async () => {
         root?.unmount();
-        await flushMicrotasks();
       });
     }
     container.remove();
@@ -233,24 +232,23 @@ describe('ActiveRoom mounted lifecycle', () => {
           />
         </StrictMode>,
       );
-      await flushMicrotasks(24);
     });
 
-    expect(rtcCoreMock.RoomSession).toHaveBeenCalledTimes(1);
+    await waitForState(() => {
+      expect(rtcCoreMock.RoomSession).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[data-testid="room-status"]')?.textContent).toBe('active');
+    });
     const mountedSessionOptions = sessionState.options;
     if (mountedSessionOptions === null) {
       throw new Error('Expected StrictMode handoff to create one room session');
     }
     expect(mountedSessionOptions.beforeSignalingConnect).toBeTypeOf('function');
-    expect(container.querySelector('[data-testid="room-status"]')?.textContent).toBe('active');
-
     const activeManager = ensureFreshSpy.mock.instances.at(-1);
     expect(activeManager).toBeInstanceOf(ParticipationGrantLeaseManager);
     const ensureFreshCallsBeforeHandoffCheck = ensureFreshSpy.mock.calls.length;
     monotonicNow = 500;
     await act(async () => {
       await mountedSessionOptions.beforeSignalingConnect?.();
-      await flushMicrotasks();
     });
 
     expect(ensureFreshSpy).toHaveBeenCalledTimes(ensureFreshCallsBeforeHandoffCheck + 1);
@@ -266,8 +264,8 @@ describe('ActiveRoom mounted lifecycle', () => {
     holdTurnRefresh = true;
     await act(async () => {
       activeCallbacks.get('turn')?.();
-      await flushMicrotasks();
     });
+    await waitForState(() => expect(pendingSignals.turn).not.toBeNull());
     const turnRefreshSignal = pendingSignals.turn;
     if (turnRefreshSignal === null) {
       throw new Error('Expected a TURN refresh request to remain in flight');
@@ -278,8 +276,8 @@ describe('ActiveRoom mounted lifecycle', () => {
     holdGrantRefresh = true;
     await act(async () => {
       activeCallbacks.get('participation-grant')?.();
-      await flushMicrotasks();
     });
+    await waitForState(() => expect(pendingSignals.grant).not.toBeNull());
     const grantRefreshSignal = pendingSignals.grant;
     if (grantRefreshSignal === null) {
       throw new Error('Expected a participation-grant refresh request to remain in flight');
@@ -298,14 +296,15 @@ describe('ActiveRoom mounted lifecycle', () => {
       for (const listener of listeners) {
         listener(currentSnapshot);
       }
-      await flushMicrotasks(24);
     });
 
-    expect(container.querySelector('[data-testid="room-status"]')?.textContent).toBe('error');
-    expect(stopSpy).toHaveBeenCalledTimes(stopCallsBeforeTerminalSnapshot + 1);
-    expect(closeSpy).toHaveBeenCalledTimes(closeCallsBeforeTerminalSnapshot + 1);
-    expect(activeLifetime.isActive()).toBe(false);
-    expect(grantRefreshSignal.aborted).toBe(true);
-    expect(turnRefreshSignal.aborted).toBe(true);
+    await waitForState(() => {
+      expect(container.querySelector('[data-testid="room-status"]')?.textContent).toBe('error');
+      expect(stopSpy).toHaveBeenCalledTimes(stopCallsBeforeTerminalSnapshot + 1);
+      expect(closeSpy).toHaveBeenCalledTimes(closeCallsBeforeTerminalSnapshot + 1);
+      expect(activeLifetime.isActive()).toBe(false);
+      expect(grantRefreshSignal.aborted).toBe(true);
+      expect(turnRefreshSignal.aborted).toBe(true);
+    });
   });
 });

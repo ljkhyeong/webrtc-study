@@ -42,7 +42,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium-full-media',
-      testMatch: /standalone-room\.spec\.ts/,
+      testMatch: /standalone-room(?:-(?:media|chat|recovery))?\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
