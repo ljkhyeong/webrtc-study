@@ -990,7 +990,7 @@ public class SignalingService implements SmartLifecycle {
 			WebSocketMessage<?> message,
 			String excludedPeerId,
 			ArrayDeque<PendingOutbound> pendingOutbound) {
-		for (Peer target : List.copyOf(room.values())) {
+		for (Peer target : room.values()) {
 			if (!target.peerId.equals(excludedPeerId)) {
 				pendingOutbound.addLast(new PendingOutbound(target, message));
 			}
@@ -1049,7 +1049,8 @@ public class SignalingService implements SmartLifecycle {
 		}
 
 		int messageBytes = message.getPayloadLength();
-		boolean peerOverflow = peer.outboundFrameCount >= MAX_OUTBOUND_QUEUE_SIZE
+		boolean peerOverflow = peer.outbound.size() + (peer.inFlightBytes == 0 ? 0 : 1)
+				>= MAX_OUTBOUND_QUEUE_SIZE
 				|| messageBytes > maxOutboundQueueBytes - peer.outboundBytes;
 		if (peerOverflow) {
 			if (disconnectAndCloseLocked(
@@ -1088,7 +1089,6 @@ public class SignalingService implements SmartLifecycle {
 		}
 
 		peer.outbound.addLast(new OutboundFrame(message, messageBytes));
-		peer.outboundFrameCount++;
 		peer.outboundBytes += messageBytes;
 		globalOutboundBytes += messageBytes;
 		metrics.updateOutboundQueuedBytes(globalOutboundBytes);
@@ -1296,13 +1296,11 @@ public class SignalingService implements SmartLifecycle {
 
 	private static ConnectionAdmissionPolicy.Reservation takeReservation(
 			WebSocketSession session) {
-		Map<String, Object> attributes = session.getAttributes();
-		Object candidate = attributes.get(ConnectionAdmissionPolicy.RESERVATION_ATTRIBUTE);
-		if (!(candidate instanceof ConnectionAdmissionPolicy.Reservation reservation)) {
-			return null;
-		}
-		attributes.remove(ConnectionAdmissionPolicy.RESERVATION_ATTRIBUTE, reservation);
-		return reservation;
+		Object candidate = session.getAttributes().remove(
+				ConnectionAdmissionPolicy.RESERVATION_ATTRIBUTE);
+		return candidate instanceof ConnectionAdmissionPolicy.Reservation reservation
+				? reservation
+				: null;
 	}
 
 	private static final class Peer {
@@ -1311,7 +1309,6 @@ public class SignalingService implements SmartLifecycle {
 		private final WebSocketSession session;
 		private final long connectionSequence;
 		private final ArrayDeque<OutboundFrame> outbound = new ArrayDeque<>();
-		private int outboundFrameCount;
 		private long outboundBytes;
 		private long inFlightBytes;
 		private boolean announced;
@@ -1484,14 +1481,12 @@ public class SignalingService implements SmartLifecycle {
 		long queuedBytes = peer.outboundBytes - peer.inFlightBytes;
 		globalOutboundBytes -= queuedBytes;
 		peer.outbound.clear();
-		peer.outboundFrameCount = peer.inFlightBytes == 0 ? 0 : 1;
 		peer.outboundBytes = peer.inFlightBytes;
 		metrics.updateOutboundQueuedBytes(globalOutboundBytes);
 	}
 
 	private void releaseInFlightLocked(Peer peer, OutboundFrame frame) {
 		peer.inFlightBytes = 0;
-		peer.outboundFrameCount--;
 		peer.outboundBytes -= frame.payloadBytes();
 		globalOutboundBytes -= frame.payloadBytes();
 		metrics.updateOutboundQueuedBytes(globalOutboundBytes);
