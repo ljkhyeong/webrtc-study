@@ -1,11 +1,10 @@
 export type PrejoinMediaStatus = 'idle' | 'checking' | 'ready';
 
 export type PrejoinMediaIssueCode =
-  'permission-denied' | 'device-not-found' | 'device-busy' | 'media-unavailable';
+  'permission-denied' | 'device-not-found' | 'device-busy' | 'media-unavailable' | 'track-ended';
 
 export interface PrejoinMediaIssue {
   readonly code: PrejoinMediaIssueCode;
-  readonly message: string;
 }
 
 export interface PrejoinMediaDevice {
@@ -62,35 +61,21 @@ function getErrorName(error: unknown): string {
   return '';
 }
 
-function issueFor(kind: InputKind, error: unknown): PrejoinMediaIssue {
-  const deviceName = kind === 'audio' ? '마이크' : '카메라';
-
+function issueFor(error: unknown): PrejoinMediaIssue {
   switch (getErrorName(error)) {
     case 'NotAllowedError':
     case 'SecurityError':
-      return {
-        code: 'permission-denied',
-        message: `${deviceName} 권한이 거부되었습니다. 브라우저 설정에서 허용한 뒤 다시 시도해 주세요.`,
-      };
+      return { code: 'permission-denied' };
     case 'NotFoundError':
     case 'DevicesNotFoundError':
     case 'OverconstrainedError':
-      return {
-        code: 'device-not-found',
-        message: `사용할 수 있는 ${deviceName}를 찾지 못했습니다. 장치 연결 상태를 확인해 주세요.`,
-      };
+      return { code: 'device-not-found' };
     case 'AbortError':
     case 'NotReadableError':
     case 'TrackStartError':
-      return {
-        code: 'device-busy',
-        message: `${deviceName}를 다른 앱이 사용 중입니다. 다른 앱을 닫은 뒤 다시 시도해 주세요.`,
-      };
+      return { code: 'device-busy' };
     default:
-      return {
-        code: 'media-unavailable',
-        message: `${deviceName}를 열지 못했습니다. 장치와 브라우저 설정을 확인한 뒤 다시 시도해 주세요.`,
-      };
+      return { code: 'media-unavailable' };
   }
 }
 
@@ -350,7 +335,7 @@ export class PrejoinMedia {
       if (acquiredStream !== null) {
         stopTracks(acquiredStream);
       }
-      const issue = issueFor(request.kind, error);
+      const issue = issueFor(error);
       if (request.kind === 'audio') {
         this.#audioIssue = issue;
       } else {
@@ -397,11 +382,7 @@ export class PrejoinMedia {
 
     this.#detachTrackEndedListener(track);
     stream.removeTrack(track);
-    const deviceName = kind === 'audio' ? '마이크' : '카메라';
-    const issue: PrejoinMediaIssue = {
-      code: 'media-unavailable',
-      message: `${deviceName} 연결이 종료되었습니다. 장치 연결 상태를 확인한 뒤 다시 시도해 주세요.`,
-    };
+    const issue: PrejoinMediaIssue = { code: 'track-ended' };
     if (kind === 'audio') {
       this.#audioIssue = issue;
     } else {

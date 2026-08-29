@@ -2,17 +2,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SIGNALING_ERROR_CODES } from '@round/protocol';
 import { ChatSendError } from '@round/rtc-core';
 import { describe, expect, it, vi } from 'vitest';
+import { App, navigateToOwningHome } from './App';
 import {
-  App,
   buildRoomSystemNotices,
   chatErrorMessage,
-  navigateToOwningHome,
   resolveActiveRoomTerminalState,
   roomErrorMessage,
   roomStatusLabel,
   roomWarningMessage,
   screenShareStartNotice,
-} from './App';
+} from './lib/room-presentation';
 
 describe('App pre-join boundary', () => {
   it('returns BATON-owned rooms with a document navigation', () => {

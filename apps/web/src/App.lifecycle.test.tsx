@@ -27,7 +27,7 @@ vi.mock('./components/RoomView', () => ({
   ),
 }));
 
-import { ActiveRoom } from './App';
+import { ActiveRoom } from './components/ActiveRoom';
 
 const ROOM_ID = 'abcd-efgh-jkmp';
 const GRANT_ENDPOINT = `/round/rooms/${ROOM_ID}/participation-grant/refresh`;

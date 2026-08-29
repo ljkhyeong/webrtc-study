@@ -1,6 +1,8 @@
 import { PrejoinMedia, type PrejoinMediaSnapshot } from '@round/rtc-core';
 import { MAX_HOST_CAPABILITY_LENGTH, MIN_HOST_CAPABILITY_LENGTH } from '@round/protocol';
 import { useEffect, useRef, useState } from 'react';
+import { DEFAULT_AUDIO_CONSTRAINTS, DEFAULT_VIDEO_CONSTRAINTS } from '../lib/media-constraints';
+import { prejoinMediaIssueMessage } from '../lib/prejoin-presentation';
 import { ArrowIcon, CameraIcon, CameraOffIcon, MicIcon, MicOffIcon } from './Icons';
 
 interface PrejoinScreenProps {
@@ -62,17 +64,8 @@ export function PrejoinScreen({
     }
 
     const controller = new PrejoinMedia({
-      audioConstraints: {
-        autoGainControl: true,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
-      videoConstraints: {
-        width: { ideal: 640 },
-        height: { ideal: 360 },
-        frameRate: { ideal: 15, max: 15 },
-        facingMode: 'user',
-      },
+      audioConstraints: DEFAULT_AUDIO_CONSTRAINTS,
+      videoConstraints: DEFAULT_VIDEO_CONSTRAINTS,
     });
     controllerRef.current = controller;
     unsubscribeRef.current = controller.subscribe(setSnapshot);
@@ -352,13 +345,13 @@ export function PrejoinScreen({
                 {snapshot.audioIssue ? (
                   <p role="alert">
                     <MicOffIcon />
-                    <span>{snapshot.audioIssue.message}</span>
+                    <span>{prejoinMediaIssueMessage('audio', snapshot.audioIssue.code)}</span>
                   </p>
                 ) : null}
                 {snapshot.videoIssue ? (
                   <p role="alert">
                     <CameraOffIcon />
-                    <span>{snapshot.videoIssue.message}</span>
+                    <span>{prejoinMediaIssueMessage('video', snapshot.videoIssue.code)}</span>
                   </p>
                 ) : null}
                 {actionError ? <p role="alert">{actionError}</p> : null}

@@ -154,14 +154,11 @@ describe('PrejoinMedia', () => {
       videoAvailable: false,
       videoEnabled: false,
     });
-    expect(snapshot.videoIssue).toEqual({
-      code: 'device-busy',
-      message: '카메라를 다른 앱이 사용 중입니다. 다른 앱을 닫은 뒤 다시 시도해 주세요.',
-    });
+    expect(snapshot.videoIssue).toEqual({ code: 'device-busy' });
     expect(controller.getStream()?.getAudioTracks()).toEqual([audioTrack]);
   });
 
-  it('distinguishes permission denial from a missing device in Korean', async () => {
+  it('distinguishes permission denial from a missing device', async () => {
     const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints) => {
       if (constraints.audio !== false) {
         throw namedError('NotAllowedError');
@@ -179,14 +176,8 @@ describe('PrejoinMedia', () => {
 
     const snapshot = await controller.checkDevices();
 
-    expect(snapshot.audioIssue).toEqual({
-      code: 'permission-denied',
-      message: '마이크 권한이 거부되었습니다. 브라우저 설정에서 허용한 뒤 다시 시도해 주세요.',
-    });
-    expect(snapshot.videoIssue).toEqual({
-      code: 'device-not-found',
-      message: '사용할 수 있는 카메라를 찾지 못했습니다. 장치 연결 상태를 확인해 주세요.',
-    });
+    expect(snapshot.audioIssue).toEqual({ code: 'permission-denied' });
+    expect(snapshot.videoIssue).toEqual({ code: 'device-not-found' });
     expect(controller.getStream()).toBeNull();
   });
 
@@ -278,8 +269,7 @@ describe('PrejoinMedia', () => {
         videoEnabled: true,
       },
       audioIssue: {
-        code: 'media-unavailable',
-        message: '마이크 연결이 종료되었습니다. 장치 연결 상태를 확인한 뒤 다시 시도해 주세요.',
+        code: 'track-ended',
       },
     });
     expect(controller.getStream()?.getAudioTracks()).toEqual([]);
