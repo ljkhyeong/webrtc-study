@@ -19,22 +19,12 @@ final class SensitiveHeaderRedactingServletServerHttpRequest
 			HttpHeaders.COOKIE,
 			HttpHeaders.PROXY_AUTHORIZATION);
 
-	private final HttpHeaders headers;
-
 	SensitiveHeaderRedactingServletServerHttpRequest(
 			ServletServerHttpRequest delegate,
 			Principal principal) {
 		super(new SensitiveHandshakeHttpServletRequest(
 				delegate.getServletRequest(),
 				principal));
-		HttpHeaders redactedHeaders = HttpHeaders.copyOf(delegate.getHeaders());
-		SENSITIVE_HEADERS.forEach(redactedHeaders::remove);
-		headers = HttpHeaders.readOnlyHttpHeaders(redactedHeaders);
-	}
-
-	@Override
-	public HttpHeaders getHeaders() {
-		return headers;
 	}
 
 	private static boolean isSensitive(String name) {

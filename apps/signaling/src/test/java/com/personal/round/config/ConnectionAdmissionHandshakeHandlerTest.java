@@ -13,9 +13,12 @@ import com.personal.round.signaling.ConnectionAdmissionPolicy;
 import com.personal.round.signaling.SignalingMetrics;
 import com.personal.round.signaling.SignalingService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.InetSocketAddress;
+import java.security.Principal;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +29,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeFailureException;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
@@ -39,6 +43,7 @@ class ConnectionAdmissionHandshakeHandlerTest {
 	private ConnectionAdmissionPolicy policy;
 	private DefaultHandshakeHandler delegate;
 	private ConnectionAdmissionHandshakeHandler handler;
+	private MockHttpServletRequest nativeRequest;
 	private ServletServerHttpRequest request;
 	private ServerHttpResponse response;
 	private WebSocketHandler webSocketHandler;
@@ -52,13 +57,13 @@ class ConnectionAdmissionHandshakeHandlerTest {
 				new ClientAddressKeyResolver());
 		delegate = mock(DefaultHandshakeHandler.class);
 		handler = new ConnectionAdmissionHandshakeHandler(service, policy, delegate);
-		request = mock(ServletServerHttpRequest.class);
+		nativeRequest = new MockHttpServletRequest();
+		nativeRequest.setRemoteAddr(REMOTE_ADDRESS.getAddress().getHostAddress());
+		nativeRequest.setRemotePort(REMOTE_ADDRESS.getPort());
+		request = new ServletServerHttpRequest(nativeRequest);
 		response = mock(ServerHttpResponse.class);
 		webSocketHandler = mock(WebSocketHandler.class);
 		when(service.isAcceptingConnections()).thenReturn(true);
-		when(request.getServletRequest()).thenReturn(mock(HttpServletRequest.class));
-		when(request.getRemoteAddress()).thenReturn(REMOTE_ADDRESS);
-		when(request.getHeaders()).thenReturn(new HttpHeaders());
 	}
 
 	@Test
@@ -177,12 +182,18 @@ class ConnectionAdmissionHandshakeHandlerTest {
 
 	@Test
 	void removesSensitiveHeadersBeforeTheUpgradeCopiesThemIntoTheSession() {
-		HttpHeaders originalHeaders = new HttpHeaders();
-		originalHeaders.add(HttpHeaders.COOKIE, "__Secure-round_access=raw-jwt");
-		originalHeaders.add(HttpHeaders.AUTHORIZATION, "Bearer raw-jwt");
-		originalHeaders.add(HttpHeaders.PROXY_AUTHORIZATION, "Basic proxy-secret");
-		originalHeaders.add(HttpHeaders.ORIGIN, "https://study.example.com");
-		when(request.getHeaders()).thenReturn(originalHeaders);
+		nativeRequest.addHeader(
+				HttpHeaders.COOKIE,
+				"__Secure-round_access=raw-jwt; preference=compact");
+		nativeRequest.addHeader(HttpHeaders.AUTHORIZATION, "Bearer raw-jwt");
+		nativeRequest.addHeader(HttpHeaders.PROXY_AUTHORIZATION, "Basic proxy-secret");
+		nativeRequest.addHeader(HttpHeaders.ORIGIN, "https://study.example.com");
+		nativeRequest.addHeader(HttpHeaders.UPGRADE, "websocket");
+		nativeRequest.setCookies(
+				new Cookie("__Secure-round_access", "raw-jwt"),
+				new Cookie("preference", "compact"));
+		Principal originalPrincipal = () -> "raw-jwt-principal";
+		nativeRequest.setUserPrincipal(originalPrincipal);
 		when(delegate.doHandshake(any(), any(), any(), any())).thenReturn(true);
 		Map<String, Object> attributes = new HashMap<>();
 		attributes.put(ParticipationGrant.SESSION_ATTRIBUTE, grant());
@@ -203,11 +214,34 @@ class ConnectionAdmissionHandshakeHandlerTest {
 		assertThat(upgradeHeaders.containsHeader(HttpHeaders.PROXY_AUTHORIZATION)).isFalse();
 		assertThat(upgradeHeaders.get(HttpHeaders.ORIGIN))
 				.containsExactly("https://study.example.com");
-		assertThat(originalHeaders.containsHeader(HttpHeaders.COOKIE)).isTrue();
+		assertThat(upgradeHeaders.getFirst(HttpHeaders.UPGRADE)).isEqualTo("websocket");
 		assertThat(upgradeRequest.getPrincipal().getName()).isEqualTo("member-42");
+		assertThat(upgradeRequest.getPrincipal()).isNotSameAs(originalPrincipal);
 		assertThat(upgradeRequest.getPrincipal())
 				.asString()
 				.doesNotContain("member-42", "raw-jwt");
+		assertThat(upgradeRequest).isInstanceOf(ServletServerHttpRequest.class);
+		HttpServletRequest sanitizedNativeRequest =
+				((ServletServerHttpRequest) upgradeRequest).getServletRequest();
+		assertThat(Collections.list(sanitizedNativeRequest.getHeaderNames()))
+				.doesNotContain(
+						HttpHeaders.COOKIE,
+						HttpHeaders.AUTHORIZATION,
+						HttpHeaders.PROXY_AUTHORIZATION)
+				.contains(HttpHeaders.ORIGIN, HttpHeaders.UPGRADE);
+		assertThat(sanitizedNativeRequest.getHeader(HttpHeaders.COOKIE)).isNull();
+		assertThat(Collections.list(
+				sanitizedNativeRequest.getHeaders(HttpHeaders.AUTHORIZATION))).isEmpty();
+		assertThat(sanitizedNativeRequest.getCookies()).isNull();
+		assertThat(sanitizedNativeRequest.getHeader(HttpHeaders.ORIGIN))
+				.isEqualTo("https://study.example.com");
+		assertThat(sanitizedNativeRequest.getHeader(HttpHeaders.UPGRADE))
+				.isEqualTo("websocket");
+		assertThat(sanitizedNativeRequest.getUserPrincipal().getName())
+				.isEqualTo("member-42");
+		assertThat(sanitizedNativeRequest.getUserPrincipal())
+				.isNotSameAs(originalPrincipal);
+		assertThat(sanitizedNativeRequest.getRemoteUser()).isEqualTo("member-42");
 		release(attributes);
 	}
 
