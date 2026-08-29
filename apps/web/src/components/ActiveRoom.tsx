@@ -18,10 +18,7 @@ import {
   type RoundAuthMode,
 } from '../lib/room-endpoints';
 import { RoomRefreshLifetime } from '../lib/room-refresh-lifetime';
-import {
-  loadRtcConfiguration,
-  type LoadedRtcConfiguration,
-} from '../lib/rtc-configuration';
+import { loadRtcConfiguration, type LoadedRtcConfiguration } from '../lib/rtc-configuration';
 import {
   PEER_CONNECTION_FAILURE_MESSAGE,
   buildRoomSystemNotices,
