@@ -19,6 +19,9 @@ management:
         enabled: true
       show-details: never
       group:
+        liveness:
+          include: livenessState
+          additional-path: "server:/healthz"
         readiness:
           include: readinessState,signaling
   endpoints:
