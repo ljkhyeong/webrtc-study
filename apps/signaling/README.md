@@ -87,19 +87,22 @@ Micrometer는 다음 signaling meter를 게시합니다.
 - `round.signaling.authorization.closes`
 - `round.auth.jwk.source.healthy` (BATON JWK 원격 소스가 정상이면 `1`, 장애면 `0`)
 - `round.turn.credentials.issued`
+- `round.turn.credentials.provider.errors`
 - `round.turn.credentials.rate_limited`
   (`scope=client|participant|global|client_state_capacity|participant_state_capacity`)
 
 meter tag는 의도적으로 제한된 값만 사용합니다. 방 ID, 표시 이름, session/peer ID, SDP, ICE
-candidate, Origin/header 값, TURN shared secret, 발급한 TURN credential은 절대로 기록하거나 meter
+candidate, Origin/header 값, Cloudflare API token, 발급한 TURN credential은 절대로 기록하거나 meter
 tag로 사용해서는 안 됩니다. 전송 log에는 고정된 메시지와 예외 class만 포함합니다.
 authorization-close meter는 참가자, 방, 참여권 tag가 없는 identity-free counter입니다.
 
-## Coturn REST 자격 증명
+## Cloudflare TURN 자격 증명
 
-`TURN_SHARED_SECRET`과 쉼표로 구분한 `TURN_URLS`를 모두 설정하거나 둘 다 설정하지 않아야
-합니다. 일부만 설정하면 secret을 출력하지 않고 시작에 실패합니다. 선택 사항인
-`TURN_CREDENTIAL_TTL_SECONDS`의 기본값은 600초(10분)입니다.
+운영에서는 `TURN_PROVIDER=cloudflare`, `TURN_CLOUDFLARE_KEY_ID`,
+`TURN_CLOUDFLARE_API_TOKEN`을 함께 설정합니다. 로컬 STUN 전용 개발은
+`TURN_PROVIDER=disabled`를 사용하고 두 Cloudflare 값을 비워 둡니다. 구성이 맞지 않으면
+자격 증명을 출력하지 않고 시작에 실패합니다. `TURN_CREDENTIAL_TTL_SECONDS`의 기본값은
+600초(10분)입니다.
 
 credential 발급에는 다음과 같은 추가 제한형 rate-limit 설정을 사용합니다.
 
@@ -126,15 +129,15 @@ credential endpoint는 다음과 같은 no-store 응답을 반환합니다.
 
 ```json
 {
-  "urls": ["turn:turn.example.com:3478?transport=udp"],
-  "username": "1780000000:base64url-random.sequence",
-  "credential": "base64-hmac-sha1",
+  "urls": ["turn:turn.cloudflare.com:3478?transport=udp"],
+  "username": "cloudflare-issued-username",
+  "credential": "cloudflare-issued-credential",
   "expiresAt": 1780000000,
   "refreshAfterSeconds": 480
 }
 ```
 
-`expiresAt`은 coturn과 운영 점검에 사용하는 Unix epoch 초입니다. `refreshAfterSeconds`는 더 짧은
+`expiresAt`은 브라우저 갱신과 운영 관측에 사용하는 Unix epoch 초입니다. `refreshAfterSeconds`는 더 짧은
 BATON 참여권 경계를 포함한 유효 server-side 수명에서 계산합니다. 브라우저는 이 상대값과 자체
 monotonic clock으로 갱신을 예약하며 로컬 wall clock의 값을 `expiresAt`에서 빼지 않습니다. 같은
 NAT 뒤의 서로 다른 브라우저를 포함해 성공한 요청마다 새 username과 credential을 받습니다.
@@ -145,6 +148,9 @@ window 가운데 남은 시간이 가장 긴 값의 정수 초를 설정합니�
 늦은 정확한 window를 나타냅니다. 완전히 같은 경우에는 participant-state capacity, client-state
 capacity, global, participant, client 압력 순서를 적용해 운영상 가장 중요한 원인이 계속 보이게
 합니다.
+Cloudflare credential API 호출 실패나 사용할 수 없는 응답은 빈 no-store HTTP 503으로 반환하고
+`round.turn.credentials.provider.errors`를 증가시킵니다. 공급자 응답의 STUN 항목과 브라우저에서
+불안정한 53번 포트 route는 브라우저 TURN 목록에 포함하지 않습니다.
 
 Origin과 Fetch Metadata 검사는 다른 웹사이트가 브라우저를 통해 방문자의 quota를 소진하지 못하게
 합니다. standalone 모드에서 이 검사는 해당 header를 만들 수 있는 비브라우저 client를 인증하지

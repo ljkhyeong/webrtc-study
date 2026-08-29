@@ -14,7 +14,7 @@ packages/rtc-core Framework-free WebRTC room engine
 
 각 참가자는 원격 참가자마다 하나의 `RTCPeerConnection`을 엽니다. 오디오, 영상, 채팅
 데이터는 브라우저 사이를 직접 이동합니다. signaling 서버는 피어가 서로를 찾도록 돕고
-SDP/ICE 메시지를 전달하는 역할만 합니다. 직접 경로를 사용할 수 없으면 coturn이 암호화된
+SDP/ICE 메시지를 전달하는 역할만 합니다. 직접 경로를 사용할 수 없으면 Cloudflare TURN이 암호화된
 WebRTC 패킷을 중계하며, 그 미디어 내용을 Java 애플리케이션에 노출하지 않습니다.
 
 이 mesh 토폴로지는 첫 버전을 저렴하게 자체 호스팅할 수 있게 합니다. 피어가 늘어날수록
@@ -197,9 +197,11 @@ transport 경계로 돌아갈 수 없습니다.
 제한합니다. 따라서 BATON membership 취소는 다음 갱신에서 반영되지만, 이미 연결된 socket은
 현재의 짧은 참여권이 만료될 때까지 승인 상태를 유지할 수 있습니다.
 
-coturn shared secret은 signaling과 TURN runtime에만 존재합니다. 브라우저는 standalone
+Cloudflare TURN API token은 signaling runtime에만 존재합니다. 브라우저는 standalone
 모드에서는 `/api/turn-credentials`, BATON 모드에서는 방 범위 endpoint에서 시간이 제한된
-HMAC credential을 요청합니다. 수명이 긴 TURN password는 Vite bundle에 compile하지 않습니다.
+credential을 요청합니다. API token이나 장기 자격 증명은 Vite bundle에 compile하지 않습니다.
+signaling은 기존 인증·Origin·quota 경계를 통과한 요청만 Cloudflare credential API로 전달하고,
+공급자 장애는 503과 제한된 counter로 드러냅니다.
 BATON 발급은 유효 client 주소, `(room_id, sub)`, 서버 전체에 fixed-window quota를 원자적으로
 적용합니다. 새 `jti`를 발급하거나 client 주소를 변경해도 참가자 window가 초기화되지 않습니다.
 Standalone 발급은 client와 global 차원만 유지합니다. Quota metric은 참가자, 방, token,

@@ -7,7 +7,7 @@
 ## 맥락
 
 ROUND는 별도 저장소에서 웹 클라이언트, Java signaling 서버, WebRTC 프로토콜과 코어,
-coturn 배포 구성을 함께 관리한다. BATON에 스터디 기능을 붙일 때 기존 signaling 코드를
+Cloudflare TURN 연동 구성을 함께 관리한다. BATON에 스터디 기능을 붙일 때 기존 signaling 코드를
 BATON 애플리케이션 내부로 옮길 수도 있지만, 그렇게 하면 실시간 연결 수명주기와 BATON의
 회원·스터디 도메인 수명주기가 같은 배포 단위에 묶인다.
 
@@ -84,7 +84,7 @@ JWT는 응답 본문이나 JavaScript에 반환하지 않는다. BATON은 정확
 ROUND의 TURN credential 응답도 `expiresAt`과 함께 서버가 유효 수명에서 계산한
 `refreshAfterSeconds`를 반환한다. 브라우저는 이 값을 응답 수신 시점의 monotonic clock에
 더해 갱신 deadline을 만들고, 로컬 wall clock과 TURN `expiresAt`을 빼서 수명을 추정하지
-않는다. `expiresAt`은 coturn username 계약과 운영 관측용 절대 시각으로만 유지한다.
+않는다. `expiresAt`은 브라우저 갱신 계약과 운영 관측용 절대 시각으로만 유지한다.
 
 ### 참여권 계약
 
@@ -213,8 +213,8 @@ BATON 장애 중에도 이미 연결된 WebSocket의 signaling은 BATON 동기 �
   분산 admission·quota registry를 도입해야 한다.
 - TURN의 참가자 quota는 한 참여자가 새 `jti` 또는 IP로 공유 발급량을 독점하는 위험을
   줄이지만, 이미 발급받은 credential 공유나 하나의 credential을 이용한 여러 relay
-  allocation까지 막지는 않는다. IP·서버 전체 발급 quota와 coturn의 사용자·전체
-  allocation quota를 함께 유지해야 한다.
+  allocation까지 막지는 않는다. IP·서버 전체 발급 quota와 Cloudflare 사용량 경보를 함께
+  유지해야 한다.
 
 ## 검토했지만 채택하지 않은 대안
 

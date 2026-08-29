@@ -72,8 +72,8 @@ standalone** 또는 **macOS pilot**이라고 명시한 항목은 해당 토폴�
       스터디 멤버십 authorization이 이를 대체할 때까지 임시 수단이라는 점을 팀이 수용합니다.
       macOS pilot에서는 이 credential이 두 전송 경로가 아닌 UI/정적 전달만 보호한다는 점도
       기록합니다.
-- [ ] TURN shared secret은 Git, 이미지 history, 브라우저 bundle, access log, 애플리케이션 log에
-      없습니다.
+- [ ] Cloudflare TURN API token은 Git, 이미지 history, 브라우저 bundle, access log,
+      애플리케이션 log에 없습니다.
 - [ ] 초대 경로를 방문해도 Caddy access log에 방 코드가 남지 않습니다. 동시에 공유 인증 `401`과
       rate-limit `429`를 포함한 모든 경로는 header와 URI를 제거하고 client 주소를 hash한 상태로
       status를 통해 계속 관측할 수 있습니다.
@@ -167,8 +167,8 @@ standalone** 또는 **macOS pilot**이라고 명시한 항목은 해당 토폴�
 - [ ] 참가자 2명과 4명이 각각 최소 30분 동안 연결을 유지합니다.
 - [ ] 실제 참가자 6명이 최소 90분 동안 연결을 유지합니다.
 - [ ] 참가자 2명의 relay-only session이 4시간 동안 연결을 유지합니다.
-- [ ] relay-only 참가자 6명이 coturn의 `user-quota`, `total-quota`, relay 포트 고갈 없이 동시에
-      입장할 수 있고, 기본값을 변경하기 전에 관측한 allocation 수를 기록합니다.
+- [ ] relay-only 참가자 6명이 동시에 입장할 수 있고 Cloudflare TURN 사용량과 오류율을
+      기록합니다.
 - [ ] 6명 video가 문서화한 저대역폭 capture 정책을 사용하고 알아들을 수 있는 audio를 유지합니다.
 - [ ] RTT, packet loss, 송신 bitrate, 프로세스 memory, 열린 file descriptor, TURN egress를
       기록합니다.
@@ -177,38 +177,17 @@ standalone** 또는 **macOS pilot**이라고 명시한 항목은 해당 토폴�
 
 ## 운영
 
-- [ ] `docker compose up -d --wait --wait-timeout 120`이 로컬 signaling, edge, TURN listener의 시작
-      gate를 통과합니다.
-- [ ] TURN host와 그 NAT 외부의 네트워크에서 secret store의 monitor 입력과 새로 발급한 단기 TURN
-      credential을 사용해 외부 TURN probe의 UDP, TCP, TLS 검사가 통과합니다.
-- [ ] **Linux standalone 전용:** probe의 HTTPS credential fetch를 공유 Basic Auth gate가 monitor
-      account를 허용했다는 증거로 기록합니다.
-- [ ] **macOS pilot 전용:** 같은 probe를 정확한 Origin의 credential 발급과 coturn 인증 및 relay의
-      증거로 기록하며 공유 Basic Auth의 증거로 기록하지 않습니다. 정적 UI의 `401`과 전송 Origin
-      거부는 별도로 검증합니다.
-- [ ] 기본 branch 규칙이 외부 TURN workflow, target property, probe, TLS 검증 및 resolver script,
-      workflow 계약 validator/test에 pull request와 code owner review를 요구합니다. 저장소 plan이
-      해당 제어를 지원하는 경우 self-review와 관리자 우회를 비활성화합니다.
-- [ ] `external-pilot-target.properties`에는 commit된 예시 host 대신 검토한 공개 ROUND Origin, TURN
-      host, `coturn/coturn@sha256` digest가 들어 있습니다.
-- [ ] `round-pilot` GitHub environment는 기본 branch만 허용하고, 공유 접근 값과 선택적인 private CA
-      값만 secret으로 저장하며, 지원되는 경우 self-review가 비활성화된 reviewer를 요구합니다.
-- [ ] 수동 `External TURN pilot probe` workflow가 운영자가 선언한 annotated 릴리스 tag에서
-      통과합니다. 실행 요약에는 tag object, 릴리스와 workflow commit, 정확한 target, probe 이미지
-      digest, 인증된 UDP, TCP, TLS 결과를 기록합니다.
-- [ ] `round-external-turn-pilot-evidence` JSON artifact를 보관합니다. `result=passed`, 실행 URL,
-      릴리스·workflow commit, target, probe 이미지와 세 전송 방식이 기록되고,
-      `deploymentIdentityVerified=false`인지 확인합니다.
-- [ ] 기록한 릴리스와 tag object를 배포 revision 또는 immutable 이미지 게시 증거와 별도로
-      대조합니다. `v*` tag ruleset은 릴리스 tag의 갱신과 삭제를 막습니다.
-- [ ] TLS probe가 certificate chain과 `TURN_PROBE_HOST`를 모두 검증합니다. 신뢰하지 않는
-      certificate나 hostname 불일치는 relay traffic을 시도하기 전에 배포 gate를 실패시킵니다.
-      검증을 비활성화하는 대신 private CA를 snapshot하고 host verifier와 coturn utility container가
-      모두 사용합니다.
-- [ ] 자동 promotion gate나 프로덕션 alert가 생길 때까지 0이 아닌 외부 TURN probe 결과를 수동
-      파일럿 중단 조건으로 강제합니다.
-- [ ] edge `/healthz`와 로컬 STUN listener를 공개 TURN 인증이나 relay media 상태의 증거로 인정하지
-      않습니다.
+- [ ] `docker compose up -d --wait --wait-timeout 120`이 signaling과 edge 시작 gate를
+      통과합니다.
+- [ ] 운영 secret store에 Cloudflare TURN key ID와 최소 권한 API token이 있고 저장소·이미지·로그에
+      포함되지 않습니다.
+- [ ] 별도 네트워크 두 곳에서 relay 전용 릴리스로 실제 양방향 미디어가 연결됩니다. credential
+      endpoint 200만 relay 성공 증거로 인정하지 않습니다.
+- [ ] UDP 제한망에서 Cloudflare가 발급한 TCP/TLS route로 연결되는지 확인합니다.
+- [ ] Cloudflare 사용량과 `round.turn.credentials.provider.errors`가 정상 범위이며 공급자 503과
+      브라우저 재시도 동작을 확인합니다.
+- [ ] key 회전 후 새 credential 발급과 기존 통화 유지 여부를 확인하고 폐기한 API token이 더 이상
+      사용되지 않습니다.
 - [ ] 방과 peer의 활성 수, 거부한 연결과 입장, 잘못되었거나 session/client/global 제한을 받은
       frame, queue overflow, heartbeat 종료를 방 ID, 이름, SDP, ICE candidate, chat text를 기록하지
       않고 관측할 수 있습니다.
@@ -236,15 +215,14 @@ BATON이 소유한 edge와 별도로 배포한 ROUND instance를 대상으로 �
 ### 2026-07-31 로컬 리허설 증거(프로덕션 승인 아님)
 
 - [x] 프로덕션 이미지, Caddy local-CA HTTPS, mock OIDC, 실제 MySQL session과 활성 OWNER/MEMBER
-      membership, BATON RS256/JWK, BATON 모드 web/signaling, 로컬 coturn을 BATON 소유 edge 뒤에
+      membership, BATON RS256/JWK, BATON 모드 web/signaling, 당시 로컬 TURN을 BATON 소유 edge 뒤에
       구성했습니다.
 - [x] 격리된 Chromium identity 두 개가 refresh 200, TURN credential 200, WSS 입장, relay-only로
       선택된 UDP candidate pair, 양방향 audio/video traffic, ACK된 chat, 원격 미디어 상태 전파,
       정상 나가기를 완료했습니다.
-- [x] 강화된 생명주기를 Spring `configtree`용 read-only TURN secret mount 하나로 다시
-      실행했습니다. coturn은 같은 secret을 tmpfs runtime config에 복사했습니다. container argv,
-      environment, log에 secret이 없었고, 정리 후 남아 있는 project container, volume, network가
-      하나도 없음을 확인했습니다.
+- [x] 당시 자체 TURN 비밀의 런타임 노출 여부와 정리 상태를 확인했습니다. 이 기록은 현재
+      Cloudflare TURN 운영 승인을 대신하지 않으며 위의 공급자 relay-only gate를 새로 통과해야
+      합니다.
 - [x] 로컬 안전성 suite는 안전하지 않거나 symlink되었거나 위조된 상태, Compose 2.24.3, stale
       volume/network, 주위 Compose override, 실패한 정리를 거부하며 SIGINT/SIGTERM은 130/143을
       반환합니다.

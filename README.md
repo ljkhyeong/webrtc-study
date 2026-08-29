@@ -100,11 +100,12 @@ Safari 검증은 이 테스트 범위에 포함되지 않으며 파일럿 체크
 | `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL`           | `67108864`              | 서버 전체 송신 대기 바이트 제한 |
 | `VITE_ROUND_AUTH_MODE`                                | `standalone`            | 브라우저 endpoint 인증 모드     |
 | `VITE_SIGNALING_URL`                                  | 현재 호스트의 `/signal` | standalone WSS/WS 주소 override |
-| `VITE_STUN_URLS`                                      | Google 공개 STUN 2개    | 쉼표로 구분한 STUN 주소         |
+| `VITE_STUN_URLS`                                      | Cloudflare 공개 STUN    | 쉼표로 구분한 STUN 주소         |
 | `VITE_TURN_CREDENTIALS_URL`                           | `/api/turn-credentials` | standalone TURN API override    |
 | `VITE_ICE_TRANSPORT_POLICY`                           | `all`                   | `relay`이면 TURN만 강제         |
-| `TURN_URLS`                                           | 없음                    | 서버가 브라우저에 전달할 TURN   |
-| `TURN_SHARED_SECRET`                                  | 없음                    | signaling과 coturn 공유 비밀    |
+| `TURN_PROVIDER`                                       | `disabled`              | `disabled` 또는 `cloudflare`    |
+| `TURN_CLOUDFLARE_KEY_ID`                              | 없음                    | Cloudflare TURN key ID          |
+| `TURN_CLOUDFLARE_API_TOKEN`                           | 없음                    | Cloudflare TURN API token       |
 | `TURN_CREDENTIAL_TTL_SECONDS`                         | `600`                   | TURN credential 수명(초)        |
 | `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`           | `600`                   | IP별 발급 제한 구간(초)         |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`             | `12`                    | 구간당 IP별 최대 발급 수        |
@@ -142,7 +143,8 @@ TURN 기본 발급 구간은 credential TTL과 같은 600초입니다. IP당 12�
 통과할 때만 한 번에 차감됩니다. standalone 모드는 참가자 quota를 적용하지 않습니다.
 운영 Compose의 Caddy는 공유 접근 자격을 요구해 익명 요청을 차단하지만, 이를 알고 있는
 사용자를 서로 구분하거나 스터디 멤버십까지 확인하지는 않습니다. BATON에서도 IP·전역
-발급 quota와 coturn quota는 계정 탈취와 relay 자원 남용을 제한하기 위해 계속 유지합니다.
+발급 quota와 Cloudflare 사용량 경보는 계정 탈취와 relay 자원 남용을 제한하기 위해 계속
+유지합니다.
 
 ## 저장소 구조
 
@@ -163,15 +165,17 @@ packages/
 사용하려면 웹은 HTTPS, signaling은 WSS로 배포해야 합니다.
 
 기본 STUN 설정만으로는 회사·학교망이나 제한적인 NAT 환경에서 연결을 보장할 수 없습니다.
-실사용 배포에는 coturn 같은 TURN 서버가 필요합니다. ROUND는 TURN shared secret을 브라우저
-번들에 넣지 않고 Java 서버가 짧은 수명의 credential을 발급합니다. mesh 방식은 참가자마다
+실사용 배포에는 TURN 서비스가 필요합니다. ROUND의 Java 서버는 Cloudflare API에서 짧은
+수명의 credential을 받아 브라우저에 전달하며 API token을 브라우저 번들에 넣지 않습니다.
+mesh 방식은 참가자마다
 업로드 스트림 수가 늘어나므로 영상은 기본 640×360, 최대 15fps이며 첫 버전은 6명으로
 제한합니다.
 
-운영 배포에는 Caddy, 단일 Java signaling 인스턴스, coturn을 포함한 Compose 구성이
-준비되어 있습니다. 외부 앱·WebSocket·TURN credential API는 HTTPS Caddy의 공유 접근
+운영 배포에는 Caddy와 단일 Java signaling 인스턴스를 포함한 Compose 구성이 준비되어
+있습니다. TURN relay는 Cloudflare가 운영합니다. 외부 앱·WebSocket·TURN credential API는
+HTTPS Caddy의 공유 접근
 인증 뒤에 놓이고, `/healthz`만 공개됩니다. 서버 준비, 접근 비밀번호 hash, DNS,
-방화벽, 인증서, relay-only 검증과 롤백 절차는 [배포 가이드](docs/deployment.md)를
+방화벽, Cloudflare key, relay-only 검증과 롤백 절차는 [배포 가이드](docs/deployment.md)를
 따르세요. 스터디 그룹에 공개하기 전에는 [파일럿 체크리스트](docs/pilot-checklist.md)를
 모두 통과해야 합니다.
 
