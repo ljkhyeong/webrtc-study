@@ -95,83 +95,34 @@ microphone track에 그대로 남습니다. display capture가 활성화된 동�
 
 ## 식별과 권한 부여 경계
 
-BATON은 사용자, 스터디, 일정과 사용자의 스터디룸 입장 허용 결정을 소유합니다. ROUND는
-휘발성 방·피어 상태, raw WebSocket signaling, TURN credential 발급만 소유합니다. ROUND는
-BATON의 database나 entity를 공유하지 않고 signaling frame마다 BATON을 동기 호출하지
-않습니다.
-
-BATON은 멤버십을 확인한 뒤 `RS256`으로 서명한 수명이 짧은 JWT 참여권을 발급하며, JOSE
-header에는 공개키 `kid`가 포함됩니다. BATON은 발급에 사용할 key를 전환하기 전에 새
-공개키를 JWK Set에 추가하고, 기존 참여권의 수명과 clock skew가 지날 때까지 이전 key를
-유지합니다. 참여권은 `HttpOnly`, `Secure`, `SameSite=Strict` cookie로 전달합니다. 여러 방의
-참여권이 충돌하지 않도록 cookie path를 `/round/rooms/{roomId}`로 제한합니다. 필수 claim은
-`iss`, `aud=round`, `sub`, `exp`, `iat`, `jti`, `room_id`, `study_id`,
-`role=host|participant`입니다.
-
-`sub`는 재할당되지 않는 정규 BATON `Account.id` UUID입니다. Google OIDC subject, Naver
-profile ID, email 주소, display name, 공유 workspace key를 사용하지 않습니다. 따라서 기존
-BATON account에 다른 login identity를 연결해도 provider나 profile claim을 ROUND에 노출하지
-않고 동일한 ROUND 참가자와 TURN quota identity를 유지합니다.
-
-브라우저와 내부 routing 계약은 다음과 같습니다.
+BATON은 사용자, 스터디, 일정과 입장 허용 결정을 소유합니다. ROUND는 휘발성 방·피어 상태,
+raw WebSocket signaling과 TURN 자격 증명 발급만 소유하며 BATON의 데이터베이스나 엔티티를
+참조하지 않습니다. 승인 결과는 방 범위의 짧은 RS256 참여권으로 전달하고 ROUND가 공개
+JWK로 로컬 검증합니다.
 
 | 목적               | 공개 same-origin 경로                               | 처리 경계                              |
 | ------------------ | --------------------------------------------------- | -------------------------------------- |
-| 참여권 갱신        | `/round/rooms/{roomId}/participation-grant/refresh` | BATON 소유, ROUND로 proxy하지 않음     |
+| 참여권 갱신        | `/round/rooms/{roomId}/participation-grant/refresh` | BATON 소유                             |
 | WebSocket 시그널링 | `/round/rooms/{roomId}/signal`                      | `/rooms/{roomId}/signal`               |
 | TURN 자격 증명     | `/round/rooms/{roomId}/turn-credentials`            | `/api/rooms/{roomId}/turn-credentials` |
 
-방 URL parser는 붙여 넣기 입력을 정리하는 함수와 분리되어 소문자 canonical room ID가 들어간
-`/room/{roomId}`만 수락합니다. 참여권 갱신 endpoint는 표준 `URL` 해석 결과가 현재 출처의
-원래 path와 정확히 같을 때만 사용하며, 참여권과 TURN 요청은 redirect를 따르지 않습니다.
+참여권은 URL, JavaScript 또는 브라우저 저장소에 노출하지 않고 방별 host-only 쿠키로
+전달합니다. 공개 경로, 내부 경로, `room.join`과 참여권의 방 식별자가 모두 일치해야 하며,
+사용자 식별자는 로그인 공급자 값이 아닌 canonical BATON `Account.id`를 사용합니다. 키
+회전, claim, 수명, clock 처리, 오류 상태와 갱신 응답의 상세 계약은
+[ADR 0001](adr/0001-round-independent-service.md)을 단일 원본으로 사용합니다.
 
-ROUND는 `RS256`만 허용하며 BATON의 JWK Set을 사용해 서명, issuer, audience, 만료, 모든 필수
-claim을 로컬에서 검증합니다. audience 목록에는 설정한 값(기본 `round`)이 정확히 하나만
-있어야 하며 다른 audience가 추가되면 거부합니다. ROUND는 가져온 JWK Set을 JVM cache에
-60초 동안 보관하고, 형식이 올바르지만 cache에 없는 `kid`를 만나면 갱신합니다. cold load와
-cache-miss 재시도를 허용하기 위해 Nimbus source는 JVM마다 30초 window에서 최대 두 번의
-외부 source 접근 burst를 허용합니다. rate limit이 적용된 unknown key는 JWK를 다시 가져오지
-않고 HTTP 401로 실패합니다. 형식이 잘못되거나 만료되었거나 검증할 수 없는 token도 HTTP
-401을 유지합니다. 실제 JWK source 또는 검증 infrastructure 장애에는 비어 있고 no-store인
-HTTP 503을 반환해 client와 metric이 서버 가용성 문제를 잘못된 credential로 오분류하지
-않게 합니다.
-따라서 BATON은 발급을 새 `kid`로 전환하기 전에 cache TTL보다 오랫동안 새 공개키를 미리
-게시해야 합니다.
-기본 참여권 최대 수명은 5분이며, 미래 `iat`에는 60초의 clock skew만 허용합니다. 서명과
-`exp`가 다른 면에서 유효해도 더 긴 참여권은 거부합니다. WebSocket upgrade와 TURN
-요청에서는 path의 `roomId`가 `room_id`와 일치해야 합니다. 검증된 참여권은 WebSocket
-session으로 전달되며, 방 입장 전에 `room.join`이 path와 claim 모두에 일치해야 합니다.
-BATON 모드는 ticket이나 verifier 설정이 없거나 잘못되면 안전하게 실패합니다. Standalone
-모드는 소규모 pilot을 위한 기존의 거친 공유 edge credential을 유지합니다.
+연결된 socket은 handshake에서 검증한 참여권을 불변 lease로 보유합니다. 만료된 연결은
+정해진 disconnect 경로로 한 번만 정리하고, 새 참여권 연결과 기존 연결이 잠시 겹치는
+범위만 admission에서 허용합니다. 같은 사용자의 새 연결이 방에 입장하면 더 최근 연결을
+남기고 이전 연결을 터미널 상태로 닫습니다. standalone 모드에는 이 BATON lease와 사용자별
+admission 정책을 적용하지 않습니다.
 
-연결된 socket은 handshake에 사용한 참여권에서 얻은 불변 lease를 유지합니다. ROUND는 연결
-시점, 수신 quota 사용과 송신 enqueue 전, heartbeat 중, 1초 주기의 sweep에서 lease를
-검사합니다. 만료된 socket은 `4001 / Participation grant expired`로 닫습니다. wall-clock
-`exp`와 연결 시점의 monotonic deadline을 함께 적용하므로 system clock을 과거로 돌려도
-lease가 연장되지 않습니다. 일반적인 멱등 disconnect 경로는 방, 입장 reservation, 송신
-queue, gauge를 정확히 한 번 해제합니다. HTTP JWT decoder는 동일하게 주입된 clock과 0의
-expiry skew를 사용하며, 참여권 전용 미래 `iat` 허용 범위는 60초로 유지합니다. Standalone
-접근에는 lease deadline이 없습니다.
-
-BATON connection admission은 진행 중인 handshake와 연결된 socket을 모두 계산합니다. 같은
-참여권 `jti`는 하나의 reservation만 소유할 수 있고, 같은 `(room_id, sub)`는 두 개의
-reservation을 소유할 수 있어 새로 발급한 참여권을 사용하는 reconnect가 기존 socket과 잠시
-겹칠 수 있습니다. 같은 참여권을 replay하거나 세 번째 participant-room 연결을 시도하면
-handshake admission 중 연결된 socket을 내보내지 않고 HTTP 429를 반환합니다. 같은 참가자의
-승인된 socket 두 개가 `room.join`을 시도하면 동일한 방 상태 lock 아래에서 connection
-sequence가 더 큰 쪽이 이깁니다. ROUND는 새 피어를 승인하기 전에 이전 피어를 제거하고 진
-socket을 `4002 / Participation session superseded`로 닫습니다. 브라우저는 이 정책에 따른
-종료를 reconnect하지 않는 terminal 상태로 처리합니다. 따라서 6명 제한에서도 방에는 BATON
-참가자마다 최대 하나의 피어만 존재합니다. 진 socket의 admission reservation은 terminal
-close 시도가 끝날 때까지 유지되어 close가 막힌 동안 세 번째 연결이 들어오는 것을 방지하고,
-close가 I/O 실패를 보고해도 정확히 한 번 해제됩니다. 다른 reservation은 방 멤버십 기간뿐
-아니라 socket 전체 수명 동안 유지되므로 `room.leave`로 제한을 우회할 수 없습니다.
-Standalone 모드는 영향을 받지 않습니다.
-
-signaling 서비스는 계속 peer ID를 소유하고 wire-level 발신자 identity를 덮어쓰며, 현재 같은
-방에 있는 피어 사이에서만 SDP/ICE를 중계해야 합니다. ROUND는 HTTP upgrade 뒤 raw
-WebSocket frame을 사용하므로 일반 MVC interceptor, argument resolver, STOMP message rule로
-이 검사를 대체할 수 없습니다.
+BATON 웹은 Account session과 현재 방 참여권을 확인하기 전 landing·prejoin과 장치 권한
+요청을 열지 않습니다. 갱신 관리자는 중복 요청을 하나로 합치고, TURN 갱신과 WebSocket
+연결·재연결 전에 최신 참여권을 확인합니다. 인증·권한·방 종료 응답은 각각 로그인 안내,
+BATON 복귀, 종료 화면으로 전환하며 내부 응답이나 자격 증명을 사용자 화면에 노출하지
+않습니다.
 
 ## 프로덕션 경계
 

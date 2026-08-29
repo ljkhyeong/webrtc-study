@@ -201,78 +201,27 @@ HTTPS Caddy의 공유 접근
 
 ## BATON 연동 경계
 
-ROUND는 BATON 내부로 signaling 코드를 옮기지 않고 별도 저장소, 배포, 런타임을 유지합니다.
-BATON은 사용자·스터디·참여 권한을 소유하고, ROUND는 휘발성 room·peer 상태와 signaling,
-TURN credential 발급을 소유합니다. 두 서비스는 데이터베이스나 엔티티를 공유하지 않으며,
-ROUND는 signaling 프레임마다 BATON API를 호출하지 않습니다.
+ROUND는 BATON과 별도 저장소·배포·런타임을 유지합니다. BATON은 사용자 신원, 스터디와
+참여 권한을 소유하고, ROUND는 휘발성 room·peer 상태, WebSocket signaling과 TURN 자격
+증명 발급을 소유합니다. 두 서비스는 데이터베이스를 공유하지 않으며 signaling 프레임마다
+서로를 호출하지 않습니다.
 
-BATON은 권한 확인 후 `kid`를 포함한 `RS256`으로 짧은 수명의 JWT 참여권을 서명합니다.
-참여권은 `HttpOnly`, `Secure`, `SameSite=Strict`,
-`Path=/round/rooms/{roomId}` 쿠키로 전달하고, ROUND는 BATON JWK Set의 공개키로
-서명·issuer·audience와 필수 claim을 검증합니다. `room_id`는 URL 경로 및
-`room.join`의 방 식별자와 일치해야 합니다.
-`aud`는 정확히 하나여야 하며 설정한 값(기본 `round`) 외 audience가 함께 있으면
-거부합니다. ROUND JVM의 JWK Set cache는 60초 뒤 만료하고, 아직 cache에 없는 정상 형식의
-새 `kid`를 만나면 JWK Set을 다시 조회해 key 선게시 회전을 수용합니다. Nimbus source는
-cold load와 cache-miss retry를 수용하면서 원격 source 접근을 JVM별 30초 window에서 최대
-두 번으로 제한하며, 제한 중인 unknown `kid`는 추가 원격 조회 없이 `401`로 거부합니다.
-따라서 새 공개키는 발급 전 60초보다 길게 선게시해야 합니다.
+브라우저가 사용하는 동일 출처 경로는 다음 세 개입니다.
 
-BATON 연동 시 브라우저가 사용하는 공개 경로는 다음과 같습니다.
+| 목적               | 공개 경로                                           | 처리 주체 |
+| ------------------ | --------------------------------------------------- | --------- |
+| 참여권 갱신        | `/round/rooms/{roomId}/participation-grant/refresh` | BATON     |
+| WebSocket 시그널링 | `/round/rooms/{roomId}/signal`                      | ROUND     |
+| TURN 자격 증명     | `/round/rooms/{roomId}/turn-credentials`            | ROUND     |
 
-- 참여권 갱신: `POST /round/rooms/{roomId}/participation-grant/refresh`
-- WebSocket: `/round/rooms/{roomId}/signal`
-- TURN 자격 증명: `/round/rooms/{roomId}/turn-credentials`
+BATON은 현재 멤버십을 확인해 방 범위의 짧은 RS256 참여권 쿠키를 발급합니다. ROUND는 공개
+JWK로 참여권과 방 경계를 로컬 검증하며, BATON 모드에서 검증 실패나 필수 설정 누락을
+standalone으로 우회하지 않습니다. 참여권의 `sub`는 로그인 공급자 정보가 아닌 재할당되지
+않는 BATON `Account.id`입니다.
 
-BATON이 제공하는 웹 번들은 빌드 시 `VITE_ROUND_AUTH_MODE=baton`을 주입하고
-`VITE_SIGNALING_URL`, `VITE_TURN_CREDENTIALS_URL`은 비워 둡니다. 브라우저는 세 경로를
-같은 canonical `roomId`의 동일 출처 경로로 계산하며, BATON 모드에서 외부 endpoint
-override가 있거나 모드 값이 올바르지 않으면 standalone으로 강등하지 않고 연결을
-거부합니다. 릴리스는 이 번들을 `/round-ui/` asset base의
-`round-baton-web` 이미지로 별도 발행하며 `round-edge`와 교체해서 사용할 수 없습니다.
-이 Vite 값과 이미지 flavor 표식은 공개 설정일 뿐 참여권이나 다른 비밀을 포함하지
-않습니다. BATON 전용 edge는 해시가 붙은 `/round-ui/assets/*`만 장기 immutable cache하고,
-`/room/*` HTML은 `no-store`로 전달합니다. `/round-ui/` 자체는 독립 방 생성 화면을 열지
-않고 404를 반환하므로 사용자는 BATON의 권한 있는 스터디 화면에서 방을 열어야 합니다.
-
-BATON은 참여권 갱신 경로에서 인증된 사용자와 현재 스터디 멤버십을 다시 확인하고, 새
-`jti`의 방별 쿠키를 회전합니다. 응답은 JWT 없이 `expiresAt`과
-`refreshAfterSeconds`만 반환합니다. 이 경로는 ROUND로 proxy하지 않습니다. edge proxy는
-나머지 두 경로만 ROUND 내부의 `/rooms/{roomId}/signal`과
-`/api/rooms/{roomId}/turn-credentials`로 전달합니다. standalone 모드의 기존 `/signal`,
-`/api/turn-credentials`와 Caddy 공유 접근 credential은 소규모 파일럿을 위해 유지하지만,
-BATON 모드는 유효한 참여권이 없으면 fail-closed로 요청을 거부합니다.
-
-브라우저는 BATON 방 URL을 열면 먼저 Account session과 방 참여권을 확인하며, 성공하기
-전에는 입장 전 화면을 렌더링하거나 카메라·마이크 권한을 요청하지 않습니다. `401`은
-canonical `/room/{roomId}` 복귀 경로를 가진 BATON 로그인으로 안내하고, `403`은 로그인
-반복 없이 BATON 홈으로 돌아가 권한을 확인하게 합니다. 이 선행 확인에 사용한 single-flight
-manager를 실제 입장까지 재사용하므로 즉시 두 번째 참여권 발급을 만들지 않습니다.
-입장 전 화면에서 `refreshAfterSeconds`가 지나면 장치 권한 요청과 미디어 없는 입장 직전에
-같은 manager로 다시 확인합니다. 이후 TURN 갱신과 모든 WebSocket 최초 연결·재연결
-전에도 참여권을 확인합니다. 활성 방의 갱신 `401`·`403`·`404`는 재시도하지 않고 각각
-로그인, 권한 확인, 종료된 방 안내로 전환합니다. BATON 모드의 사용자가 입력한 별칭은
-계정 범위 없는 브라우저 저장소에 남기지 않고 현재 문서에서만 유지합니다. 지원하지 않는
-인증 모드는 입장 화면이나 미디어 동의 UI를 렌더링하기 전에 설정 오류로 차단합니다.
-기존 socket은 연결 당시 참여권의 `exp`에서 `4001 / Participation grant expired`로
-종료되고, 제한된 자동 재연결이 미리 회전된 쿠키를 사용합니다. standalone 연결에는 이
-시간 제한과 갱신 흐름을 적용하지 않습니다.
-
-같은 `(room_id, sub)`의 새 참여권 연결이 방에 입장하면 ROUND는 더 최근 연결만 남기고
-기존 연결을 원자적으로 정리한 뒤 `4002 / Participation session superseded`로 닫습니다.
-기존 연결의 입장 예약은 이 터미널 close 시도가 끝날 때까지 유지되므로, close가 지연되는
-동안 세 번째 연결이 제한을 우회할 수 없습니다.
-이 종료는 네트워크 장애가 아니므로 기존 브라우저는 자동 재연결하지 않습니다. 따라서
-6명이 찬 방에서도 정상 재연결이 `ROOM_FULL`에 막히거나 두 브라우저가 서로를 반복해서
-밀어내지 않습니다.
-
-BATON의 Caddy 설정에서는 카메라·마이크·화면 캡처 `Permissions-Policy`, WebSocket `connect-src`,
-두 ROUND proxy 경로, BATON 갱신 경로와 cookie path를 함께 구성해야 합니다. BATON에는
-Account session·AccountMembership·room mapping·참여권 signer와 JWK가 구현되어 있고, 선택
-실행 교차서비스 테스트는 실제 BATON signer와 ROUND bootJar 사이의 TURN·WebSocket·key
-회전을 검증합니다. 다만 실제 브라우저 session과 public HTTPS edge를 함께 통과하는 E2E는
-완료된 것으로 보지 않습니다. `sub`는 Google OIDC `sub`, Naver 프로필
-ID, 이메일과 로그인 공급자 변경에 영향받지 않는 canonical BATON `Account.id`여야 합니다.
-공유 접근 키나 브라우저 display name으로 `sub`를 만들어서는 안 됩니다. 전체 결정과 JWT
-claim 계약은
-[ADR 0001](docs/adr/0001-round-independent-service.md)을 참고하세요.
+BATON 웹은 방 권한을 확인하기 전 입장 화면과 장치 권한 요청을 열지 않습니다. 활성 연결은
+참여권 만료, 같은 계정의 새 연결 인계, TURN 갱신 실패를 각각 정해진 종료·재시도 정책으로
+처리합니다. 상세 JWT claim, 쿠키, JWK 회전, 갱신 응답, 연결 admission과 배포 순서는
+[BATON 연동 계약 원본인 ADR 0001](docs/adr/0001-round-independent-service.md)을 따릅니다.
+실제 배포 전 확인 항목은 [파일럿 체크리스트](docs/pilot-checklist.md)의 BATON 연동 gate를
+사용합니다.
