@@ -18,72 +18,47 @@ cleanup() {
 trap cleanup EXIT
 umask 077
 
-openssl req \
-  -x509 \
-  -newkey rsa:2048 \
-  -nodes \
-  -days 30 \
-  -subj '/CN=turn.round.invalid' \
-  -addext 'subjectAltName=DNS:turn.round.invalid' \
-  -keyout "$fixture_dir/turn-key.pem" \
-  -out "$fixture_dir/turn-cert.pem" \
-  >/dev/null 2>&1
-
 digest_a=$(printf 'a%.0s' {1..64})
 digest_b=$(printf 'b%.0s' {1..64})
-digest_c=$(printf 'c%.0s' {1..64})
 digest_d=$(printf 'd%.0s' {1..64})
 digest_e=$(printf 'e%.0s' {1..64})
-digest_f=$(printf 'f%.0s' {1..64})
 
 write_env() {
   local destination=$1
   local edge_digest=$2
   local signaling_digest=$3
-  local turn_digest=$4
-  local turn_secret=${5:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
-  local ice_transport_policy=${6:-all}
-  local image_namespace=${7:-ghcr.io/ljkhyeong}
+  local ice_transport_policy=${4:-all}
+  local image_namespace=${5:-ghcr.io/ljkhyeong}
+  local turn_provider=${6:-cloudflare}
   cat >"$destination" <<EOF
 COMPOSE_PROJECT_NAME=round-linux-test
 ROUND_EDGE_IMAGE=$image_namespace/round-edge@sha256:$edge_digest
 ROUND_SIGNALING_IMAGE=$image_namespace/round-signaling@sha256:$signaling_digest
-ROUND_TURN_IMAGE=$image_namespace/round-turn@sha256:$turn_digest
 ROUND_DOMAIN=round.round.invalid
 ALLOWED_ORIGINS=https://round.round.invalid
 VITE_ICE_TRANSPORT_POLICY=$ice_transport_policy
-TURN_REALM=turn.round.invalid
-TURN_EXTERNAL_IP=203.0.113.10
-TURN_RELAY_IP=10.0.0.10
-TURN_MIN_PORT=49160
-TURN_MAX_PORT=49259
+TURN_PROVIDER=$turn_provider
+TURN_CLOUDFLARE_KEY_ID=test-key-id
+TURN_CLOUDFLARE_API_TOKEN=test-api-token
 ROUND_ACCESS_PASSWORD_HASH='\$2a\$12\$RJKd/exBEqUGjd.mtH9URu8H/TGJgwahZV8tA.xhPCM/4rdHfpmYS'
-TURN_SHARED_SECRET=$turn_secret
-TURN_TLS_CERT_FILE=$fixture_dir/turn-cert.pem
-TURN_TLS_KEY_FILE=$fixture_dir/turn-key.pem
 EOF
   chmod 0600 "$destination"
 }
 
 env_a="$fixture_dir/production-a.env"
 env_b="$fixture_dir/production-b.env"
-env_bad_secret="$fixture_dir/production-bad-secret.env"
-write_env "$env_a" "$digest_a" "$digest_b" "$digest_c"
-write_env "$env_b" "$digest_d" "$digest_e" "$digest_f"
+env_bad_provider="$fixture_dir/production-bad-provider.env"
+write_env "$env_a" "$digest_a" "$digest_b"
+write_env "$env_b" "$digest_d" "$digest_e"
 write_env \
-  "$env_bad_secret" \
+  "$env_bad_provider" \
   "$digest_a" \
   "$digest_b" \
-  "$digest_c" \
-  'gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg'
+  all \
+  ghcr.io/ljkhyeong \
+  disabled
 
 round_ops_require_private_file "$env_a"
-round_ops_validate_certificate "$env_a" 0
-chmod 0644 "$fixture_dir/turn-key.pem"
-if (round_ops_validate_certificate "$env_a" 0 2>/dev/null); then
-  fail 'world-readable TURN private key was accepted'
-fi
-chmod 0600 "$fixture_dir/turn-key.pem"
 round_ops_validate_digest_ref \
   ROUND_EDGE_IMAGE \
   "ghcr.io/ljkhyeong/round-edge@sha256:$digest_a"
@@ -105,8 +80,7 @@ round_ops_write_release_file \
   "$release_file" \
   "$env_a" \
   "ghcr.io/ljkhyeong/round-edge@sha256:$digest_a" \
-  "ghcr.io/ljkhyeong/round-signaling@sha256:$digest_b" \
-  "ghcr.io/ljkhyeong/round-turn@sha256:$digest_c"
+  "ghcr.io/ljkhyeong/round-signaling@sha256:$digest_b"
 round_ops_validate_release_file "$release_file"
 
 snapshot_source_env="$fixture_dir/snapshot-source.env"
@@ -261,11 +235,10 @@ set -euo pipefail
 fake_root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 command_line=" $* "
 log_compose() {
-  printf 'args=%s edge=%s signaling=%s turn=%s compose_file=%s compose_project=%s node_image=%s docker_host=%s docker_context=%s\n' \
+  printf 'args=%s edge=%s signaling=%s compose_file=%s compose_project=%s node_image=%s docker_host=%s docker_context=%s\n' \
     "$*" \
     "${ROUND_EDGE_IMAGE-unset}" \
     "${ROUND_SIGNALING_IMAGE-unset}" \
-    "${ROUND_TURN_IMAGE-unset}" \
     "${COMPOSE_FILE-unset}" \
     "${COMPOSE_PROJECT_NAME-unset}" \
     "${NODE_IMAGE-unset}" \
@@ -299,10 +272,6 @@ case "$command_line" in
       *'/round-signaling@'*)
         role_label=signaling
         flavor_label=shared
-        ;;
-      *'/round-turn@'*)
-        role_label=turn
-        flavor_label=shared
         if [[ -e "$fake_root/mixed-release" ]]; then
           tag_object_label=fedcba9876543210fedcba9876543210fedcba98
         fi
@@ -333,7 +302,7 @@ case "$command_line" in
     ;;
   *' ps --status running -q edge '*) [[ ! -e "$fake_root/edge-ps-fail" ]] ;;
   *' ps --all -q '*) [[ ! -e "$fake_root/compose-ps-fail" ]] ;;
-  *' pull edge signaling turn '*)
+  *' pull edge signaling '*)
     log_compose "$@"
     if [[ -e "$fake_root/mutate-snapshot-after-pull" ]]; then
       previous=
@@ -416,8 +385,7 @@ rmdir -- "$stale_state_root/.deploy-snapshot.interrupted"
 unreviewed_env="$fixture_dir/production-unreviewed-repository.env"
 write_env \
   "$unreviewed_env" \
-  "$digest_a" "$digest_b" "$digest_c" \
-  0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  "$digest_a" "$digest_b" \
   all \
   ghcr.io/attacker
 unreviewed_state_dir="$fixture_dir/unreviewed-repository-releases"
@@ -429,7 +397,7 @@ if PATH="$fake_bin:$PATH" \
   >/dev/null 2>&1; then
   fail 'deployment accepted an unreviewed image repository'
 fi
-if grep -Fq 'pull edge signaling turn' "$fixture_dir/docker.log"; then
+if grep -Fq 'pull edge signaling' "$fixture_dir/docker.log"; then
   fail 'an unreviewed image repository reached Docker pull'
 fi
 [[ ! -e "$unreviewed_state_dir/pending.env" && \
@@ -450,7 +418,6 @@ fi
 : >"$fixture_dir/docker.log"
 ROUND_EDGE_IMAGE='attacker.invalid/edge:latest' \
 ROUND_SIGNALING_IMAGE='attacker.invalid/signaling:latest' \
-ROUND_TURN_IMAGE='attacker.invalid/turn:latest' \
 COMPOSE_FILE='/tmp/attacker-compose.yml' \
 COMPOSE_PROJECT_NAME='attacker-project' \
 NODE_IMAGE='attacker.invalid/node:latest' \
@@ -466,8 +433,8 @@ if grep -Fq 'attacker.invalid' "$fixture_dir/docker.log"; then
   fail 'ambient attacker image reached Compose rendering'
 fi
 if PATH="$fake_bin:$PATH" \
-  ops/linux/preflight.sh --state-dir "$state_dir" "$env_bad_secret" >/dev/null 2>&1; then
-  fail 'non-hexadecimal TURN shared secret was accepted'
+  ops/linux/preflight.sh --state-dir "$state_dir" "$env_bad_provider" >/dev/null 2>&1; then
+  fail 'disabled TURN provider was accepted for production'
 fi
 
 unsigned_state_dir="$fixture_dir/unsigned-releases"
@@ -483,7 +450,7 @@ fi
 rm -f -- "$fixture_dir/fail-provenance"
 [[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '1' ]] ||
   fail 'signed provenance failure did not stop at the first rejected image'
-if grep -Fq 'pull edge signaling turn' "$fixture_dir/docker.log"; then
+if grep -Fq 'pull edge signaling' "$fixture_dir/docker.log"; then
   fail 'invalid signed provenance reached Docker pull'
 fi
 [[ ! -e "$unsigned_state_dir/pending.env" && \
@@ -530,9 +497,9 @@ rm -f -- "$fixture_dir/git-dirty"
 PATH="$fake_bin:$PATH" ops/linux/deploy.sh --state-dir "$state_dir" "$env_a" >/dev/null
 round_ops_validate_release_file "$state_dir/current.env"
 [[ ! -e "$state_dir/previous.env" ]] || fail 'first deploy unexpectedly created previous.env'
-[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '3' ]] ||
-  fail 'deployment did not verify all three signed image provenance statements'
-[[ "$(grep -c '^image-inspect ' "$fixture_dir/docker.log")" == '3' ]] ||
+[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '2' ]] ||
+  fail 'deployment did not verify both signed image provenance statements'
+[[ "$(grep -c '^image-inspect ' "$fixture_dir/docker.log")" == '2' ]] ||
   fail 'deployment did not snapshot image labels exactly once per digest'
 grep -Fq -- "--project-directory $repo_root" "$fixture_dir/docker.log" ||
   fail 'snapshot Compose changed the reviewed project directory'
@@ -570,12 +537,12 @@ touch "$fixture_dir/wrong-edge-role"
 : >"$fixture_dir/docker.log"
 if PATH="$fake_bin:$PATH" \
   ops/linux/deploy.sh --state-dir "$wrong_role_state_dir" "$env_a" >/dev/null 2>&1; then
-  fail 'deployment accepted an edge digest carrying the TURN role'
+  fail 'deployment accepted an edge digest carrying the wrong role'
 fi
 rm -f -- "$fixture_dir/wrong-edge-role"
 [[ -e "$wrong_role_state_dir/in-progress.env" ]] ||
   fail 'image-label failure did not preserve the deployment journal'
-grep -Fq 'pull edge signaling turn' "$fixture_dir/docker.log" ||
+grep -Fq 'pull edge signaling' "$fixture_dir/docker.log" ||
   fail 'image label verification ran before pulling the selected digests'
 if grep -Fq 'up -d --wait' "$fixture_dir/docker.log"; then
   fail 'deployment started containers after image-label failure'
@@ -622,9 +589,7 @@ if grep -Fq 'image-inspect ' "$fixture_dir/docker.log" ||
 fi
 
 relay_env="$fixture_dir/production-relay.env"
-write_env "$relay_env" "$digest_a" "$digest_b" "$digest_c" \
-  0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  relay
+write_env "$relay_env" "$digest_a" "$digest_b" relay
 relay_state_dir="$fixture_dir/relay-releases"
 mkdir "$relay_state_dir"
 chmod 0700 "$relay_state_dir"
@@ -645,7 +610,7 @@ rm -f -- "$fixture_dir/flock-fail"
 
 : >"$fixture_dir/gh.log"
 PATH="$fake_bin:$PATH" ops/linux/deploy.sh --state-dir "$state_dir" "$env_b" >/dev/null
-[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '6' ]] ||
+[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '4' ]] ||
   fail 'second deployment did not verify both current and candidate image provenance'
 current_edge=$(round_ops_read_env_value "$state_dir/current.env" ROUND_EDGE_IMAGE)
 previous_edge=$(round_ops_read_env_value "$state_dir/previous.env" ROUND_EDGE_IMAGE)
@@ -666,7 +631,7 @@ fi
 rm -f -- "$fixture_dir/wrong-edge-role"
 [[ -e "$state_dir/rollback-in-progress.env" && -e "$state_dir/rollback-origin.env" ]] ||
   fail 'image-label failure did not preserve the rollback journal'
-grep -Fq 'pull edge signaling turn' "$fixture_dir/docker.log" ||
+grep -Fq 'pull edge signaling' "$fixture_dir/docker.log" ||
   fail 'rollback image label verification ran before pulling the selected digests'
 if grep -Fq 'up -d --wait' "$fixture_dir/docker.log"; then
   fail 'rollback started containers after image-label failure'
@@ -680,7 +645,7 @@ PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
   --confirm ROLLBACK_ROUND \
   "$env_b" \
   >/dev/null
-[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '3' ]] ||
+[[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '2' ]] ||
   fail 'rollback did not verify all three signed image provenance statements'
 
 rollback_env="$fixture_dir/rollback-runtime.env"
@@ -754,13 +719,6 @@ if PATH="$fake_bin:$PATH" \
   ops/linux/deploy.sh --state-dir "$state_dir" "$env_b" >/dev/null 2>&1; then
   fail 'deploy was allowed while rollback recovery was pending'
 fi
-if PATH="$fake_bin:$PATH" ops/linux/reload-turn-certificate.sh \
-  --release-state-dir "$state_dir" \
-  --certificate-state-dir "$fixture_dir/pre-recovery-certificates" \
-  "$env_b" \
-  >/dev/null 2>&1; then
-  fail 'certificate reload was allowed while rollback recovery was pending'
-fi
 PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
   --state-dir "$state_dir" \
   --confirm ROLLBACK_ROUND \
@@ -779,62 +737,6 @@ chmod 0600 "$changed_env"
 if (round_ops_assert_state_compatible "$state_dir/current.env" "$changed_env" 2>/dev/null); then
   fail 'changed runtime config was accepted for a saved release state'
 fi
-
-certificate_state="$fixture_dir/certificates"
-: >"$fixture_dir/docker.log"
-touch "$fixture_dir/tls-fail"
-if PATH="$fake_bin:$PATH" ops/linux/reload-turn-certificate.sh \
-  --release-state-dir "$state_dir" \
-  --certificate-state-dir "$certificate_state" \
-  "$env_b" \
-  >/dev/null 2>&1; then
-  fail 'certificate reload accepted a failing live TLS listener'
-fi
-[[ ! -e "$certificate_state/turn-certificate.sha256" ]] ||
-  fail 'failed live TLS verification recorded an applied fingerprint'
-rm -f -- "$fixture_dir/tls-fail"
-PATH="$fake_bin:$PATH" ops/linux/reload-turn-certificate.sh \
-  --release-state-dir "$state_dir" \
-  --certificate-state-dir "$certificate_state" \
-  "$env_b" \
-  >/dev/null
-[[ -s "$certificate_state/turn-certificate.sha256" ]] ||
-  fail 'certificate deploy hook did not record its fingerprint'
-touch "$fixture_dir/docker-info-fail"
-unchanged_output=$(PATH="$fake_bin:$PATH" ops/linux/reload-turn-certificate.sh \
-  --release-state-dir "$state_dir" \
-  --certificate-state-dir "$certificate_state" \
-  "$env_b")
-rm -f -- "$fixture_dir/docker-info-fail"
-[[ "$unchanged_output" == *'unchanged'* ]] || fail 'unchanged certificate was not a no-op'
-grep -Fq "edge=ghcr.io/ljkhyeong/round-edge@sha256:$digest_a" "$fixture_dir/docker.log" ||
-  fail 'certificate reload did not use the verified current release state'
-touch "$fixture_dir/tls-fail-once"
-PATH="$fake_bin:$PATH" ops/linux/reload-turn-certificate.sh \
-  --release-state-dir "$state_dir" \
-  --certificate-state-dir "$certificate_state" \
-  "$env_b" \
-  >/dev/null 2>&1
-[[ ! -e "$fixture_dir/tls-fail-once" ]] ||
-  fail 'stale listener reconciliation did not retry after recreation'
-
-hook_environment=(
-  "ROUND_ENV_FILE=$env_b"
-  "ROUND_RELEASE_STATE_DIR=$state_dir"
-  "ROUND_CERTIFICATE_STATE_DIR=$certificate_state"
-  "ROUND_TURN_RELOAD_SCRIPT=$repo_root/ops/linux/reload-turn-certificate.sh"
-  "PATH=$fake_bin:$PATH"
-)
-touch "$fixture_dir/flock-fail"
-if env \
-  "${hook_environment[@]}" \
-  ops/linux/certbot/round-turn-deploy-hook >/dev/null 2>&1; then
-  fail 'Certbot hook ignored a lifecycle lock failure'
-fi
-rm -f -- "$fixture_dir/flock-fail"
-env \
-  "${hook_environment[@]}" \
-  ops/linux/certbot/round-turn-deploy-hook >/dev/null
 
 recipient_file="$fixture_dir/backup-recipients.txt"
 printf 'age1testrecipient\n' >"$recipient_file"
@@ -966,13 +868,5 @@ grep -Fq 'pull ghcr.io/ljkhyeong/round-edge@sha256:' "$fixture_dir/docker.log" |
 if find "$fresh_restore_root" -maxdepth 1 -name '.restore-backup.*' -print -quit | grep -q .; then
   fail 'fresh-host restore left its encrypted backup snapshot behind'
 fi
-
-grep -Fq 'Persistent=true' ops/linux/systemd/round-turn-certificate-reconcile.timer
-grep -Fq 'OnFailure=round-ops-failure@%n.service' \
-  ops/linux/systemd/round-turn-certificate-reconcile.service
-grep -Fq 'TimeoutStartSec=180s' \
-  ops/linux/systemd/round-turn-certificate-reconcile.service
-grep -Fq 'ExecStart=/bin/bash /opt/round/ops/linux/reload-turn-certificate.sh' \
-  ops/linux/systemd/round-turn-certificate-reconcile.service
 
 printf 'ROUND Linux operations tests passed.\n'

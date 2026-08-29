@@ -79,9 +79,8 @@ round_ops_require_stable_release_state "$state_dir"
 round_ops_assert_state_compatible "$current_file" "$env_file"
 edge_image=$(round_ops_read_env_value "$current_file" ROUND_EDGE_IMAGE)
 signaling_image=$(round_ops_read_env_value "$current_file" ROUND_SIGNALING_IMAGE)
-turn_image=$(round_ops_read_env_value "$current_file" ROUND_TURN_IMAGE)
 compose_metadata=$(round_ops_compose \
-  "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+  "$env_file" "$edge_image" "$signaling_image" \
   config --format json)
 caddy_data_volume=$(jq -er '.volumes.caddy_data.name' <<<"$compose_metadata")
 caddy_config_volume=$(jq -er '.volumes.caddy_config.name' <<<"$compose_metadata")
@@ -100,7 +99,7 @@ cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
   if [[ "$edge_was_running" == true ]]; then
-    round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+    round_ops_compose "$env_file" "$edge_image" "$signaling_image" \
       up -d --wait --no-build --no-deps edge || exit_code=$?
   fi
   rm -f -- "$temporary" "$checksum_temporary"
@@ -111,12 +110,12 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 edge_container_ids=$(round_ops_compose \
-  "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+  "$env_file" "$edge_image" "$signaling_image" \
   ps --status running -q edge) ||
   round_ops_die "could not determine whether the edge container is running"
 if [[ -n "$edge_container_ids" ]]; then
   edge_was_running=true
-  round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" stop edge
+  round_ops_compose "$env_file" "$edge_image" "$signaling_image" stop edge
 fi
 
 round_ops_docker run --rm --interactive \
@@ -141,7 +140,7 @@ chmod 0600 "$checksum_temporary"
 mv -f -- "$checksum_temporary" "$backup_file.sha256"
 
 if [[ "$edge_was_running" == true ]]; then
-  round_ops_compose "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+  round_ops_compose "$env_file" "$edge_image" "$signaling_image" \
     up -d --wait --no-build --no-deps edge
   edge_was_running=false
 fi

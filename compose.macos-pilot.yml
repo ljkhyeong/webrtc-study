@@ -1,8 +1,7 @@
 # macOS의 스터디 그룹 테스트를 위한 임시 Docker Desktop 토폴로지입니다.
 #
-# compose.yml은 Linux production 계약으로 유지합니다. 이 override는 host networking을
-# 명시적인 Docker Desktop 포트 publish로 교체하고, edge를 대체 host 포트에 bind해 :80의
-# 로컬 서비스와 함께 실행할 수 있게 합니다.
+# compose.yml은 Linux production 계약으로 유지합니다. 이 override는 edge를 대체 host
+# 포트에 bind해 :80의 로컬 서비스와 함께 실행할 수 있게 합니다.
 
 services:
   edge:
@@ -22,21 +21,3 @@ services:
       - '${ROUND_HTTPS_BIND_PORT:-8443}:443/udp'
     volumes:
       - ./ops/caddy/Caddyfile.macos-pilot:/etc/caddy/Caddyfile.macos-pilot:ro
-
-  turn:
-    network_mode: !reset null
-    ports:
-      - '3478:3478/udp'
-      - '3478:3478/tcp'
-      - '5349:5349/udp'
-      - '5349:5349/tcp'
-      - '${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49259}:${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49259}/udp'
-    networks:
-      turn:
-        ipv4_address: ${TURN_CONTAINER_IP:-172.31.0.10}
-
-networks:
-  turn:
-    ipam:
-      config:
-        - subnet: ${TURN_CONTAINER_SUBNET:-172.31.0.0/24}

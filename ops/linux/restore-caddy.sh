@@ -119,19 +119,17 @@ if [[ -e "$current_file" ]]; then
   round_ops_assert_state_compatible "$current_file" "$env_file"
   edge_image=$(round_ops_read_env_value "$current_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$current_file" ROUND_SIGNALING_IMAGE)
-  turn_image=$(round_ops_read_env_value "$current_file" ROUND_TURN_IMAGE)
   fresh_restore=false
 else
   edge_image=$(round_ops_read_env_value "$env_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$env_file" ROUND_SIGNALING_IMAGE)
-  turn_image=$(round_ops_read_env_value "$env_file" ROUND_TURN_IMAGE)
   source_commit=$(git rev-parse HEAD) ||
     round_ops_die "현재 ROUND checkout 커밋을 확인하지 못했습니다"
   fresh_restore=true
 fi
 
 compose_container_ids=$(round_ops_compose \
-  "$env_file" "$edge_image" "$signaling_image" "$turn_image" ps --all -q) ||
+  "$env_file" "$edge_image" "$signaling_image" ps --all -q) ||
   round_ops_die "Compose 컨테이너가 남아 있는지 확인하지 못했습니다"
 [[ -z "$compose_container_ids" ]] ||
   round_ops_die "Compose 컨테이너가 남아 있습니다. 복원 전에 docker compose down을 실행하세요"
@@ -148,7 +146,7 @@ if "$fresh_restore"; then
 fi
 
 compose_metadata=$(round_ops_compose \
-  "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+  "$env_file" "$edge_image" "$signaling_image" \
   config --format json)
 project_name=$(jq -er '.name' <<<"$compose_metadata")
 caddy_data_volume=$(jq -er '.volumes.caddy_data.name' <<<"$compose_metadata")

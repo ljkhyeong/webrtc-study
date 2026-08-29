@@ -68,13 +68,11 @@ if [[ -e "$current_file" ]]; then
   round_ops_validate_release_file "$current_file"
   current_edge_image=$(round_ops_read_env_value "$current_file" ROUND_EDGE_IMAGE)
   current_signaling_image=$(round_ops_read_env_value "$current_file" ROUND_SIGNALING_IMAGE)
-  current_turn_image=$(round_ops_read_env_value "$current_file" ROUND_TURN_IMAGE)
   current_source_commit=$(round_ops_read_env_value "$current_file" ROUND_CHECKOUT_COMMIT)
   round_ops_verify_signed_provenance \
     "$current_source_commit" \
     "$current_edge_image" \
-    "$current_signaling_image" \
-    "$current_turn_image"
+    "$current_signaling_image"
 fi
 if [[ -e "$previous_file" ]]; then
   [[ -e "$current_file" ]] ||
@@ -107,13 +105,11 @@ snapshot_compose_file="$snapshot_dir/compose.yml"
 
 edge_image=$(round_ops_read_env_value "$snapshot_env_file" ROUND_EDGE_IMAGE)
 signaling_image=$(round_ops_read_env_value "$snapshot_env_file" ROUND_SIGNALING_IMAGE)
-turn_image=$(round_ops_read_env_value "$snapshot_env_file" ROUND_TURN_IMAGE)
 round_ops_write_release_file \
   "$pending_file" \
   "$snapshot_env_file" \
   "$edge_image" \
   "$signaling_image" \
-  "$turn_image" \
   "$snapshot_compose_file"
 "$script_dir/preflight.sh" \
   --release-file "$pending_file" \
@@ -127,15 +123,15 @@ deployment_started=true
 round_ops_compose_with_file \
   "$snapshot_compose_file" \
   "$snapshot_env_file" \
-  "$edge_image" "$signaling_image" "$turn_image" \
-  pull edge signaling turn
+  "$edge_image" "$signaling_image" \
+  pull edge signaling
 round_ops_assert_state_compatible \
   "$in_progress_file" "$snapshot_env_file" "$snapshot_compose_file"
 round_ops_verify_release_image_labels "$in_progress_file" "$snapshot_env_file"
 round_ops_compose_with_file \
   "$snapshot_compose_file" \
   "$snapshot_env_file" \
-  "$edge_image" "$signaling_image" "$turn_image" \
+  "$edge_image" "$signaling_image" \
   up -d --wait --no-build --remove-orphans
 
 if [[ -e "$current_file" ]] && ! cmp -s -- "$current_file" "$in_progress_file"; then

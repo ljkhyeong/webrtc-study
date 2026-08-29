@@ -14,7 +14,6 @@ const expectedSubjects = new Map([
     '${{ env.IMAGE_NAMESPACE }}/round-signaling\0${{ steps.image.outputs.digest }}',
     'build-signaling',
   ],
-  ['${{ env.IMAGE_NAMESPACE }}/round-turn\0${{ steps.image.outputs.digest }}', 'build-turn'],
 ]);
 
 function fail(message) {
@@ -83,7 +82,7 @@ if (releaseInputs.run.includes('/jobs')) {
 }
 assert.equal(workflow.jobs?.verify, undefined, '성공한 CI를 릴리스에서 다시 실행하면 안 됩니다.');
 
-for (const jobName of ['build-edge', 'build-signaling', 'build-turn', 'promote']) {
+for (const jobName of ['build-edge', 'build-signaling', 'promote']) {
   const job = workflow.jobs?.[jobName];
   assert.ok(job, `${jobName} job이 필요합니다.`);
   if (jobName !== 'promote') {
@@ -99,7 +98,7 @@ for (const jobName of ['build-edge', 'build-signaling', 'build-turn', 'promote']
   );
 }
 
-for (const jobName of ['build-edge', 'build-signaling', 'build-turn']) {
+for (const jobName of ['build-edge', 'build-signaling']) {
   const labels = (workflow.jobs[jobName].steps ?? [])
     .filter((step) => String(step.uses ?? '').startsWith('docker/build-push-action@'))
     .map((step) => step.with?.labels ?? '')

@@ -130,19 +130,18 @@ elif [[ -e "$deploy_marker" ]]; then
       "$deploy_marker" "$snapshot_env_file" "$snapshot_compose_file"
     edge_image=$(round_ops_read_env_value "$deploy_marker" ROUND_EDGE_IMAGE)
     signaling_image=$(round_ops_read_env_value "$deploy_marker" ROUND_SIGNALING_IMAGE)
-    turn_image=$(round_ops_read_env_value "$deploy_marker" ROUND_TURN_IMAGE)
     round_ops_compose_with_file \
       "$snapshot_compose_file" "$snapshot_env_file" \
-      "$edge_image" "$signaling_image" "$turn_image" \
+      "$edge_image" "$signaling_image" \
       config --quiet
     round_ops_compose_with_file \
       "$snapshot_compose_file" "$snapshot_env_file" \
-      "$edge_image" "$signaling_image" "$turn_image" \
+      "$edge_image" "$signaling_image" \
       down --remove-orphans
     remaining_containers=$(
       round_ops_compose_with_file \
         "$snapshot_compose_file" "$snapshot_env_file" \
-        "$edge_image" "$signaling_image" "$turn_image" \
+        "$edge_image" "$signaling_image" \
         ps --all -q
     )
     [[ -z "$remaining_containers" ]] ||
@@ -175,7 +174,6 @@ round_ops_assert_state_compatible \
   "$target_file" "$snapshot_env_file" "$snapshot_compose_file"
 edge_image=$(round_ops_read_env_value "$target_file" ROUND_EDGE_IMAGE)
 signaling_image=$(round_ops_read_env_value "$target_file" ROUND_SIGNALING_IMAGE)
-turn_image=$(round_ops_read_env_value "$target_file" ROUND_TURN_IMAGE)
 if [[ "$mode" != normal_rollback ]]; then
   "$script_dir/preflight.sh" \
     --release-file "$target_file" \
@@ -186,14 +184,14 @@ fi
 
 round_ops_compose_with_file \
   "$snapshot_compose_file" "$snapshot_env_file" \
-  "$edge_image" "$signaling_image" "$turn_image" \
-  pull edge signaling turn
+  "$edge_image" "$signaling_image" \
+  pull edge signaling
 round_ops_assert_state_compatible \
   "$target_file" "$snapshot_env_file" "$snapshot_compose_file"
 round_ops_verify_release_image_labels "$target_file" "$snapshot_env_file"
 round_ops_compose_with_file \
   "$snapshot_compose_file" "$snapshot_env_file" \
-  "$edge_image" "$signaling_image" "$turn_image" \
+  "$edge_image" "$signaling_image" \
   up -d --wait --no-build --remove-orphans
 
 case "$mode" in

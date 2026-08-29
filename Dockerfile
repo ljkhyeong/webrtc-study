@@ -7,7 +7,6 @@ ARG CADDY_VERSION=v2.11.4
 ARG CADDY_RATE_LIMIT_MODULE=github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db
 ARG JAVA_BUILD_IMAGE=eclipse-temurin:21.0.11_10-jdk-alpine-3.23@sha256:1ff763083f2993d57d0bf374ab10bb3e2cb873af6c13a04458ebbd3e0337dc76
 ARG JAVA_RUNTIME_IMAGE=eclipse-temurin:21.0.11_10-jre-alpine-3.23@sha256:3f08b13888f595cc49edabea7250ba69499ba25602b267da591720769400e08c
-ARG COTURN_IMAGE=coturn/coturn:4.17.2-r0-alpine@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f
 ARG NPM_VERSION=11.7.0
 
 FROM ${NODE_IMAGE} AS web-source
@@ -31,7 +30,7 @@ COPY apps/web apps/web
 RUN npm run build:packages
 
 FROM web-source AS web-build
-ARG VITE_STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
+ARG VITE_STUN_URLS=stun:stun.cloudflare.com:3478
 ARG VITE_ICE_TRANSPORT_POLICY=all
 ARG VITE_SIGNALING_URL=
 ARG VITE_TURN_CREDENTIALS_URL=
@@ -43,7 +42,7 @@ RUN VITE_ROUND_AUTH_MODE=standalone \
     npm run build -w @round/web
 
 FROM web-source AS baton-web-build
-ARG VITE_STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
+ARG VITE_STUN_URLS=stun:stun.cloudflare.com:3478
 ARG VITE_ICE_TRANSPORT_POLICY=all
 RUN VITE_ROUND_AUTH_MODE=baton \
     VITE_STUN_URLS="${VITE_STUN_URLS}" \
@@ -105,13 +104,3 @@ STOPSIGNAL SIGTERM
 ENTRYPOINT ["java", "-jar", "/opt/round/signaling.jar"]
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=5 \
     CMD wget -q -T 2 -O /dev/null http://127.0.0.1:8787/healthz || exit 1
-
-FROM ${COTURN_IMAGE} AS turn-runtime
-COPY --chmod=0444 ops/turn/turnserver.conf /etc/coturn/round-turnserver.conf
-COPY --chmod=0555 ops/turn/entrypoint.sh /usr/local/bin/round-turn-entrypoint
-
-USER root:root
-ENTRYPOINT ["/usr/local/bin/round-turn-entrypoint"]
-CMD []
-HEALTHCHECK --interval=20s --timeout=5s --start-period=10s --retries=5 \
-    CMD turnutils_stunclient -p 3478 127.0.0.1 >/dev/null 2>&1 || exit 1

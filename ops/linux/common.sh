@@ -179,7 +179,6 @@ round_ops_require_image_repository() {
   case "$role" in
     edge) expected_repository='ghcr.io/ljkhyeong/round-edge' ;;
     signaling) expected_repository='ghcr.io/ljkhyeong/round-signaling' ;;
-    turn) expected_repository='ghcr.io/ljkhyeong/round-turn' ;;
     *) round_ops_die "unknown ROUND image role: $role" ;;
   esac
   [[ "$actual_repository" == "$expected_repository" ]] ||
@@ -275,30 +274,23 @@ round_ops_verify_release_image_labels() {
   local env_file=$2
   local edge_image
   local signaling_image
-  local turn_image
   local ice_transport_policy
   local expected_edge_flavor
   local edge_labels
   local signaling_labels
-  local turn_labels
   local edge_version
   local signaling_version
-  local turn_version
   local normalized_edge_version
   local edge_tag_object
   local signaling_tag_object
-  local turn_tag_object
   local edge_role
   local signaling_role
-  local turn_role
   local edge_flavor
   local signaling_flavor
-  local turn_flavor
 
   round_ops_require_command jq
   edge_image=$(round_ops_read_env_value "$release_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$release_file" ROUND_SIGNALING_IMAGE)
-  turn_image=$(round_ops_read_env_value "$release_file" ROUND_TURN_IMAGE)
 
   ice_transport_policy=$(round_ops_read_env_value "$env_file" VITE_ICE_TRANSPORT_POLICY)
   case "$ice_transport_policy" in
@@ -309,28 +301,20 @@ round_ops_verify_release_image_labels() {
 
   edge_labels=$(round_ops_inspect_image_labels "$edge_image")
   signaling_labels=$(round_ops_inspect_image_labels "$signaling_image")
-  turn_labels=$(round_ops_inspect_image_labels "$turn_image")
   IFS=$'\t' read -r \
     edge_version edge_tag_object edge_role edge_flavor \
     <<<"$edge_labels"
   IFS=$'\t' read -r \
     signaling_version signaling_tag_object signaling_role signaling_flavor \
     <<<"$signaling_labels"
-  IFS=$'\t' read -r \
-    turn_version turn_tag_object turn_role turn_flavor \
-    <<<"$turn_labels"
-
   [[ "$edge_role" == edge ]] || round_ops_die "ROUND_EDGE_IMAGE does not carry the edge role"
   [[ "$signaling_role" == signaling ]] ||
     round_ops_die "ROUND_SIGNALING_IMAGE does not carry the signaling role"
-  [[ "$turn_role" == turn ]] || round_ops_die "ROUND_TURN_IMAGE does not carry the TURN role"
 
   [[ "$edge_flavor" == "$expected_edge_flavor" ]] ||
     round_ops_die "ROUND_EDGE_IMAGE flavor does not match VITE_ICE_TRANSPORT_POLICY"
   [[ "$signaling_flavor" == shared ]] ||
     round_ops_die "ROUND_SIGNALING_IMAGE does not carry the shared flavor"
-  [[ "$turn_flavor" == shared ]] ||
-    round_ops_die "ROUND_TURN_IMAGE does not carry the shared flavor"
 
   normalized_edge_version=$edge_version
   if [[ "$expected_edge_flavor" == relay ]]; then
@@ -340,14 +324,12 @@ round_ops_verify_release_image_labels() {
   fi
   [[ "$normalized_edge_version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]] ||
     round_ops_die "release images carry an invalid SemVer image version"
-  [[ "$signaling_version" == "$normalized_edge_version" && \
-     "$turn_version" == "$normalized_edge_version" ]] ||
+  [[ "$signaling_version" == "$normalized_edge_version" ]] ||
     round_ops_die "release image versions do not identify the same release"
 
   [[ "$edge_tag_object" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]] ||
     round_ops_die "release images carry an invalid annotated-tag object"
-  [[ "$signaling_tag_object" == "$edge_tag_object" && \
-     "$turn_tag_object" == "$edge_tag_object" ]] ||
+  [[ "$signaling_tag_object" == "$edge_tag_object" ]] ||
     round_ops_die "release images do not come from the same annotated tag object"
 }
 
@@ -402,7 +384,6 @@ round_ops_validate_release_file() {
   local release_file=$1
   local edge_image
   local signaling_image
-  local turn_image
   local source_commit
   local compose_sha256
   local env_sha256
@@ -413,10 +394,8 @@ round_ops_validate_release_file() {
   round_ops_require_private_file "$release_file"
   edge_image=$(round_ops_read_env_value "$release_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$release_file" ROUND_SIGNALING_IMAGE)
-  turn_image=$(round_ops_read_env_value "$release_file" ROUND_TURN_IMAGE)
   round_ops_require_image_repository ROUND_EDGE_IMAGE "$edge_image" edge
   round_ops_require_image_repository ROUND_SIGNALING_IMAGE "$signaling_image" signaling
-  round_ops_require_image_repository ROUND_TURN_IMAGE "$turn_image" turn
   source_commit=$(round_ops_read_env_value "$release_file" ROUND_CHECKOUT_COMMIT)
   compose_sha256=$(round_ops_read_env_value "$release_file" ROUND_COMPOSE_SHA256)
   env_sha256=$(round_ops_read_env_value "$release_file" ROUND_ENV_SHA256)
@@ -437,7 +416,7 @@ round_ops_validate_release_file() {
     round_ops_die "$release_file contains an unsupported Docker endpoint"
 
   awk '
-      /^(ROUND_EDGE_IMAGE|ROUND_SIGNALING_IMAGE|ROUND_TURN_IMAGE|ROUND_CHECKOUT_COMMIT|ROUND_COMPOSE_SHA256|ROUND_ENV_SHA256|ROUND_PROJECT_NAME|ROUND_DOMAIN|ROUND_DOCKER_HOST)=/ {
+      /^(ROUND_EDGE_IMAGE|ROUND_SIGNALING_IMAGE|ROUND_CHECKOUT_COMMIT|ROUND_COMPOSE_SHA256|ROUND_ENV_SHA256|ROUND_PROJECT_NAME|ROUND_DOMAIN|ROUND_DOCKER_HOST)=/ {
         next
       }
       NF != 0 { exit 1 }
@@ -450,8 +429,7 @@ round_ops_write_release_file() {
   local env_file=$2
   local edge_image=$3
   local signaling_image=$4
-  local turn_image=$5
-  local compose_file=${6:-}
+  local compose_file=${5:-}
   local destination_dir
   local temporary
   local repo_root
@@ -463,7 +441,6 @@ round_ops_write_release_file() {
 
   round_ops_require_image_repository ROUND_EDGE_IMAGE "$edge_image" edge
   round_ops_require_image_repository ROUND_SIGNALING_IMAGE "$signaling_image" signaling
-  round_ops_require_image_repository ROUND_TURN_IMAGE "$turn_image" turn
   repo_root=$(round_ops_repo_root)
   if [[ -z "$compose_file" ]]; then
     compose_file="$repo_root/compose.yml"
@@ -483,7 +460,6 @@ round_ops_write_release_file() {
   {
     printf 'ROUND_EDGE_IMAGE=%s\n' "$edge_image"
     printf 'ROUND_SIGNALING_IMAGE=%s\n' "$signaling_image"
-    printf 'ROUND_TURN_IMAGE=%s\n' "$turn_image"
     printf 'ROUND_CHECKOUT_COMMIT=%s\n' "$source_commit"
     printf 'ROUND_COMPOSE_SHA256=%s\n' "$compose_sha256"
     printf 'ROUND_ENV_SHA256=%s\n' "$env_sha256"
@@ -526,7 +502,7 @@ round_ops_runtime_env_sha256() {
   round_ops_require_private_file "$env_file"
   digest=$(
     awk '
-      !/^(ROUND_EDGE_IMAGE|ROUND_SIGNALING_IMAGE|ROUND_TURN_IMAGE)=/ { print }
+      !/^(ROUND_EDGE_IMAGE|ROUND_SIGNALING_IMAGE)=/ { print }
     ' "$env_file" |
       openssl dgst -sha256 -r
   ) || round_ops_die "could not hash the runtime config in $env_file"
@@ -577,144 +553,6 @@ round_ops_require_stable_release_state() {
   done
 }
 
-round_ops_resolve_repo_path() {
-  local repo_root=$1
-  local configured_path=$2
-  case "$configured_path" in
-    /*) printf '%s\n' "$configured_path" ;;
-    *) printf '%s/%s\n' "$repo_root" "${configured_path#./}" ;;
-  esac
-}
-
-round_ops_validate_certificate() {
-  local env_file=$1
-  local minimum_validity_seconds=${2:-1209600}
-  local repo_root
-  local cert_file
-  local key_file
-  local turn_realm
-  local cert_public_key
-  local private_public_key
-  local resolved_key_file
-  local key_mode
-  local key_owner
-
-  round_ops_require_command realpath
-  repo_root=$(round_ops_repo_root)
-  cert_file=$(round_ops_resolve_repo_path \
-    "$repo_root" \
-    "$(round_ops_read_env_value "$env_file" TURN_TLS_CERT_FILE)")
-  key_file=$(round_ops_resolve_repo_path \
-    "$repo_root" \
-    "$(round_ops_read_env_value "$env_file" TURN_TLS_KEY_FILE)")
-  turn_realm=$(round_ops_read_env_value "$env_file" TURN_REALM)
-
-  [[ -r "$cert_file" && -f "$cert_file" ]] ||
-    round_ops_die "TURN certificate is not a readable regular file: $cert_file"
-  [[ -r "$key_file" && -f "$key_file" ]] ||
-    round_ops_die "TURN private key is not a readable regular file: $key_file"
-  resolved_key_file=$(realpath "$key_file") ||
-    round_ops_die "could not resolve the TURN private key path"
-  key_mode=$(round_ops_file_mode "$resolved_key_file")
-  key_owner=$(round_ops_file_owner "$resolved_key_file")
-  [[ "$key_mode" == '400' || "$key_mode" == '600' ]] ||
-    round_ops_die "TURN private key must have mode 0400 or 0600 (found $key_mode)"
-  [[ "$key_owner" == "$(id -u)" ]] ||
-    round_ops_die "TURN private key must be owned by the invoking user"
-  [[ "$minimum_validity_seconds" =~ ^[0-9]+$ ]] ||
-    round_ops_die "minimum certificate validity must be seconds"
-
-  openssl x509 -in "$cert_file" -noout -checkend "$minimum_validity_seconds" >/dev/null ||
-    round_ops_die "TURN certificate expires within $minimum_validity_seconds seconds"
-  openssl x509 -in "$cert_file" -noout -checkhost "$turn_realm" >/dev/null ||
-    round_ops_die "TURN certificate does not cover $turn_realm"
-
-  cert_public_key=$(
-    openssl x509 -in "$cert_file" -pubkey -noout |
-      openssl pkey -pubin -outform DER 2>/dev/null |
-      openssl dgst -sha256
-  ) || round_ops_die "could not read the TURN certificate public key"
-  private_public_key=$(
-    openssl pkey -in "$key_file" -pubout -outform DER 2>/dev/null |
-      openssl dgst -sha256
-  ) || round_ops_die "could not read the TURN private key"
-  [[ "$cert_public_key" == "$private_public_key" ]] ||
-    round_ops_die "TURN certificate and private key do not match"
-}
-
-round_ops_turn_certificate_fingerprint() {
-  local env_file=$1
-  local repo_root
-  local cert_file
-  local fingerprint
-
-  repo_root=$(round_ops_repo_root)
-  cert_file=$(round_ops_resolve_repo_path \
-    "$repo_root" \
-    "$(round_ops_read_env_value "$env_file" TURN_TLS_CERT_FILE)")
-  fingerprint=$(openssl x509 -in "$cert_file" -noout -fingerprint -sha256) ||
-    round_ops_die "could not calculate the TURN certificate fingerprint"
-  fingerprint=${fingerprint#*=}
-  [[ "$fingerprint" =~ ^([0-9A-F]{2}:){31}[0-9A-F]{2}$ ]] ||
-    round_ops_die "TURN certificate returned a malformed fingerprint"
-  printf '%s\n' "$fingerprint"
-}
-
-round_ops_verify_turn_tls_listener() {
-  local env_file=$1
-  local expected_fingerprint=$2
-  local check_host=${3:-127.0.0.1}
-  local check_port=${4:-5349}
-  local ca_file=${5:-}
-  local turn_realm
-  local served_fingerprint
-  local peer_output
-  local -a client_command
-
-  round_ops_require_command openssl
-  round_ops_require_command timeout
-  [[ "$check_host" =~ ^[A-Za-z0-9.-]+$ ]] ||
-    round_ops_die "TURN TLS check host must be an IPv4 address or DNS hostname"
-  [[ "$check_port" =~ ^[1-9][0-9]*$ ]] && (( check_port <= 65535 )) ||
-    round_ops_die "TURN TLS check port must be between 1 and 65535"
-  if [[ -n "$ca_file" ]]; then
-    [[ -f "$ca_file" && ! -L "$ca_file" && -r "$ca_file" ]] ||
-      round_ops_die "TURN TLS check CA must be a readable regular file: $ca_file"
-  fi
-
-  turn_realm=$(round_ops_read_env_value "$env_file" TURN_REALM)
-  peer_output=$(mktemp)
-  chmod 0600 "$peer_output"
-  client_command=(
-    openssl s_client
-    -connect "$check_host:$check_port"
-    -servername "$turn_realm"
-    -verify_hostname "$turn_realm"
-    -verify_return_error
-    -showcerts
-  )
-  if [[ -n "$ca_file" ]]; then
-    client_command+=(-CAfile "$ca_file")
-  fi
-  if ! timeout 15s "${client_command[@]}" \
-    </dev/null \
-    >"$peer_output" 2>/dev/null; then
-    rm -f -- "$peer_output"
-    round_ops_die "coturn TLS listener did not present a trusted certificate for $turn_realm"
-  fi
-  served_fingerprint=$(
-    openssl x509 -in "$peer_output" -noout -fingerprint -sha256
-  ) || {
-    rm -f -- "$peer_output"
-    round_ops_die "could not read the certificate served by coturn"
-  }
-  rm -f -- "$peer_output"
-  served_fingerprint=${served_fingerprint#*=}
-  [[ "$served_fingerprint" == "$expected_fingerprint" ]] ||
-    round_ops_die "coturn is not serving the configured TURN certificate"
-  printf '%s\n' "$expected_fingerprint"
-}
-
 round_ops_require_compose_version() {
   local minimum_version=2.24.4
   local version
@@ -754,8 +592,7 @@ round_ops_compose_with_file() {
   local env_file=$2
   local edge_image=$3
   local signaling_image=$4
-  local turn_image=$5
-  shift 5
+  shift 4
   local repo_root
   local absolute_compose_file
   local absolute_env_file
@@ -778,7 +615,6 @@ round_ops_compose_with_file() {
     round_ops_die "COMPOSE_PROJECT_NAME is invalid: $project_name"
   round_ops_validate_digest_ref ROUND_EDGE_IMAGE "$edge_image"
   round_ops_validate_digest_ref ROUND_SIGNALING_IMAGE "$signaling_image"
-  round_ops_validate_digest_ref ROUND_TURN_IMAGE "$turn_image"
   if [[ -n "$home_value" ]]; then
     sanitized+=("HOME=$home_value")
   fi
@@ -786,7 +622,6 @@ round_ops_compose_with_file() {
   "${sanitized[@]}" \
     "ROUND_EDGE_IMAGE=$edge_image" \
     "ROUND_SIGNALING_IMAGE=$signaling_image" \
-    "ROUND_TURN_IMAGE=$turn_image" \
     docker compose \
       --project-directory "$repo_root" \
       --file "$absolute_compose_file" \
@@ -799,8 +634,7 @@ round_ops_compose() {
   local env_file=$1
   local edge_image=$2
   local signaling_image=$3
-  local turn_image=$4
-  shift 4
+  shift 3
   local repo_root
 
   repo_root=$(round_ops_repo_root)
@@ -809,6 +643,5 @@ round_ops_compose() {
     "$env_file" \
     "$edge_image" \
     "$signaling_image" \
-    "$turn_image" \
     "$@"
 }

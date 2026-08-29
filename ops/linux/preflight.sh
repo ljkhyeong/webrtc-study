@@ -10,31 +10,21 @@ usage() {
 Usage: ops/linux/preflight.sh [OPTIONS] ENV_FILE
 
 Options:
-  --minimum-certificate-validity-days DAYS
   --compose-file FILE   Render this private Compose snapshot.
   --release-file FILE   Validate and render the immutable images saved in FILE.
   --state-dir DIR       Include the release-state filesystem in disk checks.
 
 Read-only production-host gate for ROUND. It validates Linux/Docker readiness,
 the private env file, immutable image references, Compose interpolation, clock
-synchronization, free disk, and the TURN certificate/key/hostname boundary.
+synchronization, free disk, and the Cloudflare TURN provider boundary.
 EOF
 }
 
-minimum_validity_days=14
 release_file=
 compose_file=
 state_dir=/var/lib/round/releases
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --minimum-certificate-validity-days)
-      [[ $# -ge 2 ]] || {
-        usage >&2
-        exit 2
-      }
-      minimum_validity_days=$2
-      shift 2
-      ;;
     --release-file)
       [[ $# -ge 2 ]] || {
         usage >&2
@@ -71,11 +61,6 @@ done
   usage >&2
   exit 2
 }
-[[ "$minimum_validity_days" =~ ^[1-9][0-9]*$ ]] ||
-  round_ops_die "minimum certificate validity must be a positive number of days"
-(( minimum_validity_days <= 3650 )) ||
-  round_ops_die "minimum certificate validity cannot exceed 3650 days"
-
 env_file=$1
 repo_root=$(round_ops_repo_root)
 cd "$repo_root"
@@ -98,17 +83,14 @@ if [[ -n "$release_file" ]]; then
   round_ops_assert_state_compatible "$release_file" "$env_file" "$compose_file"
   edge_image=$(round_ops_read_env_value "$release_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$release_file" ROUND_SIGNALING_IMAGE)
-  turn_image=$(round_ops_read_env_value "$release_file" ROUND_TURN_IMAGE)
   source_commit=$(round_ops_read_env_value "$release_file" ROUND_CHECKOUT_COMMIT)
   round_ops_verify_signed_provenance \
-    "$source_commit" "$edge_image" "$signaling_image" "$turn_image"
+    "$source_commit" "$edge_image" "$signaling_image"
 else
   edge_image=$(round_ops_read_env_value "$env_file" ROUND_EDGE_IMAGE)
   signaling_image=$(round_ops_read_env_value "$env_file" ROUND_SIGNALING_IMAGE)
-  turn_image=$(round_ops_read_env_value "$env_file" ROUND_TURN_IMAGE)
   round_ops_require_image_repository ROUND_EDGE_IMAGE "$edge_image" edge
   round_ops_require_image_repository ROUND_SIGNALING_IMAGE "$signaling_image" signaling
-  round_ops_require_image_repository ROUND_TURN_IMAGE "$turn_image" turn
 fi
 round_ops_require_compose_version
 
@@ -132,53 +114,31 @@ done
 round_domain=$(round_ops_read_env_value "$env_file" ROUND_DOMAIN)
 allowed_origins=$(round_ops_read_env_value "$env_file" ALLOWED_ORIGINS)
 ice_transport_policy=$(round_ops_read_env_value "$env_file" VITE_ICE_TRANSPORT_POLICY)
-turn_realm=$(round_ops_read_env_value "$env_file" TURN_REALM)
-turn_external_ip=$(round_ops_read_env_value "$env_file" TURN_EXTERNAL_IP)
-turn_relay_ip=$(round_ops_read_env_value "$env_file" TURN_RELAY_IP)
-turn_min_port=$(round_ops_read_env_value "$env_file" TURN_MIN_PORT)
-turn_max_port=$(round_ops_read_env_value "$env_file" TURN_MAX_PORT)
+turn_provider=$(round_ops_read_env_value "$env_file" TURN_PROVIDER)
+turn_key_id=$(round_ops_read_env_value "$env_file" TURN_CLOUDFLARE_KEY_ID)
+turn_api_token=$(round_ops_read_env_value "$env_file" TURN_CLOUDFLARE_API_TOKEN)
 access_password_hash=$(round_ops_read_env_value "$env_file" ROUND_ACCESS_PASSWORD_HASH)
-turn_shared_secret=$(round_ops_read_env_value "$env_file" TURN_SHARED_SECRET)
 [[ "$allowed_origins" == "https://$round_domain" ]] ||
   round_ops_die "ALLOWED_ORIGINS must equal the exact ROUND_DOMAIN HTTPS origin"
 [[ "$ice_transport_policy" == all || "$ice_transport_policy" == relay ]] ||
   round_ops_die "VITE_ICE_TRANSPORT_POLICY must be all or relay"
-[[ "$turn_realm" != "$round_domain" ]] ||
-  round_ops_die "TURN_REALM and ROUND_DOMAIN must use separate hostnames"
-for hostname in "$round_domain" "$turn_realm"; do
-  [[ "$hostname" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]] ||
-    round_ops_die "invalid deployment hostname: $hostname"
-  [[ "$hostname" == *.* && "$hostname" != *..* && "$hostname" != *.-* && "$hostname" != *-.* ]] ||
-    round_ops_die "invalid deployment hostname: $hostname"
-done
-for address in "$turn_external_ip" "$turn_relay_ip"; do
-  IFS=. read -r octet_1 octet_2 octet_3 octet_4 extra <<<"$address"
-  [[ -z "${extra:-}" ]] || round_ops_die "TURN address must be IPv4: $address"
-  for octet in "$octet_1" "$octet_2" "$octet_3" "$octet_4"; do
-    [[ "$octet" =~ ^[0-9]{1,3}$ ]] || round_ops_die "TURN address must be IPv4: $address"
-    (( 10#$octet <= 255 )) || round_ops_die "TURN address must be IPv4: $address"
-  done
-done
-[[ "$turn_min_port" =~ ^[0-9]+$ && "$turn_max_port" =~ ^[0-9]+$ ]] ||
-  round_ops_die "TURN relay ports must be integers"
-(( turn_min_port >= 1024 && turn_max_port <= 65535 && turn_max_port >= turn_min_port )) ||
-  round_ops_die "TURN relay port range is invalid"
-(( turn_max_port - turn_min_port + 1 >= 100 )) ||
-  round_ops_die "TURN relay range must provide at least 100 UDP ports"
+[[ "$round_domain" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ && \
+   "$round_domain" == *.* && "$round_domain" != *..* && \
+   "$round_domain" != *.-* && "$round_domain" != *-.* ]] ||
+  round_ops_die "invalid deployment hostname: $round_domain"
+[[ "$turn_provider" == cloudflare ]] ||
+  round_ops_die "TURN_PROVIDER must be cloudflare in production"
+[[ -n "$turn_key_id" && -n "$turn_api_token" ]] ||
+  round_ops_die "Cloudflare TURN key ID and API token must be configured"
 [[ "$access_password_hash" =~ ^\'\$2[ab]\$12\$[./A-Za-z0-9]{53}\'$ ]] ||
   round_ops_die "ROUND_ACCESS_PASSWORD_HASH must be a single-quoted bcrypt cost-12 hash"
-[[ "$turn_shared_secret" =~ ^[A-Fa-f0-9]{64,}$ ]] ||
-  round_ops_die "TURN_SHARED_SECRET must contain at least 64 hexadecimal characters"
-
-minimum_validity_seconds=$((minimum_validity_days * 24 * 60 * 60))
-round_ops_validate_certificate "$env_file" "$minimum_validity_seconds"
 
 replicas=$(
   round_ops_compose_with_file \
-    "$compose_file" "$env_file" "$edge_image" "$signaling_image" "$turn_image" \
+    "$compose_file" "$env_file" "$edge_image" "$signaling_image" \
     config --format json |
     jq -er '.services.signaling.deploy.replicas'
 )
 [[ "$replicas" == '1' ]] || round_ops_die "signaling must remain a single replica"
 
-printf 'ROUND Linux preflight passed for immutable images, host clock, disk, Compose, and TURN TLS.\n'
+printf 'ROUND Linux preflight passed for immutable images, host clock, disk, Compose, and Cloudflare TURN.\n'

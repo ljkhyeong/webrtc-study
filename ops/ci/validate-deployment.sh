@@ -47,7 +47,6 @@ require_command() {
 require_command docker
 require_command jq
 require_command node
-require_command openssl
 
 printf 'Verifying local pilot secrets are excluded from the Docker build context...\n'
 grep -Fxq 'ops/macos-pilot.env' .dockerignore || {
@@ -70,22 +69,11 @@ cleanup() {
 trap cleanup EXIT
 umask 077
 
-openssl req \
-  -x509 \
-  -newkey rsa:2048 \
-  -nodes \
-  -days 1 \
-  -subj '/CN=turn.invalid' \
-  -keyout "$fixture_dir/turn-key.pem" \
-  -out "$fixture_dir/turn-cert.pem" \
-  >/dev/null 2>&1
-
-TURN_SHARED_SECRET=$(openssl rand -hex 32)
-TURN_TLS_CERT_FILE="$fixture_dir/turn-cert.pem"
-TURN_TLS_KEY_FILE="$fixture_dir/turn-key.pem"
+TURN_CLOUDFLARE_KEY_ID=ci-key
+TURN_CLOUDFLARE_API_TOKEN=ci-token
 ROUND_ACCESS_USER=round-ci
 ROUND_ACCESS_PASSWORD_HASH='$2a$12$RJKd/exBEqUGjd.mtH9URu8H/TGJgwahZV8tA.xhPCM/4rdHfpmYS'
-export TURN_SHARED_SECRET TURN_TLS_CERT_FILE TURN_TLS_KEY_FILE
+export TURN_CLOUDFLARE_KEY_ID TURN_CLOUDFLARE_API_TOKEN
 export ROUND_ACCESS_USER ROUND_ACCESS_PASSWORD_HASH
 
 printf 'Validating Compose interpolation with temporary dummy fixtures...\n'
@@ -94,7 +82,6 @@ production_config=$(docker compose --env-file ops/production.env.example config 
 printf 'Validating the macOS pilot Compose override...\n'
 macos_pilot_config=$(
   ACME_EMAIL=ci@round.invalid \
-  TURN_EXTERNAL_IP=203.0.113.10 \
     docker compose \
       -f compose.yml \
       -f compose.macos-pilot.yml \
@@ -109,9 +96,7 @@ jq -e '
         {target: 443, published: "8443", protocol: "tcp"},
         {target: 443, published: "8443", protocol: "udp"}
       ]))
-  and (.services.turn.network_mode == null)
-  and (.services.turn.networks.turn.ipv4_address == "172.31.0.10")
-  and (.networks.turn.ipam.config[0].subnet == "172.31.0.0/24")
+  and ((.services | keys) == ["edge", "signaling"])
   and (.services.edge.command == [
         "caddy",
         "run",
@@ -127,37 +112,13 @@ jq -e '
             and .read_only == true
           )]
       | length == 1)
-  and ([.services.turn.ports[]
-        | select(.target == 3478 and .protocol == "tcp")]
-      | length == 1)
-  and ([.services.turn.ports[]
-        | select(.target == 3478 and .protocol == "udp")]
-      | length == 1)
-  and ([.services.turn.ports[]
-        | select(.target == 5349 and .protocol == "tcp")]
-      | length == 1)
-  and ([.services.turn.ports[]
-        | select(.target == 5349 and .protocol == "udp")]
-      | length == 1)
-  and ([.services.turn.ports[]
-        | select(.target >= 49160 and .target <= 49259 and .protocol == "udp")]
-      | length == 100)
 ' <<<"$macos_pilot_config" >/dev/null
 
 printf 'Validating deployment shell scripts...\n'
-sh -n ops/turn/entrypoint.sh
 bash -n ops/ci/run-baton-edge-e2e.sh
 bash -n ops/linux/test-systemd-units.sh
-bash ops/turn/probe.sh --help >/dev/null
-bash ops/turn/test-external-pilot-target.sh
-bash ops/turn/test-external-release.sh
-bash ops/turn/test-probe.sh
-bash ops/turn/test-tls-verification.sh
 bash ops/linux/test-linux-ops.sh
 bash ops/linux/test-systemd-units.sh
-
-printf 'Validating the external TURN workflow contract...\n'
-node ops/ci/test-validate-external-turn-workflows.mjs
 
 printf 'Validating the signed release workflow contract...\n'
 node ops/ci/validate-release-workflow.mjs
@@ -291,6 +252,5 @@ fi
 printf 'Building all production Compose images...\n'
 ROUND_EDGE_IMAGE=round-edge-validation:local \
 ROUND_SIGNALING_IMAGE=round-signaling-validation:local \
-ROUND_TURN_IMAGE=round-turn-validation:local \
   docker compose --env-file ops/production.env.example build --pull
 printf 'Deployment validation passed.\n'

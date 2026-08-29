@@ -190,8 +190,6 @@ jobs:
             "${IMAGE_NAMESPACE}/round-baton-web:sha-${RELEASE_SHA}"
             "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}"
             "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}"
-            "${IMAGE_NAMESPACE}/round-turn:${RELEASE_TAG}"
-            "${IMAGE_NAMESPACE}/round-turn:sha-${RELEASE_SHA}"
           )
           for reference in "${references[@]}"; do
             assert_tag_absent "$reference"
@@ -391,75 +389,12 @@ jobs:
           push-to-registry: true
           create-storage-record: false
 
-  build-turn:
-    name: TURN 이미지 digest build
-    needs: preflight
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    outputs:
-      digest: ${{ steps.image.outputs.digest }}
-
-    steps:
-      - name: 저장소 체크아웃
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ needs.preflight.outputs.release_sha }}
-          persist-credentials: false
-
-      - name: QEMU 설정
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
-
-      - name: Docker Buildx 설정
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
-
-      - name: GitHub Container Registry 로그인
-        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: TURN digest build 및 push
-        id: image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: .
-          target: turn-runtime
-          platforms: linux/amd64,linux/arm64
-          pull: true
-          outputs: type=image,name=${{ env.IMAGE_NAMESPACE }}/round-turn,push-by-digest=true,name-canonical=true,push=true
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ needs.preflight.outputs.release_sha }}
-            org.opencontainers.image.version=${{ needs.preflight.outputs.release_tag }}
-            io.round.image.role=turn
-            io.round.image.flavor=shared
-            io.round.release.tag-object=${{ needs.preflight.outputs.tag_object }}
-          cache-from: type=gha,scope=round-turn
-          cache-to: type=gha,mode=max,scope=round-turn
-          provenance: mode=max
-          sbom: true
-
-      - name: TURN 이미지의 서명된 출처 증명 발행
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
-        with:
-          subject-name: ${{ env.IMAGE_NAMESPACE }}/round-turn
-          subject-digest: ${{ steps.image.outputs.digest }}
-          push-to-registry: true
-          create-storage-record: false
-
   promote:
     name: 검증된 이미지 digest 승격
     needs:
       - preflight
       - build-edge
       - build-signaling
-      - build-turn
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -512,7 +447,6 @@ jobs:
           EDGE_DIGEST: ${{ needs.build-edge.outputs.edge_digest }}
           RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
           SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
-          TURN_DIGEST: ${{ needs.build-turn.outputs.digest }}
           RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
           RELEASE_SHA: ${{ needs.preflight.outputs.release_sha }}
         run: |
@@ -544,8 +478,6 @@ jobs:
             "${IMAGE_NAMESPACE}/round-baton-web:sha-${RELEASE_SHA}"
             "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}"
             "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}"
-            "${IMAGE_NAMESPACE}/round-turn:${RELEASE_TAG}"
-            "${IMAGE_NAMESPACE}/round-turn:sha-${RELEASE_SHA}"
           )
           for reference in "${references[@]}"; do
             assert_tag_absent "$reference"
@@ -556,7 +488,6 @@ jobs:
             "${IMAGE_NAMESPACE}/round-edge@${RELAY_DIGEST}"
             "${IMAGE_NAMESPACE}/round-baton-web@${BATON_WEB_DIGEST}"
             "${IMAGE_NAMESPACE}/round-signaling@${SIGNALING_DIGEST}"
-            "${IMAGE_NAMESPACE}/round-turn@${TURN_DIGEST}"
           )
           for source in "${digest_sources[@]}"; do
             docker buildx imagetools inspect "$source" >/dev/null
@@ -569,7 +500,6 @@ jobs:
           EDGE_DIGEST: ${{ needs.build-edge.outputs.edge_digest }}
           RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
           SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
-          TURN_DIGEST: ${{ needs.build-turn.outputs.digest }}
           RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
           RELEASE_SHA: ${{ needs.preflight.outputs.release_sha }}
         run: |
@@ -583,10 +513,6 @@ jobs:
             --tag "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}" \
             --tag "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}" \
             "${IMAGE_NAMESPACE}/round-signaling@${SIGNALING_DIGEST}"
-          docker buildx imagetools create \
-            --tag "${IMAGE_NAMESPACE}/round-turn:${RELEASE_TAG}" \
-            --tag "${IMAGE_NAMESPACE}/round-turn:sha-${RELEASE_SHA}" \
-            "${IMAGE_NAMESPACE}/round-turn@${TURN_DIGEST}"
           docker buildx imagetools create \
             --tag "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}-relay" \
             --tag "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}-relay" \
@@ -603,7 +529,6 @@ jobs:
           EDGE_DIGEST: ${{ needs.build-edge.outputs.edge_digest }}
           RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
           SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
-          TURN_DIGEST: ${{ needs.build-turn.outputs.digest }}
           RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
           RELEASE_SHA: ${{ needs.preflight.outputs.release_sha }}
         run: |
@@ -633,8 +558,6 @@ jobs:
           verify_tag_digest "${IMAGE_NAMESPACE}/round-baton-web:sha-${RELEASE_SHA}" "$BATON_WEB_DIGEST"
           verify_tag_digest "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}" "$SIGNALING_DIGEST"
           verify_tag_digest "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}" "$SIGNALING_DIGEST"
-          verify_tag_digest "${IMAGE_NAMESPACE}/round-turn:${RELEASE_TAG}" "$TURN_DIGEST"
-          verify_tag_digest "${IMAGE_NAMESPACE}/round-turn:sha-${RELEASE_SHA}" "$TURN_DIGEST"
 
       - name: 승격된 이미지 digest 기록
         shell: bash
@@ -643,7 +566,6 @@ jobs:
           EDGE_DIGEST: ${{ needs.build-edge.outputs.edge_digest }}
           RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
           SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
-          TURN_DIGEST: ${{ needs.build-turn.outputs.digest }}
         run: |
           {
             printf '### 승격된 ROUND 이미지\n\n'
@@ -651,5 +573,4 @@ jobs:
             printf -- '- 릴레이 전용 edge: `%s/round-edge@%s`\n' "$IMAGE_NAMESPACE" "$RELAY_DIGEST"
             printf -- '- BATON web: `%s/round-baton-web@%s`\n' "$IMAGE_NAMESPACE" "$BATON_WEB_DIGEST"
             printf -- '- 시그널링: `%s/round-signaling@%s`\n' "$IMAGE_NAMESPACE" "$SIGNALING_DIGEST"
-            printf -- '- TURN: `%s/round-turn@%s`\n' "$IMAGE_NAMESPACE" "$TURN_DIGEST"
           } >> "$GITHUB_STEP_SUMMARY"

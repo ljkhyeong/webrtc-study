@@ -88,13 +88,16 @@ services:
       SIGNALING_MAX_OUTBOUND_QUEUE_BYTES: ${SIGNALING_MAX_OUTBOUND_QUEUE_BYTES:-2097152}
       SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL: ${SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL:-67108864}
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError
-      TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:?TURN_SHARED_SECRET을 Git 외부에서 설정하세요}
-      TURN_URLS: ${TURN_URLS:?TURN_URLS를 설정하세요}
+      TURN_PROVIDER: ${TURN_PROVIDER:-cloudflare}
+      TURN_CLOUDFLARE_KEY_ID: ${TURN_CLOUDFLARE_KEY_ID:?Cloudflare TURN key ID를 설정하세요}
+      TURN_CLOUDFLARE_API_TOKEN: ${TURN_CLOUDFLARE_API_TOKEN:?Cloudflare TURN API token을 Git 외부에서 설정하세요}
       TURN_CREDENTIAL_TTL_SECONDS: ${TURN_CREDENTIAL_TTL_SECONDS:-600}
       TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS: ${TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS:-600}
       TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS:-12}
+      TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS: ${TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS:-6}
       TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS: ${TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS:-24}
       TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS:-10000}
+      TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS:-10000}
     expose:
       - '8787'
     networks:
@@ -117,54 +120,6 @@ services:
       retries: 5
     logging: *default-logging
 
-  turn:
-    image: ${ROUND_TURN_IMAGE:?ROUND_TURN_IMAGE를 불변 release tag 또는 digest로 설정하세요}
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: turn-runtime
-      args:
-        COTURN_IMAGE: ${COTURN_IMAGE:-coturn/coturn:4.17.2-r0-alpine@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f}
-    network_mode: host
-    environment:
-      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:?TURN_EXTERNAL_IP를 공개 IPv4 주소로 설정하세요}
-      TURN_RELAY_IP: ${TURN_RELAY_IP:?TURN_RELAY_IP를 host interface IPv4 주소로 설정하세요}
-      TURN_REALM: ${TURN_REALM:?TURN_REALM을 설정하세요}
-      TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:?TURN_SHARED_SECRET을 Git 외부에서 설정하세요}
-      TURN_MIN_PORT: ${TURN_MIN_PORT:-49160}
-      TURN_MAX_PORT: ${TURN_MAX_PORT:-49259}
-      TURN_USER_QUOTA: ${TURN_USER_QUOTA:-20}
-      TURN_TOTAL_QUOTA: ${TURN_TOTAL_QUOTA:-100}
-      TURN_MAX_BPS: ${TURN_MAX_BPS:-2000000}
-      TURN_BPS_CAPACITY: ${TURN_BPS_CAPACITY:-30000000}
-    secrets:
-      - source: turn_tls_cert
-        target: turn_tls_cert.pem
-      - source: turn_tls_key
-        target: turn_tls_key.pem
-    read_only: true
-    tmpfs:
-      - /tmp:size=8m,mode=1777
-      - /var/lib/coturn:size=8m,mode=1777
-    cap_drop:
-      - ALL
-    cap_add:
-      - DAC_READ_SEARCH
-      - NET_BIND_SERVICE
-      - SETGID
-      - SETUID
-    security_opt:
-      - no-new-privileges:true
-    restart: unless-stopped
-    stop_grace_period: 20s
-    healthcheck:
-      test: ['CMD', 'turnutils_stunclient', '-p', '3478', '127.0.0.1']
-      interval: 20s
-      timeout: 5s
-      start_period: 10s
-      retries: 5
-    logging: *default-logging
-
 networks:
   edge:
   backend:
@@ -173,9 +128,3 @@ networks:
 volumes:
   caddy_data:
   caddy_config:
-
-secrets:
-  turn_tls_cert:
-    file: ${TURN_TLS_CERT_FILE:?TURN_TLS_CERT_FILE을 TURN full-chain PEM으로 설정하세요}
-  turn_tls_key:
-    file: ${TURN_TLS_KEY_FILE:?TURN_TLS_KEY_FILE을 TURN private-key PEM으로 설정하세요}
