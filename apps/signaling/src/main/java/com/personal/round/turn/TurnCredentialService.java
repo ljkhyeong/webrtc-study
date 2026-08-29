@@ -3,15 +3,8 @@ package com.personal.round.turn;
 import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.config.TurnProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
-import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Base64;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import org.springframework.security.crypto.keygen.Base64StringKeyGenerator;
-import org.springframework.security.crypto.keygen.StringKeyGenerator;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -19,28 +12,24 @@ public class TurnCredentialService {
 	private static final long MINIMUM_REFRESH_SKEW_SECONDS = 30;
 	private static final long MAXIMUM_REFRESH_SKEW_SECONDS = 5 * 60;
 
-	private static final String HMAC_ALGORITHM = "HmacSHA1";
-	private static final int USERNAME_RANDOM_BYTES = 12;
-
 	private final TurnProperties properties;
 	private final Clock clock;
 	private final TurnCredentialMetrics metrics;
 	private final ClientAddressKeyResolver clientAddressKeyResolver;
+	private final CloudflareTurnClient cloudflareTurnClient;
 	private final TurnIssuanceLimiter issuanceLimiter;
-	private final StringKeyGenerator usernameTokenGenerator =
-			new Base64StringKeyGenerator(
-					Base64.getUrlEncoder().withoutPadding(),
-					USERNAME_RANDOM_BYTES);
 
 	public TurnCredentialService(
 			TurnProperties properties,
 			Clock clock,
 			TurnCredentialMetrics metrics,
-			ClientAddressKeyResolver clientAddressKeyResolver) {
+			ClientAddressKeyResolver clientAddressKeyResolver,
+			CloudflareTurnClient cloudflareTurnClient) {
 		this.properties = properties;
 		this.clock = clock;
 		this.metrics = metrics;
 		this.clientAddressKeyResolver = clientAddressKeyResolver;
+		this.cloudflareTurnClient = cloudflareTurnClient;
 		this.issuanceLimiter = new TurnIssuanceLimiter(properties);
 	}
 
@@ -85,13 +74,19 @@ public class TurnCredentialService {
 			return new RateLimited(rejected.retryAfterSeconds());
 		}
 
-		String username = expiresAt + ":" + usernameTokenGenerator.generateKey();
-		String credential = sign(username);
+		CloudflareTurnClient.Credentials providerCredentials;
+		try {
+			providerCredentials = cloudflareTurnClient.issue(expiresAt - nowEpochSecond);
+		}
+		catch (CloudflareTurnClient.ProviderUnavailableException exception) {
+			metrics.recordProviderError();
+			return ProviderUnavailable.INSTANCE;
+		}
 		long refreshAfterSeconds = refreshAfterSeconds(expiresAt - nowEpochSecond);
 		TurnCredentials credentials = new TurnCredentials(
-				properties.urls(),
-				username,
-				credential,
+				providerCredentials.urls(),
+				providerCredentials.username(),
+				providerCredentials.credential(),
 				expiresAt,
 				refreshAfterSeconds);
 		metrics.recordIssued();
@@ -106,24 +101,8 @@ public class TurnCredentialService {
 		return Math.max(1, lifetimeSeconds - refreshSkewSeconds);
 	}
 
-	private String sign(String username) {
-		try {
-			Mac mac = Mac.getInstance(HMAC_ALGORITHM);
-			mac.init(new SecretKeySpec(
-					properties.sharedSecret().getBytes(StandardCharsets.UTF_8),
-					HMAC_ALGORITHM));
-			return Base64.getEncoder().encodeToString(
-					mac.doFinal(username.getBytes(StandardCharsets.UTF_8)));
-		}
-		catch (GeneralSecurityException exception) {
-			throw new IllegalStateException(
-					"TURN credential signing is unavailable",
-					exception);
-		}
-	}
-
 	public sealed interface IssueResult
-			permits Issued, RateLimited, AuthorizationExpired, Disabled {
+			permits Issued, RateLimited, AuthorizationExpired, ProviderUnavailable, Disabled {
 	}
 
 	public record Issued(TurnCredentials credentials) implements IssueResult {
@@ -133,6 +112,10 @@ public class TurnCredentialService {
 	}
 
 	public enum AuthorizationExpired implements IssueResult {
+		INSTANCE
+	}
+
+	public enum ProviderUnavailable implements IssueResult {
 		INSTANCE
 	}
 

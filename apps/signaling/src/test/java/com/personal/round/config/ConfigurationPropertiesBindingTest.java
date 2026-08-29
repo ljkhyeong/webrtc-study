@@ -40,6 +40,7 @@ class ConfigurationPropertiesBindingTest {
 					"round.signaling.max-bytes-global-window=25165824",
 					"round.signaling.max-outbound-queue-bytes=2097152",
 					"round.signaling.max-outbound-queue-bytes-global=67108864",
+					"round.turn.provider=disabled",
 					"round.turn.credential-ttl=10m",
 					"round.turn.rate-limit-window=600s",
 					"round.turn.rate-limit-max-requests=12",
@@ -80,8 +81,9 @@ class ConfigurationPropertiesBindingTest {
 					assertThat(turn.rateLimitGlobalMaxRequests()).isEqualTo(24);
 					assertThat(turn.rateLimitMaxParticipants()).isEqualTo(10_000);
 					assertThat(turn.enabled()).isFalse();
-					assertThat(turn.urls()).isEmpty();
-					assertThat(turn.sharedSecret()).isEmpty();
+					assertThat(turn.provider()).isEqualTo(TurnProperties.Provider.DISABLED);
+					assertThat(turn.cloudflareKeyId()).isEmpty();
+					assertThat(turn.cloudflareApiToken()).isEmpty();
 					assertThatThrownBy(() -> signaling.allowedOrigins().add("https://other.example"))
 							.isInstanceOf(UnsupportedOperationException.class);
 				});
@@ -101,11 +103,10 @@ class ConfigurationPropertiesBindingTest {
 	}
 
 	@Test
-	void recordConstructorsDefensivelyCopyBothConfigurationCollections() {
+	void recordConstructorDefensivelyCopiesOriginsAndRedactsTurnCredentials() {
 		List<String> origins = new ArrayList<>(List.of("https://study.example"));
-		List<String> urls = new ArrayList<>(List.of("turn:turn.example.com:3478"));
 		SignalingProperties defaults = TestProperties.signaling();
-		TurnProperties turnDefaults = TestProperties.turn(List.of(), "");
+		TurnProperties turnDefaults = TestProperties.turn("", "");
 		SignalingProperties signaling = new SignalingProperties(
 				origins,
 				defaults.maxRoomSize(),
@@ -125,8 +126,9 @@ class ConfigurationPropertiesBindingTest {
 				defaults.maxOutboundQueueBytes(),
 				defaults.maxOutboundQueueBytesGlobal());
 		TurnProperties turn = new TurnProperties(
-				urls,
-				"shared-secret",
+				TurnProperties.Provider.CLOUDFLARE,
+				"cloudflare-key-id",
+				"cloudflare-api-token",
 				turnDefaults.credentialTtl(),
 				turnDefaults.rateLimitWindow(),
 				turnDefaults.rateLimitMaxRequests(),
@@ -136,17 +138,13 @@ class ConfigurationPropertiesBindingTest {
 				turnDefaults.rateLimitMaxParticipants());
 
 		origins.add("https://other.example");
-		urls.add("turns:turn.example.com:5349");
 
 		assertThat(signaling.allowedOrigins()).containsExactly("https://study.example");
-		assertThat(turn.urls()).containsExactly("turn:turn.example.com:3478");
 		assertThatThrownBy(() -> signaling.allowedOrigins().add("https://blocked.example"))
 				.isInstanceOf(UnsupportedOperationException.class);
-		assertThatThrownBy(() -> turn.urls().add("turn:blocked.example"))
-				.isInstanceOf(UnsupportedOperationException.class);
 		assertThat(turn.toString())
-				.contains("urls=<1 configured>", "sharedSecret=<redacted>")
-				.doesNotContain("turn.example.com", "shared-secret");
+				.contains("cloudflareKeyId=<redacted>", "cloudflareApiToken=<redacted>")
+				.doesNotContain("cloudflare-key-id", "cloudflare-api-token");
 	}
 
 	@Test
@@ -338,10 +336,13 @@ class ConfigurationPropertiesBindingTest {
 	@Test
 	void rejectsIncompleteTurnConfigurationDuringContextStartup() {
 		contextRunner
-				.withPropertyValues("round.turn.shared-secret=configured-secret")
+				.withPropertyValues(
+						"round.turn.provider=cloudflare",
+						"round.turn.cloudflare-api-token=configured-token")
 				.run(context -> assertThat(context.getStartupFailure())
 						.hasStackTraceContaining(
-								"round.turn.urls and round.turn.shared-secret must be configured together"));
+								"round.turn.cloudflare-key-id and cloudflare-api-token must be "
+										+ "configured only with the cloudflare provider"));
 	}
 
 	@Test
@@ -357,25 +358,25 @@ class ConfigurationPropertiesBindingTest {
 	}
 
 	@Test
-	void turnCrossFieldValidationDoesNotExposeSecretOrUrlValues() {
-		String secret = "must-not-appear-in-validation-errors";
-		String credentialBearingUrl = "turn:user:password@turn.example.com:3478";
+	void turnCrossFieldValidationDoesNotExposeProviderCredentials() {
+		String keyId = "must-not-expose-key-id";
+		String apiToken = "must-not-expose-api-token";
 
 		contextRunner
 				.withPropertyValues(
-						"round.turn.urls=" + credentialBearingUrl,
-						"round.turn.shared-secret=" + secret)
+						"round.turn.cloudflare-key-id=" + keyId,
+						"round.turn.cloudflare-api-token=" + apiToken)
 				.run(context -> {
 					Throwable failure = context.getStartupFailure();
 
 					assertThat(failure).isNotNull();
 					assertThat(failure)
 							.hasStackTraceContaining(
-									"round.turn.urls must contain only credential-free turn: "
-											+ "or turns: URLs");
+									"round.turn.cloudflare-key-id and cloudflare-api-token must be "
+											+ "configured only with the cloudflare provider");
 					assertThat(stackTrace(failure))
-							.doesNotContain(secret)
-							.doesNotContain(credentialBearingUrl);
+							.doesNotContain(keyId)
+							.doesNotContain(apiToken);
 				});
 	}
 

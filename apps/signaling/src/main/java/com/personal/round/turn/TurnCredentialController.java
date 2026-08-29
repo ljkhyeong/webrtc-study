@@ -71,6 +71,8 @@ public class TurnCredentialController {
 									Long.toString(rateLimited.retryAfterSeconds()))
 								.build();
 			case TurnCredentialService.AuthorizationExpired ignored -> forbidden();
+			case TurnCredentialService.ProviderUnavailable ignored ->
+					ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
 			case TurnCredentialService.Disabled ignored ->
 					ResponseEntity.noContent().build();
 		};

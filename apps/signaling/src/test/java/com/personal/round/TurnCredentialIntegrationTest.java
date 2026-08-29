@@ -1,14 +1,21 @@
 package com.personal.round;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.when;
 
+import com.personal.round.turn.CloudflareTurnClient;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -17,8 +24,9 @@ import tools.jackson.databind.ObjectMapper;
 		properties = {
 			"server.address=127.0.0.1",
 			"round.signaling.heartbeat-interval=60s",
-			"round.turn.urls=turn:turn.example.com:3478,turns:turn.example.com:5349?transport=tcp",
-			"round.turn.shared-secret=integration-shared-secret",
+			"round.turn.provider=cloudflare",
+			"round.turn.cloudflare-key-id=integration-key",
+			"round.turn.cloudflare-api-token=integration-token",
 			"round.turn.credential-ttl=1h",
 			"round.turn.rate-limit-window=60s",
 			"round.turn.rate-limit-max-requests=2",
@@ -28,6 +36,24 @@ class TurnCredentialIntegrationTest {
 
 	@LocalServerPort
 	private int port;
+
+	@MockitoBean
+	private CloudflareTurnClient cloudflareTurnClient;
+
+	private final AtomicLong credentialSequence = new AtomicLong();
+
+	@BeforeEach
+	void stubCloudflareCredentials() {
+		when(cloudflareTurnClient.issue(anyLong())).thenAnswer(ignored -> {
+			long sequence = credentialSequence.incrementAndGet();
+			return new CloudflareTurnClient.Credentials(
+					List.of(
+							"turn:turn.cloudflare.com:3478?transport=udp",
+							"turns:turn.cloudflare.com:443?transport=tcp"),
+					"provider-user-" + sequence,
+					"provider-credential-" + sequence);
+		});
+	}
 
 	@Test
 	void enforcesThePostOriginBoundaryAndAppliesClientAndGlobalQuotas() throws Exception {
@@ -65,16 +91,15 @@ class TurnCredentialIntegrationTest {
 		assertThat(secondCredentials.get("credential").asString())
 				.isNotEqualTo(firstCredentials.get("credential").asString());
 		assertThat(firstCredentials.at("/urls/0").asString())
-				.isEqualTo("turn:turn.example.com:3478");
+				.isEqualTo("turn:turn.cloudflare.com:3478?transport=udp");
 		assertThat(firstCredentials.at("/urls/1").asString())
-				.isEqualTo("turns:turn.example.com:5349?transport=tcp");
+				.isEqualTo("turns:turn.cloudflare.com:443?transport=tcp");
 		assertThat(firstCredentials.get("username").asString())
-				.startsWith(firstCredentials.get("expiresAt").asLong() + ":");
+				.startsWith("provider-user-");
 		assertThat(firstCredentials.get("refreshAfterSeconds").asLong())
 				.isEqualTo(3_300);
 		assertThat(firstCredentials.get("credential").asString())
-				.isNotBlank()
-				.doesNotContain("integration-shared-secret");
+				.startsWith("provider-credential-");
 		assertThat(firstCredentials.has("sharedSecret")).isFalse();
 
 		assertThat(limited.statusCode()).isEqualTo(429);

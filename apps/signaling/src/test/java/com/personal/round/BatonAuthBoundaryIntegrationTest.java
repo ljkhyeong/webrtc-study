@@ -3,6 +3,8 @@ package com.personal.round;
 import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
@@ -16,6 +18,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.personal.round.signaling.SignalingWebSocketHandler;
 import com.personal.round.signaling.SignalingService;
+import com.personal.round.turn.CloudflareTurnClient;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -34,6 +37,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
@@ -43,6 +47,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -65,8 +70,9 @@ import tools.jackson.databind.ObjectMapper;
 			"round.auth.max-grant-lifetime=5m",
 			"round.signaling.allowed-origins=http://localhost:5173",
 			"round.signaling.heartbeat-interval=60s",
-			"round.turn.urls=turn:turn.example.com:3478",
-			"round.turn.shared-secret=integration-shared-secret",
+			"round.turn.provider=cloudflare",
+			"round.turn.cloudflare-key-id=integration-key",
+			"round.turn.cloudflare-api-token=integration-token",
 			"round.turn.credential-ttl=1h",
 			"round.turn.rate-limit-window=60s",
 			"round.turn.rate-limit-max-requests=20",
@@ -114,8 +120,20 @@ class BatonAuthBoundaryIntegrationTest {
 	@MockitoSpyBean
 	private SignalingWebSocketHandler signalingWebSocketHandler;
 
+	@MockitoBean
+	private CloudflareTurnClient cloudflareTurnClient;
+
 	@Autowired
 	private SignalingService signalingService;
+
+	@BeforeEach
+	void stubCloudflareCredentials() {
+		when(cloudflareTurnClient.issue(anyLong())).thenReturn(
+				new CloudflareTurnClient.Credentials(
+						List.of("turn:turn.cloudflare.com:3478?transport=udp"),
+						"provider-user",
+						"provider-credential"));
+	}
 
 	@DynamicPropertySource
 	static void batonIssuerProperties(DynamicPropertyRegistry registry) {
@@ -205,11 +223,10 @@ class BatonAuthBoundaryIntegrationTest {
 				.contains("no-store");
 		JsonNode credentials = objectMapper.readTree(issued.body());
 		assertThat(credentials.at("/urls/0").asString())
-				.isEqualTo("turn:turn.example.com:3478");
+				.isEqualTo("turn:turn.cloudflare.com:3478?transport=udp");
 		assertThat(credentials.get("username").asString()).isNotBlank();
 		assertThat(credentials.get("credential").asString())
-				.isNotBlank()
-				.doesNotContain("integration-shared-secret");
+				.isEqualTo("provider-credential");
 		assertThat(credentials.get("expiresAt").asLong())
 				.isLessThanOrEqualTo(Instant.now().plusSeconds(250).getEpochSecond());
 		assertThat(credentials.get("refreshAfterSeconds").asLong())

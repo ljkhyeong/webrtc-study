@@ -10,11 +10,15 @@ import org.springframework.stereotype.Component;
 public final class TurnCredentialMetrics {
 
 	private final Counter issued;
+	private final Counter providerErrors;
 	private final Map<TurnCredentialRateLimitScope, Counter> rateLimited;
 
 	public TurnCredentialMetrics(MeterRegistry registry) {
 		issued = Counter.builder("round.turn.credentials.issued")
 				.description("TURN credentials successfully issued")
+				.register(registry);
+		providerErrors = Counter.builder("round.turn.credentials.provider.errors")
+				.description("Cloudflare TURN credential requests that failed")
 				.register(registry);
 		rateLimited = new EnumMap<>(TurnCredentialRateLimitScope.class);
 		for (TurnCredentialRateLimitScope scope
@@ -35,5 +39,9 @@ public final class TurnCredentialMetrics {
 
 	void recordRateLimited(TurnCredentialRateLimitScope scope) {
 		rateLimited.get(scope).increment();
+	}
+
+	void recordProviderError() {
+		providerErrors.increment();
 	}
 }

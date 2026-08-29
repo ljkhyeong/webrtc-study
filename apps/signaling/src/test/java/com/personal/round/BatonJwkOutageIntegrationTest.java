@@ -41,8 +41,9 @@ import org.springframework.test.context.DynamicPropertySource;
 			"round.auth.audience=round",
 			"round.auth.max-grant-lifetime=5m",
 			"round.signaling.allowed-origins=http://localhost:5173",
-			"round.turn.urls=turn:turn.example.com:3478",
-			"round.turn.shared-secret=integration-shared-secret"
+			"round.turn.provider=cloudflare",
+			"round.turn.cloudflare-key-id=integration-key",
+			"round.turn.cloudflare-api-token=integration-token"
 		})
 @Execution(ExecutionMode.SAME_THREAD)
 class BatonJwkOutageIntegrationTest {

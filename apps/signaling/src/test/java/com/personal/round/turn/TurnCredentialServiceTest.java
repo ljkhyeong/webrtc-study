@@ -1,6 +1,9 @@
 package com.personal.round.turn;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.config.TestProperties;
@@ -8,31 +11,30 @@ import com.personal.round.config.TurnProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
 
 class TurnCredentialServiceTest {
 
-	private static final String SHARED_SECRET = "test-shared-secret";
+	private static final String KEY_ID = "test-turn-key";
+	private static final String API_TOKEN = "test-turn-token";
 	private static final List<String> TURN_URLS = List.of(
 			"turn:turn.example.com:3478?transport=udp",
 			"turns:turn.example.com:5349?transport=tcp");
+
 	@Test
-	void createsUniqueCoturnRestCredentialsForClientsBehindTheSameNat() throws Exception {
+	void returnsUniqueCloudflareCredentialsForClientsBehindTheSameNat() {
 		TurnProperties properties = enabledProperties();
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
@@ -50,11 +52,6 @@ class TurnCredentialServiceTest {
 				"turns:turn.example.com:5349?transport=tcp");
 		assertThat(first.expiresAt()).isEqualTo(1_800_000_600L);
 		assertThat(first.refreshAfterSeconds()).isEqualTo(480);
-		assertThat(first.username()).startsWith(first.expiresAt() + ":");
-		assertThat(first.credential()).isEqualTo(hmac(first.username(), SHARED_SECRET));
-		assertThat(sameNatClient.credential())
-				.isEqualTo(hmac(sameNatClient.username(), SHARED_SECRET));
-		assertThat(first.credential()).doesNotContain(SHARED_SECRET);
 		assertThat(registry.get("round.turn.credentials.issued").counter().count())
 				.isEqualTo(3);
 	}
@@ -114,7 +111,7 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void isDisabledWhenTurnConfigurationIsAbsent() {
-		TurnProperties disabled = TestProperties.turn(List.of(), "");
+		TurnProperties disabled = TestProperties.turn("", "");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(disabled, clock, registry);
@@ -124,9 +121,31 @@ class TurnCredentialServiceTest {
 	}
 
 	@Test
+	void reportsProviderFailureWithoutIssuingCredentials() {
+		TurnProperties properties = enabledProperties();
+		SimpleMeterRegistry registry = new SimpleMeterRegistry();
+		CloudflareTurnClient client = mock(CloudflareTurnClient.class);
+		when(client.issue(anyLong())).thenThrow(
+				new CloudflareTurnClient.ProviderUnavailableException("provider unavailable"));
+		TurnCredentialService service = new TurnCredentialService(
+				properties,
+				new MutableClock(1_800_000_000),
+				new TurnCredentialMetrics(registry),
+				new ClientAddressKeyResolver(),
+				client);
+
+		assertThat(service.issueFor("192.0.2.10"))
+				.isSameAs(TurnCredentialService.ProviderUnavailable.INSTANCE);
+		assertThat(registry.get("round.turn.credentials.provider.errors").counter().count())
+				.isOne();
+		assertThat(registry.get("round.turn.credentials.issued").counter().count())
+				.isZero();
+	}
+
+	@Test
 	void rateLimitsPerEffectiveAddressAndResetsAtTheWindowBoundary() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 2, 8, 10_000);
+				KEY_ID, API_TOKEN, 2, 8, 10_000);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -155,7 +174,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void standaloneIssuanceDoesNotCreateOrApplyParticipantQuotaState() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 2, 1, 4, 10_000, 1);
+				KEY_ID, API_TOKEN, 2, 1, 4, 10_000, 1);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service =
@@ -178,7 +197,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void backwardClockMovementDoesNotResetTurnIssuanceQuota() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 1, 2, 10_000);
+				KEY_ID, API_TOKEN, 1, 2, 10_000);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		TurnCredentialService service =
 				service(properties, clock, new SimpleMeterRegistry());
@@ -193,7 +212,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void sharesTurnIssuanceQuotaAcrossOneIpv6Prefix() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 1, 8, 10_000);
+				KEY_ID, API_TOKEN, 1, 8, 10_000);
 		TurnCredentialService service = service(
 				properties,
 				new MutableClock(1_800_000_000),
@@ -210,7 +229,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void rateLimitsIssuanceAcrossClientAddressesAndResetsAtTheWindowBoundary() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 1, 2, 10_000);
+				KEY_ID, API_TOKEN, 1, 2, 10_000);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -236,7 +255,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void refusesUntrackedClientsWhenLiveWindowCapacityIsFullWithoutEvictingQuotaState() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 1, 8, 2);
+				KEY_ID, API_TOKEN, 1, 8, 2);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(
@@ -266,7 +285,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void rateLimitsOneParticipantAcrossNewTicketsAndClientAddresses() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 12, 2, 24, 10_000, 10_000);
+				KEY_ID, API_TOKEN, 12, 2, 24, 10_000, 10_000);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -301,7 +320,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void participantRejectionDoesNotConsumeClientOrGlobalQuota() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 2, 1, 4, 10_000, 10_000);
+				KEY_ID, API_TOKEN, 2, 1, 4, 10_000, 10_000);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service =
@@ -342,7 +361,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void refusesUntrackedParticipantsWhenLiveWindowCapacityIsFull() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 12, 6, 24, 10_000, 2);
+				KEY_ID, API_TOKEN, 12, 6, 24, 10_000, 2);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -378,7 +397,7 @@ class TurnCredentialServiceTest {
 	void atomicallyLimitsConcurrentParticipantRequestsWithVirtualThreads()
 			throws Exception {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 12, 6, 24, 10_000, 10_000);
+				KEY_ID, API_TOKEN, 12, 6, 24, 10_000, 10_000);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service =
@@ -430,7 +449,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void reportsTheScopeWithTheLongestExactRetryWindow() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 2, 1, 4, 10_000, 10_000);
+				KEY_ID, API_TOKEN, 2, 1, 4, 10_000, 10_000);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -469,7 +488,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void reportsGlobalScopeWhenParticipantAndGlobalWindowsExpireTogether() {
 		TurnProperties properties = TestProperties.turnWithRateLimits(
-				TURN_URLS, SHARED_SECRET, 2, 1, 4, 10_000, 10_000);
+				KEY_ID, API_TOKEN, 2, 1, 4, 10_000, 10_000);
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -512,14 +531,7 @@ class TurnCredentialServiceTest {
 	}
 
 	private static TurnProperties enabledProperties() {
-		return TestProperties.turn(TURN_URLS, SHARED_SECRET);
-	}
-
-	private static String hmac(String username, String secret) throws Exception {
-		Mac mac = Mac.getInstance("HmacSHA1");
-		mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA1"));
-		return Base64.getEncoder().encodeToString(
-				mac.doFinal(username.getBytes(StandardCharsets.UTF_8)));
+		return TestProperties.turn(KEY_ID, API_TOKEN);
 	}
 
 	private static ParticipationGrant grant(
@@ -553,11 +565,21 @@ class TurnCredentialServiceTest {
 			TurnProperties properties,
 			Clock clock,
 			SimpleMeterRegistry registry) {
+		CloudflareTurnClient client = mock(CloudflareTurnClient.class);
+		AtomicLong sequence = new AtomicLong();
+		when(client.issue(anyLong())).thenAnswer(ignored -> {
+			long value = sequence.incrementAndGet();
+			return new CloudflareTurnClient.Credentials(
+					TURN_URLS,
+					"provider-user-" + value,
+					"provider-credential-" + value);
+		});
 		return new TurnCredentialService(
 				properties,
 				clock,
 				new TurnCredentialMetrics(registry),
-				new ClientAddressKeyResolver());
+				new ClientAddressKeyResolver(),
+				client);
 	}
 
 	private static TurnCredentials issued(TurnCredentialService.IssueResult result) {

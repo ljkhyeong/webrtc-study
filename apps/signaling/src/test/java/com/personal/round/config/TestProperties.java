@@ -193,24 +193,24 @@ public final class TestProperties {
 				maxOutboundQueueBytesGlobal);
 	}
 
-	public static TurnProperties turn(List<String> urls, String sharedSecret) {
+	public static TurnProperties turn(String cloudflareKeyId, String cloudflareApiToken) {
 		return turnWithRateLimits(
-				urls,
-				sharedSecret,
+				cloudflareKeyId,
+				cloudflareApiToken,
 				DEFAULT_TURN_RATE_LIMIT_MAX_REQUESTS,
 				DEFAULT_TURN_RATE_LIMIT_GLOBAL_MAX_REQUESTS,
 				DEFAULT_TURN_RATE_LIMIT_MAX_CLIENTS);
 	}
 
 	public static TurnProperties turnWithRateLimits(
-			List<String> urls,
-			String sharedSecret,
+			String cloudflareKeyId,
+			String cloudflareApiToken,
 			int rateLimitMaxRequests,
 			int rateLimitGlobalMaxRequests,
 			int rateLimitMaxClients) {
 		return turnWithRateLimits(
-				urls,
-				sharedSecret,
+				cloudflareKeyId,
+				cloudflareApiToken,
 				rateLimitMaxRequests,
 				DEFAULT_TURN_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS,
 				rateLimitGlobalMaxRequests,
@@ -219,16 +219,19 @@ public final class TestProperties {
 	}
 
 	public static TurnProperties turnWithRateLimits(
-			List<String> urls,
-			String sharedSecret,
+			String cloudflareKeyId,
+			String cloudflareApiToken,
 			int rateLimitMaxRequests,
 			int rateLimitParticipantMaxRequests,
 			int rateLimitGlobalMaxRequests,
 			int rateLimitMaxClients,
 			int rateLimitMaxParticipants) {
 		return new TurnProperties(
-				urls,
-				sharedSecret,
+				cloudflareKeyId.isBlank() && cloudflareApiToken.isBlank()
+						? TurnProperties.Provider.DISABLED
+						: TurnProperties.Provider.CLOUDFLARE,
+				cloudflareKeyId,
+				cloudflareApiToken,
 				DEFAULT_TURN_CREDENTIAL_TTL,
 				DEFAULT_TURN_RATE_LIMIT_WINDOW,
 				rateLimitMaxRequests,

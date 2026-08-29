@@ -65,8 +65,7 @@ export default defineConfig({
       ROUND_STANDALONE_HOST_TOKEN_SHA256:
         'de7ca4487720742a8acf93c4bd14b590f2753d370b5c2f13cc0cc09590e183ef',
       ROUND_E2E_MODE: 'true',
-      TURN_SHARED_SECRET: '',
-      TURN_URLS: '',
+      TURN_PROVIDER: 'disabled',
       VITE_ROUND_AUTH_MODE: 'standalone',
       VITE_SIGNALING_URL: '',
       VITE_STUN_URLS: '',
