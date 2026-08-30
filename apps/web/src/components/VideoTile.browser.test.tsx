@@ -33,6 +33,34 @@ function deferredPlayback(): {
   return { promise, reject };
 }
 
+function deferredCompletion(): {
+  readonly promise: Promise<void>;
+  readonly resolve: () => void;
+} {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function installFullscreenDocument() {
+  let fullscreenElement: Element | null = null;
+  const exitFullscreen = vi.fn(async () => {
+    fullscreenElement = null;
+  });
+  Object.defineProperties(document, {
+    fullscreenElement: { configurable: true, get: () => fullscreenElement },
+    exitFullscreen: { configurable: true, value: exitFullscreen },
+  });
+  return {
+    enter: (element: Element) => {
+      fullscreenElement = element;
+    },
+    exitFullscreen,
+  };
+}
+
 describe('VideoTile browser behavior', () => {
   beforeEach(() => {
     Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
@@ -43,6 +71,8 @@ describe('VideoTile browser behavior', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    Reflect.deleteProperty(document, 'fullscreenElement');
+    Reflect.deleteProperty(document, 'exitFullscreen');
     document.body.replaceChildren();
   });
 
@@ -112,6 +142,111 @@ describe('VideoTile browser behavior', () => {
       expect(
         container.querySelector('button[aria-label="스터디원의 소리와 영상 재생"]'),
       ).toBeNull();
+    } finally {
+      act(() => {
+        root.unmount();
+      });
+    }
+  });
+
+  it('does not let an older fullscreen request close the newer request', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const firstRequest = deferredCompletion();
+    const secondRequest = deferredCompletion();
+    const fullscreenDocument = installFullscreenDocument();
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const stream = {} as MediaStream;
+
+    try {
+      act(() => {
+        root.render(<VideoTile participant={remoteParticipant(stream, 'screen')} />);
+      });
+      const video = container.querySelector<HTMLVideoElement>('video');
+      const fullscreenButton = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="스터디원의 화면 공유 전체 화면으로 보기"]',
+      );
+      expect(video).not.toBeNull();
+      expect(fullscreenButton).not.toBeNull();
+      const requestFullscreen = vi
+        .fn<() => Promise<void>>()
+        .mockImplementationOnce(async function (this: HTMLVideoElement) {
+          await firstRequest.promise;
+          fullscreenDocument.enter(this);
+        })
+        .mockImplementationOnce(async function (this: HTMLVideoElement) {
+          await secondRequest.promise;
+          fullscreenDocument.enter(this);
+        });
+      Object.defineProperty(video, 'requestFullscreen', {
+        configurable: true,
+        value: requestFullscreen,
+      });
+
+      act(() => {
+        fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await act(async () => {
+        secondRequest.resolve();
+      });
+
+      expect(requestFullscreen).toHaveBeenCalledTimes(2);
+      expect(fullscreenDocument.exitFullscreen).not.toHaveBeenCalled();
+
+      await act(async () => {
+        firstRequest.resolve();
+      });
+
+      expect(fullscreenDocument.exitFullscreen).not.toHaveBeenCalled();
+    } finally {
+      act(() => {
+        root.unmount();
+      });
+    }
+  });
+
+  it('exits a delayed fullscreen entry after the screen share ends', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const request = deferredCompletion();
+    const fullscreenDocument = installFullscreenDocument();
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const stream = {} as MediaStream;
+
+    try {
+      act(() => {
+        root.render(<VideoTile participant={remoteParticipant(stream, 'screen')} />);
+      });
+      const video = container.querySelector<HTMLVideoElement>('video');
+      const fullscreenButton = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="스터디원의 화면 공유 전체 화면으로 보기"]',
+      );
+      expect(video).not.toBeNull();
+      expect(fullscreenButton).not.toBeNull();
+      const requestFullscreen = vi.fn(async function (this: HTMLVideoElement) {
+        await request.promise;
+        fullscreenDocument.enter(this);
+      });
+      Object.defineProperty(video, 'requestFullscreen', {
+        configurable: true,
+        value: requestFullscreen,
+      });
+
+      act(() => {
+        fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        root.render(<VideoTile participant={remoteParticipant(stream, 'camera')} />);
+      });
+      expect(fullscreenDocument.exitFullscreen).not.toHaveBeenCalled();
+
+      await act(async () => {
+        request.resolve();
+      });
+
+      expect(requestFullscreen).toHaveBeenCalledOnce();
+      expect(fullscreenDocument.exitFullscreen).toHaveBeenCalledOnce();
     } finally {
       act(() => {
         root.unmount();

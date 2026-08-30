@@ -40,6 +40,8 @@ export function VideoTile({
   const videoRef = useRef<HTMLVideoElement>(null);
   const playbackAttemptRef = useRef(0);
   const fullscreenAttemptRef = useRef(0);
+  const fullscreenShareGenerationRef = useRef(0);
+  const latestFullscreenRequestGenerationRef = useRef(0);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
 
@@ -92,9 +94,14 @@ export function VideoTile({
   }
 
   useEffect(() => {
+    const generation = fullscreenShareGenerationRef.current + 1;
+    fullscreenShareGenerationRef.current = generation;
     if (isRemoteScreenShare) {
       return () => {
         fullscreenAttemptRef.current += 1;
+        if (fullscreenShareGenerationRef.current === generation) {
+          fullscreenShareGenerationRef.current += 1;
+        }
       };
     }
     fullscreenAttemptRef.current += 1;
@@ -114,9 +121,18 @@ export function VideoTile({
 
     const attempt = fullscreenAttemptRef.current + 1;
     fullscreenAttemptRef.current = attempt;
+    const shareGeneration = fullscreenShareGenerationRef.current;
+    latestFullscreenRequestGenerationRef.current = shareGeneration;
     setFullscreenError(null);
     const entered = await enterVideoFullscreen(video);
     if (fullscreenAttemptRef.current !== attempt) {
+      if (
+        entered &&
+        fullscreenShareGenerationRef.current !== shareGeneration &&
+        latestFullscreenRequestGenerationRef.current === shareGeneration
+      ) {
+        await exitVideoFullscreen(video);
+      }
       return;
     }
     if (!entered) {
