@@ -114,6 +114,33 @@ describe('통화 중 입력 장치 교체', () => {
     },
   );
 
+  it('다른 장치의 단절 경고는 유지하고 모두 복구한 뒤에만 해제한다', async () => {
+    const h = deviceHarness();
+    await joinSession(h, [{ peerId: 'peer-a', displayName: '참가자' }]);
+    h.videoTrack.end();
+    expect(await h.session.selectInputDevice('audio', 'mic')).toBe(true);
+    expect(h.session.getSnapshot()).toMatchObject({
+      localMedia: { videoAvailable: false },
+      warning: { code: 'local-media-ended' },
+    });
+
+    h.next.end();
+    h.getUserMedia.mockResolvedValueOnce(
+      new FakeMediaStream([new FakeTrack('video')]) as unknown as MediaStream,
+    );
+    expect(await h.session.selectInputDevice('video', 'camera')).toBe(true);
+    expect(h.session.getSnapshot()).toMatchObject({
+      localMedia: { audioAvailable: false, videoAvailable: true },
+      warning: { code: 'local-media-ended' },
+    });
+
+    h.getUserMedia.mockResolvedValueOnce(
+      new FakeMediaStream([new FakeTrack('audio')]) as unknown as MediaStream,
+    );
+    expect(await h.session.selectInputDevice('audio', 'mic')).toBe(true);
+    expect(h.session.getSnapshot().warning).toBeNull();
+  });
+
   it('일부 송신자 교체가 거부되면 기존 트랙으로 복원한다', async () => {
     const h = deviceHarness();
     await joinSession(h, [

@@ -540,6 +540,7 @@ export class RoomSession {
   readonly #localChatRecipientStates = new Map<string, Map<string, ChatRecipientDeliveryState>>();
   readonly #messages: ChatMessage[] = [];
   readonly #lastInputEnabled = { audio: true, video: true };
+  readonly #endedInputKinds = new Set<'audio' | 'video'>();
 
   #rtcConfiguration: RTCConfiguration | undefined;
   #socket: WebSocket | null = null;
@@ -901,11 +902,8 @@ export class RoomSession {
       this.#localStream = stream;
       next.enabled = operation.enabled;
       committed = true;
+      this.#endedInputKinds.delete(kind);
       this.#attachLocalTrackEndedListeners([next]);
-      if (this.#warning?.code === 'local-media-ended') {
-        this.#warning = null;
-        this.#warningPeerId = null;
-      }
       this.#syncLocalParticipantMedia();
       this.#broadcastMediaState();
       this.#emit();
@@ -3740,10 +3738,7 @@ export class RoomSession {
     this.#screenShareStopTrack = null;
     this.#screenShareStopGeneration = 0;
     this.#screenShareStopDisableCamera = false;
-    if (this.#warning?.code === 'local-media-ended') {
-      this.#warning = null;
-      this.#warningPeerId = null;
-    }
+    this.#endedInputKinds.clear();
   }
 
   #attachLocalTrackEndedListeners(tracks: readonly MediaStreamTrack[]): void {
@@ -3771,6 +3766,7 @@ export class RoomSession {
     }
 
     this.#detachLocalTrackEndedListener(track);
+    this.#endedInputKinds.add(track.kind === 'audio' ? 'audio' : 'video');
     const retainedCameraIndex = this.#cameraVideoTracks.indexOf(track);
     if (retainedCameraIndex >= 0) {
       this.#cameraVideoTracks.splice(retainedCameraIndex, 1);
@@ -3778,14 +3774,7 @@ export class RoomSession {
     stream.removeTrack(track);
     this.#syncLocalParticipantMedia();
     this.#broadcastMediaState();
-    if (this.#warning === null || this.#warning.code === 'local-media-ended') {
-      this.#setWarning(
-        'local-media-ended',
-        `Local ${track.kind === 'audio' ? 'microphone' : 'camera'} track ended unexpectedly`,
-      );
-    } else {
-      this.#emit();
-    }
+    this.#emit();
   }
 
   #detachLocalTrackEndedListener(track: MediaStreamTrack): void {
@@ -4043,7 +4032,15 @@ export class RoomSession {
       messages: this.#messages.map((message) => ({ ...message })),
       lastModerationNotice:
         this.#lastModerationNotice === null ? null : { ...this.#lastModerationNotice },
-      warning: this.#warning === null ? null : { ...this.#warning },
+      warning:
+        this.#warning !== null
+          ? { ...this.#warning }
+          : this.#endedInputKinds.size > 0
+            ? {
+                code: 'local-media-ended',
+                message: '마이크 또는 카메라 연결이 종료되었습니다.',
+              }
+            : null,
       error: this.#error === null ? null : { ...this.#error },
     };
   }

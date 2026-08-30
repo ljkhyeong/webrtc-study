@@ -129,7 +129,7 @@ describe('RoomSession', () => {
     expect(harness.videoTrack.endedListenerCount()).toBe(0);
   });
 
-  it('keeps an existing operational warning when a local media track ends', async () => {
+  it('운영 경고를 먼저 표시하고 해결되면 남아 있는 장치 단절 경고를 표시한다', async () => {
     const harness = createHarness();
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const peer = harness.peerConnections[0];
@@ -157,6 +157,11 @@ describe('RoomSession', () => {
         code: 'rtc-configuration-update-failed',
       },
     });
+    peer.setConfigurationError = null;
+    harness.session.updateRtcConfiguration({
+      iceServers: [{ urls: 'turn:refreshed.example.test' }],
+    });
+    expect(harness.session.getSnapshot().warning?.code).toBe('local-media-ended');
     await harness.session.leave();
   });
 
