@@ -146,8 +146,8 @@ describe('통화 중 입력 장치 교체', () => {
     await flushMicrotasks();
     await h.session.leave();
     expect(h.next.stopped).toBe(true);
-    gate.resolve();
     expect(await changing).toBe(false);
+    gate.resolve();
     expect(h.session.getSnapshot().status).toBe('ended');
   });
 
@@ -220,6 +220,72 @@ describe('통화 중 입력 장치 교체', () => {
     expect(await h.session.selectInputDevice('audio', 'mic')).toBe(true);
     expect(h.session.getSnapshot().screenSharing).toBe(true);
   });
+
+  it.each(['교체', '복원'] as const)(
+    '%s 대기 중 피어가 퇴장해도 남은 통화를 유지한다',
+    async (phase) => {
+      const h = deviceHarness();
+      await joinSession(h, [
+        { peerId: 'peer-a', displayName: '가' },
+        { peerId: 'peer-b', displayName: '나' },
+      ]);
+      const [first, second] = h.peerConnections;
+      const pending = new Promise<void>(() => {});
+      const target = phase === '교체' ? second! : first!;
+      if (phase === '교체') {
+        target.senders[0]!.replaceTrackGates.push(pending);
+      } else {
+        first!.senders[0]!.replaceTrackGates.push(Promise.resolve(), pending);
+        second!.senders[0]!.replaceTrackErrors.push(new Error('교체 실패'));
+      }
+      const changing = h.session.selectInputDevice('audio', 'mic');
+      await vi.waitFor(() =>
+        expect(target.senders[0]!.replaceTrackCalls).toHaveLength(phase === '교체' ? 1 : 2),
+      );
+      h.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'peer.left',
+        roomId: ROOM_ID,
+        payload: { peerId: phase === '교체' ? 'peer-b' : 'peer-a' },
+      });
+      expect(await changing).toBe(phase === '교체');
+      const remaining = phase === '교체' ? first! : second!;
+      expect(remaining.senders[0]!.track).toBe(phase === '교체' ? h.next : h.audioTrack);
+      expect(remaining.senders[0]!.track?.enabled).toBe(true);
+      expect(remaining.channels[0]!.readyState).toBe('open');
+      expect(await h.session.startScreenShare()).toBe('started');
+    },
+  );
+
+  it.each(['시작', '중지'] as const)(
+    '화면 공유 %s 대기 중 피어가 퇴장해도 전환을 마친다',
+    async (phase) => {
+      const h = deviceHarness();
+      await joinSession(h, [
+        { peerId: 'peer-a', displayName: '가' },
+        { peerId: 'peer-b', displayName: '나' },
+      ]);
+      if (phase === '중지') expect(await h.session.startScreenShare()).toBe('started');
+      const sender = h.peerConnections[1]!.senders.find((item) => item.track?.kind === 'video')!;
+      sender.replaceTrackGates.push(new Promise<void>(() => {}));
+      const sharing = phase === '시작' ? h.session.startScreenShare() : h.session.stopScreenShare();
+      await vi.waitFor(() =>
+        expect(sender.replaceTrackCalls).toHaveLength(phase === '시작' ? 1 : 2),
+      );
+      h.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'peer.left',
+        roomId: ROOM_ID,
+        payload: { peerId: 'peer-b' },
+      });
+      expect(await sharing).toBe(phase === '시작' ? 'started' : true);
+      expect(h.session.getSnapshot().screenSharing).toBe(phase === '시작');
+      expect(
+        h.peerConnections[0]!.senders.find((item) => item.track?.kind === 'video')!.track,
+      ).toBe(h.session.getLocalStream()!.getVideoTracks()[0]);
+      expect(await h.session.selectInputDevice('audio', 'mic')).toBe(true);
+    },
+  );
 
   it.each(['브라우저', '앱'] as const)(
     '화면 공유 중 마이크를 교체한 뒤 %s에서 공유를 종료하면 경고와 화면 리스너가 남지 않는다',

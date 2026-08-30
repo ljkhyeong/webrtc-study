@@ -220,6 +220,7 @@ interface MutableParticipant {
 interface PeerContext {
   readonly peerId: string;
   readonly connection: RTCPeerConnection;
+  readonly trackReplacementAbort: AbortController;
   videoSender: RTCRtpSender | null;
   audioSender: RTCRtpSender | null;
   readonly pendingCandidates: (SerializedIceCandidate | null)[];
@@ -877,8 +878,9 @@ export class RoomSession {
           updates.push({ peer, sender: added, previousTrack: null, added: true });
         } else {
           const previousTrack = sender.track;
-          await sender.replaceTrack(next);
-          updates.push({ peer, sender, previousTrack, added: false });
+          if (await this.#replacePeerTrack(peer, sender, next)) {
+            updates.push({ peer, sender, previousTrack, added: false });
+          }
         }
         if (this.#disposed || next.readyState === 'ended') return false;
       }
@@ -1093,8 +1095,9 @@ export class RoomSession {
 
         const sender = peer.videoSender;
         const previousTrack = sender.track ?? primaryCameraTrack;
-        await sender.replaceTrack(screenTrack);
-        senderUpdates.push({ peer, sender, previousTrack, added: false });
+        if (await this.#replacePeerTrack(peer, sender, screenTrack)) {
+          senderUpdates.push({ peer, sender, previousTrack, added: false });
+        }
         if (!this.#ownsScreenShareStart(operation, screenTrack)) {
           break;
         }
@@ -1153,6 +1156,29 @@ export class RoomSession {
     return senderFailures.size === 0 ? 'started' : 'recovering';
   }
 
+  async #replacePeerTrack(
+    peer: PeerContext,
+    sender: RTCRtpSender,
+    track: MediaStreamTrack | null,
+  ): Promise<boolean> {
+    const signal = peer.trackReplacementAbort.signal;
+    let onAbort!: () => void;
+    const closed = new Promise<void>((resolve) => {
+      onAbort = resolve;
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    try {
+      // WebKit은 연결 종료 후 replaceTrack Promise를 완료하지 않을 수 있다.
+      await Promise.race([sender.replaceTrack(track), closed]);
+      return this.#isCurrentPeer(peer);
+    } catch (error) {
+      if (this.#isCurrentPeer(peer)) throw error;
+      return false;
+    } finally {
+      signal.removeEventListener('abort', onAbort);
+    }
+  }
+
   async #rollbackSenderUpdates(
     senderUpdates: readonly MediaSenderUpdate[],
   ): Promise<Map<PeerContext, unknown>> {
@@ -1172,7 +1198,7 @@ export class RoomSession {
             update.peer.audioSender = null;
           }
         } else {
-          await update.sender.replaceTrack(update.previousTrack);
+          await this.#replacePeerTrack(update.peer, update.sender, update.previousTrack);
         }
       } catch (error) {
         failures.set(update.peer, error);
@@ -1274,7 +1300,7 @@ export class RoomSession {
         continue;
       }
       try {
-        await peer.videoSender.replaceTrack(primaryCameraTrack);
+        await this.#replacePeerTrack(peer, peer.videoSender, primaryCameraTrack);
       } catch (error) {
         senderFailures.set(peer, error);
       }
@@ -2411,6 +2437,7 @@ export class RoomSession {
     const peer: PeerContext = {
       peerId,
       connection,
+      trackReplacementAbort: new AbortController(),
       videoSender: null,
       audioSender: null,
       pendingCandidates: [],
@@ -3611,6 +3638,7 @@ export class RoomSession {
 
   #disposePeerContext(peer: PeerContext): void {
     peer.closed = true;
+    peer.trackReplacementAbort.abort();
     if (peer.connectionTimeout !== null) {
       globalThis.clearTimeout(peer.connectionTimeout);
       peer.connectionTimeout = null;
