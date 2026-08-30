@@ -21,6 +21,16 @@ test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) 
     await expect.poll(() => remoteVideoHasVisibleContent(second, '가온')).toBe(true);
 
     const remoteScreenVideo = firstTileOnSecondPage.locator('video');
+    const originalVideo = await remoteScreenVideo.elementHandle();
+    await firstTileOnSecondPage.getByRole('button', { name: '가온의 화면 공유 크게 고정' }).click();
+    await expect(firstTileOnSecondPage).toHaveClass(/video-tile--pinned/);
+    await second.getByRole('button', { name: '채팅 열기' }).click();
+    await expect(second.getByRole('textbox', { name: '메시지', exact: true })).toBeVisible();
+    expect(
+      await remoteScreenVideo.evaluate((video, original) => video === original, originalVideo),
+    ).toBe(true);
+    await second.getByRole('complementary').getByRole('button', { name: '채팅 닫기' }).click();
+    await originalVideo?.dispose();
     const remoteFullscreenButton = firstTileOnSecondPage.getByRole('button', {
       name: '가온의 화면 공유 전체 화면으로 보기',
     });
@@ -53,6 +63,7 @@ test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) 
 
     await first.getByRole('button', { name: '화면 공유 중지' }).click();
     await expect(firstTileOnSecondPage.getByText('화면 공유 중')).toHaveCount(0);
+    await expect(firstTileOnSecondPage).not.toHaveClass(/video-tile--pinned/);
     await expect(firstTileOnSecondPage.locator('.video-tile__fullscreen-error')).toHaveCount(0);
     await expectRemoteMedia(second, '가온');
 

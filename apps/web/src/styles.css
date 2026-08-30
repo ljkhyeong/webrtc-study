@@ -1567,11 +1567,16 @@ textarea:focus-visible {
   font-weight: 800;
 }
 
-.video-tile__fullscreen {
+.video-tile__view-controls {
   position: absolute;
   right: 13px;
   bottom: 52px;
   z-index: 6;
+  display: flex;
+  gap: 6px;
+}
+
+.video-tile__view-controls button {
   display: flex;
   min-height: 34px;
   padding: 0 10px;
@@ -1586,11 +1591,11 @@ textarea:focus-visible {
   backdrop-filter: blur(10px);
 }
 
-.video-tile__fullscreen:hover {
+.video-tile__view-controls button:hover {
   background: rgb(28 42 48 / 92%);
 }
 
-.video-tile__fullscreen svg {
+.video-tile__view-controls svg {
   width: 16px;
 }
 
@@ -2667,6 +2672,42 @@ textarea:focus-visible {
 
   .control-button span {
     font-size: 0.52rem;
+  }
+}
+
+.video-stage.video-stage--pinned {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: minmax(300px, 1fr);
+  grid-auto-rows: 150px;
+}
+
+.video-stage--pinned .video-tile:first-child {
+  grid-row: auto;
+}
+
+.video-stage--pinned .video-tile.video-tile--pinned {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  border-color: var(--mint-bright);
+}
+
+@media (max-width: 760px) {
+  .video-stage.video-stage--pinned {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(240px, 1fr);
+    grid-auto-rows: 140px;
+  }
+
+  .video-stage--pinned .video-tile {
+    min-height: 0;
+  }
+
+  .video-tile__view-controls {
+    right: 8px;
+    bottom: 48px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: calc(100% - 16px);
   }
 }
 

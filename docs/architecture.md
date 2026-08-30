@@ -106,6 +106,10 @@ microphone track에 그대로 남습니다. display capture가 활성화된 동�
 소스를 수신하며, peer-to-peer `participant.media` frame은 그 소스가 `camera`인지
 `screen`인지 전달합니다.
 
+수신한 공유 화면은 한 개를 크게 고정할 수 있습니다. 고정은 해당 브라우저의 배치만 바꾸며
+영상 요소와 `MediaStream`을 유지합니다. 채팅을 열거나 전체 화면으로 전환할 수 있고,
+공유가 끝나거나 해당 참가자가 나가면 고정을 해제합니다. 고정 선택은 서버로 보내거나 저장하지 않습니다.
+
 미디어 관리는 의도적으로 비활성화만 허용합니다. Signaling protocol v3는 입장이 승인된 각
 피어에 서버가 판정한 `host|participant` role을 부여합니다. host는 서버에 같은 방의 다른
 참가자 오디오나 영상을 끄도록 요청할 수 있습니다. 서버는 자신이 소유한 명령을 보내기 전에

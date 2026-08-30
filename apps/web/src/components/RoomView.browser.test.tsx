@@ -57,6 +57,66 @@ describe('RoomView 브라우저 동작', () => {
     vi.restoreAllMocks();
   });
 
+  it.each(['공유 종료', '퇴장'] as const)(
+    '%s 시 고정을 해제하고 영상 요소는 고정 중에도 유지한다',
+    async (change) => {
+      vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+      const props = roomViewProps();
+      const participant = {
+        peerId: 'presenter',
+        displayName: '발표자',
+        role: 'participant' as const,
+        isLocal: false,
+        connectionState: 'connected' as const,
+        audioEnabled: true,
+        videoEnabled: true,
+        videoSource: 'screen' as const,
+        stream: {} as MediaStream,
+      };
+      await act(async () => root.render(<RoomView {...props} participants={[participant]} />));
+      const video = container.querySelector('video');
+      const stage = container.querySelector<HTMLElement>('.video-stage')!;
+      stage.scrollTop = 300;
+      act(() =>
+        container
+          .querySelector<HTMLButtonElement>('[aria-label="발표자의 화면 공유 크게 고정"]')!
+          .click(),
+      );
+      expect(stage.classList.contains('video-stage--pinned')).toBe(true);
+      expect(stage.scrollTop).toBe(0);
+      expect(container.querySelector('video')).toBe(video);
+      expect(video?.srcObject).toBe(participant.stream);
+      act(() => container.querySelector<HTMLButtonElement>('[aria-label="채팅 열기"]')!.click());
+      expect(container.querySelector('.chat-panel')?.getAttribute('aria-hidden')).toBe('false');
+      act(() =>
+        container
+          .querySelector<HTMLButtonElement>('[aria-label="발표자의 화면 공유 고정 해제"]')!
+          .click(),
+      );
+      expect(stage.classList.contains('video-stage--pinned')).toBe(false);
+      act(() =>
+        container
+          .querySelector<HTMLButtonElement>('[aria-label="발표자의 화면 공유 크게 고정"]')!
+          .click(),
+      );
+      await act(async () =>
+        root.render(
+          <RoomView
+            {...props}
+            participants={change === '퇴장' ? [] : [{ ...participant, videoSource: 'camera' }]}
+          />,
+        ),
+      );
+      expect(stage.classList.contains('video-stage--pinned')).toBe(false);
+      await act(async () => root.render(<RoomView {...props} participants={[participant]} />));
+      expect(
+        container.querySelector(
+          '[aria-pressed="false"][aria-label="발표자의 화면 공유 크게 고정"]',
+        ),
+      ).not.toBeNull();
+    },
+  );
+
   it('초대 링크 복사 실패 시 정규 주소를 직접 복사할 수 있게 표시한다', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,

@@ -9,6 +9,8 @@ export type ParticipantView = ParticipantSnapshot & {
 
 interface VideoTileProps {
   participant: ParticipantView;
+  pinned?: boolean;
+  onTogglePin?: () => void;
   canModerateMedia?: boolean;
   onDisableAudio?: ((peerId: string) => void) | undefined;
   onDisableVideo?: ((peerId: string) => void) | undefined;
@@ -33,6 +35,8 @@ function connectionLabel(connectionState: PeerConnectionStatus) {
 
 export function VideoTile({
   participant,
+  pinned = false,
+  onTogglePin,
   canModerateMedia = false,
   onDisableAudio,
   onDisableVideo,
@@ -144,7 +148,7 @@ export function VideoTile({
 
   return (
     <article
-      className={`video-tile${isConnected ? ' video-tile--connected' : ''}`}
+      className={`video-tile${isConnected ? ' video-tile--connected' : ''}${pinned ? ' video-tile--pinned' : ''}`}
       data-peer-id={participant.peerId}
       aria-label={`${participant.displayName}${participant.isLocal ? ' (나)' : ''} 참가자`}
     >
@@ -190,15 +194,26 @@ export function VideoTile({
       </div>
 
       {isRemoteScreenShare ? (
-        <button
-          className="video-tile__fullscreen"
-          type="button"
-          aria-label={`${participant.displayName}의 화면 공유 전체 화면으로 보기`}
-          onClick={() => void openFullscreen()}
-        >
-          <FullscreenIcon />
-          <span>전체 화면</span>
-        </button>
+        <div className="video-tile__view-controls">
+          {onTogglePin ? (
+            <button
+              type="button"
+              aria-label={`${participant.displayName}의 화면 공유 ${pinned ? '고정 해제' : '크게 고정'}`}
+              aria-pressed={pinned}
+              onClick={onTogglePin}
+            >
+              {pinned ? '고정 해제' : '크게 보기'}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            aria-label={`${participant.displayName}의 화면 공유 전체 화면으로 보기`}
+            onClick={() => void openFullscreen()}
+          >
+            <FullscreenIcon />
+            <span>전체 화면</span>
+          </button>
+        </div>
       ) : null}
 
       {isRemoteScreenShare && fullscreenError ? (

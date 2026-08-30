@@ -275,6 +275,30 @@ export function RoomView({
   onLeave,
 }: RoomViewProps) {
   const [chatOpen, setChatOpen] = useState(false);
+  const [pinnedPeerId, setPinnedPeerId] = useState<string | null>(null);
+  const stageRef = useRef<HTMLElement>(null);
+  const activePinnedPeerId =
+    participants.find(
+      (participant) =>
+        participant.peerId === pinnedPeerId &&
+        !participant.isLocal &&
+        participant.videoSource === 'screen' &&
+        participant.videoEnabled &&
+        participant.stream,
+    )?.peerId ?? null;
+
+  useEffect(() => {
+    if (pinnedPeerId !== null && activePinnedPeerId === null) {
+      setPinnedPeerId(null);
+    }
+  }, [pinnedPeerId, activePinnedPeerId]);
+
+  useLayoutEffect(() => {
+    if (activePinnedPeerId !== null && stageRef.current) {
+      stageRef.current.scrollTop = 0;
+    }
+  }, [activePinnedPeerId]);
+
   const [message, setMessage] = useState('');
   const [inviteCopyState, setInviteCopyState] = useState<InviteCopyState>({ status: 'idle' });
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
@@ -566,11 +590,21 @@ export function RoomView({
       ) : null}
 
       <main className="room-workspace">
-        <section className={`video-stage video-stage--${gridSize}`} aria-label="스터디 참가자 영상">
+        <section
+          ref={stageRef}
+          className={`video-stage video-stage--${gridSize}${activePinnedPeerId ? ' video-stage--pinned' : ''}`}
+          aria-label="스터디 참가자 영상"
+        >
           {participants.map((participant) => (
             <VideoTile
               key={participant.peerId}
               participant={participant}
+              pinned={participant.peerId === activePinnedPeerId}
+              onTogglePin={() =>
+                setPinnedPeerId(
+                  participant.peerId === activePinnedPeerId ? null : participant.peerId,
+                )
+              }
               canModerateMedia={canModerateMedia}
               onDisableAudio={onDisableParticipantAudio}
               onDisableVideo={onDisableParticipantVideo}
