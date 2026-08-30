@@ -15,6 +15,8 @@ describe('통화 장치 설정', () => {
   const props = () => ({
     audioDeviceId: 'mic-1',
     videoDeviceId: '',
+    outputDeviceId: '',
+    onSelectOutput: vi.fn(),
     screenSharing: false,
     active: true,
     onSelect: vi.fn(async () => true),

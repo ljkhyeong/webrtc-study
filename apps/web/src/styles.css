@@ -1213,6 +1213,19 @@ textarea:focus-visible {
   background: var(--fog);
 }
 
+.audio-output-controls {
+  margin-top: 18px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.audio-output-controls__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
 .media-device-dialog :disabled {
   opacity: 0.5;
 }

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { AudioOutputControls } from './AudioOutputControls';
 
 interface MediaDeviceDialogProps {
   audioDeviceId: string;
   videoDeviceId: string;
+  outputDeviceId: string;
+  onSelectOutput: (deviceId: string) => void;
   screenSharing: boolean;
   active: boolean;
   onSelect: (kind: 'audio' | 'video', deviceId: string) => Promise<boolean>;
@@ -12,6 +15,8 @@ interface MediaDeviceDialogProps {
 export function MediaDeviceDialog({
   audioDeviceId,
   videoDeviceId,
+  outputDeviceId,
+  onSelectOutput,
   screenSharing,
   active,
   onSelect,
@@ -146,6 +151,12 @@ export function MediaDeviceDialog({
         {pending !== null ? '장치를 변경하고 있습니다. 권한 요청이 뜨면 확인해 주세요.' : notice}
       </p>
       {error ? <p role="alert">{error}</p> : null}
+      <AudioOutputControls
+        deviceId={outputDeviceId}
+        devices={devices}
+        onSelect={onSelectOutput}
+        onRefresh={() => setRefresh((value) => value + 1)}
+      />
     </dialog>
   );
 }

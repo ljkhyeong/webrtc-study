@@ -28,7 +28,7 @@ import {
   SendIcon,
   UsersIcon,
 } from './Icons';
-import { type ParticipantView, VideoTile } from './VideoTile';
+import { type AudioOutputSelection, type ParticipantView, VideoTile } from './VideoTile';
 import { canonicalRoomUrl } from '../lib/room';
 
 type RoomSystemNoticeId =
@@ -36,7 +36,8 @@ type RoomSystemNoticeId =
   | 'action-warning'
   | 'action-error'
   | 'participation-grant-refresh'
-  | 'turn-refresh';
+  | 'turn-refresh'
+  | 'audio-output';
 
 export interface RoomSystemNoticeView {
   readonly id: RoomSystemNoticeId;
@@ -62,6 +63,7 @@ interface RoomViewProps {
   status: RoomSessionStatus;
   statusLabel: string;
   participants: ParticipantView[];
+  audioOutput?: AudioOutputSelection | undefined;
   messages: readonly ChatMessage[];
   audioAvailable: boolean;
   audioEnabled: boolean;
@@ -249,6 +251,7 @@ export function RoomView({
   status,
   statusLabel,
   participants,
+  audioOutput,
   messages,
   audioAvailable,
   audioEnabled,
@@ -599,6 +602,8 @@ export function RoomView({
             <VideoTile
               key={participant.peerId}
               participant={participant}
+              audioOutput={audioOutput}
+              onSelectDevices={onSelectDevices}
               pinned={participant.peerId === activePinnedPeerId}
               onTogglePin={() =>
                 setPinnedPeerId(

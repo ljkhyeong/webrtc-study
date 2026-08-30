@@ -81,6 +81,39 @@ export function ActiveRoom({
   const [participationGrantRefreshWarning, setParticipationGrantRefreshWarning] = useState('');
   const [turnRefreshWarning, setTurnRefreshWarning] = useState('');
   const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
+  const [audioOutput, setAudioOutput] = useState({ deviceId: '' });
+  const outputDeviceId = audioOutput.deviceId;
+  const [outputWarning, setOutputWarning] = useState('');
+
+  useEffect(() => {
+    setOutputWarning('');
+    if (!outputDeviceId) return;
+    let disposed = false;
+    let request = 0;
+    const mediaDevices = navigator.mediaDevices;
+    const checkOutput = async () => {
+      const current = ++request;
+      try {
+        const devices = await mediaDevices.enumerateDevices();
+        if (!disposed && current === request) {
+          setOutputWarning(
+            devices.some(
+              (device) => device.kind === 'audiooutput' && device.deviceId === outputDeviceId,
+            )
+              ? ''
+              : '선택한 스피커가 연결되어 있지 않습니다. 통화 장치 설정에서 스피커를 다시 선택해 주세요.',
+          );
+        }
+      } catch {
+        // 목록 조회 실패만으로 사용 중인 출력 장치를 바꾸지 않는다.
+      }
+    };
+    mediaDevices.addEventListener('devicechange', checkOutput);
+    return () => {
+      disposed = true;
+      mediaDevices.removeEventListener('devicechange', checkOutput);
+    };
+  }, [outputDeviceId]);
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
@@ -464,6 +497,9 @@ export function ActiveRoom({
     participationGrantRefreshWarning: participationGrantRefreshWarning || undefined,
     turnRefreshWarning: turnRefreshWarning || undefined,
   });
+  if (outputWarning) {
+    systemNotices.push({ id: 'audio-output', tone: 'warning', message: outputWarning });
+  }
 
   return (
     <>
@@ -472,6 +508,7 @@ export function ActiveRoom({
         status={status}
         statusLabel={roomStatusLabel(status, participants)}
         participants={participants}
+        audioOutput={audioOutput}
         messages={messages}
         audioAvailable={localMedia.audioAvailable}
         audioEnabled={localMedia.audioEnabled}
@@ -568,6 +605,11 @@ export function ActiveRoom({
       />
       {deviceSettingsOpen ? (
         <MediaDeviceDialog
+          outputDeviceId={outputDeviceId}
+          onSelectOutput={(deviceId) => {
+            setAudioOutput({ deviceId });
+            setOutputWarning('');
+          }}
           audioDeviceId={
             sessionRef.current?.getLocalStream()?.getAudioTracks()[0]?.getSettings().deviceId ?? ''
           }

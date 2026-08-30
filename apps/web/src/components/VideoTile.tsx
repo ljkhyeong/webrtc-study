@@ -7,8 +7,16 @@ export type ParticipantView = ParticipantSnapshot & {
   readonly stream?: MediaStream | undefined;
 };
 
+export interface AudioOutputSelection {
+  readonly deviceId: string;
+}
+
+const DEFAULT_AUDIO_OUTPUT: AudioOutputSelection = { deviceId: '' };
+
 interface VideoTileProps {
   participant: ParticipantView;
+  audioOutput?: AudioOutputSelection | undefined;
+  onSelectDevices?: () => void;
   pinned?: boolean;
   onTogglePin?: () => void;
   canModerateMedia?: boolean;
@@ -35,6 +43,8 @@ function connectionLabel(connectionState: PeerConnectionStatus) {
 
 export function VideoTile({
   participant,
+  audioOutput = DEFAULT_AUDIO_OUTPUT,
+  onSelectDevices,
   pinned = false,
   onTogglePin,
   canModerateMedia = false,
@@ -47,26 +57,53 @@ export function VideoTile({
   const fullscreenShareGenerationRef = useRef(0);
   const latestFullscreenRequestGenerationRef = useRef(0);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
+  const [outputError, setOutputError] = useState(false);
+  const outputChange = useRef(Promise.resolve());
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
 
   useEffect(() => {
-    const attempt = playbackAttemptRef.current + 1;
-    playbackAttemptRef.current = attempt;
-    setPlaybackBlocked(false);
     const video = videoRef.current;
     if (!video) {
       return;
     }
 
     video.srcObject = participant.stream ?? null;
-    if (participant.stream !== undefined) {
-      void playVideo(video, attempt);
-    }
     return () => {
-      playbackAttemptRef.current += 1;
       video.srcObject = null;
     };
   }, [participant.stream]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const attempt = ++playbackAttemptRef.current;
+    video.muted = true;
+    setPlaybackBlocked(false);
+    setOutputError(false);
+    const play = () => {
+      if (playbackAttemptRef.current !== attempt) return;
+      video.muted = participant.isLocal;
+      void playVideo(video, attempt);
+    };
+    if (!participant.isLocal && typeof video.setSinkId === 'function') {
+      outputChange.current = outputChange.current.then(async () => {
+        if (playbackAttemptRef.current !== attempt) return;
+        try {
+          if (video.sinkId !== audioOutput.deviceId) {
+            await video.setSinkId(audioOutput.deviceId);
+          }
+          play();
+        } catch {
+          if (playbackAttemptRef.current === attempt) setOutputError(true);
+        }
+      });
+    } else {
+      play();
+    }
+    return () => {
+      playbackAttemptRef.current += 1;
+    };
+  }, [participant.stream, participant.isLocal, audioOutput]);
 
   const hasStream = Boolean(participant.stream);
   const hasVisibleVideo = participant.videoEnabled && hasStream;
@@ -164,7 +201,7 @@ export function VideoTile({
               .join(' ') || undefined
           }
           autoPlay
-          muted={participant.isLocal}
+          muted
           playsInline
           aria-label={`${participant.displayName}의 영상`}
           aria-hidden={!hasVisibleVideo}
@@ -220,6 +257,15 @@ export function VideoTile({
         <p className="video-tile__fullscreen-error" role="alert">
           {fullscreenError}
         </p>
+      ) : null}
+
+      {hasStream && outputError ? (
+        <div className="video-tile__playback-recovery">
+          <span role="alert">선택한 스피커로 소리를 재생하지 못했습니다.</span>
+          <button type="button" onClick={onSelectDevices}>
+            스피커 다시 선택
+          </button>
+        </div>
       ) : null}
 
       {hasStream && playbackBlocked ? (

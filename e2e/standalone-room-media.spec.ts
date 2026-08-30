@@ -95,6 +95,26 @@ test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) 
     await expect(
       first.getByRole('status').filter({ hasText: '카메라를 변경했습니다.' }),
     ).toBeVisible();
+    const speaker = first.getByRole('combobox', { name: '스피커', exact: true });
+    const outputId = await speaker
+      .locator('option')
+      .evaluateAll((options) =>
+        options.map((option) => (option as HTMLOptionElement).value).find(Boolean),
+      );
+    expect(outputId).toBeTruthy();
+    await speaker.selectOption(outputId!);
+    await first.getByRole('button', { name: '스피커 적용' }).click();
+    await expect
+      .poll(() =>
+        participantTile(first, '나래')
+          .locator('video')
+          .evaluate((video) => video.sinkId),
+      )
+      .toBe(outputId);
+    await first.getByRole('button', { name: '소리 확인', exact: true }).click();
+    await expect(
+      first.getByRole('status').filter({ hasText: '확인음을 재생했습니다.' }),
+    ).toBeVisible();
     await first.getByRole('button', { name: '장치 설정 닫기' }).click();
     expect(await localTracks.evaluate((tracks) => tracks.map((track) => track.readyState))).toEqual(
       ['ended', 'ended'],
