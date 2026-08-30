@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import Linkify from 'linkify-react';
 import type { Opts } from 'linkifyjs';
 
@@ -12,7 +12,7 @@ const LINK_OPTIONS: Opts = {
   attributes: { title: '새 탭에서 열기' },
 };
 
-export function ChatMessageContent({ text }: { text: string }) {
+export const ChatMessageContent = memo(function ChatMessageContent({ text }: { text: string }) {
   const [copyState, setCopyState] = useState<'idle' | 'copying' | 'success' | 'error'>('idle');
 
   async function copy() {
@@ -50,4 +50,4 @@ export function ChatMessageContent({ text }: { text: string }) {
       </div>
     </>
   );
-}
+});
