@@ -225,10 +225,7 @@ public class ProtocolParser {
 	}
 
 	private static String boundedString(JsonNode input, int maximumLength, String path) {
-		if (input == null || !input.isString()) {
-			throw fail(path, "must be a string");
-		}
-		String value = input.asString();
+		String value = requiredText(input, path);
 		if (value.length() > maximumLength) {
 			throw fail(path, "must contain at most " + maximumLength + " characters");
 		}
@@ -236,10 +233,7 @@ public class ProtocolParser {
 	}
 
 	private static String boundedUtf8String(JsonNode input, int maximumBytes, String path) {
-		if (input == null || !input.isString()) {
-			throw fail(path, "must be a string");
-		}
-		String value = input.asString();
+		String value = requiredText(input, path);
 		if (utf8ByteLength(value) > maximumBytes) {
 			throw fail(path, "must contain at most " + maximumBytes + " UTF-8 bytes");
 		}
