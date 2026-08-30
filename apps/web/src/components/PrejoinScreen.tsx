@@ -307,9 +307,10 @@ export function PrejoinScreen({
                       isChecking || authorizationPending || snapshot.audioInputs.length === 0
                     }
                     onChange={(event) => {
+                      const deviceId = event.currentTarget.value;
                       const controller = controllerRef.current;
                       if (controller !== null) {
-                        runAuthorized(() => controller.selectAudioInput(event.target.value));
+                        runAuthorized(() => controller.selectAudioInput(deviceId));
                       }
                     }}
                   >
@@ -340,9 +341,10 @@ export function PrejoinScreen({
                       isChecking || authorizationPending || snapshot.videoInputs.length === 0
                     }
                     onChange={(event) => {
+                      const deviceId = event.currentTarget.value;
                       const controller = controllerRef.current;
                       if (controller !== null) {
-                        runAuthorized(() => controller.selectVideoInput(event.target.value));
+                        runAuthorized(() => controller.selectVideoInput(deviceId));
                       }
                     }}
                   >
