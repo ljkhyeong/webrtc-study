@@ -1,10 +1,20 @@
 # 이 목록은 민감 경로의 검토 담당자를 안내합니다. 저장소 설정에서 CODEOWNERS 검토를
 # 강제하지 않으면 병합을 막는 신뢰 경계가 아닙니다.
 /.github/CODEOWNERS @ljkhyeong
+/.github/dependabot.yml @ljkhyeong
 /.github/workflows/ @ljkhyeong
 /.dockerignore @ljkhyeong
 /Dockerfile @ljkhyeong
 /compose*.yml @ljkhyeong
+**/package.json @ljkhyeong
+/package-lock.json @ljkhyeong
+/apps/signaling/build.gradle @ljkhyeong
+/settings.gradle @ljkhyeong
+/gradle/ @ljkhyeong
+/gradlew @ljkhyeong
+/gradlew.bat @ljkhyeong
+/browserstack.yml @ljkhyeong
+/playwright*.config.ts @ljkhyeong
 /ops/*.env.example @ljkhyeong
 /ops/caddy/ @ljkhyeong
 /ops/ci/ @ljkhyeong
