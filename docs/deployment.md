@@ -223,7 +223,10 @@ systemd-run --wait --pipe \
 systemd 단위를 설치하고 매일 백업과 매주 보존·무결성 검사를 켭니다.
 
 ```bash
-install -m 0644 ops/linux/systemd/round-offsite-* /etc/systemd/system/
+install -m 0644 \
+  ops/linux/systemd/round-offsite-* \
+  ops/linux/systemd/round-ops-failure@.service \
+  /etc/systemd/system/
 install -m 0644 ops/linux/tmpfiles.d/round-backups.conf /etc/tmpfiles.d/round-backups.conf
 systemd-tmpfiles --create /etc/tmpfiles.d/round-backups.conf
 systemctl daemon-reload
@@ -239,6 +242,7 @@ prune 중에는 repository가 잠기므로 일일 백업과 겹치지 않게 시
 
 ```bash
 ops/linux/backup-caddy.sh \
+  --output-dir /var/backups/round \
   --recipient-file /etc/round/backup-recipients.txt \
   /etc/round/production.env
 ```
