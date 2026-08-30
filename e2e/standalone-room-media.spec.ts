@@ -10,6 +10,8 @@ test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) 
   await runConnectedRoom(browser, baseURL, async ({ first, second }) => {
     await expectRemoteMedia(second, '가온');
     const firstTileOnSecondPage = participantTile(second, '가온');
+    await expect(firstTileOnSecondPage.getByText('방장', { exact: true })).toBeVisible();
+    await expect(second.getByRole('button', { name: '가온 마이크 끄기' })).toHaveCount(0);
 
     await first.getByRole('button', { name: '화면 공유 시작' }).click();
     await expect(firstTileOnSecondPage.getByText('화면 공유 중')).toBeVisible();
