@@ -656,7 +656,7 @@ PATH="$fake_bin:$PATH" ops/linux/rollback.sh \
   "$env_b" \
   >/dev/null
 [[ "$(grep -c '^attestation-verify ' "$fixture_dir/gh.log")" == '2' ]] ||
-  fail 'rollback did not verify all three signed image provenance statements'
+  fail 'rollback did not verify both signed image provenance statements'
 
 rollback_env="$fixture_dir/rollback-runtime.env"
 cp -- "$env_b" "$rollback_env"

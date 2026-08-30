@@ -154,12 +154,18 @@ jq -e '
 
 printf 'Validating deployment shell scripts...\n'
 bash -n ops/ci/run-baton-edge-e2e.sh
+bash -n ops/ci/promote-image-tags.sh
+bash -n ops/ci/test-promote-image-tags.sh
 bash -n ops/linux/test-systemd-units.sh
+bash ops/ci/test-promote-image-tags.sh
 bash ops/linux/test-linux-ops.sh
 bash ops/linux/test-systemd-units.sh
 
 printf 'Validating the signed release workflow contract...\n'
 node ops/ci/validate-release-workflow.mjs
+
+printf 'Validating the BrowserStack workflow contract...\n'
+node ops/ci/validate-browserstack-workflow.mjs
 
 caddy_validation_image=round-caddy-validation:local
 printf 'Building the pinned custom Caddy runtime...\n'
@@ -209,6 +215,7 @@ docker run --rm \
         and ($rate.rate_limits.pilot_client.match[0].not[0].path == ["/healthz"])
         and ($rate.rate_limits.pilot_client.match[0].header.Authorization == ["*"])
         and (($rate.rate_limits | keys) == ["pilot_client"])
+        and (.logging.logs.default.encoder.fields.remote_ip.filter == "hash")
     ' >/dev/null
 
 printf 'Verifying the macOS pilot mobile transport exception...\n'
@@ -221,13 +228,14 @@ docker run --rm \
   "$caddy_validation_image" \
   caddy adapt --config /etc/caddy/Caddyfile.macos-pilot \
   | jq -e '
-      [.. | objects
+      (.logging.logs.default.encoder.fields.remote_ip.filter == "hash")
+      and ([.. | objects
         | select((.handle? // []) | any(.handler? == "authentication"))
         | .match[0].not[0].path] == [[
           "/healthz",
           "/signal",
           "/api/turn-credentials"
-        ]]
+        ]])
     ' >/dev/null
 
 printf 'Checking the entire Dockerfile...\n'
