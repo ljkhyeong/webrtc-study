@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_AUDIO_CONSTRAINTS, DEFAULT_VIDEO_CONSTRAINTS } from '../lib/media-constraints';
 import { prejoinMediaIssueMessage } from '../lib/prejoin-presentation';
 import { ArrowIcon, CameraIcon, CameraOffIcon, MicIcon, MicOffIcon } from './Icons';
+import { MicrophoneLevel } from './MicrophoneLevel';
 
 interface PrejoinScreenProps {
   displayName: string;
@@ -340,6 +341,11 @@ export function PrejoinScreen({
                   </select>
                 </label>
               </div>
+
+              <MicrophoneLevel
+                track={controllerRef.current?.getStream()?.getAudioTracks()[0] ?? null}
+                enabled={snapshot.localMedia.audioEnabled}
+              />
 
               <div className="prejoin-issues" aria-live="polite">
                 {snapshot.audioIssue ? (

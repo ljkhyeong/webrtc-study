@@ -882,6 +882,36 @@ textarea:focus-visible {
   background: rgb(220 227 226 / 70%);
 }
 
+.microphone-level {
+  display: grid;
+  margin-top: 18px;
+  gap: 7px;
+}
+
+.microphone-level > span {
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.microphone-level meter {
+  width: 100%;
+  height: 14px;
+}
+
+.microphone-level meter::-webkit-meter-optimum-value {
+  background: var(--mint);
+}
+
+.microphone-level meter::-moz-meter-bar {
+  background: var(--mint);
+}
+
+.microphone-level small {
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
 .prejoin-host-capability {
   display: grid;
   margin-bottom: 20px;
