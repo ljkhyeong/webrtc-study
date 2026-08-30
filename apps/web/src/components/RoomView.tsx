@@ -530,7 +530,11 @@ export function RoomView({
                   <span>CONNECTION</span>
                   <strong>연결 진단</strong>
                 </div>
-                <button type="button" onClick={() => void collectConnectionDiagnostics()}>
+                <button
+                  type="button"
+                  disabled={connectionDiagnostics.status === 'loading'}
+                  onClick={() => void collectConnectionDiagnostics()}
+                >
                   새로고침
                 </button>
               </header>

@@ -222,6 +222,40 @@ describe('RoomView 브라우저 동작', () => {
     expect(setScrollTop).not.toHaveBeenCalled();
   });
 
+  it.each(['성공', '실패'] as const)(
+    '진단 수집 중에는 중복 요청을 막고 %s 후 새로고침을 다시 허용한다',
+    async (outcome) => {
+      const diagnostic = { status: 'active' as const, connections: [] };
+      let finish!: () => void;
+      const pending = new Promise<typeof diagnostic>((resolve, reject) => {
+        finish = () =>
+          outcome === '성공' ? resolve(diagnostic) : reject(new Error('진단 수집 실패'));
+      });
+      const onCollectConnectionDiagnostics = vi
+        .fn()
+        .mockReturnValueOnce(pending)
+        .mockResolvedValue(diagnostic);
+      act(() =>
+        root.render(<RoomView {...roomViewProps()} {...{ onCollectConnectionDiagnostics }} />),
+      );
+      const details = container.querySelector<HTMLDetailsElement>('.connection-diagnostics')!;
+      const refresh = details.querySelector<HTMLButtonElement>('header button')!;
+
+      await act(async () => {
+        details.open = true;
+        details.dispatchEvent(new Event('toggle', { bubbles: true }));
+      });
+      expect(refresh.disabled).toBe(true);
+      act(() => refresh.click());
+      expect(onCollectConnectionDiagnostics).toHaveBeenCalledTimes(1);
+
+      await act(async () => finish());
+      expect(refresh.disabled).toBe(false);
+      await act(async () => refresh.click());
+      expect(onCollectConnectionDiagnostics).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it('개인정보가 없는 연결 진단을 요청 시 수집하고 복사한다', async () => {
     const onCollectConnectionDiagnostics = vi.fn(async () => ({
       status: 'active' as const,
