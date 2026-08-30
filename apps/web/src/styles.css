@@ -1122,6 +1122,7 @@ textarea:focus-visible {
   position: relative;
 }
 
+.room-devices-button,
 .connection-diagnostics > summary {
   display: flex;
   min-height: 32px;
@@ -1134,6 +1135,86 @@ textarea:focus-visible {
   font-size: 0.68rem;
   font-weight: 650;
   list-style: none;
+}
+
+.room-devices-button {
+  background: transparent;
+}
+
+.room-devices-button:disabled {
+  opacity: 0.45;
+}
+
+.media-device-dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 35%);
+}
+
+.media-device-dialog::backdrop {
+  background: rgb(16 23 29 / 70%);
+}
+
+.media-device-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.media-device-dialog h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.media-device-dialog p {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.media-device-dialog__input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.media-device-dialog__input label {
+  display: grid;
+  gap: 7px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.media-device-dialog select {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.media-device-dialog button {
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--fog);
+}
+
+.media-device-dialog :disabled {
+  opacity: 0.5;
 }
 
 .connection-diagnostics > summary::-webkit-details-marker {
@@ -2401,6 +2482,7 @@ textarea:focus-visible {
     min-height: 30px;
   }
 
+  .room-devices-button,
   .connection-diagnostics > summary {
     min-height: 30px;
     padding-inline: 8px;
@@ -2495,6 +2577,46 @@ textarea:focus-visible {
 }
 
 @media (max-width: 430px) {
+  .room-header {
+    padding-inline: 10px;
+    gap: 8px;
+  }
+
+  .room-header__brand {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .room-header .wordmark {
+    display: none;
+  }
+
+  .room-header__status {
+    flex-shrink: 0;
+    gap: 6px;
+  }
+
+  .room-code {
+    min-width: 0;
+    margin-left: 0;
+    padding-inline: 0;
+  }
+
+  .room-code strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .room-code svg {
+    flex-shrink: 0;
+  }
+
+  .connection-state {
+    gap: 0;
+    font-size: 0;
+  }
+
   .landing-header__note {
     max-width: 110px;
     line-height: 1.35;

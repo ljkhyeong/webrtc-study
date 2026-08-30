@@ -67,5 +67,42 @@ test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) 
     await first.getByRole('button', { name: '카메라 켜기', exact: true }).click();
     await expect(firstTileOnSecondPage.getByLabel('가온의 카메라 꺼짐')).toHaveCount(0);
     await expectRemoteMedia(second, '가온');
+
+    const localTracks = await first
+      .getByRole('article', { name: '가온 (나) 참가자', exact: true })
+      .locator('video')
+      .evaluateHandle((video) => (video.srcObject as MediaStream).getTracks());
+    const remoteTrackIds = await firstTileOnSecondPage
+      .locator('video')
+      .evaluate((video) => (video.srcObject as MediaStream).getTracks().map((track) => track.id));
+    await first.getByRole('button', { name: '통화 장치 설정' }).click();
+    await first.getByRole('button', { name: '마이크 적용' }).click();
+    await expect(
+      first.getByRole('status').filter({ hasText: '마이크를 변경했습니다.' }),
+    ).toBeVisible();
+    await first.getByRole('button', { name: '카메라 적용' }).click();
+    await expect(
+      first.getByRole('status').filter({ hasText: '카메라를 변경했습니다.' }),
+    ).toBeVisible();
+    await first.getByRole('button', { name: '장치 설정 닫기' }).click();
+    expect(await localTracks.evaluate((tracks) => tracks.map((track) => track.readyState))).toEqual(
+      ['ended', 'ended'],
+    );
+    await localTracks.dispose();
+    await expectRemoteMedia(second, '가온');
+    expect(
+      await firstTileOnSecondPage
+        .locator('video')
+        .evaluate((video) => (video.srcObject as MediaStream).getTracks().map((track) => track.id)),
+    ).toEqual(remoteTrackIds);
+    await first.getByRole('button', { name: '채팅 열기' }).click();
+    await second.getByRole('button', { name: '채팅 열기' }).click();
+    await first
+      .getByRole('textbox', { name: '메시지' })
+      .fill('장치 교체 후에도 대화를 이어갑니다.');
+    await first.getByRole('button', { name: '메시지 보내기' }).click();
+    await expect(
+      second.getByText('장치 교체 후에도 대화를 이어갑니다.', { exact: true }),
+    ).toBeVisible();
   });
 });

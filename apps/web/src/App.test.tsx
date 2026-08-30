@@ -330,7 +330,7 @@ describe('App pre-join boundary', () => {
 
     expect(warning).toContain('연결이 종료');
     expect(warning).toContain('장치를 다시 선택');
-    expect(warning).toContain('방 연결을 새로 시작');
+    expect(warning).toContain('통화를 유지한 채');
     expect(warning).not.toContain('Local microphone');
   });
 

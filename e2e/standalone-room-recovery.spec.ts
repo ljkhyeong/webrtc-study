@@ -46,11 +46,12 @@ test('방장 제어와 참가자 퇴장 및 장치 종료를 복구한다', asyn
       if (audioTrack === undefined) {
         throw new Error('Local audio track is unavailable');
       }
+      audioTrack.stop();
       audioTrack.dispatchEvent(new Event('ended'));
     });
     await expect(
       second.getByText(
-        '마이크 또는 카메라 연결이 종료되었습니다. 장치를 다시 선택하면 현재 방 연결을 새로 시작합니다.',
+        '마이크 또는 카메라 연결이 종료되었습니다. 통화를 유지한 채 장치를 다시 선택할 수 있습니다.',
         { exact: true },
       ),
     ).toBeVisible();
@@ -58,9 +59,16 @@ test('방장 제어와 참가자 퇴장 및 장치 종료를 복구한다', asyn
       second.getByRole('button', { name: '마이크 장치 다시 선택', exact: true }),
     ).toBeVisible();
     await second.getByRole('button', { name: '장치 다시 선택', exact: true }).click();
+    await expect(second.getByRole('dialog', { name: '통화 장치 설정' })).toBeVisible();
+    await second.getByRole('button', { name: '마이크 적용' }).click();
     await expect(
-      second.getByRole('heading', { name: '입장 전에 장치를 확인해 주세요.' }),
+      second.getByRole('status').filter({ hasText: '마이크를 변경했습니다.' }),
     ).toBeVisible();
-    await expect(second.getByRole('button', { name: '장치 확인', exact: true })).toBeVisible();
+    await second.getByRole('button', { name: '장치 설정 닫기' }).click();
+    await expect(second.getByRole('button', { name: '마이크 끄기', exact: true })).toBeVisible();
+    await expect(second.getByLabel('참가자 1명')).toBeVisible();
+    await expect(second.getByRole('button', { name: '장치 다시 선택', exact: true })).toHaveCount(
+      0,
+    );
   });
 });

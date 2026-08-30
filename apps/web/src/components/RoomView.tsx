@@ -465,6 +465,15 @@ export function RoomView({
         </div>
 
         <div className="room-header__status">
+          <button
+            className="room-devices-button"
+            type="button"
+            disabled={!isActive}
+            aria-label="통화 장치 설정"
+            onClick={onSelectDevices}
+          >
+            장치
+          </button>
           <span
             className={`connection-state connection-state--${
               partialPeerFailure ? 'partial-failure' : status

@@ -160,6 +160,10 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
     warning:
       '일부 참가자와 화면 공유 전환에 실패해 영상 연결을 자동으로 복구하고 있습니다. 현재 통화는 유지됩니다.',
   },
+  'media-device-sender-recovery': {
+    error: '장치 교체 후 일부 참가자와 연결하지 못했습니다. 방에 다시 입장해 주세요.',
+    warning: '기존 장치로 복원하지 못한 참가자의 연결을 자동으로 복구하고 있습니다.',
+  },
   'data-channel-closed': {
     error: '채팅 연결을 복구하지 못했습니다. 방에 다시 입장해 주세요.',
     warning: '일부 참가자와의 채팅 연결이 끊겨 자동으로 복구하고 있습니다.',
@@ -186,10 +190,9 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
     warning: PEER_CONNECTION_FAILURE_MESSAGE,
   },
   'local-media-ended': {
-    error:
-      '마이크 또는 카메라 연결이 종료되었습니다. 장치를 다시 선택한 뒤 방에 다시 입장해 주세요.',
+    error: '마이크 또는 카메라 연결이 종료되었습니다. 장치를 다시 선택해 주세요.',
     warning:
-      '마이크 또는 카메라 연결이 종료되었습니다. 장치를 다시 선택하면 현재 방 연결을 새로 시작합니다.',
+      '마이크 또는 카메라 연결이 종료되었습니다. 통화를 유지한 채 장치를 다시 선택할 수 있습니다.',
   },
 } satisfies Record<Exclude<RoomIssueCode, SignalingErrorCode>, RoomIssueMessages>;
 

@@ -60,5 +60,20 @@ test('모바일에서 방 입장과 채팅 제어가 화면 안에 유지된다'
     diagnosticsFits: true,
     composerControlsAboveDock: true,
   });
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.getByRole('button', { name: '통화 장치 설정' }).click();
+  const deviceDialog = page.getByRole('dialog', { name: '통화 장치 설정' });
+  await expect(deviceDialog).toBeVisible();
+  const narrowLayout = await page.evaluate(() => {
+    const header = document.querySelector('.room-header__status')!.getBoundingClientRect();
+    const dialog = document.querySelector('dialog')!.getBoundingClientRect();
+    return {
+      headerFits: header.left >= 0 && header.right <= innerWidth,
+      dialogFits: dialog.left >= 0 && dialog.right <= innerWidth && dialog.bottom <= innerHeight,
+    };
+  });
+  expect(narrowLayout).toEqual({ headerFits: true, dialogFits: true });
+  await page.keyboard.press('Escape');
+  await expect(deviceDialog).toHaveCount(0);
   expect(failures).toEqual([]);
 });

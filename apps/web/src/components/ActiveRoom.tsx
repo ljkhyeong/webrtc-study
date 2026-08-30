@@ -5,6 +5,7 @@ import {
   type RoomSessionSnapshot,
 } from '@round/rtc-core';
 import { RoomView } from './RoomView';
+import { MediaDeviceDialog } from './MediaDeviceDialog';
 import type { ParticipantView } from './VideoTile';
 import { DEFAULT_MEDIA_CONSTRAINTS } from '../lib/media-constraints';
 import { createWithPreparedMedia, withPreparedMediaFailureCleanup } from '../lib/prepared-media';
@@ -76,6 +77,7 @@ export function ActiveRoom({
   const [actionError, setActionError] = useState('');
   const [participationGrantRefreshWarning, setParticipationGrantRefreshWarning] = useState('');
   const [turnRefreshWarning, setTurnRefreshWarning] = useState('');
+  const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
@@ -459,104 +461,127 @@ export function ActiveRoom({
   });
 
   return (
-    <RoomView
-      roomId={roomId}
-      status={status}
-      statusLabel={roomStatusLabel(status, participants)}
-      participants={participants}
-      messages={messages}
-      audioAvailable={localMedia.audioAvailable}
-      audioEnabled={localMedia.audioEnabled}
-      videoAvailable={localMedia.videoAvailable}
-      videoEnabled={localMedia.videoEnabled}
-      screenShareAvailable={snapshot?.screenShareAvailable ?? false}
-      screenSharing={snapshot?.screenSharing ?? false}
-      canModerateMedia={snapshot?.canModerateMedia ?? false}
-      moderationNotice={
-        snapshot?.lastModerationNotice?.kind === 'audio'
-          ? '방장이 마이크를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.'
-          : snapshot?.lastModerationNotice?.kind === 'video'
-            ? '방장이 비디오를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.'
-            : undefined
-      }
-      peerRecoveryMessage={hasFailedRemotePeer ? PEER_CONNECTION_FAILURE_MESSAGE : undefined}
-      mediaWarning={
-        snapshot?.warning?.code === 'peer-connection-timeout' ||
-        snapshot?.warning?.code === 'peer-negotiation-failed'
-          ? undefined
-          : roomWarningMessage(snapshot?.warning)
-      }
-      mediaRecoveryAvailable={snapshot?.warning?.code === 'local-media-ended'}
-      errorMessage={terminalErrorMessage}
-      systemNotices={systemNotices}
-      onToggleAudio={() => {
-        sessionRef.current?.toggleAudio();
-      }}
-      onToggleVideo={() => {
-        sessionRef.current?.toggleVideo();
-      }}
-      onToggleScreenShare={() => {
-        const session = sessionRef.current;
-        if (session === null) {
-          return;
+    <>
+      <RoomView
+        roomId={roomId}
+        status={status}
+        statusLabel={roomStatusLabel(status, participants)}
+        participants={participants}
+        messages={messages}
+        audioAvailable={localMedia.audioAvailable}
+        audioEnabled={localMedia.audioEnabled}
+        videoAvailable={localMedia.videoAvailable}
+        videoEnabled={localMedia.videoEnabled}
+        screenShareAvailable={snapshot?.screenShareAvailable ?? false}
+        screenSharing={snapshot?.screenSharing ?? false}
+        canModerateMedia={snapshot?.canModerateMedia ?? false}
+        moderationNotice={
+          snapshot?.lastModerationNotice?.kind === 'audio'
+            ? '방장이 마이크를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.'
+            : snapshot?.lastModerationNotice?.kind === 'video'
+              ? '방장이 비디오를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.'
+              : undefined
         }
-        setActionWarning('');
-        setActionError('');
-        const wasSharing = snapshot?.screenSharing === true;
-        if (wasSharing) {
-          void session.stopScreenShare().catch(() => {
-            if (sessionRef.current === session) {
-              setActionWarning('');
-              setActionError('화면 공유를 중지하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-            }
-          });
-          return;
+        peerRecoveryMessage={hasFailedRemotePeer ? PEER_CONNECTION_FAILURE_MESSAGE : undefined}
+        mediaWarning={
+          snapshot?.warning?.code === 'peer-connection-timeout' ||
+          snapshot?.warning?.code === 'peer-negotiation-failed'
+            ? undefined
+            : roomWarningMessage(snapshot?.warning)
         }
-        void session
-          .startScreenShare()
-          .then((result) => {
-            if (sessionRef.current !== session) {
-              return;
-            }
-            const notice = screenShareStartNotice(result);
-            if (notice?.tone === 'warning') {
-              setActionError('');
-              setActionWarning(notice.message);
-            } else if (notice?.tone === 'error') {
-              setActionWarning('');
-              setActionError(notice.message);
-            }
-          })
-          .catch(() => {
-            if (sessionRef.current === session) {
-              setActionWarning('');
-              setActionError('화면 공유를 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-            }
-          });
-      }}
-      onDisableParticipantAudio={(peerId) => {
-        if (!sessionRef.current?.disableParticipantMedia(peerId, 'audio')) {
+        mediaRecoveryAvailable={snapshot?.warning?.code === 'local-media-ended'}
+        errorMessage={terminalErrorMessage}
+        systemNotices={systemNotices}
+        onToggleAudio={() => {
+          sessionRef.current?.toggleAudio();
+        }}
+        onToggleVideo={() => {
+          sessionRef.current?.toggleVideo();
+        }}
+        onToggleScreenShare={() => {
+          const session = sessionRef.current;
+          if (session === null) {
+            return;
+          }
           setActionWarning('');
-          setActionError('이 참가자의 마이크를 끌 수 없습니다.');
-        }
-      }}
-      onDisableParticipantVideo={(peerId) => {
-        if (!sessionRef.current?.disableParticipantMedia(peerId, 'video')) {
-          setActionWarning('');
-          setActionError('이 참가자의 비디오를 끌 수 없습니다.');
-        }
-      }}
-      onSendMessage={handleSendMessage}
-      onCollectConnectionDiagnostics={async (): Promise<RoomConnectionDiagnostics> => {
-        const session = sessionRef.current;
-        if (session === null) {
-          throw new Error('Room session is unavailable');
-        }
-        return session.collectConnectionDiagnostics();
-      }}
-      onSelectDevices={onReconnect}
-      onReconnect={onReconnect}
-      onLeave={handleLeave}
-    />
+          setActionError('');
+          const wasSharing = snapshot?.screenSharing === true;
+          if (wasSharing) {
+            void session.stopScreenShare().catch(() => {
+              if (sessionRef.current === session) {
+                setActionWarning('');
+                setActionError('화면 공유를 중지하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+              }
+            });
+            return;
+          }
+          void session
+            .startScreenShare()
+            .then((result) => {
+              if (sessionRef.current !== session) {
+                return;
+              }
+              const notice = screenShareStartNotice(result);
+              if (notice?.tone === 'warning') {
+                setActionError('');
+                setActionWarning(notice.message);
+              } else if (notice?.tone === 'error') {
+                setActionWarning('');
+                setActionError(notice.message);
+              }
+            })
+            .catch(() => {
+              if (sessionRef.current === session) {
+                setActionWarning('');
+                setActionError('화면 공유를 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+              }
+            });
+        }}
+        onDisableParticipantAudio={(peerId) => {
+          if (!sessionRef.current?.disableParticipantMedia(peerId, 'audio')) {
+            setActionWarning('');
+            setActionError('이 참가자의 마이크를 끌 수 없습니다.');
+          }
+        }}
+        onDisableParticipantVideo={(peerId) => {
+          if (!sessionRef.current?.disableParticipantMedia(peerId, 'video')) {
+            setActionWarning('');
+            setActionError('이 참가자의 비디오를 끌 수 없습니다.');
+          }
+        }}
+        onSendMessage={handleSendMessage}
+        onCollectConnectionDiagnostics={async (): Promise<RoomConnectionDiagnostics> => {
+          const session = sessionRef.current;
+          if (session === null) {
+            throw new Error('Room session is unavailable');
+          }
+          return session.collectConnectionDiagnostics();
+        }}
+        onSelectDevices={() => setDeviceSettingsOpen(true)}
+        onReconnect={onReconnect}
+        onLeave={handleLeave}
+      />
+      {deviceSettingsOpen ? (
+        <MediaDeviceDialog
+          audioDeviceId={
+            sessionRef.current?.getLocalStream()?.getAudioTracks()[0]?.getSettings().deviceId ?? ''
+          }
+          videoDeviceId={
+            sessionRef.current?.getLocalStream()?.getVideoTracks()[0]?.getSettings().deviceId ?? ''
+          }
+          screenSharing={snapshot?.screenSharing ?? false}
+          active={status === 'active'}
+          onSelect={async (kind, deviceId) => {
+            const session = sessionRef.current;
+            const lifecycle = lifecycleRef.current;
+            if (session === null) return false;
+            await ensureFreshParticipationGrantRef.current();
+            if (sessionRef.current !== session || lifecycleRef.current !== lifecycle) return false;
+            return session.selectInputDevice(kind, deviceId);
+          }}
+          onClose={() => setDeviceSettingsOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }
