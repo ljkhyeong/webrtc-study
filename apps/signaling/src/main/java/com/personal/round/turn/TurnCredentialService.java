@@ -5,6 +5,7 @@ import com.personal.round.config.TurnProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.function.LongSupplier;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -14,6 +15,7 @@ public class TurnCredentialService {
 
 	private final TurnProperties properties;
 	private final Clock clock;
+	private final LongSupplier monotonicTicker;
 	private final TurnCredentialMetrics metrics;
 	private final ClientAddressKeyResolver clientAddressKeyResolver;
 	private final CloudflareTurnClient cloudflareTurnClient;
@@ -22,11 +24,13 @@ public class TurnCredentialService {
 	public TurnCredentialService(
 			TurnProperties properties,
 			Clock clock,
+			LongSupplier monotonicTicker,
 			TurnCredentialMetrics metrics,
 			ClientAddressKeyResolver clientAddressKeyResolver,
 			CloudflareTurnClient cloudflareTurnClient) {
 		this.properties = properties;
 		this.clock = clock;
+		this.monotonicTicker = monotonicTicker;
 		this.metrics = metrics;
 		this.clientAddressKeyResolver = clientAddressKeyResolver;
 		this.cloudflareTurnClient = cloudflareTurnClient;
@@ -55,6 +59,7 @@ public class TurnCredentialService {
 		}
 
 		String clientKey = clientAddressKeyResolver.resolve(clientAddress);
+		long nowNanos = monotonicTicker.getAsLong();
 		long nowMillis = clock.millis();
 		long nowEpochSecond = Math.floorDiv(nowMillis, 1_000);
 		long configuredExpiresAt = Math.addExact(
@@ -68,7 +73,7 @@ public class TurnCredentialService {
 		}
 
 		TurnIssuanceLimiter.Acquisition acquisition =
-				issuanceLimiter.tryAcquire(clientKey, participantKey, nowMillis);
+				issuanceLimiter.tryAcquire(clientKey, participantKey, nowNanos);
 		if (acquisition instanceof TurnIssuanceLimiter.Rejected rejected) {
 			metrics.recordRateLimited(rejected.scope());
 			return new RateLimited(rejected.retryAfterSeconds());

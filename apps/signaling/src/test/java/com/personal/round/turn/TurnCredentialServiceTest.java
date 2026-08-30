@@ -129,9 +129,11 @@ class TurnCredentialServiceTest {
 		CloudflareTurnClient client = mock(CloudflareTurnClient.class);
 		when(client.issue(anyLong())).thenThrow(
 				new CloudflareTurnClient.ProviderUnavailableException("provider unavailable"));
+		MutableClock clock = new MutableClock(1_800_000_000);
 		TurnCredentialService service = new TurnCredentialService(
 				properties,
-				new MutableClock(1_800_000_000),
+				clock,
+				clock::nanoTime,
 				new TurnCredentialMetrics(registry),
 				new ClientAddressKeyResolver(),
 				client);
@@ -210,10 +212,32 @@ class TurnCredentialServiceTest {
 				service(properties, clock, new SimpleMeterRegistry());
 
 		issued(service.issueFor("198.51.100.10"));
-		clock.advanceSeconds(-1);
+		clock.advanceWallClockSeconds(-1);
 
 		assertThat(rateLimited(service.issueFor("198.51.100.10")).retryAfterSeconds())
 				.isEqualTo(600);
+	}
+
+	@Test
+	void usesMonotonicTimeForForwardClockJumpsAndRetryBoundaries() {
+		TurnProperties properties = TestProperties.turnWithRateLimits(
+				KEY_ID, API_TOKEN, 1, 2, 10_000);
+		MutableClock clock = new MutableClock(1_800_000_000);
+		TurnCredentialService service =
+				service(properties, clock, new SimpleMeterRegistry());
+
+		issued(service.issueFor("198.51.100.10"));
+		clock.advanceWallClockSeconds(3_600);
+
+		assertThat(rateLimited(service.issueFor("198.51.100.10")).retryAfterSeconds())
+				.isEqualTo(600);
+
+		clock.advanceTickerMillis(599_001);
+		assertThat(rateLimited(service.issueFor("198.51.100.10")).retryAfterSeconds())
+				.isOne();
+
+		clock.advanceTickerMillis(999);
+		issued(service.issueFor("198.51.100.10"));
 	}
 
 	@Test
@@ -570,7 +594,7 @@ class TurnCredentialServiceTest {
 
 	private static TurnCredentialService service(
 			TurnProperties properties,
-			Clock clock,
+			MutableClock clock,
 			SimpleMeterRegistry registry) {
 		CloudflareTurnClient client = mock(CloudflareTurnClient.class);
 		AtomicLong sequence = new AtomicLong();
@@ -584,6 +608,7 @@ class TurnCredentialServiceTest {
 		return new TurnCredentialService(
 				properties,
 				clock,
+				clock::nanoTime,
 				new TurnCredentialMetrics(registry),
 				new ClientAddressKeyResolver(),
 				client);
@@ -623,13 +648,31 @@ class TurnCredentialServiceTest {
 	private static final class MutableClock extends Clock {
 
 		private Instant instant;
+		private long nanoTime;
 
 		private MutableClock(long epochSecond) {
 			this.instant = Instant.ofEpochSecond(epochSecond);
 		}
 
 		private void advanceSeconds(long seconds) {
+			advanceWallClockSeconds(seconds);
+			nanoTime = Math.addExact(
+					nanoTime,
+					TimeUnit.SECONDS.toNanos(seconds));
+		}
+
+		private void advanceWallClockSeconds(long seconds) {
 			instant = instant.plusSeconds(seconds);
+		}
+
+		private void advanceTickerMillis(long millis) {
+			nanoTime = Math.addExact(
+					nanoTime,
+					TimeUnit.MILLISECONDS.toNanos(millis));
+		}
+
+		private long nanoTime() {
+			return nanoTime;
 		}
 
 		@Override

@@ -6,10 +6,12 @@ import java.util.Map;
 
 final class TurnIssuanceLimiter {
 
+	private static final long NANOS_PER_SECOND = 1_000_000_000L;
+
 	private final Map<String, IssuanceWindow> clientWindows = new HashMap<>();
 	private final Map<ParticipantRoomKey, IssuanceWindow> participantWindows =
 			new HashMap<>();
-	private final long windowMillis;
+	private final long windowNanos;
 	private final int maxRequestsPerClient;
 	private final int maxRequestsPerParticipant;
 	private final int maxRequestsGlobal;
@@ -18,7 +20,7 @@ final class TurnIssuanceLimiter {
 	private IssuanceWindow globalWindow;
 
 	TurnIssuanceLimiter(TurnProperties properties) {
-		this.windowMillis = properties.rateLimitWindow().toMillis();
+		this.windowNanos = properties.rateLimitWindow().toNanos();
 		this.maxRequestsPerClient = properties.rateLimitMaxRequests();
 		this.maxRequestsPerParticipant =
 				properties.rateLimitParticipantMaxRequests();
@@ -30,10 +32,10 @@ final class TurnIssuanceLimiter {
 	synchronized Acquisition tryAcquire(
 			String clientKey,
 			ParticipantRoomKey participantKey,
-			long nowMillis) {
-		removeExpiredWindows(clientWindows, nowMillis);
-		removeExpiredWindows(participantWindows, nowMillis);
-		if (globalWindow != null && globalWindow.isExpired(nowMillis, windowMillis)) {
+			long nowNanos) {
+		removeExpiredWindows(clientWindows, nowNanos);
+		removeExpiredWindows(participantWindows, nowNanos);
+		if (globalWindow != null && globalWindow.isExpired(nowNanos, windowNanos)) {
 			globalWindow = null;
 		}
 
@@ -47,19 +49,19 @@ final class TurnIssuanceLimiter {
 				&& participantWindow.attempts >= maxRequestsPerParticipant) {
 			rejection = laterRejection(
 					rejection,
-					participantWindow.retryAfterMillis(nowMillis, windowMillis),
+					participantWindow.retryAfterNanos(nowNanos, windowNanos),
 					TurnCredentialRateLimitScope.PARTICIPANT);
 		}
 		if (clientWindow != null && clientWindow.attempts >= maxRequestsPerClient) {
 			rejection = laterRejection(
 					rejection,
-					clientWindow.retryAfterMillis(nowMillis, windowMillis),
+					clientWindow.retryAfterNanos(nowNanos, windowNanos),
 					TurnCredentialRateLimitScope.CLIENT);
 		}
 		if (globalWindow != null && globalWindow.attempts >= maxRequestsGlobal) {
 			rejection = laterRejection(
 					rejection,
-					globalWindow.retryAfterMillis(nowMillis, windowMillis),
+					globalWindow.retryAfterNanos(nowNanos, windowNanos),
 					TurnCredentialRateLimitScope.GLOBAL);
 		}
 		if (participantKey != null
@@ -67,13 +69,13 @@ final class TurnIssuanceLimiter {
 				&& participantWindows.size() >= maxTrackedParticipants) {
 			rejection = laterRejection(
 					rejection,
-					retryAfterCapacityMillis(participantWindows, nowMillis),
+					retryAfterCapacityNanos(participantWindows, nowNanos),
 					TurnCredentialRateLimitScope.PARTICIPANT_STATE_CAPACITY);
 		}
 		if (clientWindow == null && clientWindows.size() >= maxTrackedClients) {
 			rejection = laterRejection(
 					rejection,
-					retryAfterCapacityMillis(clientWindows, nowMillis),
+					retryAfterCapacityNanos(clientWindows, nowNanos),
 					TurnCredentialRateLimitScope.CLIENT_STATE_CAPACITY);
 		}
 		if (rejection != null) {
@@ -82,14 +84,14 @@ final class TurnIssuanceLimiter {
 
 		clientWindow = clientWindows.computeIfAbsent(
 				clientKey,
-				ignored -> new IssuanceWindow(nowMillis));
+				ignored -> new IssuanceWindow(nowNanos));
 		if (participantKey != null) {
 			participantWindow = participantWindows.computeIfAbsent(
 					participantKey,
-					ignored -> new IssuanceWindow(nowMillis));
+					ignored -> new IssuanceWindow(nowNanos));
 		}
 		if (globalWindow == null) {
-			globalWindow = new IssuanceWindow(nowMillis);
+			globalWindow = new IssuanceWindow(nowNanos);
 		}
 		clientWindow.attempts++;
 		if (participantWindow != null) {
@@ -101,28 +103,28 @@ final class TurnIssuanceLimiter {
 
 	private <K> void removeExpiredWindows(
 			Map<K, IssuanceWindow> windows,
-			long nowMillis) {
-		windows.values().removeIf(window -> window.isExpired(nowMillis, windowMillis));
+			long nowNanos) {
+		windows.values().removeIf(window -> window.isExpired(nowNanos, windowNanos));
 	}
 
-	private <K> long retryAfterCapacityMillis(
+	private <K> long retryAfterCapacityNanos(
 			Map<K, IssuanceWindow> windows,
-			long nowMillis) {
+			long nowNanos) {
 		return windows.values().stream()
-				.mapToLong(window -> window.retryAfterMillis(nowMillis, windowMillis))
+				.mapToLong(window -> window.retryAfterNanos(nowNanos, windowNanos))
 				.min()
 				.orElseThrow();
 	}
 
 	private static Rejected laterRejection(
 			Rejected current,
-			long retryAfterMillis,
+			long retryAfterNanos,
 			TurnCredentialRateLimitScope scope) {
 		if (current == null
-				|| retryAfterMillis > current.retryAfterMillis()
-				|| (retryAfterMillis == current.retryAfterMillis()
+				|| retryAfterNanos > current.retryAfterNanos()
+				|| (retryAfterNanos == current.retryAfterNanos()
 						&& scope.priority() > current.scope().priority())) {
-			return new Rejected(retryAfterMillis, scope);
+			return new Rejected(retryAfterNanos, scope);
 		}
 		return current;
 	}
@@ -135,32 +137,31 @@ final class TurnIssuanceLimiter {
 	}
 
 	record Rejected(
-			long retryAfterMillis,
+			long retryAfterNanos,
 			TurnCredentialRateLimitScope scope)
 			implements Acquisition {
 
 		long retryAfterSeconds() {
-			return Math.max(1, Math.ceilDiv(retryAfterMillis, 1_000));
+			return Math.max(1, Math.ceilDiv(retryAfterNanos, NANOS_PER_SECOND));
 		}
 	}
 
 	private static final class IssuanceWindow {
 
-		private final long startedAtMillis;
+		private final long startedAtNanos;
 		private int attempts;
 
-		private IssuanceWindow(long startedAtMillis) {
-			this.startedAtMillis = startedAtMillis;
+		private IssuanceWindow(long startedAtNanos) {
+			this.startedAtNanos = startedAtNanos;
 		}
 
-		private boolean isExpired(long nowMillis, long windowMillis) {
-			return nowMillis >= startedAtMillis
-					&& nowMillis - startedAtMillis >= windowMillis;
+		private boolean isExpired(long nowNanos, long windowNanos) {
+			return nowNanos - startedAtNanos >= windowNanos;
 		}
 
-		private long retryAfterMillis(long nowMillis, long windowMillis) {
-			long elapsedMillis = Math.max(0, nowMillis - startedAtMillis);
-			return Math.max(1, windowMillis - elapsedMillis);
+		private long retryAfterNanos(long nowNanos, long windowNanos) {
+			long elapsedNanos = Math.max(0, nowNanos - startedAtNanos);
+			return Math.max(1, windowNanos - elapsedNanos);
 		}
 	}
 }
