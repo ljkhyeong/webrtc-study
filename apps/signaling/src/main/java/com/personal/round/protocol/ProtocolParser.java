@@ -218,20 +218,9 @@ public class ProtocolParser {
 	}
 
 	private static boolean isEcmaScriptWhitespace(char character) {
-		return character == '\t'
-				|| character == '\n'
-				|| character == 0x000B
-				|| character == '\f'
-				|| character == '\r'
-				|| character == ' '
-				|| character == '\u00A0'
-				|| character == '\u1680'
-				|| (character >= '\u2000' && character <= '\u200A')
-				|| character == '\u2028'
-				|| character == '\u2029'
-				|| character == '\u202F'
-				|| character == '\u205F'
-				|| character == '\u3000'
+		// ECMAScript trim은 Unicode 공백 외에 ASCII 제어 공백과 BOM도 제거한다.
+		return Character.isSpaceChar(character)
+				|| (character >= '\t' && character <= '\r')
 				|| character == '\uFEFF';
 	}
 

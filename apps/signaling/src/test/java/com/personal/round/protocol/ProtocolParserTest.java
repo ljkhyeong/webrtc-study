@@ -242,14 +242,12 @@ class ProtocolParserTest {
 
 	@Test
 	void rejectsNonCanonicalRoomIdsAndEcmaScriptWhitespaceNames() {
-		assertInvalid(
-				"{\"v\":3,\"type\":\"room.join\",\"roomId\":\"abcd-efgh-jkmp\","
-						+ "\"payload\":{\"displayName\":\"\\u00a0Ada\"}}",
-				"$.payload.displayName");
-		assertInvalid(
-				"{\"v\":3,\"type\":\"room.join\",\"roomId\":\"abcd-efgh-jkmp\","
-						+ "\"payload\":{\"displayName\":\"\\ufeff\"}}",
-				"$.payload.displayName");
+		for (String escapedName : new String[] {"\\tAda", "\\u00a0Ada", "Ada\\u2028", "\\ufeff"}) {
+			assertInvalid("""
+					{"v":3,"type":"room.join","roomId":"abcd-efgh-jkmp",
+					 "payload":{"displayName":"%s"}}
+					""".formatted(escapedName), "$.payload.displayName");
+		}
 		assertInvalid(
 				"{\"v\":3,\"type\":\"room.join\",\"roomId\":\"abcd-efgi-jkmp\","
 						+ "\"payload\":{\"displayName\":\"Ada\"}}",
@@ -258,6 +256,16 @@ class ProtocolParserTest {
 				"{\"v\":3,\"type\":\"room.join\",\"roomId\":\"ABCD-efgh-jkmp\","
 						+ "\"payload\":{\"displayName\":\"Ada\"}}",
 				"$.roomId");
+	}
+
+	@Test
+	void acceptsControlCharactersThatEcmaScriptDoesNotTrim() {
+		ClientMessage.Join join = (ClientMessage.Join) parser.parse("""
+				{"v":3,"type":"room.join","roomId":"abcd-efgh-jkmp",
+				 "payload":{"displayName":"\\u001cAda\\u0085"}}
+				""");
+
+		assertThat(join.displayName()).isEqualTo("\u001cAda\u0085");
 	}
 
 	@Test
