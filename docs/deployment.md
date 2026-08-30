@@ -13,6 +13,7 @@ relay 포트 범위를 직접 관리하지 않습니다.
 ## 운영 전제
 
 - Linux host와 Docker Engine
+- `age`, `restic`, Git
 - Docker Compose 2.24.4 이상
 - 80/TCP, 443/TCP, 443/UDP를 수신할 수 있는 공개 주소
 - ROUND 도메인의 DNS와 Caddy가 발급할 HTTPS 인증서
@@ -79,7 +80,26 @@ WebRTC relay 트래픽은 브라우저와 Cloudflare 사이를 이동합니다.
 ## 배포
 
 Linux 배포 도구는 깨끗한 checkout, 불변 이미지, 서명된 provenance, 환경·Compose snapshot,
-단일 signaling replica와 host 준비 상태를 검사합니다.
+단일 signaling replica와 host 준비 상태를 검사합니다. systemd 운영 단위가 참조하는 저장소
+경로는 `/opt/round`로 고정합니다. 운영 host에 처음 설치할 때 다음처럼 checkout을 준비합니다.
+
+```bash
+sudo git clone https://github.com/ljkhyeong/webrtc-study.git /opt/round
+sudo git -C /opt/round switch --detach <검증한 커밋 SHA>
+cd /opt/round
+```
+
+이후 운영 도구를 갱신할 때도 같은 경로에서 검증한 커밋으로 전환하고 깨끗한 상태를 확인합니다.
+
+```bash
+sudo git -C /opt/round fetch origin
+sudo git -C /opt/round switch --detach <검증한 커밋 SHA>
+test -z "$(sudo git -C /opt/round status --short)"
+cd /opt/round
+```
+
+임의의 다른 checkout에서 배포 스크립트만 실행하면 배포 자체는 성공할 수 있지만 예약 백업은
+`/opt/round/ops/linux/backup-caddy.sh`를 실행하므로 운영 도구의 기준 경로를 바꾸지 않습니다.
 
 ```bash
 sudo install -d -m 0700 /var/lib/round /var/lib/round/releases
@@ -202,6 +222,27 @@ Caddy의 ACME 상태는 named volume에 저장됩니다. 기존 도구가 age로
 checksum을 만들고, restic이 이를 Cloudflare R2의 암호화 repository에 다시 보관합니다.
 R2는 S3 호환 endpoint인 `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`을 사용합니다.
 
+백업 암호화용 age identity는 운영 host 밖의 관리 단말에서 만들고 복호화 왕복을 확인합니다.
+
+```bash
+umask 077
+age-keygen -o round-backup-identity.txt
+age-keygen -y round-backup-identity.txt > round-backup-recipients.txt
+test "$(
+  printf round-backup-test |
+    age --recipients-file round-backup-recipients.txt |
+    age --decrypt --identity round-backup-identity.txt
+)" = round-backup-test
+```
+
+공개 recipient만 운영 host에 설치합니다.
+
+```bash
+sudo install -m 0644 round-backup-recipients.txt /etc/round/backup-recipients.txt
+```
+
+`round-backup-identity.txt`는 운영 host에 상시 두지 않고 별도 비밀 저장소에 보관합니다.
+
 먼저 restic을 설치하고 백업 전용 R2 bucket과 object read/write key를 만듭니다. 환경 예시와
 repository password를 root 전용 파일로 설치합니다. repository password를 잃으면 복구할 수
 없으므로 host 밖의 비밀 저장소에도 보관합니다.
@@ -240,6 +281,11 @@ systemctl status round-offsite-backup.service
 prune 중에는 repository가 잠기므로 일일 백업과 겹치지 않게 시간을 분리했습니다.
 로컬 age 백업은 systemd-tmpfiles가 30일 뒤 정리하고 장기 보존은 R2 snapshot이 담당합니다.
 
+일일 백업은 03:15부터 최대 30분의 무작위 지연 뒤 시작합니다. Caddy volume의 일관된 snapshot을
+만드는 동안 edge를 잠시 중지하고 완료 또는 실패 시 즉시 다시 시작합니다. 이때 활성 WebSocket은
+종료될 수 있으므로 03:15~03:45를 유지보수 창으로 운영하고 사용자가 방에 다시 입장할 수 있게
+안내합니다. 이 시간대에 중단을 허용할 수 없으면 timer의 `OnCalendar`를 저사용 시간대로 옮깁니다.
+
 ```bash
 ops/linux/backup-caddy.sh \
   --output-dir /var/backups/round \
@@ -263,14 +309,21 @@ systemd-run --wait --pipe \
     --target /var/lib/round/restore-test
 ```
 
-복원은 모든 ROUND Compose 컨테이너를 내린 뒤 명시적 확인 문자열과 age identity를 요구합니다.
+복원할 때만 개인 키를 메모리 기반 `/run` 아래에 설치합니다. 복원 명령이 성공하거나 실패하면
+shell trap이 개인 키를 제거합니다.
 
 ```bash
-ops/linux/restore-caddy.sh \
-  --identity-file /etc/round/backup-identity.txt \
+sudo install -d -m 0700 /run/round-restore
+restore_identity=/run/round-restore/backup-identity.txt
+sudo install -m 0600 <비밀 저장소에서 가져온 identity 파일> "$restore_identity"
+trap 'sudo rm -f -- "$restore_identity"' EXIT
+sudo /opt/round/ops/linux/restore-caddy.sh \
+  --identity-file "$restore_identity" \
   --confirm RESTORE_CADDY_VOLUMES \
   /var/backups/round/round-caddy-<시각>.tar.age \
   /etc/round/production.env
+sudo rm -f -- "$restore_identity"
+trap - EXIT
 ```
 
 백업과 복원은 Cloudflare TURN key, R2 key, restic password를 포함하지 않습니다. 운영 환경

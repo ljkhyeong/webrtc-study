@@ -296,7 +296,12 @@ case "$command_line" in
   *' config --quiet '*)
     log_compose "$@"
     ;;
-  *' ps --status running -q edge '*) [[ ! -e "$fake_root/edge-ps-fail" ]] ;;
+  *' ps --status running -q edge '*)
+    [[ ! -e "$fake_root/edge-ps-fail" ]] || exit 1
+    if [[ -e "$fake_root/edge-running" ]]; then
+      printf 'edge-container\n'
+    fi
+    ;;
   *' ps --all -q '*) [[ ! -e "$fake_root/compose-ps-fail" ]] ;;
   *' pull edge signaling '*)
     log_compose "$@"
@@ -329,7 +334,10 @@ case "$command_line" in
   *' volume create '*)
     printf 'volume-create %s\n' "$*" >>"$fake_root/docker.log"
     ;;
-  *' --entrypoint tar '*) cat "$fake_root/archive.tar" ;;
+  *' --entrypoint tar '*)
+    [[ ! -e "$fake_root/backup-archive-fail" ]] || exit 44
+    cat "$fake_root/archive.tar"
+    ;;
   *' --entrypoint sh '*) cat >/dev/null ;;
   *)
     printf 'unexpected fake docker invocation: %s\n' "$*" >&2
@@ -774,6 +782,43 @@ PATH="$fake_bin:$PATH" ops/linux/backup-caddy.sh \
 backup_file=$(printf '%s\n' "$backup_dir"/*.tar.age)
 [[ -s "$backup_file" && -s "$backup_file.sha256" ]] ||
   fail 'encrypted backup and checksum were not created'
+
+running_backup_dir="$fixture_dir/running-backups"
+touch "$fixture_dir/edge-running"
+: >"$fixture_dir/docker.log"
+PATH="$fake_bin:$PATH" ops/linux/backup-caddy.sh \
+  --state-dir "$state_dir" \
+  --recipient-file "$recipient_file" \
+  --output-dir "$running_backup_dir" \
+  "$env_b" \
+  >/dev/null
+rm -f -- "$fixture_dir/edge-running"
+[[ "$(grep -c 'stop edge' "$fixture_dir/docker.log")" == '1' ]] ||
+  fail 'backup did not stop a running edge exactly once'
+[[ "$(grep -c 'up -d --wait --no-build --no-deps edge' "$fixture_dir/docker.log")" == '1' ]] ||
+  fail 'backup did not restart a running edge exactly once'
+
+failed_running_backup_dir="$fixture_dir/failed-running-backups"
+touch "$fixture_dir/edge-running" "$fixture_dir/backup-archive-fail"
+: >"$fixture_dir/docker.log"
+if PATH="$fake_bin:$PATH" ops/linux/backup-caddy.sh \
+  --state-dir "$state_dir" \
+  --recipient-file "$recipient_file" \
+  --output-dir "$failed_running_backup_dir" \
+  "$env_b" \
+  >/dev/null 2>&1; then
+  fail 'Caddy backup ignored an archive creation failure'
+fi
+rm -f -- \
+  "$fixture_dir/edge-running" \
+  "$fixture_dir/backup-archive-fail"
+[[ "$(grep -c 'stop edge' "$fixture_dir/docker.log")" == '1' ]] ||
+  fail 'failed backup did not stop a running edge exactly once'
+[[ "$(grep -c 'up -d --wait --no-build --no-deps edge' "$fixture_dir/docker.log")" == '1' ]] ||
+  fail 'failed backup did not restart a running edge exactly once'
+if find "$failed_running_backup_dir" -type f -print -quit | grep -q .; then
+  fail 'failed running-edge backup left a backup artifact'
+fi
 
 identity_file="$fixture_dir/backup-identity.txt"
 printf 'AGE-SECRET-KEY-TEST\n' >"$identity_file"
