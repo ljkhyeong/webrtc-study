@@ -67,6 +67,53 @@ describe('통화 중 입력 장치 교체', () => {
     },
   );
 
+  it.each(['audio', 'video'] as const)(
+    '%s 장치가 분리돼도 마지막 켜기·끄기 선택을 유지한다',
+    async (kind) => {
+      const h = deviceHarness(kind);
+      await joinSession(h, [{ peerId: 'peer-a', displayName: '참가자' }]);
+      const old = kind === 'audio' ? h.audioTrack : h.videoTrack;
+      const sender = h.peerConnections[0]!.senders.find((item) => item.track?.kind === kind)!;
+      const toggle = () => (kind === 'audio' ? h.session.toggleAudio() : h.session.toggleVideo());
+      expect(toggle()).toBe(false);
+      old.end();
+
+      expect(await h.session.selectInputDevice(kind, 'replacement')).toBe(true);
+      expect(sender.track).toBe(h.next);
+      expect(h.next.enabled).toBe(false);
+
+      expect(toggle()).toBe(true);
+      h.next.end();
+      const enabledReplacement = new FakeTrack(kind);
+      h.getUserMedia.mockResolvedValueOnce(
+        new FakeMediaStream([enabledReplacement]) as unknown as MediaStream,
+      );
+      expect(await h.session.selectInputDevice(kind, 'enabled-replacement')).toBe(true);
+      expect(sender.track).toBe(enabledReplacement);
+      expect(enabledReplacement.enabled).toBe(true);
+    },
+  );
+
+  it.each(['audio', 'video'] as const)(
+    '%s 장치가 없는 동안 받은 방장 끄기 요청을 다음 장치에 적용한다',
+    async (kind) => {
+      const h = deviceHarness(kind, true);
+      await joinSession(h, [{ peerId: 'peer-a', displayName: '방장', role: 'host' }]);
+      h.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'moderation.media.disabled',
+        roomId: ROOM_ID,
+        from: 'peer-a',
+        payload: { targetPeerId: 'self', kind },
+      });
+      await flushMicrotasks();
+
+      expect(await h.session.selectInputDevice(kind, 'replacement')).toBe(true);
+      expect(h.next.enabled).toBe(false);
+      expect(h.peerConnections[0]!.senders[0]!.track).toBe(h.next);
+    },
+  );
+
   it('일부 송신자 교체가 거부되면 기존 트랙으로 복원한다', async () => {
     const h = deviceHarness();
     await joinSession(h, [

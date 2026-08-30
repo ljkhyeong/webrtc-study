@@ -537,6 +537,7 @@ export class RoomSession {
   readonly #pendingSignalRequests = new Map<string, PendingSignalRequest>();
   readonly #localChatRecipientStates = new Map<string, Map<string, ChatRecipientDeliveryState>>();
   readonly #messages: ChatMessage[] = [];
+  readonly #lastInputEnabled = { audio: true, video: true };
 
   #rtcConfiguration: RTCConfiguration | undefined;
   #socket: WebSocket | null = null;
@@ -836,7 +837,10 @@ export class RoomSession {
     const currentTracks = this.#liveLocalTracks(kind);
     const operation = {
       kind,
-      enabled: currentTracks.length === 0 || currentTracks.some((track) => track.enabled),
+      enabled:
+        currentTracks.length > 0
+          ? currentTracks.some((track) => track.enabled)
+          : this.#lastInputEnabled[kind],
       track: null as MediaStreamTrack | null,
     };
     this.#inputChange = operation;
@@ -930,6 +934,7 @@ export class RoomSession {
     }
 
     const enabled = !tracks.some((track) => track.enabled);
+    this.#lastInputEnabled.audio = enabled;
     if (this.#inputChange?.kind === 'audio') this.#inputChange.enabled = enabled;
     for (const track of tracks) {
       track.enabled = enabled;
@@ -950,6 +955,7 @@ export class RoomSession {
     }
 
     const enabled = !tracks.some((track) => track.enabled);
+    this.#lastInputEnabled.video = enabled;
     if (this.#inputChange?.kind === 'video') this.#inputChange.enabled = enabled;
     for (const track of tracks) {
       track.enabled = enabled;
@@ -2080,6 +2086,7 @@ export class RoomSession {
       fromPeerId,
       kind,
     };
+    this.#lastInputEnabled[kind] = false;
     if (this.#inputChange?.kind === kind) {
       this.#inputChange.enabled = false;
     }
@@ -3741,6 +3748,7 @@ export class RoomSession {
       if (this.#localTrackEndedListeners.has(track)) {
         continue;
       }
+      this.#lastInputEnabled[track.kind === 'audio' ? 'audio' : 'video'] = track.enabled;
       const listener: EventListener = () => {
         this.#handleLocalTrackEnded(track);
       };
