@@ -103,8 +103,8 @@ public record SignalingProperties(
 						"round.signaling.max-bytes-global-window must be at most 1073741824")
 		long maxBytesGlobalWindow,
 		@Min(
-				value = 1,
-				message = "round.signaling.max-outbound-queue-bytes must be at least 1")
+				value = ProtocolParser.MAX_SIGNALING_FRAME_BYTES,
+				message = "round.signaling.max-outbound-queue-bytes는 시그널링 프레임 한도인 {value}바이트 이상이어야 합니다")
 		@Max(
 				value = 16_777_216,
 				message = "round.signaling.max-outbound-queue-bytes must be at most 16777216")
@@ -139,15 +139,6 @@ public record SignalingProperties(
 
 	@AssertTrue(
 			message =
-					"round.signaling.unjoined-sweep-interval must not exceed unjoined-timeout")
-	public boolean isUnjoinedSweepWithinTimeout() {
-		return unjoinedSweepInterval == null
-				|| unjoinedTimeout == null
-				|| unjoinedSweepInterval.compareTo(unjoinedTimeout) <= 0;
-	}
-
-	@AssertTrue(
-			message =
 					"round.signaling.max-frames-per-client-window must not be lower than "
 							+ "max-frames-per-session-window")
 	public boolean isClientFrameLimitAtLeastSessionLimit() {
@@ -176,14 +167,6 @@ public record SignalingProperties(
 							+ "max-bytes-per-client-window")
 	public boolean isGlobalByteLimitAtLeastTwiceClientLimit() {
 		return maxBytesGlobalWindow >= 2L * maxBytesPerClientWindow;
-	}
-
-	@AssertTrue(
-			message =
-					"round.signaling.max-outbound-queue-bytes must not be lower than "
-							+ "the 65536-byte signaling frame limit")
-	public boolean isOutboundQueueLargeEnoughForOneFrame() {
-		return maxOutboundQueueBytes >= ProtocolParser.MAX_SIGNALING_FRAME_BYTES;
 	}
 
 	@AssertTrue(

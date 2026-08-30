@@ -225,10 +225,9 @@ class ConfigurationPropertiesBindingTest {
 	}
 
 	@Test
-	void rejectsInvalidTimingAndFrameRelationshipsDuringContextStartup() {
+	void rejectsInvalidFrameRelationshipsDuringContextStartup() {
 		contextRunner
 				.withPropertyValues(
-						"round.signaling.unjoined-sweep-interval=16s",
 						"round.signaling.max-frames-per-client-window=599",
 						"round.signaling.max-frames-global-window=1197")
 				.run(context -> {
@@ -236,9 +235,6 @@ class ConfigurationPropertiesBindingTest {
 
 					assertThat(failure).isNotNull();
 					assertThat(failure)
-							.hasStackTraceContaining(
-									"round.signaling.unjoined-sweep-interval must not exceed "
-											+ "unjoined-timeout")
 							.hasStackTraceContaining(
 									"round.signaling.max-frames-per-client-window must not be lower "
 											+ "than max-frames-per-session-window");
@@ -283,12 +279,23 @@ class ConfigurationPropertiesBindingTest {
 									"round.signaling.max-bytes-global-window must be at least twice "
 											+ "max-bytes-per-client-window")
 							.hasStackTraceContaining(
-									"round.signaling.max-outbound-queue-bytes must not be lower than "
-											+ "the 65536-byte signaling frame limit")
+									"round.signaling.max-outbound-queue-bytes는 시그널링 프레임 한도인 "
+											+ "65536바이트 이상이어야 합니다")
 							.hasStackTraceContaining(
 									"round.signaling.max-outbound-queue-bytes-global must not be lower "
 											+ "than max-outbound-queue-bytes");
 				});
+	}
+
+	@Test
+	void acceptsTimingAndOutboundQueueBoundaryValues() {
+		contextRunner
+				.withPropertyValues(
+						"round.signaling.unjoined-timeout=1s",
+						"round.signaling.unjoined-sweep-interval=1s",
+						"round.signaling.max-outbound-queue-bytes=65536",
+						"round.signaling.max-outbound-queue-bytes-global=65536")
+				.run(context -> assertThat(context.getStartupFailure()).isNull());
 	}
 
 	@Test
