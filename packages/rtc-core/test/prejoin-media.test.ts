@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { PrejoinMedia } from '../src/index.js';
+import { createHarness, joinSession, type Harness } from './room-session.test-support.js';
 
 class FakeTrack {
   enabled = true;
@@ -121,6 +122,45 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('PrejoinMedia', () => {
+  it.each(['audio', 'video'] as const)(
+    '입장 전에 끄고 분리한 %s 장치를 방에서 다시 선택해도 꺼진 상태를 유지한다',
+    async (kind) => {
+      const audio = new FakeTrack('audio', 'mic');
+      const video = new FakeTrack('video', 'camera');
+      const controller = new PrejoinMedia({
+        mediaDevices: {
+          ...mediaDeviceEventTarget(),
+          getUserMedia: async (constraints = {}) =>
+            new FakeMediaStream([
+              constraints.audio !== false ? audio : video,
+            ]) as unknown as MediaStream,
+          enumerateDevices: async () => [],
+        },
+        mediaStreamFactory: () => new FakeMediaStream() as unknown as MediaStream,
+      });
+      let harness: Harness | undefined;
+      try {
+        await controller.checkDevices();
+        if (kind === 'audio') controller.toggleAudio();
+        else controller.toggleVideo();
+        (kind === 'audio' ? audio : video).end();
+        const replacement = new FakeTrack(kind, 'replacement');
+        harness = createHarness({
+          initialInputEnabled: controller.getInputEnabled(),
+          preparedMediaStream: controller.takeStream(),
+          getUserMedia: async () => new FakeMediaStream([replacement]) as unknown as MediaStream,
+        });
+        await joinSession(harness);
+        expect(await harness.session.selectInputDevice(kind, 'replacement')).toBe(true);
+        expect(replacement.enabled).toBe(false);
+        expect(kind === 'audio' ? video.stopped : audio.stopped).toBe(false);
+      } finally {
+        controller.dispose();
+        await harness?.session.leave();
+      }
+    },
+  );
+
   it('waits for an explicit check and keeps audio when video is busy', async () => {
     const audioTrack = new FakeTrack('audio', 'mic-default');
     const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints) => {

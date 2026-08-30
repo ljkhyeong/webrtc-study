@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   RoomSession,
   type RoomConnectionDiagnostics,
+  type RoomSessionOptions,
   type RoomSessionSnapshot,
 } from '@round/rtc-core';
 import { RoomView } from './RoomView';
@@ -48,6 +49,7 @@ interface ActiveRoomProps {
   displayName: string;
   roomId: string;
   hostCapability?: string | undefined;
+  initialInputEnabled?: RoomSessionOptions['initialInputEnabled'];
   participationGrantLeaseManager?: ParticipationGrantLeaseManager | undefined;
   onParticipationGrantAccessFailure?: ((error: ParticipationGrantAccessError) => void) | undefined;
   releasePreparedMediaStream: () => void;
@@ -61,6 +63,7 @@ export function ActiveRoom({
   displayName,
   roomId,
   hostCapability,
+  initialInputEnabled,
   participationGrantLeaseManager: preflightParticipationGrantLeaseManager,
   onParticipationGrantAccessFailure,
   releasePreparedMediaStream,
@@ -303,6 +306,7 @@ export function ActiveRoom({
                     signalingUrl: resolvedEndpoints.signalingUrl,
                     rtcConfiguration: loaded.configuration,
                     preparedMediaStream,
+                    ...(initialInputEnabled === undefined ? {} : { initialInputEnabled }),
                     ...(hostCapability === undefined ? {} : { hostCapability }),
                     ...(participationGrantLeaseManager === null
                       ? {}
@@ -382,6 +386,7 @@ export function ActiveRoom({
     authMode,
     displayName,
     hostCapability,
+    initialInputEnabled,
     onParticipationGrantAccessFailure,
     preflightParticipationGrantLeaseManager,
     releasePreparedMediaStream,

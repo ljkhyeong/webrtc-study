@@ -1,4 +1,4 @@
-import { PrejoinMedia, type PrejoinMediaSnapshot } from '@round/rtc-core';
+import { PrejoinMedia, type PrejoinMediaSnapshot, type RoomSessionOptions } from '@round/rtc-core';
 import { MAX_HOST_CAPABILITY_LENGTH, MIN_HOST_CAPABILITY_LENGTH } from '@round/protocol';
 import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_AUDIO_CONSTRAINTS, DEFAULT_VIDEO_CONSTRAINTS } from '../lib/media-constraints';
@@ -12,7 +12,11 @@ interface PrejoinScreenProps {
   showHostCapabilityInput: boolean;
   authorizeBeforeEntryAction?: (() => Promise<boolean>) | undefined;
   onBack: () => void;
-  onJoin: (preparedMediaStream: MediaStream | null, hostCapability?: string) => void;
+  onJoin: (
+    preparedMediaStream: MediaStream | null,
+    hostCapability?: string,
+    initialInputEnabled?: RoomSessionOptions['initialInputEnabled'],
+  ) => void;
 }
 
 const initialSnapshot: PrejoinMediaSnapshot = {
@@ -137,8 +141,10 @@ export function PrejoinScreen({
     }
 
     runAuthorized(async () => {
-      const stream = controllerRef.current?.takeStream() ?? null;
-      onJoin(stream, normalizedHostCapability);
+      const controller = controllerRef.current;
+      const initialInputEnabled = controller?.getInputEnabled();
+      const stream = controller?.takeStream() ?? null;
+      onJoin(stream, normalizedHostCapability, initialInputEnabled);
       actionLifetimeRef.current = false;
     });
   };

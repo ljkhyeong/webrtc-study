@@ -161,6 +161,10 @@ export class PrejoinMedia {
     return this.#stream;
   }
 
+  getInputEnabled(): Readonly<Record<'audio' | 'video', boolean>> {
+    return { audio: this.#desiredAudioEnabled, video: this.#desiredVideoEnabled };
+  }
+
   subscribe(listener: PrejoinMediaListener): () => void {
     this.#listeners.add(listener);
     return () => {

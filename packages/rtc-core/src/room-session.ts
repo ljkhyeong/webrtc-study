@@ -180,6 +180,8 @@ export interface RoomSessionOptions {
    * 요청하지 않고 참여하며, 옵션을 생략하면 기존 세션 내부 획득 방식을 유지한다.
    */
   readonly preparedMediaStream?: MediaStream | null;
+  /** 입장 전에 분리된 장치를 다시 선택할 때 적용할 마지막 켜기·끄기 상태다. */
+  readonly initialInputEnabled?: Readonly<Record<'audio' | 'video', boolean>>;
   readonly mediaConstraints?: MediaStreamConstraints;
   readonly rtcConfiguration?: RTCConfiguration;
   readonly maxChatMessages?: number;
@@ -608,6 +610,7 @@ export class RoomSession {
       },
     });
     this.#rtcConfiguration = snapshotRtcConfiguration(options.rtcConfiguration);
+    Object.assign(this.#lastInputEnabled, options.initialInputEnabled);
     if (options.preparedMediaStream !== undefined) {
       this.#localStream = options.preparedMediaStream;
       if (this.#localStream !== null) {

@@ -3,6 +3,7 @@
 import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { RoomSession, RoomSessionOptions, RoomSessionSnapshot } from '@round/rtc-core';
+import { PrejoinMedia } from '@round/rtc-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rtcCoreMock = vi.hoisted(() => ({
@@ -168,6 +169,52 @@ describe('BATON room entry boundary', () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
+
+  it.each([true, false])(
+    '장치 확인 여부(%s)에 맞게 마지막 입력 선택을 세션에 전달한다',
+    async (checked) => {
+      vi.spyOn(PrejoinMedia.prototype, 'getInputEnabled').mockReturnValue({
+        audio: false,
+        video: true,
+      });
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          if (input === '/api/v1/auth/session') return authenticatedSession();
+          if (input === GRANT_ENDPOINT)
+            return response(200, {
+              expiresAt: 1_800_000_000,
+              refreshAfterSeconds: 240,
+            });
+          if (input === TURN_ENDPOINT)
+            return response(200, {
+              urls: ['turns:turn.example.test:5349'],
+              username: 'round-user',
+              credential: 'round-credential',
+              expiresAt: 1_800_000_000,
+              refreshAfterSeconds: 480,
+            });
+          throw new Error(`예상하지 않은 요청: ${String(input)}`);
+        }),
+      );
+      await act(async () => {
+        root = createRoot(container);
+        root.render(<App />);
+      });
+      await enterPrejoin(container);
+      if (checked) {
+        await act(async () => buttonWithText(container, '장치 확인')?.click());
+        await waitForState(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+      }
+      await act(async () => buttonWithText(container, '미디어 없이 입장')?.click());
+      await waitForState(() => expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce());
+      const options = rtcCoreMock.RoomSession.mock.calls[0]![0] as RoomSessionOptions;
+      expect(options.initialInputEnabled).toEqual(
+        checked ? { audio: false, video: true } : undefined,
+      );
+      expect(options.preparedMediaStream).toBeNull();
+    },
+  );
 
   it('completes session and room authorization before rendering prejoin or requesting media', async () => {
     let resolveGrant!: (value: Response) => void;

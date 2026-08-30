@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RoomSessionOptions } from '@round/rtc-core';
 import { ActiveRoom } from './components/ActiveRoom';
 import { LandingScreen } from './components/LandingScreen';
 import { PrejoinScreen } from './components/PrejoinScreen';
@@ -86,6 +87,8 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
   const [approvedRoomKey, setApprovedRoomKey] = useState<string | null>(null);
   const [activeRoomKey, setActiveRoomKey] = useState<string | null>(null);
   const [activeHostCapability, setActiveHostCapability] = useState<string | undefined>();
+  const [initialInputEnabled, setInitialInputEnabled] =
+    useState<RoomSessionOptions['initialInputEnabled']>();
   const [batonEntryGeneration, setBatonEntryGeneration] = useState(0);
   const preparedMediaStreamRef = useRef<MediaStream | null>(null);
 
@@ -181,10 +184,11 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
           showHostCapabilityInput={authMode !== 'baton'}
           authorizeBeforeEntryAction={authorizeBeforeEntryAction}
           onBack={goHome}
-          onJoin={(preparedMediaStream, hostCapability) => {
+          onJoin={(preparedMediaStream, hostCapability, inputEnabled) => {
             stopUnclaimedPreparedMedia();
             preparedMediaStreamRef.current = preparedMediaStream;
             setActiveHostCapability(hostCapability);
+            setInitialInputEnabled(inputEnabled);
             setActiveRoomKey(roomKey);
           }}
         />
@@ -198,6 +202,7 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
         displayName={displayName}
         roomId={roomId}
         hostCapability={activeHostCapability}
+        initialInputEnabled={initialInputEnabled}
         participationGrantLeaseManager={participationGrantLeaseManager}
         onParticipationGrantAccessFailure={onParticipationGrantAccessFailure}
         releasePreparedMediaStream={stopUnclaimedPreparedMedia}

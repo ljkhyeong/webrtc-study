@@ -1,7 +1,11 @@
 import { vi } from 'vitest';
 
 import { PROTOCOL_VERSION, utf8ByteLength } from '@round/protocol';
-import { RoomSession, type RoomSessionRecoveryOptions } from '../src/index.js';
+import {
+  RoomSession,
+  type RoomSessionOptions,
+  type RoomSessionRecoveryOptions,
+} from '../src/index.js';
 
 export const ROOM_ID = 'abcd-efgh-jkmp';
 export const OTHER_ROOM_ID = 'bcde-fghj-kmnp';
@@ -465,6 +469,7 @@ export function createHarness(
     getUserMedia?: () => Promise<MediaStream>;
     getDisplayMedia?: (constraints: DisplayMediaStreamOptions) => Promise<MediaStream>;
     preparedMediaStream?: MediaStream | null;
+    initialInputEnabled?: RoomSessionOptions['initialInputEnabled'];
     createId?: () => string;
     wallClockNow?: () => number;
     monotonicNow?: () => number;
@@ -488,6 +493,9 @@ export function createHarness(
     roomId: ROOM_ID,
     displayName: overrides.displayName ?? 'Jin',
     signalingUrl: 'ws://localhost:8787',
+    ...(overrides.initialInputEnabled === undefined
+      ? {}
+      : { initialInputEnabled: overrides.initialInputEnabled }),
     ...(overrides.hostCapability === undefined ? {} : { hostCapability: overrides.hostCapability }),
     webSocketFactory: () => {
       const socket = new FakeWebSocket();
