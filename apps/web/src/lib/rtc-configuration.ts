@@ -9,6 +9,11 @@ export async function loadRtcConfiguration(
   turnCredentialsUrl: string,
   signal?: AbortSignal,
 ): Promise<LoadedRtcConfiguration> {
+  const configuredPolicy = import.meta.env.VITE_ICE_TRANSPORT_POLICY?.trim() || 'all';
+  if (configuredPolicy !== 'all' && configuredPolicy !== 'relay') {
+    throw new Error('ICE 전송 정책 설정이 올바르지 않습니다.');
+  }
+
   const stunUrls = (import.meta.env.VITE_STUN_URLS ?? 'stun:stun.cloudflare.com:3478')
     .split(',')
     .map((url) => url.trim())
@@ -28,11 +33,6 @@ export async function loadRtcConfiguration(
   }
   if (credentials !== null) {
     iceServers.push(credentials.iceServer);
-  }
-
-  const configuredPolicy = import.meta.env.VITE_ICE_TRANSPORT_POLICY?.trim() || 'all';
-  if (configuredPolicy !== 'all' && configuredPolicy !== 'relay') {
-    throw new Error('ICE 전송 정책 설정이 올바르지 않습니다.');
   }
 
   const localDevelopment = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);

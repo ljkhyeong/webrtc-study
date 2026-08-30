@@ -88,5 +88,6 @@ describe('RTC configuration loading', () => {
     await expect(loadRtcConfiguration('/api/turn')).rejects.toThrow(
       'ICE 전송 정책 설정이 올바르지 않습니다.',
     );
+    expect(mockedLoadTurnCredentials).not.toHaveBeenCalled();
   });
 });
