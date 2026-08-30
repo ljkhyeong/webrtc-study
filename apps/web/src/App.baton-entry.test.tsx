@@ -173,6 +173,10 @@ describe('BATON room entry boundary', () => {
   it.each([true, false])(
     '장치 확인 여부(%s)에 맞게 마지막 입력 선택을 세션에 전달한다',
     async (checked) => {
+      vi.mocked(navigator.mediaDevices.enumerateDevices).mockResolvedValue([
+        { deviceId: 'mic', kind: 'audioinput', label: '마이크' } as MediaDeviceInfo,
+        { deviceId: 'camera', kind: 'videoinput', label: '카메라' } as MediaDeviceInfo,
+      ]);
       vi.spyOn(PrejoinMedia.prototype, 'getInputEnabled').mockReturnValue({
         audio: false,
         video: true,
@@ -205,6 +209,12 @@ describe('BATON room entry boundary', () => {
       if (checked) {
         await act(async () => buttonWithText(container, '장치 확인')?.click());
         await waitForState(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+        expect([...container.querySelectorAll('select')].map((select) => select.value)).toEqual([
+          '',
+          '',
+        ]);
+        expect(container.textContent).toContain('마이크를 선택해 주세요');
+        expect(container.textContent).toContain('카메라를 선택해 주세요');
       }
       await act(async () => buttonWithText(container, '미디어 없이 입장')?.click());
       await waitForState(() => expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce());

@@ -161,6 +161,53 @@ describe('PrejoinMedia', () => {
     },
   );
 
+  it.each(['audio', 'video'] as const)(
+    '%s 트랙이 없으면 같은 장치와 목록에서 자동 선택한 대체 장치를 다시 요청한다',
+    async (kind) => {
+      let track = new FakeTrack(kind, 'first');
+      let devices = [device(kind === 'audio' ? 'audioinput' : 'videoinput', 'first', '기존 장치')];
+      const mediaDevices = Object.assign(new EventTarget(), {
+        enumerateDevices: async () => devices,
+        getUserMedia: vi.fn(async (constraints: MediaStreamConstraints = {}) => {
+          if ((constraints.audio === false ? 'video' : 'audio') !== kind) {
+            throw namedError('NotFoundError');
+          }
+          return new FakeMediaStream([track]) as unknown as MediaStream;
+        }),
+      });
+      const controller = new PrejoinMedia({
+        mediaDevices,
+        mediaStreamFactory: () => new FakeMediaStream() as unknown as MediaStream,
+      });
+      const select = (id: string) =>
+        kind === 'audio' ? controller.selectAudioInput(id) : controller.selectVideoInput(id);
+      try {
+        await controller.checkDevices();
+        track.end();
+        track = new FakeTrack(kind, 'first');
+        await select('first');
+        expect(controller.getStream()?.getTracks()).toEqual([track]);
+
+        track.end();
+        devices = [device(kind === 'audio' ? 'audioinput' : 'videoinput', 'next', '대체 장치')];
+        mediaDevices.dispatchEvent(new Event('devicechange'));
+        await flushMicrotasks();
+        const snapshot = controller.getSnapshot();
+        expect(
+          kind === 'audio' ? snapshot.selectedAudioInputId : snapshot.selectedVideoInputId,
+        ).toBe('next');
+        track = new FakeTrack(kind, 'next');
+        await select('next');
+        expect(controller.getStream()?.getTracks()).toEqual([track]);
+        const calls = mediaDevices.getUserMedia.mock.calls.length;
+        await select('next');
+        expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(calls);
+      } finally {
+        controller.dispose();
+      }
+    },
+  );
+
   it('waits for an explicit check and keeps audio when video is busy', async () => {
     const audioTrack = new FakeTrack('audio', 'mic-default');
     const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints) => {

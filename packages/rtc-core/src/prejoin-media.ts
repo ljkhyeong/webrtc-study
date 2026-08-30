@@ -199,14 +199,20 @@ export class PrejoinMedia {
   }
 
   selectAudioInput(deviceId: string): Promise<PrejoinMediaSnapshot> {
-    if (deviceId.length === 0 || deviceId === this.#selectedAudioInputId) {
+    if (
+      deviceId.length === 0 ||
+      this.#liveTracks(this.#audioTracks()).some((track) => this.#trackDeviceId(track) === deviceId)
+    ) {
       return Promise.resolve(this.#snapshot);
     }
     return this.#runRequests([{ kind: 'audio', deviceId }]);
   }
 
   selectVideoInput(deviceId: string): Promise<PrejoinMediaSnapshot> {
-    if (deviceId.length === 0 || deviceId === this.#selectedVideoInputId) {
+    if (
+      deviceId.length === 0 ||
+      this.#liveTracks(this.#videoTracks()).some((track) => this.#trackDeviceId(track) === deviceId)
+    ) {
       return Promise.resolve(this.#snapshot);
     }
     return this.#runRequests([{ kind: 'video', deviceId }]);

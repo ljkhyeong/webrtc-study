@@ -298,7 +298,11 @@ export function PrejoinScreen({
                 <label>
                   <span>마이크</span>
                   <select
-                    value={snapshot.selectedAudioInputId ?? ''}
+                    value={
+                      snapshot.localMedia.audioAvailable
+                        ? (snapshot.selectedAudioInputId ?? '')
+                        : ''
+                    }
                     disabled={
                       isChecking || authorizationPending || snapshot.audioInputs.length === 0
                     }
@@ -309,6 +313,9 @@ export function PrejoinScreen({
                       }
                     }}
                   >
+                    {!snapshot.localMedia.audioAvailable && snapshot.audioInputs.length > 0 ? (
+                      <option value="">마이크를 선택해 주세요</option>
+                    ) : null}
                     {snapshot.audioInputs.length === 0 ? (
                       <option value="">사용 가능한 마이크 없음</option>
                     ) : (
@@ -324,7 +331,11 @@ export function PrejoinScreen({
                 <label>
                   <span>카메라</span>
                   <select
-                    value={snapshot.selectedVideoInputId ?? ''}
+                    value={
+                      snapshot.localMedia.videoAvailable
+                        ? (snapshot.selectedVideoInputId ?? '')
+                        : ''
+                    }
                     disabled={
                       isChecking || authorizationPending || snapshot.videoInputs.length === 0
                     }
@@ -335,6 +346,9 @@ export function PrejoinScreen({
                       }
                     }}
                   >
+                    {!snapshot.localMedia.videoAvailable && snapshot.videoInputs.length > 0 ? (
+                      <option value="">카메라를 선택해 주세요</option>
+                    ) : null}
                     {snapshot.videoInputs.length === 0 ? (
                       <option value="">사용 가능한 카메라 없음</option>
                     ) : (
