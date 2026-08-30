@@ -54,10 +54,42 @@ assert.deepEqual(
 );
 
 const serializedWorkflow = JSON.stringify(workflow);
+const tagAbsenceSteps = Object.values(workflow.jobs ?? {}).flatMap((job) =>
+  (job.steps ?? []).filter((step) =>
+    String(step.run ?? '').includes('bash ops/ci/assert-image-tags-absent.sh'),
+  ),
+);
 assert.equal(
-  (serializedWorkflow.match(/bash ops\/ci\/assert-image-tags-absent\.sh/g) ?? []).length,
-  2,
-  '최종 태그 미사용 검사는 공통 스크립트를 두 단계에서 실행해야 합니다.',
+  tagAbsenceSteps.length,
+  1,
+  '최종 태그 미사용 검사는 이미지 build 전 preflight에서 한 번 실행해야 합니다.',
+);
+assert.ok(
+  (preflight.steps ?? []).includes(tagAbsenceSteps[0]),
+  '최종 태그 미사용 검사는 이미지 build 전 preflight가 소유해야 합니다.',
+);
+const promotionSteps = (workflow.jobs?.promote?.steps ?? []).filter((step) =>
+  String(step.run ?? '').includes('bash ops/ci/promote-image-tags.sh'),
+);
+assert.equal(
+  promotionSteps.length,
+  1,
+  'promote job은 재시도 가능한 이미지 승격 helper를 한 번 실행해야 합니다.',
+);
+for (const imageRole of ['round-edge', 'round-baton-web', 'round-signaling']) {
+  assert.ok(
+    promotionSteps[0].run.includes(imageRole),
+    'promote job의 승격 대상 이미지가 빠졌습니다: ' + imageRole,
+  );
+}
+assert.ok(
+  promotionSteps[0].run.includes('${RELAY_DIGEST}'),
+  'promote job의 승격 대상에서 relay-only edge digest가 빠졌습니다.',
+);
+assert.equal(
+  serializedWorkflow.includes('docker buildx imagetools create'),
+  false,
+  'workflow가 검증된 승격 helper 밖에서 최종 태그를 직접 만들면 안 됩니다.',
 );
 if (serializedWorkflow.includes('github.ref_name')) {
   fail('repository_dispatch가 제공하지 않는 github.ref_name을 사용하면 안 됩니다.');

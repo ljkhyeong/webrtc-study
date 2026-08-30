@@ -420,40 +420,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 태그 재확인 및 원본 digest 검증
-        shell: bash
-        env:
-          BATON_WEB_DIGEST: ${{ needs.build-edge.outputs.baton_web_digest }}
-          EDGE_DIGEST: ${{ needs.build-edge.outputs.edge_digest }}
-          RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
-          SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
-          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
-          RELEASE_SHA: ${{ needs.preflight.outputs.release_sha }}
-        run: |
-          set -euo pipefail
-
-          references=(
-            "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}"
-            "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}"
-            "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}-relay"
-            "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}-relay"
-            "${IMAGE_NAMESPACE}/round-baton-web:${RELEASE_TAG}"
-            "${IMAGE_NAMESPACE}/round-baton-web:sha-${RELEASE_SHA}"
-            "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}"
-            "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}"
-          )
-          bash ops/ci/assert-image-tags-absent.sh "${references[@]}"
-
-          digest_sources=(
-            "${IMAGE_NAMESPACE}/round-edge@${EDGE_DIGEST}"
-            "${IMAGE_NAMESPACE}/round-edge@${RELAY_DIGEST}"
-            "${IMAGE_NAMESPACE}/round-baton-web@${BATON_WEB_DIGEST}"
-            "${IMAGE_NAMESPACE}/round-signaling@${SIGNALING_DIGEST}"
-          )
-          for source in "${digest_sources[@]}"; do
-            docker buildx imagetools inspect "$source" >/dev/null
-          done
-
       - name: 모든 이미지 digest를 최종 태그로 승격
         shell: bash
         env:
@@ -466,59 +432,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker buildx imagetools create \
-            --tag "${IMAGE_NAMESPACE}/round-baton-web:${RELEASE_TAG}" \
-            --tag "${IMAGE_NAMESPACE}/round-baton-web:sha-${RELEASE_SHA}" \
-            "${IMAGE_NAMESPACE}/round-baton-web@${BATON_WEB_DIGEST}"
-          docker buildx imagetools create \
-            --tag "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}" \
-            --tag "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}" \
-            "${IMAGE_NAMESPACE}/round-signaling@${SIGNALING_DIGEST}"
-          docker buildx imagetools create \
-            --tag "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}-relay" \
-            --tag "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}-relay" \
-            "${IMAGE_NAMESPACE}/round-edge@${RELAY_DIGEST}"
-          docker buildx imagetools create \
-            --tag "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}" \
-            --tag "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}" \
-            "${IMAGE_NAMESPACE}/round-edge@${EDGE_DIGEST}"
-
-      - name: 승격된 모든 태그 digest 검증
-        shell: bash
-        env:
-          BATON_WEB_DIGEST: ${{ needs.build-edge.outputs.baton_web_digest }}
-          EDGE_DIGEST: ${{ needs.build-edge.outputs.edge_digest }}
-          RELAY_DIGEST: ${{ needs.build-edge.outputs.relay_digest }}
-          SIGNALING_DIGEST: ${{ needs.build-signaling.outputs.digest }}
-          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
-          RELEASE_SHA: ${{ needs.preflight.outputs.release_sha }}
-        run: |
-          set -euo pipefail
-
-          verify_tag_digest() {
-            local reference="$1"
-            local expected_digest="$2"
-            local actual_digest
-
-            actual_digest="$(
-              docker buildx imagetools inspect "$reference" \
-                --format '{{.Manifest.Digest}}'
-            )"
-            if [[ "$actual_digest" != "$expected_digest" ]]; then
-              printf '승격된 태그 %s의 실제 digest는 %s이며 예상값은 %s입니다.\n' \
-                "$reference" "$actual_digest" "$expected_digest" >&2
-              return 1
-            fi
-          }
-
-          verify_tag_digest "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}" "$EDGE_DIGEST"
-          verify_tag_digest "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}" "$EDGE_DIGEST"
-          verify_tag_digest "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}-relay" "$RELAY_DIGEST"
-          verify_tag_digest "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}-relay" "$RELAY_DIGEST"
-          verify_tag_digest "${IMAGE_NAMESPACE}/round-baton-web:${RELEASE_TAG}" "$BATON_WEB_DIGEST"
-          verify_tag_digest "${IMAGE_NAMESPACE}/round-baton-web:sha-${RELEASE_SHA}" "$BATON_WEB_DIGEST"
-          verify_tag_digest "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}" "$SIGNALING_DIGEST"
-          verify_tag_digest "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}" "$SIGNALING_DIGEST"
+          bash ops/ci/promote-image-tags.sh \
+            "${IMAGE_NAMESPACE}/round-baton-web@${BATON_WEB_DIGEST}" \
+            "${IMAGE_NAMESPACE}/round-baton-web:${RELEASE_TAG}" \
+            "${IMAGE_NAMESPACE}/round-baton-web:sha-${RELEASE_SHA}" \
+            "${IMAGE_NAMESPACE}/round-signaling@${SIGNALING_DIGEST}" \
+            "${IMAGE_NAMESPACE}/round-signaling:${RELEASE_TAG}" \
+            "${IMAGE_NAMESPACE}/round-signaling:sha-${RELEASE_SHA}" \
+            "${IMAGE_NAMESPACE}/round-edge@${RELAY_DIGEST}" \
+            "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}-relay" \
+            "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}-relay" \
+            "${IMAGE_NAMESPACE}/round-edge@${EDGE_DIGEST}" \
+            "${IMAGE_NAMESPACE}/round-edge:${RELEASE_TAG}" \
+            "${IMAGE_NAMESPACE}/round-edge:sha-${RELEASE_SHA}"
 
       - name: 승격된 이미지 digest 기록
         shell: bash
