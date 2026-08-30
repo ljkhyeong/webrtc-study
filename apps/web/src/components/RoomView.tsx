@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent, type SyntheticEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type SyntheticEvent,
+} from 'react';
 import type {
   ChatDeliveryState,
   ChatMessage,
@@ -300,7 +307,8 @@ export function RoomView({
     [],
   );
 
-  useEffect(() => {
+  // 자동 스크롤 이벤트보다 먼저 새 메시지 높이에 맞춰 스크롤 위치를 갱신한다.
+  useLayoutEffect(() => {
     const currentLocalDeliveryStates = collectLocalDeliveryStates(messages);
     if (!hasObservedMessages.current) {
       hasObservedMessages.current = true;

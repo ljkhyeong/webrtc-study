@@ -66,6 +66,13 @@ test('한글 조합 입력과 양방향 채팅 전송 상태를 처리한다', a
     expect(await messages.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
       true,
     );
+    await expect
+      .poll(() =>
+        messages.evaluate(
+          (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+        ),
+      )
+      .toBeLessThanOrEqual(32);
     await messages.evaluate((element) => {
       element.scrollTop = 80;
       element.dispatchEvent(new Event('scroll'));
