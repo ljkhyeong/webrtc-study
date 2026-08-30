@@ -399,15 +399,7 @@ public class SignalingService implements SmartLifecycle {
 							peer.expectedPongPayload = challenge;
 						}
 					}
-					case PING_QUEUED -> {
-						if (elapsedAtLeast(
-								nowNanos,
-								peer.heartbeatPhaseStartedAtNanos,
-								heartbeatIntervalNanos)) {
-							closeForHeartbeatTimeoutLocked(peer, workPlan);
-						}
-					}
-					case AWAITING_PONG -> {
+					case PING_QUEUED, AWAITING_PONG -> {
 						if (elapsedAtLeast(
 								nowNanos,
 								peer.heartbeatPhaseStartedAtNanos,
