@@ -13,7 +13,8 @@
 		format filter {
 			request>headers delete
 			request>uri delete
-			remote_ip hash
+			request>remote_ip hash
+			request>client_ip hash
 			wrap json
 		}
 	}

@@ -64,9 +64,13 @@ grep -Fxq 'ops/macos-pilot.credentials' .dockerignore || {
 
 fixture_dir=$(mktemp -d)
 baton_web_runtime_container=
+caddy_log_container=
 cleanup() {
   if [[ -n "$baton_web_runtime_container" ]]; then
     docker rm -f "$baton_web_runtime_container" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$caddy_log_container" ]]; then
+    docker rm -f "$caddy_log_container" >/dev/null 2>&1 || true
   fi
   rm -rf -- "$fixture_dir"
 }
@@ -215,7 +219,9 @@ docker run --rm \
         and ($rate.rate_limits.pilot_client.match[0].not[0].path == ["/healthz"])
         and ($rate.rate_limits.pilot_client.match[0].header.Authorization == ["*"])
         and (($rate.rate_limits | keys) == ["pilot_client"])
-        and (.logging.logs.default.encoder.fields.remote_ip.filter == "hash")
+        and (.logging.logs.default.encoder.fields["request>remote_ip"].filter == "hash")
+        and (.logging.logs.default.encoder.fields["request>client_ip"].filter == "hash")
+        and ((.logging.logs.default.encoder.fields | has("remote_ip")) | not)
     ' >/dev/null
 
 printf 'Verifying the macOS pilot mobile transport exception...\n'
@@ -228,7 +234,9 @@ docker run --rm \
   "$caddy_validation_image" \
   caddy adapt --config /etc/caddy/Caddyfile.macos-pilot \
   | jq -e '
-      (.logging.logs.default.encoder.fields.remote_ip.filter == "hash")
+      (.logging.logs.default.encoder.fields["request>remote_ip"].filter == "hash")
+      and (.logging.logs.default.encoder.fields["request>client_ip"].filter == "hash")
+      and ((.logging.logs.default.encoder.fields | has("remote_ip")) | not)
       and ([.. | objects
         | select((.handle? // []) | any(.handler? == "authentication"))
         | .match[0].not[0].path] == [[
@@ -237,6 +245,50 @@ docker run --rm \
           "/api/turn-credentials"
         ]])
     ' >/dev/null
+
+printf 'Verifying that Caddy access logs do not expose client addresses...\n'
+caddy_log_container=$(
+  docker run --detach \
+    --publish 127.0.0.1::8081 \
+    -e ACME_EMAIL=ci@round.invalid \
+    -e ROUND_ACCESS_PASSWORD_HASH \
+    -e ROUND_ACCESS_USER \
+    -e ROUND_DOMAIN=http://127.0.0.1:8081 \
+    "$caddy_validation_image"
+)
+caddy_log_port=$(
+  docker inspect \
+    --format '{{(index (index .NetworkSettings.Ports "8081/tcp") 0).HostPort}}' \
+    "$caddy_log_container"
+)
+caddy_log_ready=false
+for _ in {1..30}; do
+  if curl \
+    --silent \
+    --output /dev/null \
+    --connect-timeout 1 \
+    --max-time 2 \
+    "http://127.0.0.1:$caddy_log_port/healthz"; then
+    caddy_log_ready=true
+    break
+  fi
+  sleep 1
+done
+"$caddy_log_ready" || {
+  printf 'deployment validation: Caddy access log fixture did not start\n' >&2
+  exit 1
+}
+docker logs "$caddy_log_container" 2>&1 \
+  | jq -s -e '
+      [.[] | select(.request?)]
+      | last
+      | (.request.remote_ip | test("^[0-9a-f]{8,64}$"))
+        and (.request.client_ip | test("^[0-9a-f]{8,64}$"))
+        and ((.request | has("headers")) | not)
+        and ((.request | has("uri")) | not)
+    ' >/dev/null
+docker rm -f "$caddy_log_container" >/dev/null
+caddy_log_container=
 
 printf 'Checking the entire Dockerfile...\n'
 docker build --check .
