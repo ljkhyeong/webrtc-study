@@ -96,5 +96,34 @@ test('한글 조합 입력과 양방향 채팅 전송 상태를 처리한다', a
         (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
       ),
     ).toBeLessThanOrEqual(32);
+
+    const sharedText = '스터디 자료\nhttps://example.test/guide?chapter=3';
+    await secondComposer.fill(sharedText);
+    await secondComposer.press('Enter');
+    const sharedMessage = first.locator('article.chat-message', { hasText: '스터디 자료' });
+    const link = sharedMessage.getByRole('link');
+    await expect(link).toHaveAttribute('href', 'https://example.test/guide?chapter=3');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(link).toHaveAttribute('target', '_blank');
+    await first
+      .context()
+      .grantPermissions(['camera', 'microphone', 'clipboard-read', 'clipboard-write']);
+    await sharedMessage.getByRole('button', { name: '메시지 복사' }).click();
+    await expect(sharedMessage.getByRole('status')).toHaveText('메시지를 복사했습니다.');
+    expect(await first.evaluate(() => navigator.clipboard.readText())).toBe(sharedText);
+
+    await first
+      .context()
+      .route('https://example.test/**', (route) => route.fulfill({ body: '스터디 자료' }));
+    const roomUrl = first.url();
+    const opened = first.waitForEvent('popup');
+    await link.click();
+    const popup = await opened;
+    await popup.waitForLoadState();
+    expect(await popup.evaluate(() => window.opener === null && document.referrer === '')).toBe(
+      true,
+    );
+    expect(first.url()).toBe(roomUrl);
+    await popup.close();
   });
 });

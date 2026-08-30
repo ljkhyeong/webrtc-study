@@ -12,6 +12,8 @@
   "dependencies": {
     "@round/protocol": "0.1.0",
     "@round/rtc-core": "0.1.0",
+    "linkify-react": "4.3.3",
+    "linkifyjs": "4.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },

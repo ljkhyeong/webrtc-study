@@ -30,6 +30,7 @@ import {
 } from './Icons';
 import { type AudioOutputSelection, type ParticipantView, VideoTile } from './VideoTile';
 import { canonicalRoomUrl } from '../lib/room';
+import { ChatMessageContent } from './ChatMessageContent';
 
 type RoomSystemNoticeId =
   | 'session-error'
@@ -747,7 +748,7 @@ export function RoomView({
                       deliveryState={chatMessage.deliveryState}
                     />
                   </header>
-                  <p>{chatMessage.text}</p>
+                  <ChatMessageContent text={chatMessage.text} />
                 </article>
               ))
             )}

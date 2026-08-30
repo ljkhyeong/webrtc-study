@@ -2062,6 +2062,45 @@ textarea:focus-visible {
   background: #286e5c;
 }
 
+.chat-message a {
+  color: #a4e1ff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.chat-message--mine a {
+  color: #e2fbff;
+}
+
+.chat-message__actions {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.65rem;
+  line-height: 1.5;
+}
+
+.chat-message__actions button {
+  flex-shrink: 0;
+  min-height: 28px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  color: #aab7ba;
+  background: transparent;
+  cursor: pointer;
+}
+
+.chat-message__actions button:hover {
+  color: white;
+  background: #223038;
+}
+
+.chat-message__actions [role='alert'] {
+  color: #ffb6a9;
+}
+
 .chat-composer {
   position: relative;
   display: grid;
