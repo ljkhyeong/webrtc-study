@@ -10,6 +10,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.personal.round.config.TestProperties;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -33,6 +35,7 @@ class CloudflareTurnClientTest {
 						.body("""
 								{
 								  "iceServers": [
+								    null,
 								    {
 								      "urls": ["stun:stun.cloudflare.com:3478"]
 								    },
@@ -65,8 +68,12 @@ class CloudflareTurnClientTest {
 		server.verify();
 	}
 
-	@Test
-	void rejectsAResponseWithoutUsableTurnCredentials() {
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"{\"iceServers\":[{\"urls\":[\"stun:stun.cloudflare.com:3478\"]}]}",
+			"{\"iceServers\":[null]}"
+	})
+	void rejectsAResponseWithoutUsableTurnCredentials(String responseBody) {
 		RestClient.Builder builder = RestClient.builder();
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 		server.expect(requestTo(
@@ -74,13 +81,7 @@ class CloudflareTurnClientTest {
 							+ "generate-ice-servers"))
 				.andRespond(withStatus(HttpStatus.CREATED)
 						.contentType(MediaType.APPLICATION_JSON)
-						.body("""
-								{
-								  "iceServers": [
-								    {"urls": ["stun:stun.cloudflare.com:3478"]}
-								  ]
-								}
-								"""));
+						.body(responseBody));
 		CloudflareTurnClient client = new CloudflareTurnClient(
 				builder,
 				TestProperties.turn("test-key", "test-token"));

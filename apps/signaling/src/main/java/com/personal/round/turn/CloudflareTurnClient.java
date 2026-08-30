@@ -2,6 +2,7 @@ package com.personal.round.turn;
 
 import com.personal.round.config.TurnProperties;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -49,6 +50,7 @@ public class CloudflareTurnClient {
 		}
 
 		return response.iceServers().stream()
+				.filter(Objects::nonNull)
 				.filter(server -> server.username() != null && !server.username().isBlank())
 				.filter(server -> server.credential() != null && !server.credential().isBlank())
 				.map(server -> new Credentials(
