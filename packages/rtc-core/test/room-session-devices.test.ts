@@ -221,6 +221,31 @@ describe('통화 중 입력 장치 교체', () => {
     expect(h.session.getSnapshot().screenSharing).toBe(true);
   });
 
+  it.each(['브라우저', '앱'] as const)(
+    '화면 공유 중 마이크를 교체한 뒤 %s에서 공유를 종료하면 경고와 화면 리스너가 남지 않는다',
+    async (source) => {
+      const h = deviceHarness();
+      await joinSession(h, [{ peerId: 'peer-a', displayName: '참가자' }]);
+      expect(await h.session.startScreenShare()).toBe('started');
+      const screenTrack = h.session.getLocalStream()!.getVideoTracks()[0] as unknown as FakeTrack;
+      expect(await h.session.selectInputDevice('audio', 'mic')).toBe(true);
+
+      if (source === '브라우저') {
+        screenTrack.end();
+        await flushMicrotasks();
+      } else {
+        expect(await h.session.stopScreenShare()).toBe(true);
+      }
+
+      expect(screenTrack.endedListenerCount()).toBe(0);
+      expect(h.session.getSnapshot()).toMatchObject({ screenSharing: false, warning: null });
+      expect(
+        h.peerConnections[0]!.senders.find((sender) => sender.track?.kind === 'video')?.track,
+      ).toBe(h.videoTrack);
+      expect(h.next.endedListenerCount()).toBe(1);
+    },
+  );
+
   it('교체 도중 트랙이 종료되면 기존 트랙으로 복원한다', async () => {
     const h = deviceHarness();
     await joinSession(h, [{ peerId: 'peer-a', displayName: '참가자' }]);

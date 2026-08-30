@@ -611,7 +611,7 @@ export class RoomSession {
       if (this.#localStream !== null) {
         this.#normalizeLocalVideoTracks(this.#localStream);
       }
-      this.#attachLocalTrackEndedListeners();
+      this.#attachLocalTrackEndedListeners(this.#localStream?.getTracks() ?? []);
     }
     this.#snapshot = this.#buildSnapshot();
   }
@@ -892,7 +892,7 @@ export class RoomSession {
       this.#localStream = stream;
       next.enabled = operation.enabled;
       committed = true;
-      this.#attachLocalTrackEndedListeners();
+      this.#attachLocalTrackEndedListeners([next]);
       if (this.#warning?.code === 'local-media-ended') {
         this.#warning = null;
         this.#warningPeerId = null;
@@ -1520,7 +1520,7 @@ export class RoomSession {
       }
       this.#normalizeLocalVideoTracks(stream);
       this.#localStream = stream;
-      this.#attachLocalTrackEndedListeners();
+      this.#attachLocalTrackEndedListeners(stream.getTracks());
     } catch (error) {
       this.#warning = {
         code: 'media-permission-denied',
@@ -3708,8 +3708,8 @@ export class RoomSession {
     }
   }
 
-  #attachLocalTrackEndedListeners(): void {
-    for (const track of [...(this.#localStream?.getTracks() ?? [])]) {
+  #attachLocalTrackEndedListeners(tracks: readonly MediaStreamTrack[]): void {
+    for (const track of [...tracks]) {
       if (this.#localTrackEndedListeners.has(track)) {
         continue;
       }
