@@ -189,6 +189,8 @@ class ConnectionAdmissionHandshakeHandlerTest {
 		nativeRequest.addHeader(HttpHeaders.PROXY_AUTHORIZATION, "Basic proxy-secret");
 		nativeRequest.addHeader(HttpHeaders.ORIGIN, "https://study.example.com");
 		nativeRequest.addHeader(HttpHeaders.UPGRADE, "websocket");
+		nativeRequest.addHeader(HttpHeaders.CONNECTION, "Upgrade");
+		nativeRequest.addHeader("Sec-WebSocket-Key", "test-key");
 		nativeRequest.setCookies(
 				new Cookie("__Secure-round_access", "raw-jwt"),
 				new Cookie("preference", "compact"));
@@ -228,7 +230,11 @@ class ConnectionAdmissionHandshakeHandlerTest {
 						HttpHeaders.COOKIE,
 						HttpHeaders.AUTHORIZATION,
 						HttpHeaders.PROXY_AUTHORIZATION)
-				.contains(HttpHeaders.ORIGIN, HttpHeaders.UPGRADE);
+				.contains(
+						HttpHeaders.ORIGIN,
+						HttpHeaders.UPGRADE,
+						HttpHeaders.CONNECTION,
+						"Sec-WebSocket-Key");
 		assertThat(sanitizedNativeRequest.getHeader(HttpHeaders.COOKIE)).isNull();
 		assertThat(Collections.list(
 				sanitizedNativeRequest.getHeaders(HttpHeaders.AUTHORIZATION))).isEmpty();
@@ -237,6 +243,10 @@ class ConnectionAdmissionHandshakeHandlerTest {
 				.isEqualTo("https://study.example.com");
 		assertThat(sanitizedNativeRequest.getHeader(HttpHeaders.UPGRADE))
 				.isEqualTo("websocket");
+		assertThat(sanitizedNativeRequest.getHeader(HttpHeaders.CONNECTION))
+				.isEqualTo("Upgrade");
+		assertThat(sanitizedNativeRequest.getHeader("Sec-WebSocket-Key"))
+				.isEqualTo("test-key");
 		assertThat(sanitizedNativeRequest.getUserPrincipal().getName())
 				.isEqualTo("member-42");
 		assertThat(sanitizedNativeRequest.getUserPrincipal())
