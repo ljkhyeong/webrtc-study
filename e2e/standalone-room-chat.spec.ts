@@ -55,5 +55,39 @@ test('한글 조합 입력과 양방향 채팅 전송 상태를 처리한다', a
     });
     await expect(secondOutgoingMessage).toHaveAttribute('data-delivery-state', 'sent');
     await expect(secondOutgoingMessage).not.toContainText('수신 확인 실패');
+
+    const secondComposer = second.getByRole('textbox', { name: '메시지', exact: true });
+    for (let index = 0; index < 8; index += 1) {
+      await secondComposer.fill(`이전 대화 ${index} ${'내용을 확인합니다. '.repeat(30)}`);
+      await secondComposer.press('Enter');
+    }
+    await expect(first.locator('article.chat-message')).toHaveCount(11);
+    const messages = first.locator('.chat-messages');
+    expect(await messages.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
+      true,
+    );
+    await messages.evaluate((element) => {
+      element.scrollTop = 80;
+      element.dispatchEvent(new Event('scroll'));
+    });
+    await expect(
+      first.getByRole('button', { name: '최신 대화로 이동', exact: true }),
+    ).toBeVisible();
+    const readingPosition = await messages.evaluate((element) => element.scrollTop);
+    await secondComposer.fill('새 메시지가 와도 읽던 위치를 유지합니다.');
+    await secondComposer.press('Enter');
+    const latest = first.getByRole('button', {
+      name: '새 메시지 1개 · 최신 대화로 이동',
+      exact: true,
+    });
+    await expect(latest).toBeVisible();
+    expect(await messages.evaluate((element) => element.scrollTop)).toBe(readingPosition);
+    await latest.click();
+    await expect(latest).toHaveCount(0);
+    expect(
+      await messages.evaluate(
+        (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+      ),
+    ).toBeLessThanOrEqual(32);
   });
 });
