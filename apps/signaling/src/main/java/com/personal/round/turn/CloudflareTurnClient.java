@@ -2,7 +2,6 @@ package com.personal.round.turn;
 
 import com.personal.round.config.TurnProperties;
 import java.util.List;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -29,9 +28,7 @@ public class CloudflareTurnClient {
 					.uri(
 							"/v1/turn/keys/{keyId}/credentials/generate-ice-servers",
 							properties.cloudflareKeyId())
-					.header(
-							HttpHeaders.AUTHORIZATION,
-							"Bearer " + properties.cloudflareApiToken())
+					.headers(headers -> headers.setBearerAuth(properties.cloudflareApiToken()))
 					.contentType(MediaType.APPLICATION_JSON)
 					.body(new CredentialRequest(ttlSeconds))
 					.retrieve()
