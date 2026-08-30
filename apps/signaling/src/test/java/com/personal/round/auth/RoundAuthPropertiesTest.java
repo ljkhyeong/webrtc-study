@@ -45,6 +45,11 @@ class RoundAuthPropertiesTest {
 		assertThat(properties.jwkSetUri())
 				.isEqualTo("https://baton.example/oauth2/jwks.json");
 		assertThat(validator.validate(properties)).isEmpty();
+		assertThat(properties.toString()).isEqualTo(
+				"RoundAuthProperties[mode=BATON, cookieName=__Secure-round_access, "
+						+ "issuer=https://baton.example/oauth2/issuer, audience=round, "
+						+ "jwkSetUri=https://baton.example/oauth2/jwks.json, "
+						+ "standaloneHostTokenSha256=<redacted>, maxGrantLifetime=PT5M]");
 	}
 
 	@Test

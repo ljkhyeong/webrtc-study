@@ -79,8 +79,8 @@ public record RoundAuthProperties(
 
 	@Override
 	public String toString() {
-		return "RoundAuthProperties[mode=%s, cookieName=%s, issuer=%s, audience=%s, "
-				+ "jwkSetUri=%s, standaloneHostTokenSha256=<redacted>, maxGrantLifetime=%s]"
+		return ("RoundAuthProperties[mode=%s, cookieName=%s, issuer=%s, audience=%s, "
+				+ "jwkSetUri=%s, standaloneHostTokenSha256=<redacted>, maxGrantLifetime=%s]")
 				.formatted(mode, cookieName, issuer, audience, jwkSetUri, maxGrantLifetime);
 	}
 
