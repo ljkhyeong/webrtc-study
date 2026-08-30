@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ChatMessage } from '@round/rtc-core';
 import { describe, expect, it, vi } from 'vitest';
@@ -163,9 +165,12 @@ describe('RoomView connection state', () => {
   });
 
   it('makes the closed chat panel and its controls inert', () => {
-    const markup = renderRoom();
+    const renderedDocument = new DOMParser().parseFromString(renderRoom(), 'text/html');
+    const chatPanel = renderedDocument.querySelector('.chat-panel');
 
-    expect(markup).toContain('class="chat-panel" aria-hidden="true" inert=""');
+    expect(chatPanel).not.toBeNull();
+    expect(chatPanel?.getAttribute('aria-hidden')).toBe('true');
+    expect(chatPanel?.hasAttribute('inert')).toBe(true);
   });
 
   it('offers device selection for unavailable local media after joining', () => {
@@ -177,13 +182,22 @@ describe('RoomView connection state', () => {
       videoAvailable: false,
       videoEnabled: false,
     });
+    const renderedDocument = new DOMParser().parseFromString(markup, 'text/html');
+    const microphoneButton = renderedDocument.querySelector<HTMLButtonElement>(
+      'button[aria-label="마이크 장치 다시 선택"]',
+    );
+    const cameraButton = renderedDocument.querySelector<HTMLButtonElement>(
+      'button[aria-label="카메라 장치 다시 선택"]',
+    );
+    const screenShareButton = renderedDocument.querySelector<HTMLButtonElement>(
+      'button[aria-label="이 브라우저는 화면 공유를 지원하지 않음"]',
+    );
 
-    expect(markup).toContain('aria-label="마이크 장치 다시 선택"');
-    expect(markup).toContain('aria-label="카메라 장치 다시 선택"');
     expect(markup).toContain('마이크 연결');
     expect(markup).toContain('카메라 연결');
-    expect(markup).toContain('이 브라우저는 화면 공유를 지원하지 않음');
-    expect(markup.match(/disabled=""/g)).toHaveLength(2);
+    expect(microphoneButton?.disabled).toBe(false);
+    expect(cameraButton?.disabled).toBe(false);
+    expect(screenShareButton?.disabled).toBe(true);
   });
 
   it('shows device recovery only for a recoverable local media warning', () => {

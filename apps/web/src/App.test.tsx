@@ -124,6 +124,16 @@ describe('App pre-join boundary', () => {
     expect(warning).not.toContain('현재 통화 정보는 유지');
   });
 
+  it('describes a full room without hard-coding deployment capacity', () => {
+    const message = roomErrorMessage({
+      code: 'ROOM_FULL',
+      message: 'This room is limited to 4 participants.',
+    });
+
+    expect(message).toBe('이 스터디룸은 최대 인원에 도달했습니다.');
+    expect(message).not.toContain('4');
+  });
+
   it('describes an exhausted peer connection as a partial actionable failure', () => {
     const timeoutWarning = roomWarningMessage({
       code: 'peer-connection-timeout',
