@@ -2615,10 +2615,7 @@ export class RoomSession {
       if (!this.#isCurrentPeer(peer) || this.#status !== 'active') {
         return;
       }
-      if (
-        peer.connection.connectionState === 'connected' &&
-        (!peer.recovering || peer.channel?.readyState === 'open')
-      ) {
+      if (peer.connection.connectionState === 'connected' && peer.channel?.readyState === 'open') {
         this.#finishPeerRecovery(peer);
         return;
       }
@@ -2729,7 +2726,7 @@ export class RoomSession {
   }
 
   #finishPeerRecovery(peer: PeerContext): void {
-    if (peer.recovering && peer.channel?.readyState !== 'open') {
+    if (peer.connection.connectionState !== 'connected' || peer.channel?.readyState !== 'open') {
       return;
     }
     const shouldFlush =
@@ -2909,7 +2906,7 @@ export class RoomSession {
     if (!this.#isCurrentPeer(peer) || peer.channel !== channel || channel.readyState !== 'open') {
       return;
     }
-    if (peer.recovering && peer.connection.connectionState === 'connected') {
+    if (peer.connection.connectionState === 'connected') {
       this.#finishPeerRecovery(peer);
       return;
     }

@@ -168,12 +168,63 @@ describe('RoomSession', () => {
       await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
       await answerPeer(harness, 'z-peer');
       const peer = harness.peerConnections[0];
+      const channel = peer?.channels[0];
+      if (channel === undefined) {
+        throw new Error('Expected an initial DataChannel');
+      }
+      channel.readyState = 'connecting';
 
       peer?.setConnectionState('connected');
+      await vi.advanceTimersByTimeAsync(19);
+      channel.open();
       await vi.advanceTimersByTimeAsync(100);
 
       expect(peer?.closed).toBe(false);
       expect(peer?.offerOptions).toEqual([undefined]);
+      expect(harness.peerConnections).toHaveLength(1);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: null,
+        error: null,
+      });
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the initial connection deadline until the data channel opens', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          peerConnectionTimeoutMs: 20,
+          peerRecoveryTimeoutMs: 30,
+        },
+      });
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      await answerPeer(harness, 'z-peer');
+      const peer = harness.peerConnections[0];
+      const channel = peer?.channels[0];
+      if (channel === undefined) {
+        throw new Error('Expected an initial DataChannel');
+      }
+      channel.readyState = 'connecting';
+
+      peer?.setConnectionState('connected');
+      await vi.advanceTimersByTimeAsync(20);
+      await flushMicrotasks();
+
+      expect(peer?.offerOptions).toEqual([undefined, { iceRestart: true }]);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'active',
+        warning: { code: 'peer-connection-recovering' },
+      });
+
+      channel.open();
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(peer?.closed).toBe(false);
       expect(harness.peerConnections).toHaveLength(1);
       expect(harness.session.getSnapshot()).toMatchObject({
         status: 'active',
