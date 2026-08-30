@@ -1934,6 +1934,7 @@ textarea:focus-visible {
 }
 
 .chat-composer {
+  position: relative;
   display: grid;
   min-height: 76px;
   padding: 12px;
@@ -1985,6 +1986,21 @@ textarea:focus-visible {
 
 .chat-composer svg {
   width: 18px;
+}
+
+.chat-composer .chat-latest {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 12px;
+  width: calc(100% - 24px);
+  height: auto;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid #49b58e;
+  border-radius: 8px;
+  color: #f3f7f6;
+  background: #286e5c;
+  font-size: 0.72rem;
 }
 
 .control-dock {

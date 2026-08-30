@@ -272,6 +272,7 @@ export function RoomView({
   const [inviteCopyState, setInviteCopyState] = useState<InviteCopyState>({ status: 'idle' });
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [unseenDeliveryIssueCount, setUnseenDeliveryIssueCount] = useState(0);
+  const [followingChat, setFollowingChat] = useState(true);
   const [connectionDiagnostics, setConnectionDiagnostics] = useState<ConnectionDiagnosticsState>({
     status: 'idle',
   });
@@ -283,7 +284,8 @@ export function RoomView({
   );
   const previousLocalDeliveryStates = useRef(collectLocalDeliveryStates(messages));
   const hasObservedMessages = useRef(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const followingChatRef = useRef(true);
   const chatCompositionActive = useRef(false);
   const chatButtonRef = useRef<HTMLButtonElement>(null);
   const restoreChatFocus = useRef(false);
@@ -306,7 +308,7 @@ export function RoomView({
       previousLocalDeliveryStates.current = currentLocalDeliveryStates;
       return;
     }
-    if (!chatOpen) {
+    if (!chatOpen || !followingChatRef.current) {
       const newRemoteMessages = countNewRemoteMessages(messages, previousLastMessage.current);
       const newDeliveryIssues = countNewLocalDeliveryIssues(
         messages,
@@ -314,6 +316,12 @@ export function RoomView({
       );
       setUnreadMessageCount((count) => count + newRemoteMessages);
       setUnseenDeliveryIssueCount((count) => count + newDeliveryIssues);
+    } else if (
+      messages.at(-1)?.id !== previousLastMessage.current?.id ||
+      messages.at(-1)?.senderId !== previousLastMessage.current?.senderId
+    ) {
+      const list = messagesRef.current;
+      if (list !== null) list.scrollTop = list.scrollHeight;
     }
     previousLastMessage.current = chatMessageIdentity(messages.at(-1));
     previousLocalDeliveryStates.current = currentLocalDeliveryStates;
@@ -328,10 +336,34 @@ export function RoomView({
       return;
     }
 
+    followingChatRef.current = true;
+    setFollowingChat(true);
     setUnreadMessageCount(0);
     setUnseenDeliveryIssueCount(0);
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [chatOpen, messages]);
+    const list = messagesRef.current;
+    if (list !== null) list.scrollTop = list.scrollHeight;
+  }, [chatOpen]);
+
+  const showLatestMessages = () => {
+    followingChatRef.current = true;
+    setFollowingChat(true);
+    setUnreadMessageCount(0);
+    setUnseenDeliveryIssueCount(0);
+    const list = messagesRef.current;
+    if (list !== null) list.scrollTop = list.scrollHeight;
+  };
+
+  const handleChatScroll = () => {
+    const list = messagesRef.current;
+    if (list === null || !chatOpen) return;
+    const following = list.scrollHeight - list.scrollTop - list.clientHeight <= 32;
+    followingChatRef.current = following;
+    setFollowingChat(following);
+    if (following) {
+      setUnreadMessageCount(0);
+      setUnseenDeliveryIssueCount(0);
+    }
+  };
 
   const handleCopy = async () => {
     if (inviteCopyResetTimer.current !== null) {
@@ -359,6 +391,7 @@ export function RoomView({
 
     if (onSendMessage(message)) {
       setMessage('');
+      showLatestMessages();
     }
   };
 
@@ -632,7 +665,12 @@ export function RoomView({
             </button>
           </header>
 
-          <div className="chat-messages" aria-live="polite">
+          <div
+            className="chat-messages"
+            ref={messagesRef}
+            onScroll={handleChatScroll}
+            aria-live="polite"
+          >
             {messages.length === 0 ? (
               <div className="chat-empty">
                 <MessageIcon />
@@ -657,10 +695,16 @@ export function RoomView({
                 </article>
               ))
             )}
-            <div ref={messagesEndRef} />
           </div>
 
           <form className="chat-composer" onSubmit={handleSubmit}>
+            {!followingChat ? (
+              <button className="chat-latest" type="button" onClick={showLatestMessages}>
+                {unreadMessageCount > 0 ? `새 메시지 ${unreadMessageCount}개 · ` : ''}
+                {unseenDeliveryIssueCount > 0 ? `전송 문제 ${unseenDeliveryIssueCount}건 · ` : ''}
+                최신 대화로 이동
+              </button>
+            ) : null}
             <label className="sr-only" htmlFor="chat-message">
               메시지
             </label>

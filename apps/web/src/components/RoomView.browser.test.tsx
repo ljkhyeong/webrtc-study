@@ -90,6 +90,78 @@ describe('RoomView 브라우저 동작', () => {
     expect(document.activeElement).toBe(toggle);
   });
 
+  it('이전 대화를 읽을 때 위치를 유지하고 최신 대화로 이동한 뒤에만 새 메시지를 따라간다', () => {
+    const props = roomViewProps();
+    const message = {
+      id: 'first',
+      senderId: 'peer',
+      senderName: '참가자',
+      text: '첫 메시지',
+      sentAt: 1,
+      isLocal: false,
+      deliveryState: 'received' as const,
+    };
+    act(() => root.render(<RoomView {...props} messages={[message]} />));
+    const list = container.querySelector<HTMLDivElement>('.chat-messages')!;
+    let height = 1000;
+    Object.defineProperties(list, {
+      scrollHeight: { get: () => height },
+      clientHeight: { value: 200 },
+    });
+    act(() =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="채팅 열기"]')!.click(),
+    );
+    expect(list.scrollTop).toBe(1000);
+
+    act(() => {
+      list.scrollTop = 100;
+      list.dispatchEvent(new Event('scroll'));
+    });
+    const messages = [message, { ...message, id: 'second' }];
+    height = 1200;
+    act(() => root.render(<RoomView {...props} messages={messages} />));
+    expect(list.scrollTop).toBe(100);
+    expect(container.querySelector('.chat-latest')?.textContent).toContain('새 메시지 1개');
+
+    act(() => root.render(<RoomView {...props} messages={[...messages]} />));
+    expect(list.scrollTop).toBe(100);
+    expect(container.querySelector('.chat-latest')?.textContent).toContain('새 메시지 1개');
+
+    act(() => container.querySelector<HTMLButtonElement>('.chat-latest')!.click());
+    expect(list.scrollTop).toBe(1200);
+    expect(container.querySelector('.chat-latest')).toBeNull();
+
+    height = 1400;
+    act(() =>
+      root.render(<RoomView {...props} messages={[...messages, { ...message, id: 'third' }]} />),
+    );
+    expect(list.scrollTop).toBe(1400);
+  });
+
+  it('수신 확인 상태만 바뀌면 채팅 스크롤을 움직이지 않는다', () => {
+    const props = roomViewProps();
+    const message = {
+      id: 'local',
+      senderId: 'me',
+      senderName: '나',
+      text: '보낸 메시지',
+      sentAt: 1,
+      isLocal: true,
+      deliveryState: 'pending' as const,
+    };
+    act(() => root.render(<RoomView {...props} messages={[message]} />));
+    act(() =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="채팅 열기"]')!.click(),
+    );
+    const list = container.querySelector<HTMLDivElement>('.chat-messages')!;
+    const setScrollTop = vi.fn();
+    Object.defineProperty(list, 'scrollTop', { set: setScrollTop });
+    act(() =>
+      root.render(<RoomView {...props} messages={[{ ...message, deliveryState: 'sent' }]} />),
+    );
+    expect(setScrollTop).not.toHaveBeenCalled();
+  });
+
   it('개인정보가 없는 연결 진단을 요청 시 수집하고 복사한다', async () => {
     const onCollectConnectionDiagnostics = vi.fn(async () => ({
       status: 'active' as const,
