@@ -58,6 +58,7 @@ export function VideoTile({
   const latestFullscreenRequestGenerationRef = useRef(0);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [outputError, setOutputError] = useState(false);
+  const [mutedLocally, setMutedLocally] = useState(false);
   const outputChange = useRef(Promise.resolve());
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
 
@@ -82,7 +83,7 @@ export function VideoTile({
     setOutputError(false);
     const play = () => {
       if (playbackAttemptRef.current !== attempt) return;
-      video.muted = participant.isLocal;
+      video.muted = participant.isLocal || mutedLocally;
       void playVideo(video, attempt);
     };
     if (!participant.isLocal && typeof video.setSinkId === 'function') {
@@ -103,7 +104,7 @@ export function VideoTile({
     return () => {
       playbackAttemptRef.current += 1;
     };
-  }, [participant.stream, participant.isLocal, audioOutput]);
+  }, [participant.stream, participant.isLocal, audioOutput, mutedLocally]);
 
   const hasStream = Boolean(participant.stream);
   const hasVisibleVideo = participant.videoEnabled && hasStream;
@@ -311,6 +312,17 @@ export function VideoTile({
           {participant.displayName}
           {participant.isLocal ? ' (나)' : ''}
         </span>
+        {!participant.isLocal ? (
+          <button
+            type="button"
+            className="video-tile__local-mute"
+            aria-label={`${participant.displayName}의 소리 내 쪽에서만 끄기`}
+            aria-pressed={mutedLocally}
+            onClick={() => setMutedLocally((muted) => !muted)}
+          >
+            {mutedLocally ? '소리 켜기' : '소리 끄기'}
+          </button>
+        ) : null}
         {!participant.audioEnabled ? (
           <span className="video-tile__muted" aria-label="마이크 꺼짐">
             <MicOffIcon />

@@ -1684,6 +1684,7 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
 }
 
 .video-tile__name {
@@ -1694,6 +1695,23 @@ textarea:focus-visible {
   text-overflow: ellipsis;
   text-shadow: 0 1px 8px rgb(0 0 0 / 40%);
   white-space: nowrap;
+}
+
+.video-tile__local-mute {
+  flex-shrink: 0;
+  min-height: 32px;
+  margin-left: auto;
+  padding: 4px 8px;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 8px;
+  color: #f2f6f6;
+  background: rgb(6 10 13 / 72%);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.video-tile__local-mute[aria-pressed='true'] {
+  color: #f3bab0;
 }
 
 .video-tile__muted {

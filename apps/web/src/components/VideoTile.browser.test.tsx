@@ -78,6 +78,62 @@ describe('VideoTile browser behavior', () => {
     document.body.replaceChildren();
   });
 
+  it('개인 음소거를 스트림·스피커 교체 뒤에도 유지하고 상대 마이크를 바꾸지 않는다', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const root = createRoot(document.body);
+    const participant = remoteParticipant({} as MediaStream);
+    try {
+      await act(async () => root.render(<VideoTile participant={participant} />));
+      const video = document.querySelector('video')!;
+      const button = document.querySelector<HTMLButtonElement>('.video-tile__local-mute')!;
+      await act(async () => button.click());
+      expect(video.muted).toBe(true);
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+      await act(async () =>
+        root.render(
+          <VideoTile
+            participant={{ ...participant, stream: {} as MediaStream, videoEnabled: false }}
+            audioOutput={{ deviceId: '' }}
+          />,
+        ),
+      );
+      expect(document.querySelector('video')).toBe(video);
+      expect(video.muted).toBe(true);
+      expect(participant.audioEnabled).toBe(true);
+      await act(async () => button.click());
+      expect(video.muted).toBe(false);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it('개인 음소거 해제로 스피커 적용 실패를 우회하지 않는다', async () => {
+    const setSinkId = vi.fn().mockRejectedValue(new DOMException('장치 없음', 'NotFoundError'));
+    Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', {
+      configurable: true,
+      value: setSinkId,
+    });
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const root = createRoot(document.body);
+    try {
+      await act(async () =>
+        root.render(
+          <VideoTile
+            participant={remoteParticipant({} as MediaStream)}
+            audioOutput={{ deviceId: 'missing' }}
+          />,
+        ),
+      );
+      const button = document.querySelector<HTMLButtonElement>('.video-tile__local-mute')!;
+      await act(async () => button.click());
+      await act(async () => button.click());
+      expect(document.querySelector('video')!.muted).toBe(true);
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain('선택한 스피커');
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
   it('기본 스피커를 그대로 쓰면 출력 선택 API를 호출하지 않는다', async () => {
     const setSinkId = vi.fn().mockRejectedValue(new DOMException('권한 없음', 'NotAllowedError'));
     Object.defineProperties(HTMLMediaElement.prototype, {
