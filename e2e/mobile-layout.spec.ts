@@ -28,38 +28,45 @@ test('모바일에서 방 입장과 채팅 제어가 화면 안에 유지된다'
   ).toBeVisible();
   await expect(controlDock).toBeVisible();
 
-  const layout = await page.evaluate(() => {
-    const dock = document.querySelector<HTMLElement>('.control-dock')?.getBoundingClientRect();
-    const messageInput = document
-      .querySelector<HTMLElement>('.chat-composer textarea')
-      ?.getBoundingClientRect();
-    const sendButton = document
-      .querySelector<HTMLElement>('.chat-composer button')
-      ?.getBoundingClientRect();
-    const diagnostics = document
-      .querySelector<HTMLElement>('.connection-diagnostics__panel')
-      ?.getBoundingClientRect();
-    return {
-      documentFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-      dockFits:
-        dock !== undefined && dock.left >= 0 && dock.right <= document.documentElement.clientWidth,
-      diagnosticsFits:
-        diagnostics !== undefined &&
-        diagnostics.left >= 0 &&
-        diagnostics.right <= document.documentElement.clientWidth,
-      composerControlsAboveDock:
-        messageInput !== undefined &&
-        sendButton !== undefined &&
-        dock !== undefined &&
-        Math.max(messageInput.bottom, sendButton.bottom) <= dock.top + 1,
-    };
-  });
-  expect(layout).toEqual({
-    documentFits: true,
-    dockFits: true,
-    diagnosticsFits: true,
-    composerControlsAboveDock: true,
-  });
+  // 채팅 패널이 열리는 중간 좌표가 아니라 실제 표시된 배치를 확인한다.
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const dock = document.querySelector<HTMLElement>('.control-dock')?.getBoundingClientRect();
+        const messageInput = document
+          .querySelector<HTMLElement>('.chat-composer textarea')
+          ?.getBoundingClientRect();
+        const sendButton = document
+          .querySelector<HTMLElement>('.chat-composer button')
+          ?.getBoundingClientRect();
+        const diagnostics = document
+          .querySelector<HTMLElement>('.connection-diagnostics__panel')
+          ?.getBoundingClientRect();
+        return {
+          documentFits:
+            document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+          dockFits:
+            dock !== undefined &&
+            dock.left >= 0 &&
+            dock.right <= document.documentElement.clientWidth,
+          diagnosticsFits:
+            diagnostics !== undefined &&
+            diagnostics.left >= 0 &&
+            diagnostics.right <= document.documentElement.clientWidth,
+          composerControlsAboveDock:
+            messageInput !== undefined &&
+            sendButton !== undefined &&
+            dock !== undefined &&
+            Math.max(messageInput.bottom, sendButton.bottom) <= dock.top + 1,
+        };
+      }),
+    )
+    .toEqual({
+      documentFits: true,
+      dockFits: true,
+      diagnosticsFits: true,
+      composerControlsAboveDock: true,
+    });
   await page.setViewportSize({ width: 320, height: 740 });
   await page.getByRole('button', { name: '통화 장치 설정' }).click();
   const deviceDialog = page.getByRole('dialog', { name: '통화 장치 설정' });
