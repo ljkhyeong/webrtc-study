@@ -3,7 +3,7 @@ Description=ROUND Cloudflare R2 백업 보존 정책과 무결성 검사
 After=network-online.target
 Wants=network-online.target
 OnFailure=round-ops-failure@%n.service
-ConditionPathIsExecutable=/usr/bin/restic
+ConditionFileIsExecutable=/usr/bin/restic
 AssertPathExists=/etc/round/restic-r2.env
 AssertPathExists=/etc/round/restic-password
 
