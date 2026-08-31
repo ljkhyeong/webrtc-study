@@ -486,6 +486,7 @@ export function ActiveRoom({
     videoEnabled: false,
     videoSource: 'camera' as const,
   };
+  const localAudioTrack = sessionRef.current?.getLocalStream()?.getAudioTracks()[0] ?? null;
   const hasFailedRemotePeer = participants.some(
     (participant) => !participant.isLocal && participant.connectionState === 'failed',
   );
@@ -614,9 +615,9 @@ export function ActiveRoom({
             setAudioOutput({ deviceId });
             setOutputWarning('');
           }}
-          audioDeviceId={
-            sessionRef.current?.getLocalStream()?.getAudioTracks()[0]?.getSettings().deviceId ?? ''
-          }
+          audioDeviceId={localAudioTrack?.getSettings().deviceId ?? ''}
+          audioTrack={localAudioTrack}
+          audioEnabled={localMedia.audioEnabled}
           videoDeviceId={
             sessionRef.current?.getLocalStream()?.getVideoTracks()[0]?.getSettings().deviceId ?? ''
           }

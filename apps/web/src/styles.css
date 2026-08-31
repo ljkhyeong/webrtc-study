@@ -1187,6 +1187,11 @@ textarea:focus-visible {
   margin-top: 18px;
 }
 
+.media-device-dialog__input > .microphone-level {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
 .media-device-dialog__input label {
   display: grid;
   gap: 7px;

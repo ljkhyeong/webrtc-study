@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VideoQualityMode } from '@round/rtc-core';
 import { AudioOutputControls } from './AudioOutputControls';
+import { MicrophoneLevel } from './MicrophoneLevel';
 
 interface MediaDeviceDialogProps {
   audioDeviceId: string;
+  audioTrack: MediaStreamTrack | null;
+  audioEnabled: boolean;
   videoDeviceId: string;
   outputDeviceId: string;
   onSelectOutput: (deviceId: string) => void;
@@ -17,6 +20,8 @@ interface MediaDeviceDialogProps {
 
 export function MediaDeviceDialog({
   audioDeviceId,
+  audioTrack,
+  audioEnabled,
   videoDeviceId,
   outputDeviceId,
   onSelectOutput,
@@ -161,6 +166,9 @@ export function MediaDeviceDialog({
             >
               {label} 적용
             </button>
+            {kind === 'audio' ? (
+              <MicrophoneLevel track={audioTrack} enabled={active && audioEnabled} />
+            ) : null}
           </div>
         );
       })}

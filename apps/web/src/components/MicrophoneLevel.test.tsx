@@ -24,7 +24,7 @@ class TestAudioContext extends EventTarget {
   }
 }
 
-describe('입장 전 마이크 입력 표시', () => {
+describe('마이크 입력 표시', () => {
   let container: HTMLDivElement;
   let root: Root;
   let nextFrame: FrameRequestCallback;
@@ -90,6 +90,17 @@ describe('입장 전 마이크 입력 표시', () => {
     vi.stubGlobal('AudioContext', undefined);
     act(() => root.render(<MicrophoneLevel track={track} enabled />));
     expect(container.textContent).toContain('이 브라우저에서는 입력 크기를 표시할 수 없습니다.');
+    expect(track.stop).not.toHaveBeenCalled();
+  });
+
+  it('입력 표시를 닫으면 분석 자원만 정리하고 통화 트랙은 유지한다', () => {
+    act(() => root.render(<MicrophoneLevel track={track} enabled />));
+    const context = TestAudioContext.instances[0]!;
+    act(() => root.render(null));
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(context.source.disconnect).toHaveBeenCalledOnce();
+    expect(context.analyser.disconnect).toHaveBeenCalledOnce();
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
     expect(track.stop).not.toHaveBeenCalled();
   });
 });

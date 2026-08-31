@@ -14,6 +14,8 @@ describe('통화 장치 설정', () => {
   };
   const props = () => ({
     audioDeviceId: 'mic-1',
+    audioTrack: null,
+    audioEnabled: false,
     videoDeviceId: '',
     outputDeviceId: '',
     onSelectOutput: vi.fn(),
@@ -47,6 +49,22 @@ describe('통화 장치 설정', () => {
     Reflect.deleteProperty(HTMLDialogElement.prototype, 'close');
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('꺼진 마이크와 종료된 통화에서는 입력 표시를 위해 장치를 요청하거나 분석하지 않는다', async () => {
+    const AudioContext = vi.fn();
+    vi.stubGlobal('AudioContext', AudioContext);
+    const track = { stop: vi.fn() } as unknown as MediaStreamTrack;
+    const input = props();
+    await act(async () => root.render(<MediaDeviceDialog {...input} audioTrack={track} />));
+    expect(container.textContent).toContain('마이크가 꺼져 있습니다.');
+    await act(async () =>
+      root.render(<MediaDeviceDialog {...input} audioTrack={track} audioEnabled active={false} />),
+    );
+    expect(container.textContent).toContain('마이크가 꺼져 있습니다.');
+    expect(AudioContext).not.toHaveBeenCalled();
+    expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(track.stop).not.toHaveBeenCalled();
   });
 
   it('송신 설정은 적용 버튼으로만 바꾸고 실패를 성공으로 표시하지 않는다', async () => {
