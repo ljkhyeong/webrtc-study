@@ -4,7 +4,7 @@ Description=매일 ROUND 외부 백업 실행
 [Timer]
 OnCalendar=*-*-* 03:15:00
 RandomizedDelaySec=30m
-Persistent=true
+Persistent=false
 Unit=round-offsite-backup.service
 
 [Install]

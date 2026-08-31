@@ -940,7 +940,7 @@ grep -Fq -- '--keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune' \
   ops/linux/systemd/round-offsite-maintenance.service
 grep -Fq 'ExecStart=/usr/bin/restic --retry-lock 5m check' \
   ops/linux/systemd/round-offsite-maintenance.service
-grep -Fq 'Persistent=true' ops/linux/systemd/round-offsite-backup.timer
+grep -Fq 'Persistent=false' ops/linux/systemd/round-offsite-backup.timer
 grep -Fq 'Persistent=true' ops/linux/systemd/round-offsite-maintenance.timer
 grep -Fq 'd /var/backups/round 0700 root root 30d' \
   ops/linux/tmpfiles.d/round-backups.conf

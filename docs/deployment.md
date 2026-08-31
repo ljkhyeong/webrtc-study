@@ -272,8 +272,6 @@ install -m 0644 ops/linux/tmpfiles.d/round-backups.conf /etc/tmpfiles.d/round-ba
 systemd-tmpfiles --create /etc/tmpfiles.d/round-backups.conf
 systemctl daemon-reload
 systemctl enable --now round-offsite-backup.timer round-offsite-maintenance.timer
-systemctl start round-offsite-backup.service
-systemctl status round-offsite-backup.service
 ```
 
 매일 작업은 로컬 age 백업을 만든 뒤 `restic backup`을 실행합니다. 매주 작업은 최근 14개 일별,
@@ -294,6 +292,18 @@ journalctl -u round-offsite-backup.service -u round-offsite-maintenance.service 
 만드는 동안 edge를 잠시 중지하고 완료 또는 실패 시 즉시 다시 시작합니다. 이때 활성 WebSocket은
 종료될 수 있으므로 03:15~03:45를 유지보수 창으로 운영하고 사용자가 방에 다시 입장할 수 있게
 안내합니다. 이 시간대에 중단을 허용할 수 없으면 timer의 `OnCalendar`를 저사용 시간대로 옮깁니다.
+
+일일 timer는 `Persistent=false`로 설정해 서버가 꺼져 있는 동안 놓친 백업을 재부팅 뒤에 자동으로
+실행하지 않습니다. 누락된 백업은 다음 정기 실행을 기다리거나 승인된 유지보수 창에서 수동으로
+실행합니다. 최초 설치 후 시험 백업도 같은 시간 제한을 지킵니다. edge를 중지하지 않는 주간
+보존·무결성 검사는 `Persistent=true`를 유지합니다.
+
+```bash
+systemctl start round-offsite-backup.service
+systemctl status round-offsite-backup.service
+```
+
+R2 전송 없이 로컬 백업만 만들 때도 유지보수 창에서 실행합니다.
 
 ```bash
 ops/linux/backup-caddy.sh \
