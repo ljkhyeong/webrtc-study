@@ -36,6 +36,7 @@ export type RoomIssueCode =
   | SignalingErrorCode
   | 'media-unavailable'
   | 'media-permission-denied'
+  | 'video-quality-update-failed'
   | 'rtc-configuration-update-failed'
   | 'join-failed'
   | 'room-join-timeout'
@@ -81,6 +82,7 @@ export interface LocalMediaSnapshot {
 }
 
 export type VideoSource = ParticipantMediaDataMessage['videoSource'];
+export type VideoQualityMode = 'standard' | 'data-saver';
 
 export interface ParticipantSnapshot {
   readonly peerId: string;
@@ -148,6 +150,7 @@ export interface RoomSessionSnapshot {
   readonly canModerateMedia: boolean;
   readonly screenShareAvailable: boolean;
   readonly screenSharing: boolean;
+  readonly videoQualityMode: VideoQualityMode;
   readonly participants: readonly ParticipantSnapshot[];
   readonly localMedia: LocalMediaSnapshot;
   readonly messages: readonly ChatMessage[];
@@ -224,6 +227,9 @@ interface PeerContext {
   readonly connection: RTCPeerConnection;
   readonly trackReplacementAbort: AbortController;
   videoSender: RTCRtpSender | null;
+  videoQualityUpdate: Promise<boolean>;
+  videoQualityLimited: boolean;
+  videoQualityFailed: boolean;
   audioSender: RTCRtpSender | null;
   readonly pendingCandidates: (SerializedIceCandidate | null)[];
   readonly pendingLocalCandidates: (SerializedIceCandidate | null)[];
@@ -549,6 +555,7 @@ export class RoomSession {
   #signalRequestSequence = 0;
   #localStream: MediaStream | null = null;
   #cameraVideoTracks: MediaStreamTrack[] = [];
+  #videoQualityMode: VideoQualityMode = 'standard';
   #inputChange: {
     kind: 'audio' | 'video';
     enabled: boolean;
@@ -632,6 +639,67 @@ export class RoomSession {
 
   getRemoteStream(peerId: string): MediaStream | null {
     return this.#remoteStreams.get(peerId) ?? null;
+  }
+
+  async setVideoQualityMode(mode: VideoQualityMode): Promise<boolean> {
+    if (this.#disposed || this.#status !== 'active') return false;
+    this.#videoQualityMode = mode;
+    this.#emit();
+    const results = await Promise.all(
+      [...this.#peers.values()].map((peer) => this.#updateVideoQuality(peer)),
+    );
+    return !this.#disposed && results.every(Boolean);
+  }
+
+  #updateVideoQuality(peer: PeerContext): Promise<boolean> {
+    const update = peer.videoQualityUpdate.then(async () => {
+      const sender = peer.videoSender;
+      if (!this.#isCurrentPeer(peer) || sender?.track == null) return true;
+      const screen =
+        sender.track === this.#screenTrack || sender.track === this.#pendingScreenTrack;
+      const limited = this.#videoQualityMode === 'data-saver' && !screen;
+      if (!limited && !peer.videoQualityLimited) return true;
+      try {
+        peer.videoQualityLimited = true;
+        const parameters = sender.getParameters();
+        // 협상 전에는 송신 인코딩이 없을 수 있다. SDP 적용 후 다시 적용한다.
+        if (parameters.encodings.length === 0) return true;
+        for (const encoding of parameters.encodings) {
+          if (limited) {
+            encoding.maxBitrate = 150_000;
+            encoding.maxFramerate = 10;
+            encoding.scaleResolutionDownBy = 2;
+          } else {
+            delete encoding.maxBitrate;
+            delete encoding.maxFramerate;
+            encoding.scaleResolutionDownBy = 1;
+          }
+        }
+        if (!(await this.#waitForPeerMedia(peer, () => sender.setParameters(parameters))))
+          return true;
+        peer.videoQualityLimited = limited;
+        peer.videoQualityFailed = false;
+        if (
+          this.#warning?.code === 'video-quality-update-failed' &&
+          ![...this.#peers.values()].some((item) => item.videoQualityFailed)
+        ) {
+          this.#warning = null;
+          this.#warningPeerId = null;
+          this.#emit();
+        }
+        return true;
+      } catch {
+        if (!this.#isCurrentPeer(peer)) return true;
+        peer.videoQualityFailed = true;
+        this.#setWarning(
+          'video-quality-update-failed',
+          '일부 연결에 카메라 송신 설정을 적용하지 못했습니다.',
+        );
+        return false;
+      }
+    });
+    peer.videoQualityUpdate = update;
+    return update;
   }
 
   /**
@@ -1168,6 +1236,12 @@ export class RoomSession {
     sender: RTCRtpSender,
     track: MediaStreamTrack | null,
   ): Promise<boolean> {
+    const replaced = await this.#waitForPeerMedia(peer, () => sender.replaceTrack(track));
+    if (replaced && sender === peer.videoSender) await this.#updateVideoQuality(peer);
+    return replaced;
+  }
+
+  async #waitForPeerMedia(peer: PeerContext, operation: () => Promise<void>): Promise<boolean> {
     const signal = peer.trackReplacementAbort.signal;
     let onAbort!: () => void;
     const closed = new Promise<void>((resolve) => {
@@ -1176,7 +1250,7 @@ export class RoomSession {
     });
     try {
       // WebKit은 연결 종료 후 replaceTrack Promise를 완료하지 않을 수 있다.
-      await Promise.race([sender.replaceTrack(track), closed]);
+      await Promise.race([operation(), closed]);
       return this.#isCurrentPeer(peer);
     } catch (error) {
       if (this.#isCurrentPeer(peer)) throw error;
@@ -2168,6 +2242,7 @@ export class RoomSession {
       if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return false;
       }
+      void this.#updateVideoQuality(peer);
       const description = peer.connection.localDescription ?? offer;
       this.#captureLocalIceUsernameFragments(peer, description.sdp);
       this.#publishLocalDescription(peer, {
@@ -2238,6 +2313,7 @@ export class RoomSession {
       if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
         return;
       }
+      void this.#updateVideoQuality(peer);
       const localDescription = peer.connection.localDescription ?? answer;
       this.#captureLocalIceUsernameFragments(peer, localDescription.sdp);
       this.#publishLocalDescription(peer, {
@@ -2295,6 +2371,7 @@ export class RoomSession {
       if (peer.connection.connectionState === 'connected') {
         this.#finishPeerRecovery(peer);
       }
+      void this.#updateVideoQuality(peer);
       this.#drainPendingLocalRenegotiation(peer);
     } catch (error) {
       if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
@@ -2447,6 +2524,9 @@ export class RoomSession {
       connection,
       trackReplacementAbort: new AbortController(),
       videoSender: null,
+      videoQualityUpdate: Promise.resolve(true),
+      videoQualityLimited: false,
+      videoQualityFailed: false,
       audioSender: null,
       pendingCandidates: [],
       pendingLocalCandidates: [],
@@ -4025,6 +4105,7 @@ export class RoomSession {
       canModerateMedia: this.#canModerateMedia,
       screenShareAvailable: this.#getMediaDevices()?.getDisplayMedia !== undefined,
       screenSharing: this.#screenTrack !== null && this.#screenTrack.readyState === 'live',
+      videoQualityMode: this.#videoQualityMode,
       participants: [...this.#participants.values()].map((participant) => ({
         ...participant,
       })),

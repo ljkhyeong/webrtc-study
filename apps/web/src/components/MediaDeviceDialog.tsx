@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { VideoQualityMode } from '@round/rtc-core';
 import { AudioOutputControls } from './AudioOutputControls';
 
 interface MediaDeviceDialogProps {
@@ -8,6 +9,8 @@ interface MediaDeviceDialogProps {
   onSelectOutput: (deviceId: string) => void;
   screenSharing: boolean;
   active: boolean;
+  videoQualityMode: VideoQualityMode;
+  onSelectVideoQuality: (mode: VideoQualityMode) => Promise<boolean>;
   onSelect: (kind: 'audio' | 'video', deviceId: string) => Promise<boolean>;
   onClose: () => void;
 }
@@ -19,6 +22,8 @@ export function MediaDeviceDialog({
   onSelectOutput,
   screenSharing,
   active,
+  videoQualityMode,
+  onSelectVideoQuality,
   onSelect,
   onClose,
 }: MediaDeviceDialogProps) {
@@ -26,8 +31,9 @@ export function MediaDeviceDialog({
   const mounted = useRef(false);
   const [audio, setAudio] = useState(audioDeviceId);
   const [video, setVideo] = useState(videoDeviceId);
+  const [quality, setQuality] = useState(videoQualityMode);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [pending, setPending] = useState<'audio' | 'video' | null>(null);
+  const [pending, setPending] = useState<'audio' | 'video' | 'quality' | null>(null);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [deviceListError, setDeviceListError] = useState(false);
@@ -89,6 +95,23 @@ export function MediaDeviceDialog({
     }
   };
 
+  const applyQuality = async () => {
+    setPending('quality');
+    setNotice('');
+    setError('');
+    try {
+      const applied = await onSelectVideoQuality(quality);
+      if (!mounted.current) return;
+      if (applied)
+        setNotice('카메라 송신 설정을 적용했습니다. 새 연결에도 같은 설정을 사용합니다.');
+      else setError('일부 연결에 적용하지 못했습니다. 다시 적용하거나 카메라를 꺼 주세요.');
+    } catch {
+      if (mounted.current) setError('카메라 송신 설정을 적용하지 못했습니다. 다시 시도해 주세요.');
+    } finally {
+      if (mounted.current) setPending(null);
+    }
+  };
+
   const inputOptions = (kind: MediaDeviceKind) => devices.filter((device) => device.kind === kind);
 
   return (
@@ -142,13 +165,42 @@ export function MediaDeviceDialog({
         );
       })}
       {screenSharing ? <p>카메라는 화면 공유를 중지한 뒤 변경할 수 있습니다.</p> : null}
+      <div className="media-device-dialog__input">
+        <label>
+          <span>카메라 송신 설정</span>
+          <select
+            aria-label="카메라 송신 설정"
+            value={quality}
+            disabled={pending !== null || !active}
+            onChange={(event) => setQuality(event.target.value as VideoQualityMode)}
+          >
+            <option value="standard">일반</option>
+            <option value="data-saver">데이터 절약</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={pending !== null || !active}
+          onClick={() => void applyQuality()}
+        >
+          송신 설정 적용
+        </button>
+      </div>
+      <p>
+        데이터 절약은 내가 보내는 카메라 영상만 줄입니다. 상대 영상 수신량은 줄이지 않으며, 화면
+        공유는 글자를 읽기 쉽도록 일반 설정을 사용합니다.
+      </p>
       {deviceListError ? (
         <p>
           장치 목록을 불러오지 못했습니다. 브라우저 기본 장치를 적용하거나 설정을 다시 열어 주세요.
         </p>
       ) : null}
       <p role="status">
-        {pending !== null ? '장치를 변경하고 있습니다. 권한 요청이 뜨면 확인해 주세요.' : notice}
+        {pending === 'quality'
+          ? '카메라 송신 설정을 적용하고 있습니다.'
+          : pending !== null
+            ? '장치를 변경하고 있습니다. 권한 요청이 뜨면 확인해 주세요.'
+            : notice}
       </p>
       {error ? <p role="alert">{error}</p> : null}
       <AudioOutputControls

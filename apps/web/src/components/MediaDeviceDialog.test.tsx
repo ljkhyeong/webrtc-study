@@ -18,6 +18,8 @@ describe('통화 장치 설정', () => {
     outputDeviceId: '',
     onSelectOutput: vi.fn(),
     screenSharing: false,
+    videoQualityMode: 'standard' as const,
+    onSelectVideoQuality: vi.fn(async () => true),
     active: true,
     onSelect: vi.fn(async () => true),
     onClose: vi.fn(),
@@ -45,6 +47,29 @@ describe('통화 장치 설정', () => {
     Reflect.deleteProperty(HTMLDialogElement.prototype, 'close');
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('송신 설정은 적용 버튼으로만 바꾸고 실패를 성공으로 표시하지 않는다', async () => {
+    const input = props();
+    input.onSelectVideoQuality.mockResolvedValue(false);
+    await act(async () => root.render(<MediaDeviceDialog {...input} />));
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="카메라 송신 설정"]')!;
+    act(() => {
+      select.value = 'data-saver';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(input.onSelectVideoQuality).not.toHaveBeenCalled();
+    const apply = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === '송신 설정 적용',
+    )!;
+    await act(async () => apply.click());
+    expect(input.onSelectVideoQuality).toHaveBeenCalledWith('data-saver');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('일부 연결');
+    expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    input.onSelectVideoQuality.mockResolvedValue(true);
+    await act(async () => apply.click());
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('적용했습니다');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
   it('설정을 열거나 목록을 변경할 때는 장치를 요청하지 않고 적용 버튼으로만 교체한다', async () => {

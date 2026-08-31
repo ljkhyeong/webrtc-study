@@ -76,6 +76,11 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
     warning:
       '카메라 또는 마이크를 열지 못해 미디어 없이 입장했습니다. 장치를 다시 선택할 수 있습니다.',
   },
+  'video-quality-update-failed': {
+    error: '카메라 송신 설정을 적용하지 못했습니다.',
+    warning:
+      '일부 연결에 카메라 송신 설정을 적용하지 못했습니다. 통화 장치 설정에서 다시 적용하거나 카메라를 꺼 주세요.',
+  },
   'rtc-configuration-update-failed': {
     error: 'TURN 연결 정보를 적용하지 못했습니다. 네트워크를 확인한 뒤 다시 입장해 주세요.',
     warning: '일부 참가자의 TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.',

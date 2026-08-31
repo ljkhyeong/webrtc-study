@@ -30,5 +30,6 @@ export {
   type RoomSessionSnapshot,
   type RoomSessionStatus,
   type ScreenShareStartResult,
+  type VideoQualityMode,
   type VideoSource,
 } from './room-session.js';

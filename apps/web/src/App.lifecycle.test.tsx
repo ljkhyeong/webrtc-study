@@ -44,6 +44,7 @@ function roomSnapshot(
     selfRole: status === 'active' ? 'participant' : null,
     canModerateMedia: false,
     screenShareAvailable: false,
+    videoQualityMode: 'standard',
     screenSharing: false,
     participants: [],
     localMedia: {

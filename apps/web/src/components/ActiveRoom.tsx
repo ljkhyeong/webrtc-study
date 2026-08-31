@@ -605,6 +605,10 @@ export function ActiveRoom({
       />
       {deviceSettingsOpen ? (
         <MediaDeviceDialog
+          videoQualityMode={snapshot?.videoQualityMode ?? 'standard'}
+          onSelectVideoQuality={async (mode) =>
+            sessionRef.current?.setVideoQualityMode(mode) ?? false
+          }
           outputDeviceId={outputDeviceId}
           onSelectOutput={(deviceId) => {
             setAudioOutput({ deviceId });

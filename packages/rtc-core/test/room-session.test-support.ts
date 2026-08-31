@@ -292,8 +292,23 @@ export class FakeRtpSender {
   readonly replacements: (MediaStreamTrack | null)[] = [];
   readonly replaceTrackGates: Promise<void>[] = [];
   readonly replaceTrackErrors: (Error | undefined)[] = [];
+  parameters: RTCRtpSendParameters = {
+    transactionId: 'test',
+    encodings: [{}],
+    codecs: [],
+    headerExtensions: [],
+    rtcp: {},
+  };
 
   constructor(public track: MediaStreamTrack | null) {}
+
+  getParameters(): RTCRtpSendParameters {
+    return structuredClone(this.parameters);
+  }
+
+  async setParameters(parameters: RTCRtpSendParameters): Promise<void> {
+    this.parameters = structuredClone(parameters);
+  }
 
   async replaceTrack(track: MediaStreamTrack | null): Promise<void> {
     this.replaceTrackCalls.push(track);
