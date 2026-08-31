@@ -1,0 +1,2 @@
+# 같은 작업의 성공 URL 끝에 /fail을 붙인다. 실제 URL을 저장소나 로그에 남기지 않는다.
+url = "https://hc-ping.com/CHECK_UUID/fail"

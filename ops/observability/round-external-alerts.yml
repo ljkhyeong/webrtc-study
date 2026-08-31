@@ -1,0 +1,29 @@
+# Synthetic Monitoring의 round-public-https 검사를 만든 뒤에만 가져온다.
+groups:
+  - name: round-external-availability
+    interval: 1m
+    rules:
+      - alert: RoundPublicHttpsUnavailable
+        expr: max(probe_success{job="round-public-https"}) == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: ROUND 외부 HTTPS 접속 실패
+          description: 모든 수집 중인 외부 검사 위치에서 3분 동안 HTTPS 요청이 실패했습니다. DNS, 인증서, 방화벽과 edge 상태를 확인하세요.
+      - alert: RoundPublicHttpsCheckMissing
+        expr: absent_over_time(probe_success{job="round-public-https"}[10m])
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: ROUND 외부 접속 검사 결과 누락
+          description: 외부 검사 결과가 10분 이상 없습니다. Synthetic Monitoring 검사와 지표 수집 상태를 확인하세요.
+      - alert: RoundPublicTlsCertificateExpiring
+        expr: min(probe_ssl_earliest_cert_expiry{job="round-public-https"}) - time() < 14 * 24 * 60 * 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: ROUND TLS 인증서 만료 임박
+          description: 외부에서 확인한 TLS 인증서가 14일 이내 만료됩니다. Caddy 인증서 갱신과 DNS 상태를 확인하세요.

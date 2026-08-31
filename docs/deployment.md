@@ -161,6 +161,10 @@ source를 선택합니다. `RoundSignalingUnavailable`은 Alloy 자체가 멈춰
 사용자 ID와 URL은 로그나 저장소에 기록하지 않으며 token은 `metrics:write` 외 권한을 부여하지
 않습니다.
 
+공인 HTTPS·TLS 인증서 장애와 백업 실패·예약 누락은 내부 지표만으로 확인할 수 없습니다.
+선택 설치용 Synthetic Monitoring 규칙과 Healthchecks systemd 설정은
+[외부 접속·백업 알림 설정](external-monitoring.md)을 따릅니다. 별도로 활성화하기 전에는 알림을 보내지 않습니다.
+
 ## 로컬과 macOS 파일럿
 
 로컬 개발은 `.env.example`의 `TURN_PROVIDER=disabled`를 기본으로 사용합니다. 실제 relay가

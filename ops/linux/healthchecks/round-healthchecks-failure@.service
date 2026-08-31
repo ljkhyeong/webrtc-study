@@ -1,0 +1,12 @@
+[Unit]
+Description=ROUND 백업 작업 실패를 Healthchecks.io에 전달
+
+[Service]
+Type=oneshot
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+CapabilityBoundingSet=
+TimeoutStartSec=15s
+ExecStart=/usr/bin/curl --disable --silent --fail --request POST --output /dev/null --connect-timeout 5 --max-time 10 --proto =https --config /etc/round/healthchecks/%i-fail.curl

@@ -34,4 +34,16 @@ SYSTEMD_UNIT_PATH="$fixture_dir:" systemd-analyze verify \
   'round-ops-failure@round-offsite-backup.service.service' \
   'round-ops-failure@round-offsite-maintenance.service.service'
 
+cp "$repo_root/ops/linux/healthchecks/round-healthchecks-failure@.service" "$fixture_dir/"
+for job in backup maintenance; do
+  mkdir "$fixture_dir/round-offsite-$job.service.d"
+  cp "$repo_root/ops/linux/healthchecks/10-healthchecks.conf" \
+    "$fixture_dir/round-offsite-$job.service.d/10-healthchecks.conf"
+done
+SYSTEMD_UNIT_PATH="$fixture_dir:" systemd-analyze verify \
+  round-offsite-backup.service \
+  round-offsite-maintenance.service \
+  'round-healthchecks-failure@round-offsite-backup.service.service' \
+  'round-healthchecks-failure@round-offsite-maintenance.service.service'
+
 printf 'ROUND systemd unit verification passed.\n'

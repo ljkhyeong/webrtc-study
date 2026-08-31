@@ -184,6 +184,11 @@ GitHub Actions의 **실제 iOS Safari 검사**를 수동 실행해 BrowserStack 
 
 ## 운영
 
+- [ ] [외부 알림 설정](external-monitoring.md)에 따라 HTTPS 두 위치 검사·인증서 만료 경보와
+      Healthchecks 일일·주간 검사를 활성화하고 시험 알림 수신을 확인했습니다.
+- [ ] Healthchecks 성공 시각이 R2 전송 완료 뒤이며 실패·예약 누락이 각각 운영 연락처에 전달됩니다.
+      03:15~03:45 유지보수 제외는 외부 HTTPS 중단 경보에만 적용했습니다.
+
 - [ ] `docker compose up -d --wait --wait-timeout 120`이 signaling과 edge 시작 gate를
       통과합니다.
 - [ ] 운영 secret store에 Cloudflare TURN key ID와 최소 권한 API token이 있고 저장소·이미지·로그에

@@ -1,0 +1,2 @@
+# 해당 작업의 Healthchecks ping URL을 입력한다. 이 파일은 root 소유 0600으로 보관한다.
+url = "https://hc-ping.com/CHECK_UUID"
