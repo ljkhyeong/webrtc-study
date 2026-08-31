@@ -129,6 +129,11 @@ jobs:
       - name: WebKit 설치
         run: npx playwright install --with-deps webkit
 
+      - name: WebKit 직접 연결용 mDNS 설정
+        run: |
+          sudo apt-get install --yes --no-install-recommends avahi-daemon libnss-mdns
+          sudo systemctl start avahi-daemon
+
       - name: WebKit 호환성 smoke 테스트 실행
         run: npx playwright test --project=webkit-smoke --project=webkit-mobile-layout
 

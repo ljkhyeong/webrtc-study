@@ -62,6 +62,16 @@ npx playwright install chromium webkit
 npm run test:e2e
 ```
 
+Ubuntu에서 WebKit 검사를 실행할 때는 브라우저 의존성과 mDNS 서비스도 준비합니다.
+미디어 권한 없이 직접 연결하는 WebKit은 로컬 IP 대신 `.local` ICE 후보를 사용하므로
+Avahi와 이름 조회 모듈이 필요합니다. CI도 같은 설정으로 외부 STUN·TURN 없이 검사합니다.
+
+```bash
+npx playwright install --with-deps chromium webkit
+sudo apt-get install --yes --no-install-recommends avahi-daemon libnss-mdns
+sudo systemctl start avahi-daemon
+```
+
 `chromium-full-media` 프로젝트는 fake 카메라·마이크·화면 스트림을 사용해 직접 초대 입장,
 원격 미디어 연결, 화면 공유 전환, 방장의 원격 미디어 끄기, DataChannel 채팅과 수신 ACK,
 퇴장을 확인합니다. `webkit-smoke` 프로젝트는 실제 Playwright WebKit 엔진에서 직접 초대와
