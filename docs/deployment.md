@@ -293,10 +293,19 @@ journalctl -t round-ops -p crit --since today
 journalctl -u round-offsite-backup.service -u round-offsite-maintenance.service --since today
 ```
 
-일일 백업은 03:15부터 최대 30분의 무작위 지연 뒤 시작합니다. Caddy volume의 일관된 snapshot을
-만드는 동안 edge를 잠시 중지하고 완료 또는 실패 시 즉시 다시 시작합니다. 이때 활성 WebSocket은
-종료될 수 있으므로 03:15~03:45를 유지보수 창으로 운영하고 사용자가 방에 다시 입장할 수 있게
-안내합니다. 이 시간대에 중단을 허용할 수 없으면 timer의 `OnCalendar`를 저사용 시간대로 옮깁니다.
+일일 백업은 서버 시간 기준 03:15에 무작위 지연 없이 시작하며, timer의 허용 오차는 1초로 설정합니다.
+Caddy volume의 일관된 snapshot을 만드는 동안 edge를 잠시 중지하고 완료 또는 실패 시 다시
+시작합니다. 활성 WebSocket이 종료될 수 있으므로 03:15~03:45를 유지보수 창으로 운영합니다.
+이 시간대에 중단을 허용할 수 없으면 timer의 `OnCalendar`와 유지보수 창을 함께 옮깁니다.
+
+로컬 백업 명령은 GNU `timeout`으로 20분 뒤 종료 신호를 보내고, 정리·재기동에 최대 5분을 더
+허용합니다. edge 재기동의 상태 확인은 한 번에 120초로 제한합니다. 정상 예약 시각에 시작하면
+03:40 무렵까지 명령을 종료하도록 제한해 유지보수 종료 전 여유를 확보합니다. R2 전송은 edge가
+다시 시작된 뒤 별도로 실행하므로 로컬 백업의 20분 제한을 적용하지 않습니다.
+
+시간 제한은 복구 성공을 보장하지 않습니다. 추가 5분이 지나도 끝나지 않으면 프로세스를 강제
+종료하며, Docker 장애 등으로 edge를 다시 켜지 못할 수 있습니다. 예약 백업의 제한 시간 초과나
+재기동 실패는 위 운영 오류 로그에서 확인하고 edge 복구 여부를 점검합니다.
 
 일일 timer는 `Persistent=false`로 설정해 서버가 꺼져 있는 동안 놓친 백업을 재부팅 뒤에 자동으로
 실행하지 않습니다. 누락된 백업은 다음 정기 실행을 기다리거나 승인된 유지보수 창에서 수동으로
@@ -311,7 +320,7 @@ systemctl status round-offsite-backup.service
 R2 전송 없이 로컬 백업만 만들 때도 유지보수 창에서 실행합니다.
 
 ```bash
-ops/linux/backup-caddy.sh \
+timeout --verbose --kill-after=5m 20m ops/linux/backup-caddy.sh \
   --output-dir /var/backups/round \
   --recipient-file /etc/round/backup-recipients.txt \
   /etc/round/production.env

@@ -324,7 +324,7 @@ case "$command_line" in
       exit 42
     fi
     ;;
-  *' up -d --wait --no-build --no-deps edge '*) log_compose "$@" ;;
+  *' up -d --wait --wait-timeout 120 --no-build --no-deps edge '*) log_compose "$@" ;;
   *' stop edge '*) log_compose "$@" ;;
   *' down --remove-orphans '*) log_compose "$@" ;;
   *' pull ghcr.io/ljkhyeong/round-edge@sha256:'*) log_compose "$@" ;;
@@ -336,6 +336,9 @@ case "$command_line" in
     ;;
   *' --entrypoint tar '*)
     [[ ! -e "$fake_root/backup-archive-fail" ]] || exit 44
+    if [[ -e "$fake_root/backup-archive-hang" ]]; then
+      exec sleep 30
+    fi
     cat "$fake_root/archive.tar"
     ;;
   *' --entrypoint sh '*) cat >/dev/null ;;
@@ -795,7 +798,7 @@ PATH="$fake_bin:$PATH" ops/linux/backup-caddy.sh \
 rm -f -- "$fixture_dir/edge-running"
 [[ "$(grep -c 'stop edge' "$fixture_dir/docker.log")" == '1' ]] ||
   fail 'backup did not stop a running edge exactly once'
-[[ "$(grep -c 'up -d --wait --no-build --no-deps edge' "$fixture_dir/docker.log")" == '1' ]] ||
+[[ "$(grep -c 'up -d --wait --wait-timeout 120 --no-build --no-deps edge' "$fixture_dir/docker.log")" == '1' ]] ||
   fail 'backup did not restart a running edge exactly once'
 
 failed_running_backup_dir="$fixture_dir/failed-running-backups"
@@ -814,10 +817,34 @@ rm -f -- \
   "$fixture_dir/backup-archive-fail"
 [[ "$(grep -c 'stop edge' "$fixture_dir/docker.log")" == '1' ]] ||
   fail 'failed backup did not stop a running edge exactly once'
-[[ "$(grep -c 'up -d --wait --no-build --no-deps edge' "$fixture_dir/docker.log")" == '1' ]] ||
+[[ "$(grep -c 'up -d --wait --wait-timeout 120 --no-build --no-deps edge' "$fixture_dir/docker.log")" == '1' ]] ||
   fail 'failed backup did not restart a running edge exactly once'
 if find "$failed_running_backup_dir" -type f -print -quit | grep -q .; then
   fail 'failed running-edge backup left a backup artifact'
+fi
+
+if command -v timeout >/dev/null 2>&1; then
+  timeout_backup_dir="$fixture_dir/timeout-backups"
+  touch "$fixture_dir/edge-running" "$fixture_dir/backup-archive-hang"
+  : >"$fixture_dir/docker.log"
+  timeout_status=0
+  PATH="$fake_bin:$PATH" timeout --kill-after=5s 10s ops/linux/backup-caddy.sh \
+    --state-dir "$state_dir" \
+    --recipient-file "$recipient_file" \
+    --output-dir "$timeout_backup_dir" \
+    "$env_b" \
+    >"$fixture_dir/backup-timeout.log" 2>&1 || timeout_status=$?
+  [[ "$timeout_status" == 124 ]] || fail "백업 제한 시간 종료 코드가 아닙니다: $timeout_status"
+  rm -f -- "$fixture_dir/edge-running" "$fixture_dir/backup-archive-hang"
+  [[ "$(grep -c 'stop edge' "$fixture_dir/docker.log")" == '1' ]] ||
+    fail '제한 시간 검사에서 실행 중인 edge를 중지하지 않았습니다'
+  [[ "$(grep -c 'up -d --wait --wait-timeout 120 --no-build --no-deps edge' "$fixture_dir/docker.log")" == '1' ]] ||
+    fail '제한 시간이 지난 백업이 edge를 다시 시작하지 않았습니다'
+  if find "$timeout_backup_dir" -type f -print -quit | grep -q .; then
+    fail '제한 시간이 지난 백업이 불완전한 파일을 남겼습니다'
+  fi
+else
+  printf 'GNU timeout이 없어 백업 제한 시간 검사를 건너뜁니다. Linux CI에서 실행합니다.\n'
 fi
 
 identity_file="$fixture_dir/backup-identity.txt"
@@ -934,12 +961,17 @@ for unit_file in \
   fi
 done
 
+grep -Fq 'ExecStart=/usr/bin/timeout --verbose --kill-after=5m 20m /bin/bash' \
+  ops/linux/systemd/round-offsite-backup.service
 grep -Fq 'ExecStart=/usr/bin/restic --retry-lock 5m backup' \
   ops/linux/systemd/round-offsite-backup.service
 grep -Fq -- '--keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune' \
   ops/linux/systemd/round-offsite-maintenance.service
 grep -Fq 'ExecStart=/usr/bin/restic --retry-lock 5m check' \
   ops/linux/systemd/round-offsite-maintenance.service
+grep -Fxq 'OnCalendar=*-*-* 03:15:00' ops/linux/systemd/round-offsite-backup.timer
+grep -Fxq 'RandomizedDelaySec=0' ops/linux/systemd/round-offsite-backup.timer
+grep -Fxq 'AccuracySec=1s' ops/linux/systemd/round-offsite-backup.timer
 grep -Fq 'Persistent=false' ops/linux/systemd/round-offsite-backup.timer
 grep -Fq 'Persistent=true' ops/linux/systemd/round-offsite-maintenance.timer
 grep -Fq 'd /var/backups/round 0700 root root 30d' \

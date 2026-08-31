@@ -16,5 +16,6 @@ Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 TimeoutStartSec=30min
-ExecStart=/bin/bash /opt/round/ops/linux/backup-caddy.sh --recipient-file /etc/round/backup-recipients.txt --output-dir /var/backups/round /etc/round/production.env
+TimeoutStopSec=5min
+ExecStart=/usr/bin/timeout --verbose --kill-after=5m 20m /bin/bash /opt/round/ops/linux/backup-caddy.sh --recipient-file /etc/round/backup-recipients.txt --output-dir /var/backups/round /etc/round/production.env
 ExecStart=/usr/bin/restic --retry-lock 5m backup --host round-production --tag round-caddy --skip-if-unchanged /var/backups/round

@@ -100,7 +100,7 @@ cleanup() {
   trap - EXIT INT TERM
   if [[ "$edge_was_running" == true ]]; then
     round_ops_compose "$env_file" "$edge_image" "$signaling_image" \
-      up -d --wait --no-build --no-deps edge || exit_code=$?
+      up -d --wait --wait-timeout 120 --no-build --no-deps edge || exit_code=$?
   fi
   rm -f -- "$temporary" "$checksum_temporary"
   return "$exit_code"
@@ -141,7 +141,7 @@ mv -f -- "$checksum_temporary" "$backup_file.sha256"
 
 if [[ "$edge_was_running" == true ]]; then
   round_ops_compose "$env_file" "$edge_image" "$signaling_image" \
-    up -d --wait --no-build --no-deps edge
+    up -d --wait --wait-timeout 120 --no-build --no-deps edge
   edge_was_running=false
 fi
 trap - EXIT INT TERM
