@@ -679,12 +679,7 @@ export class RoomSession {
           return true;
         peer.videoQualityLimited = limited;
         peer.videoQualityFailed = false;
-        if (
-          this.#warning?.code === 'video-quality-update-failed' &&
-          ![...this.#peers.values()].some((item) => item.videoQualityFailed)
-        ) {
-          this.#warning = null;
-          this.#warningPeerId = null;
+        if (this.#clearResolvedVideoQualityWarning()) {
           this.#emit();
         }
         return true;
@@ -700,6 +695,18 @@ export class RoomSession {
     });
     peer.videoQualityUpdate = update;
     return update;
+  }
+
+  #clearResolvedVideoQualityWarning(): boolean {
+    if (
+      this.#warning?.code !== 'video-quality-update-failed' ||
+      [...this.#peers.values()].some((peer) => peer.videoQualityFailed)
+    ) {
+      return false;
+    }
+    this.#warning = null;
+    this.#warningPeerId = null;
+    return true;
   }
 
   /**
@@ -3076,6 +3083,7 @@ export class RoomSession {
     if (existing !== undefined) {
       this.#disposePeerContext(existing);
       this.#peers.delete(peerId);
+      this.#clearResolvedVideoQualityWarning();
     }
     this.#stopRemoteStream(peerId);
 
@@ -3745,6 +3753,7 @@ export class RoomSession {
       this.#markQueuedChatsFailed(peer);
       this.#disposePeerContext(peer);
       this.#peers.delete(peerId);
+      this.#clearResolvedVideoQualityWarning();
     }
 
     this.#stopRemoteStream(peerId);

@@ -96,6 +96,44 @@ describe('카메라 송신 품질', () => {
     expect(h.peerConnections.every((peer) => !peer.closed)).toBe(true);
   });
 
+  it.each([0, 1])(
+    '정상 연결이 %i개일 때 마지막 실패 연결이 퇴장하면 경고를 해제한다',
+    async (healthyCount) => {
+      const h = setup();
+      await joinSession(h, [
+        { peerId: 'peer-a', displayName: '가' },
+        { peerId: 'peer-b', displayName: '나' },
+        ...Array.from({ length: healthyCount }, (_, index) => ({
+          peerId: `healthy-${index}`,
+          displayName: '정상 참가자',
+        })),
+      ]);
+      for (const peer of h.peerConnections.slice(0, 2)) {
+        const video = peer.senders.find((sender) => sender.track?.kind === 'video')!;
+        vi.spyOn(video, 'setParameters').mockRejectedValueOnce(
+          new DOMException('미지원', 'NotSupportedError'),
+        );
+      }
+      expect(await h.session.setVideoQualityMode('data-saver')).toBe(false);
+      for (const peerId of ['peer-a', 'peer-b']) {
+        h.socket.serverMessage({
+          v: PROTOCOL_VERSION,
+          type: 'peer.left',
+          roomId: ROOM_ID,
+          payload: { peerId },
+        });
+        await flushMicrotasks();
+        if (peerId === 'peer-a') {
+          expect(h.session.getSnapshot().warning?.code).toBe('video-quality-update-failed');
+        }
+      }
+      expect(h.session.getSnapshot().warning).toBeNull();
+      expect(h.session.getSnapshot().participants).toHaveLength(healthyCount + 1);
+      expect(await h.session.setVideoQualityMode('standard')).toBe(true);
+      expect(h.session.getSnapshot().warning).toBeNull();
+    },
+  );
+
   it('연속 설정은 순서대로 적용하고 퇴장하면 끝나지 않은 브라우저 응답을 기다리지 않는다', async () => {
     const h = setup();
     await joinSession(h, [{ peerId: 'peer-a', displayName: '참가자' }]);
