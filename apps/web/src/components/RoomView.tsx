@@ -203,7 +203,23 @@ const candidateTypeLabels: Record<RTCIceCandidateType, string> = {
 };
 
 function diagnosticValue(value: number | null, unit: string) {
-  return value === null ? '측정 전' : `${value}${unit}`;
+  return value === null ? '측정 불가' : `${value}${unit}`;
+}
+
+export function connectionDiagnosticAdvice(diagnostic: PeerConnectionDiagnostics): string {
+  if (diagnostic.connectionState !== 'connected') {
+    return '연결 복구 중에는 품질을 판단하기 어렵습니다. 연결된 뒤 다시 측정해 주세요.';
+  }
+  if (diagnostic.packetLossPercent === null) {
+    return '수신 표본이 부족합니다. 상대방이 소리나 영상을 보내는 동안 다시 측정해 주세요.';
+  }
+  if (diagnostic.packetLossPercent >= 3 || (diagnostic.jitterMs ?? 0) >= 30) {
+    return '최근 수신이 불안정합니다. Wi-Fi 상태를 확인하고 상대방에게 데이터 절약 모드나 카메라 끄기를 요청해 보세요.';
+  }
+  if ((diagnostic.roundTripTimeMs ?? 0) >= 300) {
+    return '왕복 지연이 큽니다. 다운로드를 멈추거나 유선망·다른 Wi-Fi에서 다시 측정해 보세요.';
+  }
+  return '이번 측정에서 큰 수신 손실은 보이지 않습니다. 끊김이 반복되면 문제가 발생할 때 다시 측정해 주세요.';
 }
 
 function candidateTypeLabel(type: RTCIceCandidateType | null) {
@@ -235,7 +251,7 @@ function ConnectionDiagnosticItem({
           <dd>{diagnosticValue(diagnostic.roundTripTimeMs, 'ms')}</dd>
         </div>
         <div>
-          <dt>패킷 손실</dt>
+          <dt>최근 수신 손실</dt>
           <dd>{diagnosticValue(diagnostic.packetLossPercent, '%')}</dd>
         </div>
         <div>
@@ -243,6 +259,7 @@ function ConnectionDiagnosticItem({
           <dd>{diagnosticValue(diagnostic.jitterMs, 'ms')}</dd>
         </div>
       </dl>
+      <p>{connectionDiagnosticAdvice(diagnostic)}</p>
     </article>
   );
 }
@@ -464,7 +481,16 @@ export function RoomView({
       return;
     }
     try {
-      await navigator.clipboard.writeText(JSON.stringify(connectionDiagnostics.value, null, 2));
+      await navigator.clipboard.writeText(
+        JSON.stringify(
+          {
+            measurement: '요청 후 약 3초 동안의 수신 손실과 측정 종료 시점의 지연·jitter',
+            ...connectionDiagnostics.value,
+          },
+          null,
+          2,
+        ),
+      );
       setDiagnosticsCopyState('success');
     } catch {
       setDiagnosticsCopyState('error');
@@ -539,14 +565,15 @@ export function RoomView({
                 </button>
               </header>
               <p className="connection-diagnostics__privacy">
-                현재 연결에서 한 번만 수집하며 IP 주소, 방 코드, 참가자 식별자는 포함하지 않습니다.
+                요청 후 약 3초 동안 수신 손실을 측정합니다. 지연·jitter는 마지막 측정값이며, IP
+                주소, 방 코드, 참가자 식별자를 포함하거나 서버로 보내지 않습니다.
               </p>
               {connectionDiagnostics.status === 'error' ? (
                 <p role="alert">연결 진단을 수집하지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
               ) : connectionDiagnostics.status === 'idle' ? (
-                <p>연결 진단을 열면 현재 상태를 한 번 수집합니다.</p>
+                <p>연결 진단을 열면 약 3초 동안 측정합니다.</p>
               ) : readyConnectionDiagnostics === null ? (
-                <p role="status">연결 상태를 확인하고 있습니다.</p>
+                <p role="status">최근 수신 상태를 약 3초 동안 측정하고 있습니다.</p>
               ) : (
                 <>
                   {readyConnectionDiagnostics.connections.length === 0 ? (

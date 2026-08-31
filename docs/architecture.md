@@ -57,9 +57,14 @@ channel을 즉시 닫고 현재의 정상 channel을 유지합니다.
 채팅 frame의 `sentAt`은 표시와 wire 호환성을 위한 wall clock epoch이고, 피어별 수신량
 제한 구간은 시스템 시각 변경에 영향받지 않는 monotonic clock을 사용합니다.
 
-사용자가 연결 진단을 열면 `RoomSession`은 각 `RTCPeerConnection`의 표준 `getStats()`를 한 번
-호출합니다. 화면에는 연결 상태, local·remote candidate 유형, 왕복 지연, 패킷 손실률, 수신
-jitter 최댓값만 표시합니다. 방 코드, peer ID, 표시 이름, candidate 주소와 포트는 진단 결과에
+사용자가 연결 진단을 열거나 새로고침하면 `RoomSession`은 각 `RTCPeerConnection`의
+표준 `getStats()`를 약 3초 간격으로 두 번 호출합니다. 같은 RTP 통계의 수신·손실 증가량으로
+최근 수신 손실률을 계산하고 새 트랙·초기화된 카운터·누락된 통계는 계산에서 제외합니다.
+표본이 없으면 0% 대신 측정 불가를 표시하며 연결 종료 시 측정 대기도 정리합니다. 화면에는
+연결 상태, local·remote candidate 유형, 마지막 왕복 지연, 최근 수신 손실률, 마지막 수신
+jitter 최댓값과 재측정·네트워크 확인 안내를 표시합니다. 안내 기준은 손실 3% 이상 또는
+jitter 30ms 이상, 왕복 지연 300ms 이상이며 원인을 확정하는 진단은 아닙니다.
+방 코드, peer ID, 표시 이름, candidate 주소와 포트는 진단 결과에
 포함하지 않으며 서버로 전송하거나 주기적으로 수집하지 않습니다. 따라서 운영 지원에 필요한
 TURN 사용 여부와 품질 정보는 복사할 수 있지만 참가자의 네트워크 주소는 노출하지 않습니다.
 

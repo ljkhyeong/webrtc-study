@@ -703,7 +703,7 @@ export class RoomSession {
   }
 
   /**
-   * 현재 피어 연결의 개인정보를 제외한 진단 정보를 요청 시점에 한 번 수집한다.
+   * 요청 후 약 3초 동안의 수신 통계를 비교하며 주기적으로 수집하지 않는다.
    * candidate 주소, 방 코드, peer ID는 결과에 포함하지 않는다.
    */
   async collectConnectionDiagnostics(): Promise<RoomConnectionDiagnostics> {
@@ -711,8 +711,22 @@ export class RoomSession {
       (peer) => !peer.closed && peer.connection.connectionState !== 'closed',
     );
     const connections = await Promise.all(
-      peers.map(async (peer, index): Promise<PeerConnectionDiagnostics> => {
+      peers.map(async (peer, index): Promise<PeerConnectionDiagnostics | null> => {
+        const before = await peer.connection.getStats();
+        const signal = peer.trackReplacementAbort.signal;
+        if (signal.aborted) return null;
+        await new Promise<void>((resolve) => {
+          const finish = () => {
+            globalThis.clearTimeout(timer);
+            signal.removeEventListener('abort', finish);
+            resolve();
+          };
+          const timer = globalThis.setTimeout(finish, 3_000);
+          signal.addEventListener('abort', finish, { once: true });
+        });
+        if (!this.#isCurrentPeer(peer)) return null;
         const report = await peer.connection.getStats();
+        if (!this.#isCurrentPeer(peer)) return null;
         const entries = [...report.values()];
         const transport = entries.find(
           (stats): stats is RTCTransportStats => stats.type === 'transport',
@@ -750,8 +764,21 @@ export class RoomSession {
             continue;
           }
           const inbound = stats as RTCInboundRtpStreamStats;
-          packetsReceived += inbound.packetsReceived ?? 0;
-          packetsLost += inbound.packetsLost ?? 0;
+          const previous = before.get(inbound.id) as RTCInboundRtpStreamStats | undefined;
+          if (
+            previous?.type === 'inbound-rtp' &&
+            previous.ssrc === inbound.ssrc &&
+            inbound.timestamp > previous.timestamp &&
+            inbound.packetsReceived !== undefined &&
+            previous.packetsReceived !== undefined &&
+            inbound.packetsLost !== undefined &&
+            previous.packetsLost !== undefined &&
+            inbound.packetsReceived >= previous.packetsReceived
+          ) {
+            packetsReceived += inbound.packetsReceived - previous.packetsReceived;
+            // 늦게 도착한 패킷으로 누적 손실이 감소해도 음수 손실률을 표시하지 않는다.
+            packetsLost += Math.max(0, inbound.packetsLost - previous.packetsLost);
+          }
           if (
             inbound.jitter !== undefined &&
             (maximumJitterSeconds === null || inbound.jitter > maximumJitterSeconds)
@@ -777,7 +804,10 @@ export class RoomSession {
       }),
     );
 
-    return { status: this.#status, connections };
+    return {
+      status: this.#status,
+      connections: connections.filter((connection) => connection !== null),
+    };
   }
 
   /**

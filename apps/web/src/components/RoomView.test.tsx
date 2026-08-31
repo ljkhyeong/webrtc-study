@@ -5,11 +5,32 @@ import type { ChatMessage } from '@round/rtc-core';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  connectionDiagnosticAdvice,
   countNewLocalDeliveryIssues,
   countNewRemoteMessages,
   RoomView,
   shouldSubmitChatOnEnter,
 } from './RoomView';
+
+describe('진단 안내', () => {
+  it.each([
+    { packetLossPercent: null, roundTripTimeMs: 34, jitterMs: 10, message: '표본이 부족' },
+    { packetLossPercent: 3, roundTripTimeMs: 34, jitterMs: 10, message: '상대방에게 데이터 절약' },
+    { packetLossPercent: 0, roundTripTimeMs: 34, jitterMs: 30, message: '수신이 불안정' },
+    { packetLossPercent: 0, roundTripTimeMs: 300, jitterMs: 10, message: '왕복 지연이 큽니다' },
+    { packetLossPercent: 0, roundTripTimeMs: 34, jitterMs: 10, message: '이번 측정' },
+  ])('수신 표본에 맞는 안내를 표시한다: $message', ({ message, ...values }) => {
+    expect(
+      connectionDiagnosticAdvice({
+        connectionNumber: 1,
+        connectionState: 'connected',
+        localCandidateType: null,
+        remoteCandidateType: null,
+        ...values,
+      }),
+    ).toContain(message);
+  });
+});
 
 function renderRoom(overrides: Partial<Parameters<typeof RoomView>[0]> = {}) {
   return renderToStaticMarkup(

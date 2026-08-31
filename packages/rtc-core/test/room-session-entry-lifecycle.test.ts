@@ -417,7 +417,7 @@ describe('RoomSession', () => {
     ]);
   });
 
-  it('collects connection diagnostics without peer or network addresses', async () => {
+  it('최근 구간의 손실만 계산하고 참가자·네트워크 주소를 진단에서 제외한다', async () => {
     const harness = createHarness();
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const peer = harness.peerConnections[0];
@@ -493,7 +493,32 @@ describe('RoomSession', () => {
       ],
     ]) as unknown as RTCStatsReport;
 
-    const diagnostics = await harness.session.collectConnectionDiagnostics();
+    const before = new Map(peer.statsReport);
+    const after = new Map(before);
+    after.set('audio-inbound', {
+      ...before.get('audio-inbound'),
+      timestamp: 3001,
+      packetsReceived: 1089,
+      packetsLost: 11,
+    } as RTCStats);
+    after.set('video-inbound', {
+      ...before.get('video-inbound'),
+      timestamp: 3001,
+      packetsReceived: 579,
+      packetsLost: 21,
+    } as RTCStats);
+    vi.spyOn(peer, 'getStats')
+      .mockResolvedValueOnce(before as RTCStatsReport)
+      .mockResolvedValueOnce(after as RTCStatsReport);
+    vi.useFakeTimers();
+    let diagnostics;
+    try {
+      const collecting = harness.session.collectConnectionDiagnostics();
+      await vi.advanceTimersByTimeAsync(3_000);
+      diagnostics = await collecting;
+    } finally {
+      vi.useRealTimers();
+    }
 
     expect(diagnostics).toEqual({
       status: 'active',
@@ -504,7 +529,7 @@ describe('RoomSession', () => {
           localCandidateType: 'relay',
           remoteCandidateType: 'srflx',
           roundTripTimeMs: 34,
-          packetLossPercent: 2,
+          packetLossPercent: 1,
           jitterMs: 18,
         },
       ],
