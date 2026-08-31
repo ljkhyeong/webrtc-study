@@ -924,6 +924,16 @@ if find "$fresh_restore_root" -maxdepth 1 -name '.restore-backup.*' -print -quit
   fail 'fresh-host restore left its encrypted backup snapshot behind'
 fi
 
+for unit_file in \
+  ops/linux/systemd/round-offsite-backup.service \
+  ops/linux/systemd/round-offsite-maintenance.service; do
+  grep -Fxq 'OnFailure=round-ops-failure@%n.service' "$unit_file" ||
+    fail "백업 실패 기록 설정이 없습니다: $unit_file"
+  if grep -Eq '^(Condition|Assert)[[:alnum:]]+=' "$unit_file"; then
+    fail "백업 실패 처리를 건너뛰는 사전 조건이 있습니다: $unit_file"
+  fi
+done
+
 grep -Fq 'ExecStart=/usr/bin/restic --retry-lock 5m backup' \
   ops/linux/systemd/round-offsite-backup.service
 grep -Fq -- '--keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune' \

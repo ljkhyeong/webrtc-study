@@ -281,6 +281,15 @@ systemctl status round-offsite-backup.service
 prune 중에는 repository가 잠기므로 일일 백업과 겹치지 않게 시간을 분리했습니다.
 로컬 age 백업은 systemd-tmpfiles가 30일 뒤 정리하고 장기 보존은 R2 snapshot이 담당합니다.
 
+필수 실행 파일이나 설정 파일이 없으면 서비스를 실패 처리하고 `OnFailure`로 `round-ops` 태그의
+치명적인 운영 오류를 기록합니다. `Condition`·`Assert` 사전 검사는 실패 처리 전에 실행을
+건너뛰므로 사용하지 않습니다. 실패 요약과 실제 원인은 다음 로그에서 확인합니다.
+
+```bash
+journalctl -t round-ops -p crit --since today
+journalctl -u round-offsite-backup.service -u round-offsite-maintenance.service --since today
+```
+
 일일 백업은 03:15부터 최대 30분의 무작위 지연 뒤 시작합니다. Caddy volume의 일관된 snapshot을
 만드는 동안 edge를 잠시 중지하고 완료 또는 실패 시 즉시 다시 시작합니다. 이때 활성 WebSocket은
 종료될 수 있으므로 03:15~03:45를 유지보수 창으로 운영하고 사용자가 방에 다시 입장할 수 있게

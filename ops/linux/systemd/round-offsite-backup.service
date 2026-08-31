@@ -4,12 +4,6 @@ Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
 OnFailure=round-ops-failure@%n.service
-ConditionFileIsExecutable=/usr/bin/restic
-AssertPathExists=/opt/round/ops/linux/backup-caddy.sh
-AssertPathExists=/etc/round/production.env
-AssertPathExists=/etc/round/backup-recipients.txt
-AssertPathExists=/etc/round/restic-r2.env
-AssertPathExists=/etc/round/restic-password
 
 [Service]
 Type=oneshot
