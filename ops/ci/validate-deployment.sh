@@ -94,6 +94,7 @@ production_config=$(docker compose --env-file ops/production.env.example config 
 jq -e '
   ((.services.signaling.networks | keys | sort) == ["backend", "egress"])
   and ((.services.edge.networks | keys | sort) == ["backend", "edge"])
+  and (.services.edge.restart == "always")
   and (.networks.backend.internal == true)
   and ((.networks.egress.internal // false) == false)
 ' <<<"$production_config" >/dev/null

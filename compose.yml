@@ -45,7 +45,7 @@ services:
       - /tmp:size=16m,mode=1777
     security_opt:
       - no-new-privileges:true
-    restart: unless-stopped
+    restart: always
     stop_grace_period: 20s
     healthcheck:
       test: ['CMD', 'wget', '-q', '-T', '2', '-O', '/dev/null', 'http://127.0.0.1:8080/healthz']

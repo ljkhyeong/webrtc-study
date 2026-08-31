@@ -120,6 +120,11 @@ ops/linux/rollback.sh \
 
 롤백하면 활성 WebSocket이 닫힐 수 있으므로 사용자가 다시 입장할 수 있는 시간에 수행합니다.
 
+`edge`는 `restart: always`로 실행합니다. 백업이 edge를 중지한 뒤 전원이 끊겨도 Docker가 다시
+시작되면 edge가 자동으로 켜집니다. 운영자가 수동으로 중지한 경우에도 Docker 재시작 시 다시
+켜집니다. 재부팅 후에도 서비스를 중단해 두려면 `docker compose --env-file /etc/round/production.env down`으로
+프로젝트를 내립니다. Caddy 데이터를 보존하려면 `--volumes` 옵션을 사용하지 않습니다.
+
 ## Grafana Cloud 지표와 경보
 
 Grafana Alloy는 signaling의 비공개 `/actuator/prometheus`를 30초마다 수집하고 Grafana Cloud
