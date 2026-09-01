@@ -19,6 +19,11 @@ import {
   type ServerMessage,
   type SignalingErrorCode,
 } from '@round/protocol';
+import {
+  measurePeerConnections,
+  type PeerConnectionDiagnostics,
+} from './connection-diagnostics.js';
+export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
 
 export type RoomSessionStatus =
   | 'idle'
@@ -93,16 +98,6 @@ export interface ParticipantSnapshot {
   readonly audioEnabled: boolean;
   readonly videoEnabled: boolean;
   readonly videoSource: VideoSource;
-}
-
-export interface PeerConnectionDiagnostics {
-  readonly connectionNumber: number;
-  readonly connectionState: PeerConnectionStatus;
-  readonly localCandidateType: RTCIceCandidateType | null;
-  readonly remoteCandidateType: RTCIceCandidateType | null;
-  readonly roundTripTimeMs: number | null;
-  readonly packetLossPercent: number | null;
-  readonly jitterMs: number | null;
 }
 
 export interface RoomConnectionDiagnostics {
@@ -234,22 +229,13 @@ interface PeerContext {
   readonly pendingCandidates: (SerializedIceCandidate | null)[];
   readonly pendingLocalCandidates: (SerializedIceCandidate | null)[];
   readonly localIceUsernameFragments: Set<string>;
-  readonly pendingChatMessages: PendingChatMessage[];
-  readonly receivedChatIds: Set<string>;
-  readonly receivedChatIdOrder: string[];
-  readonly pendingAckIds: Set<string>;
-  pendingMediaState: ParticipantMediaDataMessage | null;
+  readonly data: PeerDataState;
   pendingCandidateOverflowWarned: boolean;
-  inboundDataWindowStartedAt: number | null;
-  inboundDataMessagesInWindow: number;
-  inboundDataRateLimitExceeded: boolean;
-  inboundDataWindowExpiryTimer: TimerHandle | null;
   offerRetryAttempts: number;
   connectionAttempt: number;
   pendingLocalRenegotiation: boolean;
   negotiationId: string | null;
   readonly retiredNegotiationIds: Set<string>;
-  channel: RTCDataChannel | null;
   remoteDescriptionSet: boolean;
   localDescriptionPublished: boolean;
   makingOffer: boolean;
@@ -259,8 +245,21 @@ interface PeerContext {
   offerRetryTimer: TimerHandle | null;
   disconnectedTimer: TimerHandle | null;
   recoveryTimer: TimerHandle | null;
-  dataChannelErrorTimer: TimerHandle | null;
   closed: boolean;
+}
+
+interface PeerDataState {
+  channel: RTCDataChannel | null;
+  readonly pendingChatMessages: PendingChatMessage[];
+  readonly receivedChatIds: Set<string>;
+  readonly receivedChatIdOrder: string[];
+  readonly pendingAckIds: Set<string>;
+  pendingMediaState: ParticipantMediaDataMessage | null;
+  inboundWindowStartedAt: number | null;
+  inboundMessagesInWindow: number;
+  inboundRateLimitExceeded: boolean;
+  inboundWindowExpiryTimer: TimerHandle | null;
+  errorTimer: TimerHandle | null;
 }
 
 type ChatRecipientDeliveryState = 'pending' | 'acknowledged' | 'failed';
@@ -717,103 +716,16 @@ export class RoomSession {
     const peers = [...this.#peers.values()].filter(
       (peer) => !peer.closed && peer.connection.connectionState !== 'closed',
     );
-    const connections = await Promise.all(
-      peers.map(async (peer, index): Promise<PeerConnectionDiagnostics | null> => {
-        const before = await peer.connection.getStats();
-        const signal = peer.trackReplacementAbort.signal;
-        if (signal.aborted) return null;
-        await new Promise<void>((resolve) => {
-          const finish = () => {
-            globalThis.clearTimeout(timer);
-            signal.removeEventListener('abort', finish);
-            resolve();
-          };
-          const timer = globalThis.setTimeout(finish, 3_000);
-          signal.addEventListener('abort', finish, { once: true });
-        });
-        if (!this.#isCurrentPeer(peer)) return null;
-        const report = await peer.connection.getStats();
-        if (!this.#isCurrentPeer(peer)) return null;
-        const entries = [...report.values()];
-        const transport = entries.find(
-          (stats): stats is RTCTransportStats => stats.type === 'transport',
-        );
-        const selectedCandidatePair =
-          (transport?.selectedCandidatePairId === undefined
-            ? undefined
-            : report.get(transport.selectedCandidatePairId)) ??
-          entries.find(
-            (stats) =>
-              stats.type === 'candidate-pair' &&
-              (stats as RTCIceCandidatePairStats).state === 'succeeded' &&
-              (stats as RTCIceCandidatePairStats).nominated === true,
-          );
-        const candidatePair =
-          selectedCandidatePair?.type === 'candidate-pair'
-            ? (selectedCandidatePair as RTCIceCandidatePairStats)
-            : undefined;
-        const localCandidate =
-          candidatePair === undefined
-            ? undefined
-            : (report.get(candidatePair.localCandidateId) as
-                (RTCStats & { readonly candidateType?: RTCIceCandidateType }) | undefined);
-        const remoteCandidate =
-          candidatePair === undefined
-            ? undefined
-            : (report.get(candidatePair.remoteCandidateId) as
-                (RTCStats & { readonly candidateType?: RTCIceCandidateType }) | undefined);
-
-        let packetsReceived = 0;
-        let packetsLost = 0;
-        let maximumJitterSeconds: number | null = null;
-        for (const stats of entries) {
-          if (stats.type !== 'inbound-rtp') {
-            continue;
-          }
-          const inbound = stats as RTCInboundRtpStreamStats;
-          const previous = before.get(inbound.id) as RTCInboundRtpStreamStats | undefined;
-          if (
-            previous?.type === 'inbound-rtp' &&
-            previous.ssrc === inbound.ssrc &&
-            inbound.timestamp > previous.timestamp &&
-            inbound.packetsReceived !== undefined &&
-            previous.packetsReceived !== undefined &&
-            inbound.packetsLost !== undefined &&
-            previous.packetsLost !== undefined &&
-            inbound.packetsReceived >= previous.packetsReceived
-          ) {
-            packetsReceived += inbound.packetsReceived - previous.packetsReceived;
-            // 늦게 도착한 패킷으로 누적 손실이 감소해도 음수 손실률을 표시하지 않는다.
-            packetsLost += Math.max(0, inbound.packetsLost - previous.packetsLost);
-          }
-          if (
-            inbound.jitter !== undefined &&
-            (maximumJitterSeconds === null || inbound.jitter > maximumJitterSeconds)
-          ) {
-            maximumJitterSeconds = inbound.jitter;
-          }
-        }
-        const totalPackets = packetsReceived + packetsLost;
-
-        return {
-          connectionNumber: index + 1,
-          connectionState: peer.connection.connectionState,
-          localCandidateType: localCandidate?.candidateType ?? null,
-          remoteCandidateType: remoteCandidate?.candidateType ?? null,
-          roundTripTimeMs:
-            candidatePair?.currentRoundTripTime === undefined
-              ? null
-              : Math.round(candidatePair.currentRoundTripTime * 1_000),
-          packetLossPercent:
-            totalPackets <= 0 ? null : Math.round((packetsLost / totalPackets) * 1_000) / 10,
-          jitterMs: maximumJitterSeconds === null ? null : Math.round(maximumJitterSeconds * 1_000),
-        };
-      }),
+    const connections = await measurePeerConnections(
+      peers.map((peer) => ({
+        connection: peer.connection,
+        signal: peer.trackReplacementAbort.signal,
+        isCurrent: () => this.#isCurrentPeer(peer),
+      })),
     );
-
     return {
       status: this.#status,
-      connections: connections.filter((connection) => connection !== null),
+      connections,
     };
   }
 
@@ -1569,8 +1481,8 @@ export class RoomSession {
     };
     this.#rememberMessage(initialMessage);
     for (const peer of targets.peers) {
-      if (peer.channel?.readyState === 'open' && !peer.recovering) {
-        this.#flushPendingData(peer, peer.channel, false);
+      if (peer.data.channel?.readyState === 'open' && !peer.recovering) {
+        this.#flushPendingData(peer, peer.data.channel, false);
       }
     }
     this.#emit();
@@ -2258,7 +2170,7 @@ export class RoomSession {
     }
     this.#setPeerConnectionStatus(peerId, 'negotiating');
 
-    if (peer.channel === null) {
+    if (peer.data.channel === null) {
       this.#attachDataChannel(
         peer,
         peer.connection.createDataChannel(DATA_CHANNEL_LABEL, {
@@ -2568,22 +2480,25 @@ export class RoomSession {
       pendingCandidates: [],
       pendingLocalCandidates: [],
       localIceUsernameFragments: new Set(),
-      pendingChatMessages: [],
-      receivedChatIds: new Set(),
-      receivedChatIdOrder: [],
-      pendingAckIds: new Set(),
-      pendingMediaState: null,
+      data: {
+        channel: null,
+        pendingChatMessages: [],
+        receivedChatIds: new Set(),
+        receivedChatIdOrder: [],
+        pendingAckIds: new Set(),
+        pendingMediaState: null,
+        inboundWindowStartedAt: null,
+        inboundMessagesInWindow: 0,
+        inboundRateLimitExceeded: false,
+        inboundWindowExpiryTimer: null,
+        errorTimer: null,
+      },
       pendingCandidateOverflowWarned: false,
-      inboundDataWindowStartedAt: null,
-      inboundDataMessagesInWindow: 0,
-      inboundDataRateLimitExceeded: false,
-      inboundDataWindowExpiryTimer: null,
       offerRetryAttempts: 0,
       connectionAttempt,
       pendingLocalRenegotiation: false,
       negotiationId: null,
       retiredNegotiationIds: new Set(retiredNegotiationIds),
-      channel: null,
       remoteDescriptionSet: connection.remoteDescription !== null,
       localDescriptionPublished: false,
       makingOffer: false,
@@ -2593,7 +2508,6 @@ export class RoomSession {
       offerRetryTimer: null,
       disconnectedTimer: null,
       recoveryTimer: null,
-      dataChannelErrorTimer: null,
       closed: false,
     };
     this.#peers.set(peerId, peer);
@@ -2890,7 +2804,10 @@ export class RoomSession {
       if (!this.#isCurrentPeer(peer) || this.#status !== 'active') {
         return;
       }
-      if (peer.connection.connectionState === 'connected' && peer.channel?.readyState === 'open') {
+      if (
+        peer.connection.connectionState === 'connected' &&
+        peer.data.channel?.readyState === 'open'
+      ) {
         this.#finishPeerRecovery(peer);
         return;
       }
@@ -2959,7 +2876,10 @@ export class RoomSession {
       if (!this.#isCurrentPeer(peer)) {
         return;
       }
-      if (peer.connection.connectionState === 'connected' && peer.channel?.readyState === 'open') {
+      if (
+        peer.connection.connectionState === 'connected' &&
+        peer.data.channel?.readyState === 'open'
+      ) {
         this.#finishPeerRecovery(peer);
         return;
       }
@@ -3001,7 +2921,10 @@ export class RoomSession {
   }
 
   #finishPeerRecovery(peer: PeerContext): void {
-    if (peer.connection.connectionState !== 'connected' || peer.channel?.readyState !== 'open') {
+    if (
+      peer.connection.connectionState !== 'connected' ||
+      peer.data.channel?.readyState !== 'open'
+    ) {
       return;
     }
     const shouldFlush =
@@ -3043,8 +2966,8 @@ export class RoomSession {
         'ice-candidate-queue-overflow',
         'ice-candidate-rejected',
       ]) || this.#clearRecoveredDataChannelWarning(peer);
-    if (shouldFlush && peer.channel?.readyState === 'open') {
-      this.#flushPendingData(peer, peer.channel, true);
+    if (shouldFlush && peer.data.channel?.readyState === 'open') {
+      this.#flushPendingData(peer, peer.data.channel, true);
     }
     if (restoredConnectedState || warningCleared) {
       this.#emit();
@@ -3064,16 +2987,16 @@ export class RoomSession {
     const pendingCandidateOverflowWarned =
       preservePendingCandidates && existing?.pendingCandidateOverflowWarned === true;
     const pendingChatMessages =
-      existing?.pendingChatMessages.splice(0, existing.pendingChatMessages.length) ?? [];
+      existing?.data.pendingChatMessages.splice(0, existing.data.pendingChatMessages.length) ?? [];
     for (const pendingChat of pendingChatMessages) {
       pendingChat.sentOnCurrentChannel = false;
     }
-    const receivedChatIdOrder = [...(existing?.receivedChatIdOrder ?? [])];
-    const pendingAckIds = new Set(existing?.pendingAckIds ?? []);
-    const pendingMediaState = existing?.pendingMediaState ?? null;
-    const inboundDataWindowStartedAt = existing?.inboundDataWindowStartedAt ?? null;
-    const inboundDataMessagesInWindow = existing?.inboundDataMessagesInWindow ?? 0;
-    const inboundDataRateLimitExceeded = existing?.inboundDataRateLimitExceeded ?? false;
+    const receivedChatIdOrder = [...(existing?.data.receivedChatIdOrder ?? [])];
+    const pendingAckIds = new Set(existing?.data.pendingAckIds ?? []);
+    const pendingMediaState = existing?.data.pendingMediaState ?? null;
+    const inboundDataWindowStartedAt = existing?.data.inboundWindowStartedAt ?? null;
+    const inboundDataMessagesInWindow = existing?.data.inboundMessagesInWindow ?? 0;
+    const inboundDataRateLimitExceeded = existing?.data.inboundRateLimitExceeded ?? false;
     const offerRetryAttempts = existing?.offerRetryAttempts ?? 0;
     if (existing !== undefined) {
       this.#rememberRetiredNegotiation(existing, existing.negotiationId);
@@ -3109,18 +3032,18 @@ export class RoomSession {
     replacement.recovering = true;
     replacement.pendingCandidates.push(...pendingCandidates);
     replacement.pendingCandidateOverflowWarned = pendingCandidateOverflowWarned;
-    replacement.pendingChatMessages.push(...pendingChatMessages);
+    replacement.data.pendingChatMessages.push(...pendingChatMessages);
     for (const messageId of receivedChatIdOrder) {
-      replacement.receivedChatIds.add(messageId);
-      replacement.receivedChatIdOrder.push(messageId);
+      replacement.data.receivedChatIds.add(messageId);
+      replacement.data.receivedChatIdOrder.push(messageId);
     }
     for (const messageId of pendingAckIds) {
-      replacement.pendingAckIds.add(messageId);
+      replacement.data.pendingAckIds.add(messageId);
     }
-    replacement.pendingMediaState = pendingMediaState;
-    replacement.inboundDataWindowStartedAt = inboundDataWindowStartedAt;
-    replacement.inboundDataMessagesInWindow = inboundDataMessagesInWindow;
-    replacement.inboundDataRateLimitExceeded = inboundDataRateLimitExceeded;
+    replacement.data.pendingMediaState = pendingMediaState;
+    replacement.data.inboundWindowStartedAt = inboundDataWindowStartedAt;
+    replacement.data.inboundMessagesInWindow = inboundDataMessagesInWindow;
+    replacement.data.inboundRateLimitExceeded = inboundDataRateLimitExceeded;
     this.#scheduleInboundDataWindowExpiry(replacement);
     replacement.offerRetryAttempts = offerRetryAttempts;
     this.#emit();
@@ -3128,16 +3051,16 @@ export class RoomSession {
   }
 
   #attachDataChannel(peer: PeerContext, channel: RTCDataChannel): void {
-    if (peer.channel !== null && peer.channel !== channel) {
-      this.#detachAndCloseChannel(peer.channel);
+    if (peer.data.channel !== null && peer.data.channel !== channel) {
+      this.#detachAndCloseChannel(peer.data.channel);
     }
-    if (peer.dataChannelErrorTimer !== null) {
-      globalThis.clearTimeout(peer.dataChannelErrorTimer);
-      peer.dataChannelErrorTimer = null;
+    if (peer.data.errorTimer !== null) {
+      globalThis.clearTimeout(peer.data.errorTimer);
+      peer.data.errorTimer = null;
     }
 
-    peer.channel = channel;
-    for (const pendingChat of peer.pendingChatMessages) {
+    peer.data.channel = channel;
+    for (const pendingChat of peer.data.pendingChatMessages) {
       pendingChat.sentOnCurrentChannel = false;
     }
     channel.bufferedAmountLowThreshold = DATA_CHANNEL_BUFFERED_AMOUNT_LOW_BYTES;
@@ -3157,11 +3080,11 @@ export class RoomSession {
       );
     };
     channel.onerror = () => {
-      if (peer.dataChannelErrorTimer !== null) {
-        globalThis.clearTimeout(peer.dataChannelErrorTimer);
+      if (peer.data.errorTimer !== null) {
+        globalThis.clearTimeout(peer.data.errorTimer);
       }
-      peer.dataChannelErrorTimer = globalThis.setTimeout(() => {
-        peer.dataChannelErrorTimer = null;
+      peer.data.errorTimer = globalThis.setTimeout(() => {
+        peer.data.errorTimer = null;
         if (!this.#isCurrentPeer(peer)) {
           return;
         }
@@ -3180,7 +3103,11 @@ export class RoomSession {
   }
 
   #handleDataChannelOpen(peer: PeerContext, channel: RTCDataChannel): void {
-    if (!this.#isCurrentPeer(peer) || peer.channel !== channel || channel.readyState !== 'open') {
+    if (
+      !this.#isCurrentPeer(peer) ||
+      peer.data.channel !== channel ||
+      channel.readyState !== 'open'
+    ) {
       return;
     }
     if (peer.connection.connectionState === 'connected') {
@@ -3200,22 +3127,22 @@ export class RoomSession {
     code: DataChannelRecoveryIssueCode,
     message: string,
   ): void {
-    if (!this.#isCurrentPeer(peer) || peer.channel !== channel) {
+    if (!this.#isCurrentPeer(peer) || peer.data.channel !== channel) {
       return;
     }
-    if (peer.dataChannelErrorTimer !== null) {
-      globalThis.clearTimeout(peer.dataChannelErrorTimer);
-      peer.dataChannelErrorTimer = null;
+    if (peer.data.errorTimer !== null) {
+      globalThis.clearTimeout(peer.data.errorTimer);
+      peer.data.errorTimer = null;
     }
 
-    peer.channel = null;
+    peer.data.channel = null;
     this.#detachAndCloseChannel(channel);
     this.#setPeerWarning(peer.peerId, code, message);
     this.#beginPeerRecovery(peer);
   }
 
   #clearRecoveredDataChannelWarning(peer: PeerContext): boolean {
-    if (peer.channel?.readyState !== 'open') {
+    if (peer.data.channel?.readyState !== 'open') {
       return false;
     }
     return this.#clearPeerWarning(peer.peerId, DATA_CHANNEL_RECOVERY_WARNING_CODES);
@@ -3224,7 +3151,7 @@ export class RoomSession {
   #handleDataMessage(peer: PeerContext, channel: RTCDataChannel, raw: unknown): void {
     if (
       !this.#isCurrentPeer(peer) ||
-      peer.channel !== channel ||
+      peer.data.channel !== channel ||
       !this.#consumeInboundDataBudget(peer) ||
       typeof raw !== 'string'
     ) {
@@ -3262,7 +3189,7 @@ export class RoomSession {
       return;
     }
 
-    if (!peer.receivedChatIds.has(data.id)) {
+    if (!peer.data.receivedChatIds.has(data.id)) {
       this.#rememberReceivedChatId(peer, data.id);
       this.#rememberMessage({
         id: data.id,
@@ -3275,32 +3202,35 @@ export class RoomSession {
       });
       this.#emit();
     }
-    if (peer.pendingAckIds.has(data.id) || peer.pendingAckIds.size < MAX_PENDING_ACK_IDS_PER_PEER) {
-      peer.pendingAckIds.add(data.id);
+    if (
+      peer.data.pendingAckIds.has(data.id) ||
+      peer.data.pendingAckIds.size < MAX_PENDING_ACK_IDS_PER_PEER
+    ) {
+      peer.data.pendingAckIds.add(data.id);
       this.#flushPendingData(peer, channel, false);
     }
   }
 
   #rememberReceivedChatId(peer: PeerContext, messageId: string): void {
-    peer.receivedChatIds.add(messageId);
-    peer.receivedChatIdOrder.push(messageId);
-    while (peer.receivedChatIdOrder.length > MAX_RECEIVED_CHAT_IDS_PER_PEER) {
-      const removed = peer.receivedChatIdOrder.shift() as string;
-      peer.receivedChatIds.delete(removed);
+    peer.data.receivedChatIds.add(messageId);
+    peer.data.receivedChatIdOrder.push(messageId);
+    while (peer.data.receivedChatIdOrder.length > MAX_RECEIVED_CHAT_IDS_PER_PEER) {
+      const removed = peer.data.receivedChatIdOrder.shift() as string;
+      peer.data.receivedChatIds.delete(removed);
     }
   }
 
   #consumeInboundDataBudget(peer: PeerContext): boolean {
     const now = this.#monotonicNow();
-    const windowStartedAt = peer.inboundDataWindowStartedAt;
+    const windowStartedAt = peer.data.inboundWindowStartedAt;
     let warningCleared = false;
     if (windowStartedAt === null || now - windowStartedAt >= DATA_CHANNEL_RATE_WINDOW_MS) {
       warningCleared = this.#resetInboundDataWindow(peer, now);
     }
 
-    if (peer.inboundDataMessagesInWindow >= MAX_DATA_CHANNEL_MESSAGES_PER_WINDOW) {
-      if (!peer.inboundDataRateLimitExceeded) {
-        peer.inboundDataRateLimitExceeded = true;
+    if (peer.data.inboundMessagesInWindow >= MAX_DATA_CHANNEL_MESSAGES_PER_WINDOW) {
+      if (!peer.data.inboundRateLimitExceeded) {
+        peer.data.inboundRateLimitExceeded = true;
         this.#scheduleInboundDataWindowExpiry(peer);
       }
       if (this.#warning === null) {
@@ -3313,7 +3243,7 @@ export class RoomSession {
       return false;
     }
 
-    peer.inboundDataMessagesInWindow += 1;
+    peer.data.inboundMessagesInWindow += 1;
     if (warningCleared) {
       this.#emit();
     }
@@ -3321,34 +3251,34 @@ export class RoomSession {
   }
 
   #resetInboundDataWindow(peer: PeerContext, nextWindowStartedAt: number | null): boolean {
-    if (peer.inboundDataWindowExpiryTimer !== null) {
-      globalThis.clearTimeout(peer.inboundDataWindowExpiryTimer);
-      peer.inboundDataWindowExpiryTimer = null;
+    if (peer.data.inboundWindowExpiryTimer !== null) {
+      globalThis.clearTimeout(peer.data.inboundWindowExpiryTimer);
+      peer.data.inboundWindowExpiryTimer = null;
     }
-    peer.inboundDataWindowStartedAt = nextWindowStartedAt;
-    peer.inboundDataMessagesInWindow = 0;
-    peer.inboundDataRateLimitExceeded = false;
+    peer.data.inboundWindowStartedAt = nextWindowStartedAt;
+    peer.data.inboundMessagesInWindow = 0;
+    peer.data.inboundRateLimitExceeded = false;
     return this.#clearPeerWarning(peer.peerId, ['data-channel-rate-limit']);
   }
 
   #scheduleInboundDataWindowExpiry(peer: PeerContext): void {
-    const windowStartedAt = peer.inboundDataWindowStartedAt;
+    const windowStartedAt = peer.data.inboundWindowStartedAt;
     if (
       !this.#isCurrentPeer(peer) ||
-      !peer.inboundDataRateLimitExceeded ||
+      !peer.data.inboundRateLimitExceeded ||
       windowStartedAt === null ||
-      peer.inboundDataWindowExpiryTimer !== null
+      peer.data.inboundWindowExpiryTimer !== null
     ) {
       return;
     }
 
     const delay = Math.max(0, windowStartedAt + DATA_CHANNEL_RATE_WINDOW_MS - this.#monotonicNow());
-    peer.inboundDataWindowExpiryTimer = globalThis.setTimeout(() => {
-      peer.inboundDataWindowExpiryTimer = null;
+    peer.data.inboundWindowExpiryTimer = globalThis.setTimeout(() => {
+      peer.data.inboundWindowExpiryTimer = null;
       if (
         !this.#isCurrentPeer(peer) ||
-        !peer.inboundDataRateLimitExceeded ||
-        peer.inboundDataWindowStartedAt !== windowStartedAt
+        !peer.data.inboundRateLimitExceeded ||
+        peer.data.inboundWindowStartedAt !== windowStartedAt
       ) {
         return;
       }
@@ -3375,9 +3305,9 @@ export class RoomSession {
       if (!this.#isCurrentPeer(peer)) {
         continue;
       }
-      peer.pendingMediaState = message;
-      if (peer.channel?.readyState === 'open' && !peer.recovering) {
-        this.#flushPendingData(peer, peer.channel, false);
+      peer.data.pendingMediaState = message;
+      if (peer.data.channel?.readyState === 'open' && !peer.recovering) {
+        this.#flushPendingData(peer, peer.data.channel, false);
       }
     }
   }
@@ -3400,7 +3330,7 @@ export class RoomSession {
     }
     const messageBytes = utf8ByteLength(serializedMessage);
     const saturatedPeer = targetPeers.find(
-      (peer) => peer.pendingChatMessages.length >= MAX_PENDING_CHAT_MESSAGES_PER_PEER,
+      (peer) => peer.data.pendingChatMessages.length >= MAX_PENDING_CHAT_MESSAGES_PER_PEER,
     );
     if (saturatedPeer !== undefined) {
       throw new ChatSendError(
@@ -3422,7 +3352,7 @@ export class RoomSession {
         sentOnCurrentChannel: false,
         everSent: false,
       };
-      peer.pendingChatMessages.push(pendingChat);
+      peer.data.pendingChatMessages.push(pendingChat);
     }
     return {
       peers: targetPeers,
@@ -3440,11 +3370,11 @@ export class RoomSession {
     if (peer === undefined) {
       return;
     }
-    const index = peer.pendingChatMessages.indexOf(pendingChat);
+    const index = peer.data.pendingChatMessages.indexOf(pendingChat);
     if (index < 0) {
       return;
     }
-    const [expired] = peer.pendingChatMessages.splice(index, 1) as [PendingChatMessage];
+    const [expired] = peer.data.pendingChatMessages.splice(index, 1) as [PendingChatMessage];
     if (this.#markLocalChatRecipientState(expired.message.id, peerId, 'failed')) {
       this.#emit();
     }
@@ -3454,18 +3384,18 @@ export class RoomSession {
     if (
       !this.#isCurrentPeer(peer) ||
       peer.recovering ||
-      peer.channel !== channel ||
+      peer.data.channel !== channel ||
       channel.readyState !== 'open'
     ) {
       return;
     }
 
     if (sendMediaState) {
-      peer.pendingMediaState = this.#currentMediaDataMessage();
+      peer.data.pendingMediaState = this.#currentMediaDataMessage();
     }
 
-    while (peer.pendingAckIds.size > 0) {
-      const messageId = peer.pendingAckIds.values().next().value as string;
+    while (peer.data.pendingAckIds.size > 0) {
+      const messageId = peer.data.pendingAckIds.values().next().value as string;
       const acknowledgement: ChatAckDataMessage = {
         type: 'chat.ack',
         messageId,
@@ -3483,22 +3413,22 @@ export class RoomSession {
       if (!this.#sendSerializedData(peer, channel, serializedAcknowledgement)) {
         return;
       }
-      peer.pendingAckIds.delete(messageId);
+      peer.data.pendingAckIds.delete(messageId);
     }
 
-    if (peer.pendingMediaState !== null) {
-      const serializedMediaState = serializePeerDataMessage(peer.pendingMediaState);
+    if (peer.data.pendingMediaState !== null) {
+      const serializedMediaState = serializePeerDataMessage(peer.data.pendingMediaState);
       if (
         this.#isDataChannelBackpressured(channel, utf8ByteLength(serializedMediaState)) ||
         !this.#sendSerializedData(peer, channel, serializedMediaState)
       ) {
         return;
       }
-      peer.pendingMediaState = null;
+      peer.data.pendingMediaState = null;
     }
 
     while (true) {
-      const pendingChat = peer.pendingChatMessages.find(
+      const pendingChat = peer.data.pendingChatMessages.find(
         (candidate) => !candidate.sentOnCurrentChannel,
       );
       if (pendingChat === undefined) {
@@ -3543,13 +3473,13 @@ export class RoomSession {
   }
 
   #acknowledgeOutboundChat(peer: PeerContext, messageId: string): boolean {
-    const index = peer.pendingChatMessages.findIndex(
+    const index = peer.data.pendingChatMessages.findIndex(
       (pendingChat) => pendingChat.everSent && pendingChat.message.id === messageId,
     );
     if (index < 0) {
       return false;
     }
-    const [acknowledged] = peer.pendingChatMessages.splice(index, 1) as [PendingChatMessage];
+    const [acknowledged] = peer.data.pendingChatMessages.splice(index, 1) as [PendingChatMessage];
     globalThis.clearTimeout(acknowledged.timeout);
     return this.#markLocalChatRecipientState(messageId, peer.peerId, 'acknowledged');
   }
@@ -3614,11 +3544,11 @@ export class RoomSession {
   }
 
   #markQueuedChatsFailed(peer: PeerContext): void {
-    for (const pendingChat of peer.pendingChatMessages) {
+    for (const pendingChat of peer.data.pendingChatMessages) {
       globalThis.clearTimeout(pendingChat.timeout);
       this.#markLocalChatRecipientState(pendingChat.message.id, peer.peerId, 'failed');
     }
-    peer.pendingChatMessages.length = 0;
+    peer.data.pendingChatMessages.length = 0;
   }
 
   #rememberMessage(message: ChatMessage): void {
@@ -3776,22 +3706,22 @@ export class RoomSession {
       globalThis.clearTimeout(peer.recoveryTimer);
       peer.recoveryTimer = null;
     }
-    if (peer.dataChannelErrorTimer !== null) {
-      globalThis.clearTimeout(peer.dataChannelErrorTimer);
-      peer.dataChannelErrorTimer = null;
+    if (peer.data.errorTimer !== null) {
+      globalThis.clearTimeout(peer.data.errorTimer);
+      peer.data.errorTimer = null;
     }
-    if (peer.inboundDataWindowExpiryTimer !== null) {
-      globalThis.clearTimeout(peer.inboundDataWindowExpiryTimer);
-      peer.inboundDataWindowExpiryTimer = null;
+    if (peer.data.inboundWindowExpiryTimer !== null) {
+      globalThis.clearTimeout(peer.data.inboundWindowExpiryTimer);
+      peer.data.inboundWindowExpiryTimer = null;
     }
     peer.connection.onicecandidate = null;
     peer.connection.ontrack = null;
     peer.connection.ondatachannel = null;
     peer.connection.onconnectionstatechange = null;
     peer.connection.onsignalingstatechange = null;
-    if (peer.channel !== null) {
-      this.#detachAndCloseChannel(peer.channel);
-      peer.channel = null;
+    if (peer.data.channel !== null) {
+      this.#detachAndCloseChannel(peer.data.channel);
+      peer.data.channel = null;
     }
     peer.connection.close();
     peer.videoSender = null;
@@ -3799,10 +3729,10 @@ export class RoomSession {
     peer.pendingLocalRenegotiation = false;
     peer.pendingCandidates.length = 0;
     peer.pendingLocalCandidates.length = 0;
-    peer.receivedChatIds.clear();
-    peer.receivedChatIdOrder.length = 0;
-    peer.pendingAckIds.clear();
-    peer.pendingMediaState = null;
+    peer.data.receivedChatIds.clear();
+    peer.data.receivedChatIdOrder.length = 0;
+    peer.data.pendingAckIds.clear();
+    peer.data.pendingMediaState = null;
   }
 
   #stopRemoteStream(peerId: string): void {
