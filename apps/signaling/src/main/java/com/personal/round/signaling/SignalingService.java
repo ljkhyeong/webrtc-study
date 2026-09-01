@@ -220,7 +220,6 @@ public class SignalingService implements SmartLifecycle {
 				}
 			}
 			if (peer != null) {
-				inboundLimiter.touch(peer.inboundLimit);
 				SignalingInboundLimiter.Decision decision =
 						inboundLimiter.tryAcquire(peer.inboundLimit, nowNanos, payloadBytes);
 				switch (decision) {

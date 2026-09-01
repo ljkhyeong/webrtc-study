@@ -18,7 +18,6 @@ interface SocketBinding {
 }
 
 interface PendingSignalRequest {
-  readonly generation: number;
   readonly peerId: string;
 }
 
@@ -190,7 +189,7 @@ export class SignalingTransport {
     const request = this.#pendingRequests.get(requestId);
     if (request === undefined) return null;
     this.#pendingRequests.delete(requestId);
-    return request.generation === this.#generation ? { peerId: request.peerId } : null;
+    return { peerId: request.peerId };
   }
 
   purgeRequestsForPeer(peerId: string): void {
@@ -268,7 +267,6 @@ export class SignalingTransport {
 
   #rememberRequest(requestId: string, peerId: string): void {
     this.#pendingRequests.set(requestId, {
-      generation: this.#generation,
       peerId,
     });
     while (this.#pendingRequests.size > MAX_PENDING_SIGNAL_REQUESTS) {

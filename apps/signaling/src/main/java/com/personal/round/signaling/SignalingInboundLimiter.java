@@ -50,21 +50,12 @@ final class SignalingInboundLimiter {
 	}
 
 	void release(Connection connection) {
-		if (!connection.active) {
-			return;
-		}
-		connection.active = false;
 		connection.clientState.activeConnections--;
 	}
 
-	void touch(Connection connection) {
-		if (connection.active) {
-			// 접근 순서를 사용해 활성 트래픽 항목을 비활성 LRU 항목 뒤로 보낸다.
-			clients.get(connection.clientKey);
-		}
-	}
-
 	Decision tryAcquire(Connection connection, long nowNanos, int payloadBytes) {
+		// 접근 순서를 사용해 활성 트래픽 항목을 비활성 LRU 항목 뒤로 보낸다.
+		clients.get(connection.clientKey);
 		WindowDecision session = connection.sessionWindow.tryAcquire(
 				nowNanos,
 				windowNanos,
@@ -151,7 +142,6 @@ final class SignalingInboundLimiter {
 		private final String clientKey;
 		private final ClientState clientState;
 		private final UsageWindow sessionWindow = new UsageWindow();
-		private boolean active = true;
 
 		private Connection(String clientKey, ClientState clientState) {
 			this.clientKey = clientKey;
@@ -189,10 +179,8 @@ final class SignalingInboundLimiter {
 				frameCount = 0;
 				payloadBytes = 0;
 			}
-			if (frameCount < Integer.MAX_VALUE) {
-				frameCount++;
-			}
-			payloadBytes = saturatedAdd(payloadBytes, nextPayloadBytes);
+			frameCount++;
+			payloadBytes += nextPayloadBytes;
 			if (frameCount > maximumFrames) {
 				return WindowDecision.FRAME_LIMITED;
 			}
@@ -211,13 +199,6 @@ final class SignalingInboundLimiter {
 			startedAtNanos = UNSET_NANOS;
 			frameCount = 0;
 			payloadBytes = 0;
-		}
-
-		private static long saturatedAdd(long current, int increment) {
-			if (Long.MAX_VALUE - current < increment) {
-				return Long.MAX_VALUE;
-			}
-			return current + increment;
 		}
 	}
 }
