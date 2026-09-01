@@ -18,6 +18,7 @@ import {
   measurePeerConnections,
   type PeerConnectionDiagnostics,
 } from './connection-diagnostics.js';
+import { PeerConnectionLifecycle } from './peer-connection-lifecycle.js';
 import { PEER_DATA_CHANNEL_LABEL, PeerDataChannel } from './peer-data-channel.js';
 import { SignalingTransport, SignalingTransportError } from './signaling-transport.js';
 export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
@@ -214,36 +215,7 @@ interface MutableParticipant {
   videoSource: VideoSource;
 }
 
-interface PeerContext {
-  readonly peerId: string;
-  readonly connection: RTCPeerConnection;
-  readonly trackReplacementAbort: AbortController;
-  videoSender: RTCRtpSender | null;
-  videoQualityUpdate: Promise<boolean>;
-  videoQualityLimited: boolean;
-  videoQualityFailed: boolean;
-  audioSender: RTCRtpSender | null;
-  readonly pendingCandidates: (SerializedIceCandidate | null)[];
-  readonly pendingLocalCandidates: (SerializedIceCandidate | null)[];
-  readonly localIceUsernameFragments: Set<string>;
-  readonly data: PeerDataChannel;
-  pendingCandidateOverflowWarned: boolean;
-  offerRetryAttempts: number;
-  connectionAttempt: number;
-  pendingLocalRenegotiation: boolean;
-  negotiationId: string | null;
-  readonly retiredNegotiationIds: Set<string>;
-  remoteDescriptionSet: boolean;
-  localDescriptionPublished: boolean;
-  makingOffer: boolean;
-  readonly remoteOffersInProgress: Set<string | null>;
-  recovering: boolean;
-  connectionTimeout: TimerHandle | null;
-  offerRetryTimer: TimerHandle | null;
-  disconnectedTimer: TimerHandle | null;
-  recoveryTimer: TimerHandle | null;
-  closed: boolean;
-}
+type PeerContext = PeerConnectionLifecycle;
 
 type ChatRecipientDeliveryState = 'pending' | 'acknowledged' | 'failed';
 
@@ -276,7 +248,6 @@ type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 
 // 일반적인 ICE 후보 수집량은 이 값보다 훨씬 적다. 초과 시 최신 후보를 유지한다.
 const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
-const MAX_RETIRED_NEGOTIATION_IDS = 8;
 // 완전히 폐기된 로컬 ID에는 피어 ACK/중복 제거 윈도 크기를 동일하게 적용한다.
 // 현재의 신뢰성·순서 보장 채널에서는 이보다 많은 새 확인 응답이 앞지를 수 없으며,
 // 분리된 채널은 핸들러가 제거된다. 표시 중이거나 대기 중인 ID는 이 FIFO 한도와
@@ -445,20 +416,6 @@ function safeSignalingErrorMessage(code: SignalingErrorCode): string {
     case 'INTERNAL_ERROR':
       return 'The signaling server could not process a request.';
   }
-}
-
-function iceUsernameFragmentsFromSdp(sdp: string | undefined): Set<string> {
-  const fragments = new Set<string>();
-  if (sdp === undefined) {
-    return fragments;
-  }
-  for (const match of sdp.matchAll(/^a=ice-ufrag:([^\r\n]+)$/gm)) {
-    const fragment = match[1]?.trim();
-    if (fragment) {
-      fragments.add(fragment);
-    }
-  }
-  return fragments;
 }
 
 /**
@@ -1956,7 +1913,7 @@ export class RoomSession {
     options: { readonly iceRestart?: boolean } = {},
   ): Promise<boolean> {
     const peer = this.#ensurePeer(peerId);
-    if (peer.makingOffer || peer.remoteOffersInProgress.size > 0) {
+    if (peer.makingOffer || peer.hasRemoteOffersInProgress()) {
       return false;
     }
     if (peer.connection.signalingState !== 'stable') {
@@ -1971,12 +1928,11 @@ export class RoomSession {
     }
 
     peer.makingOffer = true;
-    const negotiationId = this.#startLocalNegotiation(peer);
+    const negotiationId = peer.startLocalNegotiation(defaultCreateId);
     peer.remoteDescriptionSet = false;
-    peer.localDescriptionPublished = false;
-    peer.pendingLocalCandidates.length = 0;
+    peer.resetLocalDescription();
     if (options.iceRestart === true) {
-      peer.pendingCandidates.length = 0;
+      peer.clearPendingRemoteCandidates();
     }
     this.#setPeerConnectionStatus(peerId, 'negotiating');
 
@@ -2002,7 +1958,7 @@ export class RoomSession {
       }
       void this.#updateVideoQuality(peer);
       const description = peer.connection.localDescription ?? offer;
-      this.#captureLocalIceUsernameFragments(peer, description.sdp);
+      peer.captureLocalIceUsernameFragments(description.sdp);
       this.#publishLocalDescription(peer, {
         v: PROTOCOL_VERSION,
         type: 'rtc.offer',
@@ -2034,7 +1990,7 @@ export class RoomSession {
     negotiationId?: string,
   ): Promise<void> {
     const existing = this.#peers.get(peerId);
-    if (!this.#canAcceptRemoteOffer(existing, negotiationId)) {
+    if (existing !== undefined && !existing.canAcceptRemoteOffer(negotiationId)) {
       return;
     }
     if (existing?.connection.connectionState === 'failed' && existing.connectionAttempt > 0) {
@@ -2045,9 +2001,9 @@ export class RoomSession {
       existing?.connection.connectionState === 'failed'
         ? this.#replacePeer(peerId, true, existing.connectionAttempt + 1)
         : this.#ensurePeer(peerId);
-    this.#replaceNegotiationId(peer, negotiationId ?? null);
+    peer.replaceNegotiationId(negotiationId ?? null);
     const acceptedNegotiationId = peer.negotiationId;
-    peer.remoteOffersInProgress.add(acceptedNegotiationId);
+    peer.beginRemoteOffer(acceptedNegotiationId);
     try {
       peer.remoteDescriptionSet = false;
       this.#setPeerConnectionStatus(peerId, 'negotiating');
@@ -2061,8 +2017,7 @@ export class RoomSession {
         return;
       }
 
-      peer.localDescriptionPublished = false;
-      peer.pendingLocalCandidates.length = 0;
+      peer.resetLocalDescription();
       const answer = await peer.connection.createAnswer();
       if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
         return;
@@ -2073,7 +2028,7 @@ export class RoomSession {
       }
       void this.#updateVideoQuality(peer);
       const localDescription = peer.connection.localDescription ?? answer;
-      this.#captureLocalIceUsernameFragments(peer, localDescription.sdp);
+      peer.captureLocalIceUsernameFragments(localDescription.sdp);
       this.#publishLocalDescription(peer, {
         v: PROTOCOL_VERSION,
         type: 'rtc.answer',
@@ -2096,7 +2051,7 @@ export class RoomSession {
       }
       throw error;
     } finally {
-      peer.remoteOffersInProgress.delete(acceptedNegotiationId);
+      peer.endRemoteOffer(acceptedNegotiationId);
       this.#drainPendingLocalRenegotiation(peer);
     }
   }
@@ -2109,7 +2064,7 @@ export class RoomSession {
     const peer = this.#peers.get(peerId);
     if (
       peer === undefined ||
-      !this.#matchesCurrentNegotiation(peer, negotiationId) ||
+      !peer.matchesNegotiation(negotiationId) ||
       !peer.localDescriptionPublished ||
       peer.connection.signalingState !== 'have-local-offer'
     ) {
@@ -2145,23 +2100,18 @@ export class RoomSession {
     negotiationId?: string,
   ): Promise<void> {
     const peer = this.#ensurePeer(peerId);
-    if (!this.#adoptOrMatchCandidateNegotiation(peer, negotiationId)) {
+    if (!peer.adoptOrMatchCandidateNegotiation(negotiationId)) {
       return;
     }
     const acceptedNegotiationId = peer.negotiationId;
     if (peer.connection.connectionState === 'failed' || !peer.remoteDescriptionSet) {
-      if (peer.pendingCandidates.length >= MAX_PENDING_REMOTE_ICE_CANDIDATES) {
-        peer.pendingCandidates.shift();
-        if (!peer.pendingCandidateOverflowWarned) {
-          peer.pendingCandidateOverflowWarned = true;
-          this.#setPeerWarning(
-            peer.peerId,
-            'ice-candidate-queue-overflow',
-            `Oldest pending ICE candidate for ${peer.peerId} was discarded`,
-          );
-        }
+      if (peer.queueRemoteCandidate(candidate, MAX_PENDING_REMOTE_ICE_CANDIDATES)) {
+        this.#setPeerWarning(
+          peer.peerId,
+          'ice-candidate-queue-overflow',
+          `Oldest pending ICE candidate for ${peer.peerId} was discarded`,
+        );
       }
-      peer.pendingCandidates.push(candidate);
       return;
     }
 
@@ -2169,8 +2119,7 @@ export class RoomSession {
   }
 
   async #flushPendingCandidates(peer: PeerContext, negotiationId: string | null): Promise<void> {
-    const candidates = peer.pendingCandidates.splice(0, peer.pendingCandidates.length);
-    peer.pendingCandidateOverflowWarned = false;
+    const candidates = peer.takePendingRemoteCandidates();
     for (const candidate of candidates) {
       if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return;
@@ -2197,34 +2146,12 @@ export class RoomSession {
     }
   }
 
-  #captureLocalIceUsernameFragments(peer: PeerContext, sdp: string | undefined): void {
-    peer.localIceUsernameFragments.clear();
-    for (const fragment of iceUsernameFragmentsFromSdp(sdp)) {
-      peer.localIceUsernameFragments.add(fragment);
-    }
-  }
-
-  #candidateMatchesCurrentLocalNegotiation(
-    peer: PeerContext,
-    candidate: SerializedIceCandidate | null,
-  ): boolean {
-    if (peer.retiredNegotiationIds.size === 0) {
-      return true;
-    }
-    if (candidate === null) {
-      return false;
-    }
-    const fragment = candidate.usernameFragment ?? null;
-    return fragment !== null && peer.localIceUsernameFragments.has(fragment);
-  }
-
   #publishLocalDescription(peer: PeerContext, message: RelayClientMessage): void {
     if (!this.#isCurrentPeer(peer)) {
       return;
     }
     this.#signalingTransport.sendRelay(message);
-    peer.localDescriptionPublished = true;
-    const candidates = peer.pendingLocalCandidates.splice(0, peer.pendingLocalCandidates.length);
+    const candidates = peer.publishLocalDescription();
     for (const candidate of candidates) {
       this.#sendLocalCandidate(peer, candidate);
     }
@@ -2233,7 +2160,7 @@ export class RoomSession {
   #sendLocalCandidate(peer: PeerContext, candidate: SerializedIceCandidate | null): void {
     if (
       !this.#isCurrentPeer(peer) ||
-      !this.#candidateMatchesCurrentLocalNegotiation(peer, candidate) ||
+      !peer.candidateMatchesCurrentLocalNegotiation(candidate) ||
       !this.#signalingTransport.isOpen() ||
       this.#status === 'reconnecting'
     ) {
@@ -2345,36 +2272,13 @@ export class RoomSession {
       this.#options.peerConnectionFactory ??
       ((configuration: RTCConfiguration | undefined) => new RTCPeerConnection(configuration));
     const connection = factory(snapshotRtcConfiguration(this.#rtcConfiguration));
-    const peer: PeerContext = {
+    const peer = new PeerConnectionLifecycle(
       peerId,
       connection,
-      trackReplacementAbort: new AbortController(),
-      videoSender: null,
-      videoQualityUpdate: Promise.resolve(true),
-      videoQualityLimited: false,
-      videoQualityFailed: false,
-      audioSender: null,
-      pendingCandidates: [],
-      pendingLocalCandidates: [],
-      localIceUsernameFragments: new Set(),
-      data: dataChannel ?? this.#createPeerDataChannel(peerId),
-      pendingCandidateOverflowWarned: false,
-      offerRetryAttempts: 0,
+      dataChannel ?? this.#createPeerDataChannel(peerId),
       connectionAttempt,
-      pendingLocalRenegotiation: false,
-      negotiationId: null,
-      retiredNegotiationIds: new Set(retiredNegotiationIds),
-      remoteDescriptionSet: connection.remoteDescription !== null,
-      localDescriptionPublished: false,
-      makingOffer: false,
-      remoteOffersInProgress: new Set(),
-      recovering: false,
-      connectionTimeout: null,
-      offerRetryTimer: null,
-      disconnectedTimer: null,
-      recoveryTimer: null,
-      closed: false,
-    };
+      retiredNegotiationIds,
+    );
     this.#peers.set(peerId, peer);
 
     for (const track of this.#localStream?.getTracks() ?? []) {
@@ -2393,7 +2297,7 @@ export class RoomSession {
       const candidate =
         event.candidate === null ? null : (event.candidate.toJSON() as SerializedIceCandidate);
       if (!peer.localDescriptionPublished) {
-        peer.pendingLocalCandidates.push(candidate);
+        peer.queueLocalCandidate(candidate);
         return;
       }
       this.#sendLocalCandidate(peer, candidate);
@@ -2449,7 +2353,7 @@ export class RoomSession {
           this.#scheduleDisconnectedRecovery(peer);
           return;
         case 'failed':
-          this.#cancelDisconnectedTimer(peer);
+          peer.cancelTimer('disconnected');
           this.#beginPeerRecovery(peer);
           return;
         case 'closed':
@@ -2469,89 +2373,6 @@ export class RoomSession {
 
   #isCurrentNegotiation(peer: PeerContext, negotiationId: string | null): boolean {
     return this.#isCurrentPeer(peer) && peer.negotiationId === negotiationId;
-  }
-
-  #rememberRetiredNegotiation(peer: PeerContext, negotiationId: string | null): void {
-    if (negotiationId === null || peer.retiredNegotiationIds.has(negotiationId)) {
-      return;
-    }
-    while (peer.retiredNegotiationIds.size >= MAX_RETIRED_NEGOTIATION_IDS) {
-      const oldestNegotiationId = peer.retiredNegotiationIds.values().next().value as string;
-      peer.retiredNegotiationIds.delete(oldestNegotiationId);
-    }
-    peer.retiredNegotiationIds.add(negotiationId);
-  }
-
-  #replaceNegotiationId(peer: PeerContext, negotiationId: string | null): void {
-    if (peer.negotiationId === negotiationId) {
-      return;
-    }
-    this.#rememberRetiredNegotiation(peer, peer.negotiationId);
-    peer.negotiationId = negotiationId;
-    peer.pendingCandidates.length = 0;
-    peer.pendingCandidateOverflowWarned = false;
-    peer.localDescriptionPublished = false;
-    peer.pendingLocalCandidates.length = 0;
-    peer.localIceUsernameFragments.clear();
-  }
-
-  #startLocalNegotiation(peer: PeerContext): string {
-    let negotiationId = defaultCreateId();
-    while (negotiationId === peer.negotiationId || peer.retiredNegotiationIds.has(negotiationId)) {
-      negotiationId = defaultCreateId();
-    }
-    this.#replaceNegotiationId(peer, negotiationId);
-    return negotiationId;
-  }
-
-  #canAcceptRemoteOffer(peer: PeerContext | undefined, negotiationId?: string): boolean {
-    if (peer === undefined) {
-      return true;
-    }
-    const normalizedNegotiationId = negotiationId ?? null;
-    if (peer.remoteOffersInProgress.has(normalizedNegotiationId)) {
-      return false;
-    }
-    if (negotiationId === undefined) {
-      return (
-        peer.negotiationId === null &&
-        peer.retiredNegotiationIds.size === 0 &&
-        peer.connectionAttempt === 0 &&
-        !peer.remoteDescriptionSet &&
-        !peer.localDescriptionPublished
-      );
-    }
-    if (peer.retiredNegotiationIds.has(negotiationId)) {
-      return false;
-    }
-    if (peer.negotiationId !== negotiationId) {
-      return true;
-    }
-    return !peer.remoteDescriptionSet && !peer.localDescriptionPublished;
-  }
-
-  #matchesCurrentNegotiation(peer: PeerContext, negotiationId?: string): boolean {
-    if (negotiationId === undefined) {
-      return peer.negotiationId === null && peer.retiredNegotiationIds.size === 0;
-    }
-    return peer.negotiationId === negotiationId && !peer.retiredNegotiationIds.has(negotiationId);
-  }
-
-  #adoptOrMatchCandidateNegotiation(peer: PeerContext, negotiationId?: string): boolean {
-    if (this.#matchesCurrentNegotiation(peer, negotiationId)) {
-      return true;
-    }
-    if (
-      negotiationId === undefined ||
-      peer.negotiationId !== null ||
-      peer.retiredNegotiationIds.has(negotiationId) ||
-      peer.remoteDescriptionSet ||
-      peer.localDescriptionPublished
-    ) {
-      return false;
-    }
-    this.#replaceNegotiationId(peer, negotiationId);
-    return true;
   }
 
   #isPeerRecoveryInitiator(peerId: string): boolean {
@@ -2574,7 +2395,7 @@ export class RoomSession {
       this.#status !== 'active' ||
       !this.#signalingTransport.isOpen() ||
       peer.makingOffer ||
-      peer.remoteOffersInProgress.size > 0 ||
+      peer.hasRemoteOffersInProgress() ||
       peer.connection.signalingState !== 'stable'
     ) {
       return;
@@ -2600,8 +2421,8 @@ export class RoomSession {
       peer === undefined ||
       !this.#isCurrentPeer(peer) ||
       this.#disposed ||
-      peer.offerRetryTimer !== null ||
-      peer.recoveryTimer !== null
+      peer.hasTimer('offer-retry') ||
+      peer.hasTimer('recovery')
     ) {
       return;
     }
@@ -2619,8 +2440,7 @@ export class RoomSession {
       'peer-negotiation-retrying',
       `Initial connection to ${peerId} failed; retry ${retryAttempt}/${this.#recoveryOptions.maxReconnectAttempts} is scheduled: ${getErrorMessage(error)}`,
     );
-    peer.offerRetryTimer = globalThis.setTimeout(() => {
-      peer.offerRetryTimer = null;
+    peer.scheduleTimer('offer-retry', this.#reconnectDelay(retryAttempt), () => {
       if (!this.#isCurrentPeer(peer) || this.#status !== 'active') {
         return;
       }
@@ -2639,7 +2459,7 @@ export class RoomSession {
           if (!offerPublished) {
             return;
           }
-          if (this.#isCurrentPeer(retryPeer) && retryPeer.recoveryTimer === null) {
+          if (this.#isCurrentPeer(retryPeer) && !retryPeer.hasTimer('recovery')) {
             retryPeer.offerRetryAttempts = 0;
             if (this.#clearPeerWarning(retryPeer.peerId, ['peer-negotiation-retrying'])) {
               this.#emit();
@@ -2651,16 +2471,15 @@ export class RoomSession {
             this.#scheduleInitialOfferRetry(retryPeer.peerId, retryError);
           }
         });
-    }, this.#reconnectDelay(retryAttempt));
+    });
   }
 
   #schedulePeerConnectionTimeout(peer: PeerContext): void {
-    if (!this.#isCurrentPeer(peer) || peer.connectionTimeout !== null) {
+    if (!this.#isCurrentPeer(peer) || peer.hasTimer('connection')) {
       return;
     }
 
-    peer.connectionTimeout = globalThis.setTimeout(() => {
-      peer.connectionTimeout = null;
+    peer.scheduleTimer('connection', this.#recoveryOptions.peerConnectionTimeoutMs, () => {
       if (!this.#isCurrentPeer(peer) || this.#status !== 'active') {
         return;
       }
@@ -2680,16 +2499,15 @@ export class RoomSession {
         `Connection to ${peer.peerId} did not complete within ${this.#recoveryOptions.peerConnectionTimeoutMs}ms; attempting ICE recovery`,
       );
       this.#beginPeerRecovery(peer);
-    }, this.#recoveryOptions.peerConnectionTimeoutMs);
+    });
   }
 
   #scheduleDisconnectedRecovery(peer: PeerContext): void {
-    if (!this.#isCurrentPeer(peer) || peer.disconnectedTimer !== null) {
+    if (!this.#isCurrentPeer(peer) || peer.hasTimer('disconnected')) {
       return;
     }
     peer.recovering = true;
-    peer.disconnectedTimer = globalThis.setTimeout(() => {
-      peer.disconnectedTimer = null;
+    peer.scheduleTimer('disconnected', this.#recoveryOptions.peerDisconnectedGraceMs, () => {
       if (
         !this.#isCurrentPeer(peer) ||
         (peer.connection.connectionState !== 'disconnected' &&
@@ -2698,29 +2516,15 @@ export class RoomSession {
         return;
       }
       this.#beginPeerRecovery(peer);
-    }, this.#recoveryOptions.peerDisconnectedGraceMs);
-  }
-
-  #cancelOfferRetryTimer(peer: PeerContext): void {
-    if (peer.offerRetryTimer !== null) {
-      globalThis.clearTimeout(peer.offerRetryTimer);
-      peer.offerRetryTimer = null;
-    }
-  }
-
-  #cancelDisconnectedTimer(peer: PeerContext): void {
-    if (peer.disconnectedTimer !== null) {
-      globalThis.clearTimeout(peer.disconnectedTimer);
-      peer.disconnectedTimer = null;
-    }
+    });
   }
 
   #beginPeerRecovery(peer: PeerContext): void {
     if (!this.#isCurrentPeer(peer) || this.#status !== 'active' || this.#selfId === null) {
       return;
     }
-    this.#cancelOfferRetryTimer(peer);
-    if (peer.recoveryTimer !== null) {
+    peer.cancelTimer('offer-retry');
+    if (peer.hasTimer('recovery')) {
       return;
     }
 
@@ -2728,8 +2532,7 @@ export class RoomSession {
     if (peer.connectionAttempt > 0) {
       return;
     }
-    peer.recoveryTimer = globalThis.setTimeout(() => {
-      peer.recoveryTimer = null;
+    peer.scheduleTimer('recovery', this.#recoveryOptions.peerRecoveryTimeoutMs, () => {
       if (!this.#isCurrentPeer(peer)) {
         return;
       }
@@ -2758,7 +2561,7 @@ export class RoomSession {
           }
         });
       }
-    }, this.#recoveryOptions.peerRecoveryTimeoutMs);
+    });
 
     if (!this.#isPeerRecoveryInitiator(peer.peerId)) {
       return;
@@ -2778,12 +2581,7 @@ export class RoomSession {
     if (peer.connection.connectionState !== 'connected' || !peer.data.isOpen()) {
       return;
     }
-    const shouldFlush =
-      peer.recovering ||
-      peer.connectionTimeout !== null ||
-      peer.offerRetryTimer !== null ||
-      peer.disconnectedTimer !== null ||
-      peer.recoveryTimer !== null;
+    const shouldFlush = peer.hasRecoveryActivity();
     const participant = this.#participants.get(peer.peerId);
     const restoredConnectedState =
       peer.connection.connectionState === 'connected' &&
@@ -2792,16 +2590,7 @@ export class RoomSession {
     if (restoredConnectedState) {
       participant.connectionState = 'connected';
     }
-    if (peer.connectionTimeout !== null) {
-      globalThis.clearTimeout(peer.connectionTimeout);
-      peer.connectionTimeout = null;
-    }
-    this.#cancelOfferRetryTimer(peer);
-    this.#cancelDisconnectedTimer(peer);
-    if (peer.recoveryTimer !== null) {
-      globalThis.clearTimeout(peer.recoveryTimer);
-      peer.recoveryTimer = null;
-    }
+    peer.cancelAllTimers();
     peer.offerRetryAttempts = 0;
     peer.connectionAttempt = 0;
     peer.recovering = false;
@@ -2834,15 +2623,13 @@ export class RoomSession {
     const dataChannel = existing?.data;
     const pendingCandidates =
       preservePendingCandidates && existing !== undefined
-        ? existing.pendingCandidates.splice(0, existing.pendingCandidates.length)
-        : [];
-    const pendingCandidateOverflowWarned =
-      preservePendingCandidates && existing?.pendingCandidateOverflowWarned === true;
+        ? existing.extractPendingRemoteCandidates()
+        : { candidates: [], overflowWarned: false };
     const offerRetryAttempts = existing?.offerRetryAttempts ?? 0;
     if (existing !== undefined) {
-      this.#rememberRetiredNegotiation(existing, existing.negotiationId);
+      existing.rememberCurrentNegotiation();
     }
-    const retiredNegotiationIds = new Set(existing?.retiredNegotiationIds ?? []);
+    const retiredNegotiationIds = existing?.retiredNegotiationIdsSnapshot() ?? new Set<string>();
 
     if (existing !== undefined) {
       existing.data.detach();
@@ -2869,8 +2656,7 @@ export class RoomSession {
       throw error;
     }
     replacement.recovering = true;
-    replacement.pendingCandidates.push(...pendingCandidates);
-    replacement.pendingCandidateOverflowWarned = pendingCandidateOverflowWarned;
+    replacement.restorePendingRemoteCandidates(pendingCandidates);
     replacement.offerRetryAttempts = offerRetryAttempts;
     this.#emit();
     return replacement;
@@ -3151,29 +2937,7 @@ export class RoomSession {
   }
 
   #disposePeerContext(peer: PeerContext): void {
-    peer.closed = true;
-    peer.trackReplacementAbort.abort();
-    if (peer.connectionTimeout !== null) {
-      globalThis.clearTimeout(peer.connectionTimeout);
-      peer.connectionTimeout = null;
-    }
-    this.#cancelOfferRetryTimer(peer);
-    this.#cancelDisconnectedTimer(peer);
-    if (peer.recoveryTimer !== null) {
-      globalThis.clearTimeout(peer.recoveryTimer);
-      peer.recoveryTimer = null;
-    }
-    peer.connection.onicecandidate = null;
-    peer.connection.ontrack = null;
-    peer.connection.ondatachannel = null;
-    peer.connection.onconnectionstatechange = null;
-    peer.connection.onsignalingstatechange = null;
-    peer.connection.close();
-    peer.videoSender = null;
-    peer.audioSender = null;
-    peer.pendingLocalRenegotiation = false;
-    peer.pendingCandidates.length = 0;
-    peer.pendingLocalCandidates.length = 0;
+    peer.disposeConnection();
   }
 
   #stopRemoteStream(peerId: string): void {
