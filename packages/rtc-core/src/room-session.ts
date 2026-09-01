@@ -1,11 +1,8 @@
 import {
   PROTOCOL_VERSION,
-  parsePeerDataMessage,
   serializeClientMessage,
   serializePeerDataMessage,
-  utf8ByteLength,
   type AnswerDescription,
-  type ChatAckDataMessage,
   type ChatDataMessage,
   type ClientMessage,
   type ModeratedMediaKind,
@@ -13,7 +10,6 @@ import {
   type Participant,
   type ParticipantMediaDataMessage,
   type ParticipantRole,
-  type PeerDataMessage,
   type SerializedIceCandidate,
   type ServerMessage,
   type SignalingErrorCode,
@@ -22,6 +18,7 @@ import {
   measurePeerConnections,
   type PeerConnectionDiagnostics,
 } from './connection-diagnostics.js';
+import { PEER_DATA_CHANNEL_LABEL, PeerDataChannel } from './peer-data-channel.js';
 import { SignalingTransport, SignalingTransportError } from './signaling-transport.js';
 export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
 
@@ -229,7 +226,7 @@ interface PeerContext {
   readonly pendingCandidates: (SerializedIceCandidate | null)[];
   readonly pendingLocalCandidates: (SerializedIceCandidate | null)[];
   readonly localIceUsernameFragments: Set<string>;
-  readonly data: PeerDataState;
+  readonly data: PeerDataChannel;
   pendingCandidateOverflowWarned: boolean;
   offerRetryAttempts: number;
   connectionAttempt: number;
@@ -246,20 +243,6 @@ interface PeerContext {
   disconnectedTimer: TimerHandle | null;
   recoveryTimer: TimerHandle | null;
   closed: boolean;
-}
-
-interface PeerDataState {
-  channel: RTCDataChannel | null;
-  readonly pendingChatMessages: PendingChatMessage[];
-  readonly receivedChatIds: Set<string>;
-  readonly receivedChatIdOrder: string[];
-  readonly pendingAckIds: Set<string>;
-  pendingMediaState: ParticipantMediaDataMessage | null;
-  inboundWindowStartedAt: number | null;
-  inboundMessagesInWindow: number;
-  inboundRateLimitExceeded: boolean;
-  inboundWindowExpiryTimer: TimerHandle | null;
-  errorTimer: TimerHandle | null;
 }
 
 type ChatRecipientDeliveryState = 'pending' | 'acknowledged' | 'failed';
@@ -282,15 +265,6 @@ interface ResolvedRecoveryOptions {
 
 type RelayClientMessage = Extract<ClientMessage, { to: string }>;
 
-interface PendingChatMessage {
-  readonly message: ChatDataMessage;
-  readonly serialized: string;
-  readonly byteLength: number;
-  readonly timeout: TimerHandle;
-  sentOnCurrentChannel: boolean;
-  everSent: boolean;
-}
-
 interface MediaSenderUpdate {
   readonly peer: PeerContext;
   readonly sender: RTCRtpSender;
@@ -303,32 +277,11 @@ type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 // 일반적인 ICE 후보 수집량은 이 값보다 훨씬 적다. 초과 시 최신 후보를 유지한다.
 const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
 const MAX_RETIRED_NEGOTIATION_IDS = 8;
-const DATA_CHANNEL_RATE_WINDOW_MS = 10_000;
-const DATA_CHANNEL_LABEL = 'round-room';
-// 짧은 UI 집중 전송은 허용하되 지속 전송은 피어당 초당 12프레임으로 제한한다.
-const MAX_DATA_CHANNEL_MESSAGES_PER_WINDOW = 120;
-const MAX_PENDING_CHAT_MESSAGES_PER_PEER = 50;
-const MAX_RECEIVED_CHAT_IDS_PER_PEER = 128;
-const MAX_PENDING_ACK_IDS_PER_PEER = 128;
 // 완전히 폐기된 로컬 ID에는 피어 ACK/중복 제거 윈도 크기를 동일하게 적용한다.
 // 현재의 신뢰성·순서 보장 채널에서는 이보다 많은 새 확인 응답이 앞지를 수 없으며,
 // 분리된 채널은 핸들러가 제거된다. 표시 중이거나 대기 중인 ID는 이 FIFO 한도와
 // 별도로 계속 고정한다.
-const MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS = Math.max(
-  MAX_RECEIVED_CHAT_IDS_PER_PEER,
-  MAX_PENDING_ACK_IDS_PER_PEER,
-);
-const CHAT_ACK_TIMEOUT_MS = 45_000;
-const MAX_DATA_CHANNEL_BUFFERED_BYTES = 256 * 1024;
-const DATA_CHANNEL_BUFFERED_AMOUNT_LOW_BYTES = 64 * 1024;
-const DATA_CHANNEL_CONTROL_RESERVE_BYTES = 32 * 1024;
-const DATA_CHANNEL_ERROR_GRACE_MS = 250;
-const DATA_CHANNEL_RECOVERY_WARNING_CODES = [
-  'data-channel-closed',
-  'data-channel-error',
-  'data-channel-send-failed',
-] as const;
-type DataChannelRecoveryIssueCode = (typeof DATA_CHANNEL_RECOVERY_WARNING_CODES)[number];
+const MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS = 128;
 const SIGNALING_SESSION_SUPERSEDED_CLOSE_CODE = 4002;
 const SIGNALING_SESSION_SUPERSEDED_REASON = 'Participation session superseded';
 const DEFAULT_SIGNALING_CONNECT_TIMEOUT_MS = 8_000;
@@ -1484,9 +1437,7 @@ export class RoomSession {
     };
     this.#rememberMessage(initialMessage);
     for (const peer of targets.peers) {
-      if (peer.data.channel?.readyState === 'open' && !peer.recovering) {
-        this.#flushPendingData(peer, peer.data.channel, false);
-      }
+      peer.data.flush();
     }
     this.#emit();
     return (
@@ -2029,10 +1980,9 @@ export class RoomSession {
     }
     this.#setPeerConnectionStatus(peerId, 'negotiating');
 
-    if (peer.data.channel === null) {
-      this.#attachDataChannel(
-        peer,
-        peer.connection.createDataChannel(DATA_CHANNEL_LABEL, {
+    if (!peer.data.isAttached()) {
+      peer.data.attach(
+        peer.connection.createDataChannel(PEER_DATA_CHANNEL_LABEL, {
           ordered: true,
         }),
       );
@@ -2301,10 +2251,79 @@ export class RoomSession {
     });
   }
 
+  #createPeerDataChannel(peerId: string): PeerDataChannel {
+    let dataChannel!: PeerDataChannel;
+    dataChannel = new PeerDataChannel({
+      peerId,
+      isCurrent: () => this.#peers.get(peerId)?.data === dataChannel,
+      isRecovering: () => this.#peers.get(peerId)?.recovering ?? true,
+      monotonicNow: () => this.#monotonicNow(),
+      currentMediaState: () => this.#currentMediaDataMessage(),
+      onOpen: () => {
+        const peer = this.#peers.get(peerId);
+        if (peer?.data === dataChannel) {
+          this.#handleDataChannelOpen(peer);
+        }
+      },
+      canReceiveChat: () => this.#participants.has(peerId),
+      onChatMessage: (message) => {
+        const participant = this.#participants.get(peerId);
+        if (participant === undefined) {
+          return;
+        }
+        this.#rememberMessage({
+          id: message.id,
+          senderId: peerId,
+          senderName: participant.displayName,
+          text: message.text,
+          sentAt: message.sentAt,
+          isLocal: false,
+          deliveryState: 'received',
+        });
+        this.#emit();
+      },
+      onMediaState: (message) => {
+        const participant = this.#participants.get(peerId);
+        if (participant === undefined) {
+          return;
+        }
+        this.#remoteMediaStates.set(peerId, message);
+        participant.audioEnabled = message.audioEnabled;
+        participant.videoEnabled = message.videoEnabled;
+        participant.videoSource = message.videoSource;
+        this.#emit();
+      },
+      onChatAcknowledged: (messageId) =>
+        this.#markLocalChatRecipientState(messageId, peerId, 'acknowledged'),
+      onChatFailed: (messageId) => this.#markLocalChatRecipientState(messageId, peerId, 'failed'),
+      onRateLimited: () => {
+        if (this.#warning === null) {
+          this.#setPeerWarning(
+            peerId,
+            'data-channel-rate-limit',
+            `Ignored excessive DataChannel messages from ${peerId}`,
+          );
+        }
+      },
+      onRecoveryRequired: (code, message) => {
+        const peer = this.#peers.get(peerId);
+        if (peer?.data !== dataChannel) {
+          return;
+        }
+        this.#setPeerWarning(peerId, code, message);
+        this.#beginPeerRecovery(peer);
+      },
+      clearWarning: (codes) => this.#clearPeerWarning(peerId, codes),
+      onStateChanged: () => this.#emit(),
+    });
+    return dataChannel;
+  }
+
   #ensurePeer(
     peerId: string,
     connectionAttempt = 0,
     retiredNegotiationIds: ReadonlySet<string> = new Set(),
+    dataChannel?: PeerDataChannel,
   ): PeerContext {
     const existing = this.#peers.get(peerId);
     if (existing !== undefined) {
@@ -2338,19 +2357,7 @@ export class RoomSession {
       pendingCandidates: [],
       pendingLocalCandidates: [],
       localIceUsernameFragments: new Set(),
-      data: {
-        channel: null,
-        pendingChatMessages: [],
-        receivedChatIds: new Set(),
-        receivedChatIdOrder: [],
-        pendingAckIds: new Set(),
-        pendingMediaState: null,
-        inboundWindowStartedAt: null,
-        inboundMessagesInWindow: 0,
-        inboundRateLimitExceeded: false,
-        inboundWindowExpiryTimer: null,
-        errorTimer: null,
-      },
+      data: dataChannel ?? this.#createPeerDataChannel(peerId),
       pendingCandidateOverflowWarned: false,
       offerRetryAttempts: 0,
       connectionAttempt,
@@ -2411,15 +2418,15 @@ export class RoomSession {
       const channel = event.channel;
       if (
         !this.#isCurrentPeer(peer) ||
-        channel.label !== DATA_CHANNEL_LABEL ||
+        channel.label !== PEER_DATA_CHANNEL_LABEL ||
         channel.ordered !== true ||
         channel.maxRetransmits !== null ||
         channel.maxPacketLifeTime !== null
       ) {
-        this.#detachAndCloseChannel(channel);
+        channel.close();
         return;
       }
-      this.#attachDataChannel(peer, channel);
+      peer.data.attach(channel);
     };
 
     connection.onsignalingstatechange = () => {
@@ -2657,10 +2664,7 @@ export class RoomSession {
       if (!this.#isCurrentPeer(peer) || this.#status !== 'active') {
         return;
       }
-      if (
-        peer.connection.connectionState === 'connected' &&
-        peer.data.channel?.readyState === 'open'
-      ) {
+      if (peer.connection.connectionState === 'connected' && peer.data.isOpen()) {
         this.#finishPeerRecovery(peer);
         return;
       }
@@ -2729,10 +2733,7 @@ export class RoomSession {
       if (!this.#isCurrentPeer(peer)) {
         return;
       }
-      if (
-        peer.connection.connectionState === 'connected' &&
-        peer.data.channel?.readyState === 'open'
-      ) {
+      if (peer.connection.connectionState === 'connected' && peer.data.isOpen()) {
         this.#finishPeerRecovery(peer);
         return;
       }
@@ -2774,10 +2775,7 @@ export class RoomSession {
   }
 
   #finishPeerRecovery(peer: PeerContext): void {
-    if (
-      peer.connection.connectionState !== 'connected' ||
-      peer.data.channel?.readyState !== 'open'
-    ) {
+    if (peer.connection.connectionState !== 'connected' || !peer.data.isOpen()) {
       return;
     }
     const shouldFlush =
@@ -2818,9 +2816,9 @@ export class RoomSession {
         'media-device-sender-recovery',
         'ice-candidate-queue-overflow',
         'ice-candidate-rejected',
-      ]) || this.#clearRecoveredDataChannelWarning(peer);
-    if (shouldFlush && peer.data.channel?.readyState === 'open') {
-      this.#flushPendingData(peer, peer.data.channel, true);
+      ]) || peer.data.clearRecoveryWarning();
+    if (shouldFlush) {
+      peer.data.flush(true);
     }
     if (restoredConnectedState || warningCleared) {
       this.#emit();
@@ -2833,23 +2831,13 @@ export class RoomSession {
     connectionAttempt: number,
   ): PeerContext {
     const existing = this.#peers.get(peerId);
+    const dataChannel = existing?.data;
     const pendingCandidates =
       preservePendingCandidates && existing !== undefined
         ? existing.pendingCandidates.splice(0, existing.pendingCandidates.length)
         : [];
     const pendingCandidateOverflowWarned =
       preservePendingCandidates && existing?.pendingCandidateOverflowWarned === true;
-    const pendingChatMessages =
-      existing?.data.pendingChatMessages.splice(0, existing.data.pendingChatMessages.length) ?? [];
-    for (const pendingChat of pendingChatMessages) {
-      pendingChat.sentOnCurrentChannel = false;
-    }
-    const receivedChatIdOrder = [...(existing?.data.receivedChatIdOrder ?? [])];
-    const pendingAckIds = new Set(existing?.data.pendingAckIds ?? []);
-    const pendingMediaState = existing?.data.pendingMediaState ?? null;
-    const inboundDataWindowStartedAt = existing?.data.inboundWindowStartedAt ?? null;
-    const inboundDataMessagesInWindow = existing?.data.inboundMessagesInWindow ?? 0;
-    const inboundDataRateLimitExceeded = existing?.data.inboundRateLimitExceeded ?? false;
     const offerRetryAttempts = existing?.offerRetryAttempts ?? 0;
     if (existing !== undefined) {
       this.#rememberRetiredNegotiation(existing, existing.negotiationId);
@@ -2857,6 +2845,7 @@ export class RoomSession {
     const retiredNegotiationIds = new Set(existing?.retiredNegotiationIds ?? []);
 
     if (existing !== undefined) {
+      existing.data.detach();
       this.#disposePeerContext(existing);
       this.#peers.delete(peerId);
       this.#clearResolvedVideoQualityWarning();
@@ -2874,272 +2863,32 @@ export class RoomSession {
 
     let replacement: PeerContext;
     try {
-      replacement = this.#ensurePeer(peerId, connectionAttempt, retiredNegotiationIds);
+      replacement = this.#ensurePeer(peerId, connectionAttempt, retiredNegotiationIds, dataChannel);
     } catch (error) {
-      for (const pendingChat of pendingChatMessages) {
-        globalThis.clearTimeout(pendingChat.timeout);
-        this.#markLocalChatRecipientState(pendingChat.message.id, peerId, 'failed');
-      }
+      dataChannel?.dispose();
       throw error;
     }
     replacement.recovering = true;
     replacement.pendingCandidates.push(...pendingCandidates);
     replacement.pendingCandidateOverflowWarned = pendingCandidateOverflowWarned;
-    replacement.data.pendingChatMessages.push(...pendingChatMessages);
-    for (const messageId of receivedChatIdOrder) {
-      replacement.data.receivedChatIds.add(messageId);
-      replacement.data.receivedChatIdOrder.push(messageId);
-    }
-    for (const messageId of pendingAckIds) {
-      replacement.data.pendingAckIds.add(messageId);
-    }
-    replacement.data.pendingMediaState = pendingMediaState;
-    replacement.data.inboundWindowStartedAt = inboundDataWindowStartedAt;
-    replacement.data.inboundMessagesInWindow = inboundDataMessagesInWindow;
-    replacement.data.inboundRateLimitExceeded = inboundDataRateLimitExceeded;
-    this.#scheduleInboundDataWindowExpiry(replacement);
     replacement.offerRetryAttempts = offerRetryAttempts;
     this.#emit();
     return replacement;
   }
 
-  #attachDataChannel(peer: PeerContext, channel: RTCDataChannel): void {
-    if (peer.data.channel !== null && peer.data.channel !== channel) {
-      this.#detachAndCloseChannel(peer.data.channel);
-    }
-    if (peer.data.errorTimer !== null) {
-      globalThis.clearTimeout(peer.data.errorTimer);
-      peer.data.errorTimer = null;
-    }
-
-    peer.data.channel = channel;
-    for (const pendingChat of peer.data.pendingChatMessages) {
-      pendingChat.sentOnCurrentChannel = false;
-    }
-    channel.bufferedAmountLowThreshold = DATA_CHANNEL_BUFFERED_AMOUNT_LOW_BYTES;
-    channel.onopen = () => this.#handleDataChannelOpen(peer, channel);
-    channel.onmessage = (event) => {
-      this.#handleDataMessage(peer, channel, event.data);
-    };
-    channel.onbufferedamountlow = () => {
-      this.#flushPendingData(peer, channel, false);
-    };
-    channel.onclose = () => {
-      this.#recoverDataChannel(
-        peer,
-        channel,
-        'data-channel-closed',
-        `Chat channel to ${peer.peerId} closed and is being recovered`,
-      );
-    };
-    channel.onerror = () => {
-      if (peer.data.errorTimer !== null) {
-        globalThis.clearTimeout(peer.data.errorTimer);
-      }
-      peer.data.errorTimer = globalThis.setTimeout(() => {
-        peer.data.errorTimer = null;
-        if (!this.#isCurrentPeer(peer)) {
-          return;
-        }
-        this.#recoverDataChannel(
-          peer,
-          channel,
-          'data-channel-error',
-          `Chat channel to ${peer.peerId} encountered an error and is being recovered`,
-        );
-      }, DATA_CHANNEL_ERROR_GRACE_MS);
-    };
-
-    if (channel.readyState === 'open' && !peer.recovering) {
-      this.#handleDataChannelOpen(peer, channel);
-    }
-  }
-
-  #handleDataChannelOpen(peer: PeerContext, channel: RTCDataChannel): void {
-    if (
-      !this.#isCurrentPeer(peer) ||
-      peer.data.channel !== channel ||
-      channel.readyState !== 'open'
-    ) {
+  #handleDataChannelOpen(peer: PeerContext): void {
+    if (!this.#isCurrentPeer(peer) || !peer.data.isOpen()) {
       return;
     }
     if (peer.connection.connectionState === 'connected') {
       this.#finishPeerRecovery(peer);
       return;
     }
-    const warningCleared = this.#clearRecoveredDataChannelWarning(peer);
+    const warningCleared = peer.data.clearRecoveryWarning();
     if (warningCleared) {
       this.#emit();
     }
-    this.#flushPendingData(peer, channel, true);
-  }
-
-  #recoverDataChannel(
-    peer: PeerContext,
-    channel: RTCDataChannel,
-    code: DataChannelRecoveryIssueCode,
-    message: string,
-  ): void {
-    if (!this.#isCurrentPeer(peer) || peer.data.channel !== channel) {
-      return;
-    }
-    if (peer.data.errorTimer !== null) {
-      globalThis.clearTimeout(peer.data.errorTimer);
-      peer.data.errorTimer = null;
-    }
-
-    peer.data.channel = null;
-    this.#detachAndCloseChannel(channel);
-    this.#setPeerWarning(peer.peerId, code, message);
-    this.#beginPeerRecovery(peer);
-  }
-
-  #clearRecoveredDataChannelWarning(peer: PeerContext): boolean {
-    if (peer.data.channel?.readyState !== 'open') {
-      return false;
-    }
-    return this.#clearPeerWarning(peer.peerId, DATA_CHANNEL_RECOVERY_WARNING_CODES);
-  }
-
-  #handleDataMessage(peer: PeerContext, channel: RTCDataChannel, raw: unknown): void {
-    if (
-      !this.#isCurrentPeer(peer) ||
-      peer.data.channel !== channel ||
-      !this.#consumeInboundDataBudget(peer) ||
-      typeof raw !== 'string'
-    ) {
-      return;
-    }
-
-    let data: PeerDataMessage;
-    try {
-      data = parsePeerDataMessage(raw);
-    } catch {
-      return;
-    }
-
-    if (data.type === 'chat.ack') {
-      if (this.#acknowledgeOutboundChat(peer, data.messageId)) {
-        this.#emit();
-      }
-      return;
-    }
-
-    if (data.type === 'participant.media') {
-      const participant = this.#participants.get(peer.peerId);
-      if (participant !== undefined) {
-        this.#remoteMediaStates.set(peer.peerId, data);
-        participant.audioEnabled = data.audioEnabled;
-        participant.videoEnabled = data.videoEnabled;
-        participant.videoSource = data.videoSource;
-        this.#emit();
-      }
-      return;
-    }
-
-    const participant = this.#participants.get(peer.peerId);
-    if (participant === undefined) {
-      return;
-    }
-
-    if (!peer.data.receivedChatIds.has(data.id)) {
-      this.#rememberReceivedChatId(peer, data.id);
-      this.#rememberMessage({
-        id: data.id,
-        senderId: peer.peerId,
-        senderName: participant.displayName,
-        text: data.text,
-        sentAt: data.sentAt,
-        isLocal: false,
-        deliveryState: 'received',
-      });
-      this.#emit();
-    }
-    if (
-      peer.data.pendingAckIds.has(data.id) ||
-      peer.data.pendingAckIds.size < MAX_PENDING_ACK_IDS_PER_PEER
-    ) {
-      peer.data.pendingAckIds.add(data.id);
-      this.#flushPendingData(peer, channel, false);
-    }
-  }
-
-  #rememberReceivedChatId(peer: PeerContext, messageId: string): void {
-    peer.data.receivedChatIds.add(messageId);
-    peer.data.receivedChatIdOrder.push(messageId);
-    while (peer.data.receivedChatIdOrder.length > MAX_RECEIVED_CHAT_IDS_PER_PEER) {
-      const removed = peer.data.receivedChatIdOrder.shift() as string;
-      peer.data.receivedChatIds.delete(removed);
-    }
-  }
-
-  #consumeInboundDataBudget(peer: PeerContext): boolean {
-    const now = this.#monotonicNow();
-    const windowStartedAt = peer.data.inboundWindowStartedAt;
-    let warningCleared = false;
-    if (windowStartedAt === null || now - windowStartedAt >= DATA_CHANNEL_RATE_WINDOW_MS) {
-      warningCleared = this.#resetInboundDataWindow(peer, now);
-    }
-
-    if (peer.data.inboundMessagesInWindow >= MAX_DATA_CHANNEL_MESSAGES_PER_WINDOW) {
-      if (!peer.data.inboundRateLimitExceeded) {
-        peer.data.inboundRateLimitExceeded = true;
-        this.#scheduleInboundDataWindowExpiry(peer);
-      }
-      if (this.#warning === null) {
-        this.#setPeerWarning(
-          peer.peerId,
-          'data-channel-rate-limit',
-          `Ignored excessive DataChannel messages from ${peer.peerId}`,
-        );
-      }
-      return false;
-    }
-
-    peer.data.inboundMessagesInWindow += 1;
-    if (warningCleared) {
-      this.#emit();
-    }
-    return true;
-  }
-
-  #resetInboundDataWindow(peer: PeerContext, nextWindowStartedAt: number | null): boolean {
-    if (peer.data.inboundWindowExpiryTimer !== null) {
-      globalThis.clearTimeout(peer.data.inboundWindowExpiryTimer);
-      peer.data.inboundWindowExpiryTimer = null;
-    }
-    peer.data.inboundWindowStartedAt = nextWindowStartedAt;
-    peer.data.inboundMessagesInWindow = 0;
-    peer.data.inboundRateLimitExceeded = false;
-    return this.#clearPeerWarning(peer.peerId, ['data-channel-rate-limit']);
-  }
-
-  #scheduleInboundDataWindowExpiry(peer: PeerContext): void {
-    const windowStartedAt = peer.data.inboundWindowStartedAt;
-    if (
-      !this.#isCurrentPeer(peer) ||
-      !peer.data.inboundRateLimitExceeded ||
-      windowStartedAt === null ||
-      peer.data.inboundWindowExpiryTimer !== null
-    ) {
-      return;
-    }
-
-    const delay = Math.max(0, windowStartedAt + DATA_CHANNEL_RATE_WINDOW_MS - this.#monotonicNow());
-    peer.data.inboundWindowExpiryTimer = globalThis.setTimeout(() => {
-      peer.data.inboundWindowExpiryTimer = null;
-      if (
-        !this.#isCurrentPeer(peer) ||
-        !peer.data.inboundRateLimitExceeded ||
-        peer.data.inboundWindowStartedAt !== windowStartedAt
-      ) {
-        return;
-      }
-
-      if (this.#resetInboundDataWindow(peer, null)) {
-        this.#emit();
-      }
-    }, delay);
+    peer.data.flush(true);
   }
 
   #currentMediaDataMessage(): ParticipantMediaDataMessage {
@@ -3158,10 +2907,7 @@ export class RoomSession {
       if (!this.#isCurrentPeer(peer)) {
         continue;
       }
-      peer.data.pendingMediaState = message;
-      if (peer.data.channel?.readyState === 'open' && !peer.recovering) {
-        this.#flushPendingData(peer, peer.data.channel, false);
-      }
+      peer.data.publishMediaState(message);
     }
   }
 
@@ -3181,10 +2927,7 @@ export class RoomSession {
         `Chat delivery to ${recipientIds[0]} is unavailable while the peer connection is failed`,
       );
     }
-    const messageBytes = utf8ByteLength(serializedMessage);
-    const saturatedPeer = targetPeers.find(
-      (peer) => peer.data.pendingChatMessages.length >= MAX_PENDING_CHAT_MESSAGES_PER_PEER,
-    );
+    const saturatedPeer = targetPeers.find((peer) => !peer.data.hasQueueCapacity());
     if (saturatedPeer !== undefined) {
       throw new ChatSendError(
         'queue-full',
@@ -3193,19 +2936,7 @@ export class RoomSession {
     }
 
     for (const peer of targetPeers) {
-      let pendingChat: PendingChatMessage;
-      const timeout = globalThis.setTimeout(() => {
-        this.#expireOutboundChat(peer.peerId, pendingChat);
-      }, CHAT_ACK_TIMEOUT_MS);
-      pendingChat = {
-        message,
-        serialized: serializedMessage,
-        byteLength: messageBytes,
-        timeout,
-        sentOnCurrentChannel: false,
-        everSent: false,
-      };
-      peer.data.pendingChatMessages.push(pendingChat);
+      peer.data.enqueueChat(message, serializedMessage);
     }
     return {
       peers: targetPeers,
@@ -3216,125 +2947,6 @@ export class RoomSession {
         ]),
       ),
     };
-  }
-
-  #expireOutboundChat(peerId: string, pendingChat: PendingChatMessage): void {
-    const peer = this.#peers.get(peerId);
-    if (peer === undefined) {
-      return;
-    }
-    const index = peer.data.pendingChatMessages.indexOf(pendingChat);
-    if (index < 0) {
-      return;
-    }
-    const [expired] = peer.data.pendingChatMessages.splice(index, 1) as [PendingChatMessage];
-    if (this.#markLocalChatRecipientState(expired.message.id, peerId, 'failed')) {
-      this.#emit();
-    }
-  }
-
-  #flushPendingData(peer: PeerContext, channel: RTCDataChannel, sendMediaState: boolean): void {
-    if (
-      !this.#isCurrentPeer(peer) ||
-      peer.recovering ||
-      peer.data.channel !== channel ||
-      channel.readyState !== 'open'
-    ) {
-      return;
-    }
-
-    if (sendMediaState) {
-      peer.data.pendingMediaState = this.#currentMediaDataMessage();
-    }
-
-    while (peer.data.pendingAckIds.size > 0) {
-      const messageId = peer.data.pendingAckIds.values().next().value as string;
-      const acknowledgement: ChatAckDataMessage = {
-        type: 'chat.ack',
-        messageId,
-      };
-      const serializedAcknowledgement = serializePeerDataMessage(acknowledgement);
-      if (
-        this.#isDataChannelBackpressured(
-          channel,
-          utf8ByteLength(serializedAcknowledgement),
-          MAX_DATA_CHANNEL_BUFFERED_BYTES + DATA_CHANNEL_CONTROL_RESERVE_BYTES,
-        )
-      ) {
-        return;
-      }
-      if (!this.#sendSerializedData(peer, channel, serializedAcknowledgement)) {
-        return;
-      }
-      peer.data.pendingAckIds.delete(messageId);
-    }
-
-    if (peer.data.pendingMediaState !== null) {
-      const serializedMediaState = serializePeerDataMessage(peer.data.pendingMediaState);
-      if (
-        this.#isDataChannelBackpressured(channel, utf8ByteLength(serializedMediaState)) ||
-        !this.#sendSerializedData(peer, channel, serializedMediaState)
-      ) {
-        return;
-      }
-      peer.data.pendingMediaState = null;
-    }
-
-    while (true) {
-      const pendingChat = peer.data.pendingChatMessages.find(
-        (candidate) => !candidate.sentOnCurrentChannel,
-      );
-      if (pendingChat === undefined) {
-        return;
-      }
-      if (
-        this.#isDataChannelBackpressured(channel, pendingChat.byteLength) ||
-        !this.#sendSerializedData(peer, channel, pendingChat.serialized)
-      ) {
-        return;
-      }
-      pendingChat.sentOnCurrentChannel = true;
-      pendingChat.everSent = true;
-    }
-  }
-
-  #isDataChannelBackpressured(
-    channel: RTCDataChannel,
-    nextFrameBytes: number,
-    limit = MAX_DATA_CHANNEL_BUFFERED_BYTES,
-  ): boolean {
-    return channel.bufferedAmount + nextFrameBytes > limit;
-  }
-
-  #sendSerializedData(
-    peer: PeerContext,
-    channel: RTCDataChannel,
-    serializedMessage: string,
-  ): boolean {
-    try {
-      channel.send(serializedMessage);
-      return true;
-    } catch (error) {
-      this.#recoverDataChannel(
-        peer,
-        channel,
-        'data-channel-send-failed',
-        `Chat channel to ${peer.peerId} rejected a send and is being recovered: ${getErrorMessage(error)}`,
-      );
-      return false;
-    }
-  }
-
-  #acknowledgeOutboundChat(peer: PeerContext, messageId: string): boolean {
-    const index = peer.data.pendingChatMessages.findIndex(
-      (pendingChat) => pendingChat.everSent && pendingChat.message.id === messageId,
-    );
-    if (index < 0) {
-      return false;
-    }
-    const [acknowledged] = peer.data.pendingChatMessages.splice(index, 1) as [PendingChatMessage];
-    globalThis.clearTimeout(acknowledged.timeout);
-    return this.#markLocalChatRecipientState(messageId, peer.peerId, 'acknowledged');
   }
 
   #markLocalChatRecipientState(
@@ -3394,14 +3006,6 @@ export class RoomSession {
       return 'sent';
     }
     return sentCount === 0 ? 'failed' : 'partial';
-  }
-
-  #markQueuedChatsFailed(peer: PeerContext): void {
-    for (const pendingChat of peer.data.pendingChatMessages) {
-      globalThis.clearTimeout(pendingChat.timeout);
-      this.#markLocalChatRecipientState(pendingChat.message.id, peer.peerId, 'failed');
-    }
-    peer.data.pendingChatMessages.length = 0;
   }
 
   #rememberMessage(message: ChatMessage): void {
@@ -3533,7 +3137,7 @@ export class RoomSession {
     this.#signalingTransport.purgeRequestsForPeer(peerId);
     const peer = this.#peers.get(peerId);
     if (peer !== undefined) {
-      this.#markQueuedChatsFailed(peer);
+      peer.data.dispose();
       this.#disposePeerContext(peer);
       this.#peers.delete(peerId);
       this.#clearResolvedVideoQualityWarning();
@@ -3559,33 +3163,17 @@ export class RoomSession {
       globalThis.clearTimeout(peer.recoveryTimer);
       peer.recoveryTimer = null;
     }
-    if (peer.data.errorTimer !== null) {
-      globalThis.clearTimeout(peer.data.errorTimer);
-      peer.data.errorTimer = null;
-    }
-    if (peer.data.inboundWindowExpiryTimer !== null) {
-      globalThis.clearTimeout(peer.data.inboundWindowExpiryTimer);
-      peer.data.inboundWindowExpiryTimer = null;
-    }
     peer.connection.onicecandidate = null;
     peer.connection.ontrack = null;
     peer.connection.ondatachannel = null;
     peer.connection.onconnectionstatechange = null;
     peer.connection.onsignalingstatechange = null;
-    if (peer.data.channel !== null) {
-      this.#detachAndCloseChannel(peer.data.channel);
-      peer.data.channel = null;
-    }
     peer.connection.close();
     peer.videoSender = null;
     peer.audioSender = null;
     peer.pendingLocalRenegotiation = false;
     peer.pendingCandidates.length = 0;
     peer.pendingLocalCandidates.length = 0;
-    peer.data.receivedChatIds.clear();
-    peer.data.receivedChatIdOrder.length = 0;
-    peer.data.pendingAckIds.clear();
-    peer.data.pendingMediaState = null;
   }
 
   #stopRemoteStream(peerId: string): void {
@@ -3594,15 +3182,6 @@ export class RoomSession {
       track.stop();
     }
     this.#remoteStreams.delete(peerId);
-  }
-
-  #detachAndCloseChannel(channel: RTCDataChannel): void {
-    channel.onopen = null;
-    channel.onmessage = null;
-    channel.onclose = null;
-    channel.onerror = null;
-    channel.onbufferedamountlow = null;
-    channel.close();
   }
 
   #cleanupPeerResources(): void {
