@@ -1,7 +1,6 @@
 import {
   PROTOCOL_VERSION,
   parsePeerDataMessage,
-  parseServerMessageText,
   serializeClientMessage,
   serializePeerDataMessage,
   utf8ByteLength,
@@ -23,6 +22,7 @@ import {
   measurePeerConnections,
   type PeerConnectionDiagnostics,
 } from './connection-diagnostics.js';
+import { SignalingTransport, SignalingTransportError } from './signaling-transport.js';
 export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
 
 export type RoomSessionStatus =
@@ -280,19 +280,7 @@ interface ResolvedRecoveryOptions {
   readonly peerRecoveryTimeoutMs: number;
 }
 
-interface SocketBinding {
-  readonly socket: WebSocket;
-  readonly generation: number;
-  readonly message: (event: MessageEvent<unknown>) => void;
-  readonly close: (event: CloseEvent) => void;
-}
-
 type RelayClientMessage = Extract<ClientMessage, { to: string }>;
-
-interface PendingSignalRequest {
-  readonly generation: number;
-  readonly peerId: string;
-}
 
 interface PendingChatMessage {
   readonly message: ChatDataMessage;
@@ -314,7 +302,6 @@ type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 
 // 일반적인 ICE 후보 수집량은 이 값보다 훨씬 적다. 초과 시 최신 후보를 유지한다.
 const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
-const MAX_PENDING_SIGNAL_REQUESTS = 256;
 const MAX_RETIRED_NEGOTIATION_IDS = 8;
 const DATA_CHANNEL_RATE_WINDOW_MS = 10_000;
 const DATA_CHANNEL_LABEL = 'round-room';
@@ -541,17 +528,13 @@ export class RoomSession {
   readonly #staleSelfIds = new Set<string>();
   readonly #exhaustedPeerIds = new Set<string>();
   readonly #localTrackEndedListeners = new Map<MediaStreamTrack, EventListener>();
-  readonly #pendingSignalRequests = new Map<string, PendingSignalRequest>();
   readonly #localChatRecipientStates = new Map<string, Map<string, ChatRecipientDeliveryState>>();
   readonly #messages: ChatMessage[] = [];
   readonly #lastInputEnabled = { audio: true, video: true };
   readonly #endedInputKinds = new Set<'audio' | 'video'>();
+  readonly #signalingTransport: SignalingTransport;
 
   #rtcConfiguration: RTCConfiguration | undefined;
-  #socket: WebSocket | null = null;
-  #socketBinding: SocketBinding | null = null;
-  #socketGeneration = 0;
-  #signalRequestSequence = 0;
   #localStream: MediaStream | null = null;
   #cameraVideoTracks: MediaStreamTrack[] = [];
   #videoQualityMode: VideoQualityMode = 'standard';
@@ -581,7 +564,6 @@ export class RoomSession {
   #error: RoomIssue | null = null;
   #snapshot: RoomSessionSnapshot;
   #joinPromise: Promise<void> | null = null;
-  #rejectConnecting: ((reason: unknown) => void) | null = null;
   #resolveJoined: (() => void) | null = null;
   #rejectJoined: ((reason: unknown) => void) | null = null;
   #joinTimeout: TimerHandle | null = null;
@@ -607,6 +589,27 @@ export class RoomSession {
 
     this.#options = { ...options, roomId, displayName };
     this.#recoveryOptions = resolveRecoveryOptions(options.recovery);
+    this.#signalingTransport = new SignalingTransport({
+      url: this.#options.signalingUrl,
+      roomId,
+      connectTimeoutMs: this.#recoveryOptions.signalingConnectTimeoutMs,
+      ...(options.beforeSignalingConnect === undefined
+        ? {}
+        : { beforeConnect: options.beforeSignalingConnect }),
+      ...(options.webSocketFactory === undefined
+        ? {}
+        : { webSocketFactory: options.webSocketFactory }),
+      canConnect: () => !this.#leaving && !this.#disposed,
+      onMessage: (message, socket, generation) => {
+        void this.#routeServerMessage(message, socket, generation);
+      },
+      onInvalidMessage: (message) => {
+        this.#setWarning('invalid-signal-message', message);
+      },
+      onClose: (error, event) => {
+        this.#handleSocketClose(error, event);
+      },
+    });
     this.#serializedJoinMessage = serializeClientMessage({
       v: PROTOCOL_VERSION,
       type: 'room.join',
@@ -815,10 +818,9 @@ export class RoomSession {
     this.#disposed = true;
     this.#cancelReconnectWait();
 
-    const socket = this.#socket;
-    if (socket !== null && socket.readyState === socket.OPEN) {
+    if (this.#signalingTransport.isOpen()) {
       try {
-        this.#send({
+        this.#signalingTransport.send({
           v: PROTOCOL_VERSION,
           type: 'room.leave',
           roomId: this.#options.roomId,
@@ -829,11 +831,12 @@ export class RoomSession {
     }
 
     this.#resolveJoined = null;
-    this.#rejectConnecting?.(new Error('Room session ended before signaling connected'));
-    this.#rejectConnecting = null;
+    this.#signalingTransport.cancelConnect(
+      new Error('Room session ended before signaling connected'),
+    );
     this.#rejectJoined?.(new Error('Room session ended before joining'));
     this.#clearJoinedWait();
-    this.#closeSocket();
+    this.#signalingTransport.close();
     this.#cleanupAllResources();
     this.#exhaustedPeerIds.clear();
     this.#selfId = null;
@@ -1033,7 +1036,7 @@ export class RoomSession {
     }
 
     try {
-      this.#sendRelay({
+      this.#signalingTransport.sendRelay({
         v: PROTOCOL_VERSION,
         type: 'moderation.media.disable',
         roomId: this.#options.roomId,
@@ -1502,7 +1505,7 @@ export class RoomSession {
       }
 
       this.#setStatus('connecting-signal');
-      await this.#connectSocket();
+      await this.#signalingTransport.connect();
 
       if (this.#disposed) {
         throw new Error('Room session ended while connecting');
@@ -1513,7 +1516,7 @@ export class RoomSession {
     } catch (error) {
       if (!this.#leaving) {
         this.#cleanupAllResources();
-        this.#closeSocket();
+        this.#signalingTransport.close();
         this.#disposed = true;
         if (this.#status !== 'error') {
           const issue = this.#issueFromError(error, 'join-failed');
@@ -1619,7 +1622,7 @@ export class RoomSession {
       }, this.#recoveryOptions.roomJoinTimeoutMs);
 
       try {
-        this.#requireOpenSocket().send(this.#serializedJoinMessage);
+        this.#signalingTransport.sendSerialized(this.#serializedJoinMessage);
       } catch (error) {
         settleError(error);
       }
@@ -1646,7 +1649,7 @@ export class RoomSession {
     }
   }
 
-  #beginReconnect(reason: RoomSessionFailure): void {
+  #beginReconnect(reason: RoomIssue): void {
     if (this.#leaving || this.#disposed) {
       return;
     }
@@ -1686,7 +1689,7 @@ export class RoomSession {
       });
   }
 
-  async #performReconnect(initialFailure: RoomSessionFailure): Promise<void> {
+  async #performReconnect(initialFailure: RoomIssue): Promise<void> {
     let lastIssue: RoomIssue = {
       code: initialFailure.code,
       message: initialFailure.message,
@@ -1705,16 +1708,16 @@ export class RoomSession {
       }
 
       try {
-        await this.#connectSocket();
+        await this.#signalingTransport.connect();
         if (this.#leaving || this.#disposed) {
           return;
         }
 
-        const attemptSocket = this.#socket;
+        const attemptSocket = this.#signalingTransport.socket;
         await this.#joinRoom();
         if (
           attemptSocket !== null &&
-          this.#socket === attemptSocket &&
+          this.#signalingTransport.socket === attemptSocket &&
           attemptSocket.readyState === attemptSocket.OPEN &&
           this.#status === 'active'
         ) {
@@ -1729,9 +1732,8 @@ export class RoomSession {
           return;
         }
         lastIssue = this.#issueFromError(error, 'reconnect-attempt-failed');
-        this.#rejectConnecting = null;
         this.#clearJoinedWait();
-        this.#closeSocket(1000, 'reconnect retry');
+        this.#signalingTransport.close(1000, 'reconnect retry');
         this.#cleanupPeerResources();
         this.#participants.clear();
         this.#remoteMediaStates.clear();
@@ -1787,9 +1789,8 @@ export class RoomSession {
     }
     this.#disposed = true;
     this.#cancelReconnectWait();
-    this.#rejectConnecting = null;
     this.#clearJoinedWait();
-    this.#closeSocket(1000, 'reconnect exhausted');
+    this.#signalingTransport.close(1000, 'reconnect exhausted');
     this.#cleanupAllResources();
     this.#participants.clear();
     this.#selfId = null;
@@ -1802,149 +1803,7 @@ export class RoomSession {
     this.#setFatalError(issue.code, issue.message);
   }
 
-  async #connectSocket(): Promise<void> {
-    await this.#options.beforeSignalingConnect?.();
-    if (this.#leaving || this.#disposed) {
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const factory = this.#options.webSocketFactory ?? ((url: string) => new WebSocket(url));
-
-      let socket: WebSocket;
-      try {
-        socket = factory(this.#options.signalingUrl);
-      } catch (error) {
-        reject(error);
-        return;
-      }
-
-      this.#pendingSignalRequests.clear();
-      this.#socket = socket;
-      const generation = ++this.#socketGeneration;
-      this.#bindSocket(socket, generation);
-
-      let timeout: TimerHandle | null = null;
-      const cleanupAttemptListeners = () => {
-        socket.removeEventListener('open', settleOpen);
-        socket.removeEventListener('error', settleErrorEvent);
-        socket.removeEventListener('close', settleClose);
-        if (timeout !== null) {
-          globalThis.clearTimeout(timeout);
-          timeout = null;
-        }
-      };
-
-      const settleOpen = () => {
-        if (!settled) {
-          settled = true;
-          cleanupAttemptListeners();
-          this.#rejectConnecting = null;
-          resolve();
-        }
-      };
-      const settleError = (
-        error: unknown = new RoomSessionFailure(
-          'signaling-connect-failed',
-          'Could not connect to the signaling server',
-        ),
-      ) => {
-        if (!settled) {
-          settled = true;
-          cleanupAttemptListeners();
-          this.#rejectConnecting = null;
-          reject(error);
-        }
-      };
-      const settleErrorEvent = () => {
-        settleError();
-      };
-      const settleClose = (event: Event) => {
-        const close = event as CloseEvent;
-        const reason = close.reason || `close code ${close.code}`;
-        settleError(
-          new RoomSessionFailure(
-            'signaling-closed',
-            `Signaling connection closed before it opened (${reason})`,
-          ),
-        );
-      };
-
-      this.#rejectConnecting = settleError;
-      socket.addEventListener('open', settleOpen);
-      socket.addEventListener('error', settleErrorEvent);
-      socket.addEventListener('close', settleClose);
-      timeout = globalThis.setTimeout(() => {
-        const error = new RoomSessionFailure(
-          'signaling-connect-timeout',
-          `Signaling connection did not open within ${this.#recoveryOptions.signalingConnectTimeoutMs}ms`,
-        );
-        settleError(error);
-        if (this.#isCurrentSocket(socket, generation)) {
-          this.#closeSocket(1000, 'signaling connect timeout');
-        }
-      }, this.#recoveryOptions.signalingConnectTimeoutMs);
-
-      if (socket.readyState === socket.OPEN) {
-        settleOpen();
-      } else if (socket.readyState !== socket.CONNECTING) {
-        settleError();
-      }
-    });
-  }
-
-  #bindSocket(socket: WebSocket, generation: number): void {
-    const message = (event: MessageEvent<unknown>) => {
-      this.#handleSocketMessage(socket, generation, event);
-    };
-    const close = (event: CloseEvent) => {
-      this.#handleSocketClose(socket, generation, event);
-    };
-    this.#socketBinding = { socket, generation, message, close };
-    socket.addEventListener('message', message);
-    socket.addEventListener('close', close);
-  }
-
-  #handleSocketMessage(socket: WebSocket, generation: number, event: MessageEvent<unknown>): void {
-    if (!this.#isCurrentSocket(socket, generation)) {
-      return;
-    }
-    if (typeof event.data !== 'string') {
-      this.#setWarning('invalid-signal-message', 'Ignored a non-text signaling message');
-      return;
-    }
-
-    let message: ServerMessage;
-    try {
-      message = parseServerMessageText(event.data);
-    } catch (error) {
-      this.#setWarning('invalid-signal-message', getErrorMessage(error));
-      return;
-    }
-
-    if (message.type !== 'error' && message.roomId !== this.#options.roomId) {
-      return;
-    }
-
-    void this.#routeServerMessage(message, socket, generation);
-  }
-
-  #handleSocketClose(socket: WebSocket, generation: number, event: CloseEvent): void {
-    if (!this.#isCurrentSocket(socket, generation)) {
-      return;
-    }
-
-    this.#detachSocket(socket);
-    this.#socket = null;
-    this.#pendingSignalRequests.clear();
-    const reason = event.reason || `close code ${event.code}`;
-    const error = new RoomSessionFailure(
-      'signaling-closed',
-      `Signaling connection closed (${reason})`,
-    );
-    this.#rejectConnecting?.(error);
-    this.#rejectConnecting = null;
+  #handleSocketClose(error: SignalingTransportError, event: CloseEvent): void {
     this.#rejectJoined?.(error);
     this.#clearJoinedWait();
 
@@ -2033,7 +1892,7 @@ export class RoomSession {
           return;
       }
     } catch (error) {
-      if (!this.#isCurrentSocket(socket, generation)) {
+      if (!this.#signalingTransport.isCurrent(socket, generation)) {
         return;
       }
       const peerId = 'from' in message ? message.from : null;
@@ -2413,7 +2272,7 @@ export class RoomSession {
     if (!this.#isCurrentPeer(peer)) {
       return;
     }
-    this.#sendRelay(message);
+    this.#signalingTransport.sendRelay(message);
     peer.localDescriptionPublished = true;
     const candidates = peer.pendingLocalCandidates.splice(0, peer.pendingLocalCandidates.length);
     for (const candidate of candidates) {
@@ -2425,13 +2284,12 @@ export class RoomSession {
     if (
       !this.#isCurrentPeer(peer) ||
       !this.#candidateMatchesCurrentLocalNegotiation(peer, candidate) ||
-      this.#socket === null ||
-      this.#socket.readyState !== this.#socket.OPEN ||
+      !this.#signalingTransport.isOpen() ||
       this.#status === 'reconnecting'
     ) {
       return;
     }
-    this.#sendRelay({
+    this.#signalingTransport.sendRelay({
       v: PROTOCOL_VERSION,
       type: 'rtc.ice',
       roomId: this.#options.roomId,
@@ -2522,11 +2380,7 @@ export class RoomSession {
     }
 
     connection.onicecandidate = (event) => {
-      if (
-        !this.#isCurrentPeer(peer) ||
-        this.#socket === null ||
-        this.#socket.readyState !== this.#socket.OPEN
-      ) {
+      if (!this.#isCurrentPeer(peer) || !this.#signalingTransport.isOpen()) {
         return;
       }
       const candidate =
@@ -2711,8 +2565,7 @@ export class RoomSession {
       !peer.pendingLocalRenegotiation ||
       this.#disposed ||
       this.#status !== 'active' ||
-      this.#socket === null ||
-      this.#socket.readyState !== this.#socket.OPEN ||
+      !this.#signalingTransport.isOpen() ||
       peer.makingOffer ||
       peer.remoteOffersInProgress.size > 0 ||
       peer.connection.signalingState !== 'stable'
@@ -3677,7 +3530,7 @@ export class RoomSession {
   }
 
   #cleanupPeer(peerId: string, removeParticipant: boolean): void {
-    this.#purgeSignalRequestsForPeer(peerId);
+    this.#signalingTransport.purgeRequestsForPeer(peerId);
     const peer = this.#peers.get(peerId);
     if (peer !== undefined) {
       this.#markQueuedChatsFailed(peer);
@@ -3764,7 +3617,7 @@ export class RoomSession {
     ++this.#screenShareOperation;
     this.#inputChange?.track?.stop();
     this.#inputChange = null;
-    this.#pendingSignalRequests.clear();
+    this.#signalingTransport.clearPendingRequests();
     this.#cleanupPeerResources();
     this.#remoteMediaStates.clear();
 
@@ -3848,36 +3701,6 @@ export class RoomSession {
     this.#screenTrackEndedListener = null;
   }
 
-  #closeSocket(code = 1000, reason = 'client leave'): void {
-    this.#pendingSignalRequests.clear();
-    const socket = this.#socket;
-    if (socket === null) {
-      return;
-    }
-
-    this.#detachSocket(socket);
-    socket.close(code, reason);
-    this.#socket = null;
-  }
-
-  #detachSocket(socket: WebSocket): void {
-    const binding = this.#socketBinding;
-    if (binding === null || binding.socket !== socket) {
-      return;
-    }
-    socket.removeEventListener('message', binding.message);
-    socket.removeEventListener('close', binding.close);
-    this.#socketBinding = null;
-  }
-
-  #isCurrentSocket(socket: WebSocket, generation: number): boolean {
-    return (
-      this.#socket === socket &&
-      this.#socketBinding?.socket === socket &&
-      this.#socketBinding.generation === generation
-    );
-  }
-
   #handleServerError(code: SignalingErrorCode, requestId: string | undefined): void {
     const error = new RoomSessionFailure(code, safeSignalingErrorMessage(code));
     if (this.#rejectJoined !== null) {
@@ -3889,7 +3712,8 @@ export class RoomSession {
       return;
     }
 
-    const request = requestId === undefined ? null : this.#takePendingSignalRequest(requestId);
+    const request =
+      requestId === undefined ? null : this.#signalingTransport.takePendingRequest(requestId);
 
     switch (code) {
       case 'TARGET_NOT_FOUND': {
@@ -3900,14 +3724,14 @@ export class RoomSession {
       }
       case 'TARGET_SELF': {
         if (request !== null) {
-          this.#closeSocket(1000, 'signaling identity mismatch');
+          this.#signalingTransport.close(1000, 'signaling identity mismatch');
           this.#beginReconnect(error);
         }
         return;
       }
       case 'NOT_IN_ROOM':
       case 'ROOM_MISMATCH':
-        this.#closeSocket(1000, 'signaling state mismatch');
+        this.#signalingTransport.close(1000, 'signaling state mismatch');
         this.#beginReconnect(error);
         return;
       case 'ALREADY_JOINED':
@@ -3925,71 +3749,14 @@ export class RoomSession {
     }
   }
 
-  #send(message: ClientMessage): void {
-    const socket = this.#requireOpenSocket();
-    socket.send(serializeClientMessage(message));
-  }
-
-  #requireOpenSocket(): WebSocket {
-    const socket = this.#socket;
-    if (socket === null || socket.readyState !== socket.OPEN) {
-      throw new Error('Signaling socket is not open');
-    }
-    return socket;
-  }
-
-  #sendRelay(message: RelayClientMessage): void {
-    const socket = this.#requireOpenSocket();
-    this.#signalRequestSequence += 1;
-    const requestId = `signal-${this.#socketGeneration}-${this.#signalRequestSequence.toString(36)}`;
-    const correlatedMessage = { ...message, requestId } as RelayClientMessage;
-    const serialized = serializeClientMessage(correlatedMessage);
-    this.#rememberSignalRequest(requestId, correlatedMessage);
-    try {
-      socket.send(serialized);
-    } catch (error) {
-      this.#pendingSignalRequests.delete(requestId);
-      throw error;
-    }
-  }
-
-  #rememberSignalRequest(requestId: string, message: RelayClientMessage): void {
-    this.#pendingSignalRequests.set(requestId, {
-      generation: this.#socketGeneration,
-      peerId: message.to,
-    });
-    while (this.#pendingSignalRequests.size > MAX_PENDING_SIGNAL_REQUESTS) {
-      const oldestRequestId = this.#pendingSignalRequests.keys().next().value as string;
-      this.#pendingSignalRequests.delete(oldestRequestId);
-    }
-  }
-
-  #takePendingSignalRequest(requestId: string): PendingSignalRequest | null {
-    const request = this.#pendingSignalRequests.get(requestId);
-    if (request === undefined) {
-      return null;
-    }
-    this.#pendingSignalRequests.delete(requestId);
-    return request.generation === this.#socketGeneration ? request : null;
-  }
-
-  #purgeSignalRequestsForPeer(peerId: string): void {
-    for (const [requestId, request] of this.#pendingSignalRequests) {
-      if (request.peerId === peerId) {
-        this.#pendingSignalRequests.delete(requestId);
-      }
-    }
-  }
-
   #finishFatalSignalingError(error: RoomSessionFailure): void {
     if (this.#leaving || this.#disposed) {
       return;
     }
     this.#disposed = true;
     this.#cancelReconnectWait();
-    this.#rejectConnecting = null;
     this.#clearJoinedWait();
-    this.#closeSocket(1000, 'fatal signaling error');
+    this.#signalingTransport.close(1000, 'fatal signaling error');
     this.#cleanupAllResources();
     this.#exhaustedPeerIds.clear();
     this.#participants.clear();
@@ -4038,7 +3805,7 @@ export class RoomSession {
   }
 
   #issueFromError(error: unknown, fallbackCode: RoomIssueCode): RoomIssue {
-    if (error instanceof RoomSessionFailure) {
+    if (error instanceof RoomSessionFailure || error instanceof SignalingTransportError) {
       return { code: error.code, message: error.message };
     }
     return { code: fallbackCode, message: getErrorMessage(error) };
