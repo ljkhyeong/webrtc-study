@@ -8,6 +8,9 @@ import {
   type SerializedIceCandidate,
   type ServerMessage,
 } from './types.js';
+import { exactKeys, fail, record, type UnknownRecord } from './validation-primitives.js';
+
+export { ProtocolValidationError } from './validation-primitives.js';
 
 export const ROOM_ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 export const ROOM_ID_SEGMENT_LENGTH = 4;
@@ -28,18 +31,6 @@ const UTF8_ENCODER = new TextEncoder();
 
 export const MAX_SIGNALING_FRAME_BYTES = 64 * 1024;
 export const MAX_SDP_BYTES = 48 * 1024;
-
-type UnknownRecord = Record<string, unknown>;
-
-export class ProtocolValidationError extends Error {
-  readonly path: string;
-
-  constructor(path: string, reason: string) {
-    super(`${path}: ${reason}`);
-    this.name = 'ProtocolValidationError';
-    this.path = path;
-  }
-}
 
 export function parseClientMessage(input: unknown): ClientMessage {
   const message = record(input, '$');
@@ -388,23 +379,4 @@ function oneOf<const T extends readonly string[]>(
   if (typeof input !== 'string' || !allowed.includes(input)) {
     fail(path, `must be one of ${allowed.join(', ')}`);
   }
-}
-
-function record(input: unknown, path: string): UnknownRecord {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-    fail(path, 'must be an object');
-  }
-  return input as UnknownRecord;
-}
-
-function exactKeys(input: UnknownRecord, allowedKeys: readonly string[], path: string): void {
-  const allowed = new Set(allowedKeys);
-  const unexpected = Object.keys(input).find((key) => !allowed.has(key));
-  if (unexpected !== undefined) {
-    fail(`${path}.${unexpected}`, 'is not allowed');
-  }
-}
-
-function fail(path: string, reason: string): never {
-  throw new ProtocolValidationError(path, reason);
 }

@@ -1,4 +1,5 @@
-import { ProtocolValidationError, utf8ByteLength } from './validation.js';
+import { utf8ByteLength } from './validation.js';
+import { exactKeys, fail, record } from './validation-primitives.js';
 
 export const MAX_DATA_CHANNEL_FRAME_BYTES = 32 * 1024;
 const MAX_CHAT_TEXT_LENGTH = 4_000;
@@ -35,7 +36,7 @@ export function parsePeerDataMessage(raw: string): PeerDataMessage {
   try {
     input = JSON.parse(raw);
   } catch {
-    throw new ProtocolValidationError('$', 'must be valid JSON');
+    fail('$', 'must be valid JSON');
   }
   return validatePeerDataMessage(input);
 }
@@ -67,7 +68,7 @@ function validatePeerDataMessage(input: unknown): PeerDataMessage {
       videoSource(message.videoSource, '$.videoSource');
       return message as unknown as ParticipantMediaDataMessage;
     default:
-      throw new ProtocolValidationError('$.type', 'must be a supported DataChannel message type');
+      fail('$.type', 'must be a supported DataChannel message type');
   }
 }
 
@@ -76,28 +77,7 @@ function assertFrameWithinBudget(raw: string): void {
     raw.length > MAX_DATA_CHANNEL_FRAME_BYTES ||
     utf8ByteLength(raw) > MAX_DATA_CHANNEL_FRAME_BYTES
   ) {
-    throw new ProtocolValidationError(
-      '$',
-      `must be at most ${MAX_DATA_CHANNEL_FRAME_BYTES} UTF-8 bytes`,
-    );
-  }
-}
-
-function record(input: unknown, path: string): Record<string, unknown> {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-    throw new ProtocolValidationError(path, 'must be an object');
-  }
-  return input as Record<string, unknown>;
-}
-
-function exactKeys(
-  value: Record<string, unknown>,
-  allowedKeys: readonly string[],
-  path: string,
-): void {
-  const unexpected = Object.keys(value).find((key) => !allowedKeys.includes(key));
-  if (unexpected !== undefined) {
-    throw new ProtocolValidationError(`${path}.${unexpected}`, 'is not allowed');
+    fail('$', `must be at most ${MAX_DATA_CHANNEL_FRAME_BYTES} UTF-8 bytes`);
   }
 }
 
@@ -107,10 +87,7 @@ function boundedIdentifier(input: unknown, path: string): void {
     input.length === 0 ||
     input.length > MAX_DATA_MESSAGE_ID_LENGTH
   ) {
-    throw new ProtocolValidationError(
-      path,
-      `must be a string between 1 and ${MAX_DATA_MESSAGE_ID_LENGTH} characters`,
-    );
+    fail(path, `must be a string between 1 and ${MAX_DATA_MESSAGE_ID_LENGTH} characters`);
   }
 }
 
@@ -120,27 +97,24 @@ function dateSafeTimestamp(input: unknown, path: string): void {
     (input as number) < 0 ||
     (input as number) > MAX_DATE_TIMESTAMP_MS
   ) {
-    throw new ProtocolValidationError(path, 'must be a Date-safe non-negative integer');
+    fail(path, 'must be a Date-safe non-negative integer');
   }
 }
 
 function boundedText(input: unknown, path: string): void {
   if (typeof input !== 'string' || input.length === 0 || input.length > MAX_CHAT_TEXT_LENGTH) {
-    throw new ProtocolValidationError(
-      path,
-      `must be a string between 1 and ${MAX_CHAT_TEXT_LENGTH} characters`,
-    );
+    fail(path, `must be a string between 1 and ${MAX_CHAT_TEXT_LENGTH} characters`);
   }
 }
 
 function booleanValue(input: unknown, path: string): void {
   if (typeof input !== 'boolean') {
-    throw new ProtocolValidationError(path, 'must be a boolean');
+    fail(path, 'must be a boolean');
   }
 }
 
 function videoSource(input: unknown, path: string): void {
   if (input !== 'camera' && input !== 'screen') {
-    throw new ProtocolValidationError(path, 'must be one of camera, screen');
+    fail(path, 'must be one of camera, screen');
   }
 }
