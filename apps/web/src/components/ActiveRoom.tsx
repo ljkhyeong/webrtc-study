@@ -19,7 +19,7 @@ import {
   type RoomEndpoints,
   type RoundAuthMode,
 } from '../lib/room-endpoints';
-import { RoomRefreshLifetime } from '../lib/room-refresh-lifetime';
+import { RoomRefreshCoordinator } from '../lib/room-refresh-coordinator';
 import { loadRtcConfiguration, type LoadedRtcConfiguration } from '../lib/rtc-configuration';
 import {
   PEER_CONNECTION_FAILURE_MESSAGE,
@@ -32,8 +32,6 @@ import {
   screenShareStartNotice,
   type RoomStartupErrorCode,
 } from '../lib/room-presentation';
-import { turnCredentialRefreshDelayMs } from '../lib/turn';
-
 class RoomStartupFailure extends Error {
   constructor(
     readonly code: RoomStartupErrorCode,
@@ -119,161 +117,24 @@ export function ActiveRoom({
     const lifecycle = ++lifecycleRef.current;
     let isCurrentSession = true;
     let unsubscribe = () => {};
-    let endpoints: RoomEndpoints | null = null;
-    let participationGrantLeaseManager = preflightParticipationGrantLeaseManager ?? null;
-    let ownsParticipationGrantLeaseManager = participationGrantLeaseManager === null;
-    const refreshLifetime = new RoomRefreshLifetime();
-    const turnRequestController = new AbortController();
-
     const isCurrentLifecycle = () => isCurrentSession && lifecycleRef.current === lifecycle;
-    const canRefresh = () => isCurrentLifecycle() && refreshLifetime.isActive();
-
-    const stopBackgroundRefreshes = () => {
-      refreshLifetime.stop();
-      if (ownsParticipationGrantLeaseManager) {
-        participationGrantLeaseManager?.close();
-      }
-      turnRequestController.abort();
-    };
-
-    const scheduleParticipationGrantRefresh = () => {
-      if (!canRefresh()) {
-        return;
-      }
-      const delayMs = participationGrantLeaseManager?.refreshDelayMs();
-      if (delayMs === undefined || delayMs === null) {
-        return;
-      }
-      refreshLifetime.schedule(
-        'participation-grant',
-        () => {
-          void refreshParticipationGrant();
-        },
-        delayMs,
-      );
-    };
-
-    const scheduleParticipationGrantRefreshRetry = () => {
-      if (!canRefresh()) {
-        return;
-      }
-      refreshLifetime.schedule(
-        'participation-grant',
-        () => {
-          void refreshParticipationGrant();
-        },
-        30_000,
-      );
-    };
-
-    const ensureFreshParticipationGrant = async () => {
-      const manager = participationGrantLeaseManager;
-      if (manager === null || !canRefresh()) {
-        return;
-      }
-
-      try {
-        await manager.ensureFresh();
-      } catch (error) {
-        if (error instanceof ParticipationGrantAccessError) {
-          stopBackgroundRefreshes();
-          setParticipationGrantRefreshWarning('');
-          onParticipationGrantAccessFailure?.(error);
-          throw error;
-        }
-        if (canRefresh()) {
-          setParticipationGrantRefreshWarning(
-            '스터디 참여 권한을 갱신하지 못했습니다. 현재 통화는 유지하며 곧 다시 시도합니다.',
-          );
-          scheduleParticipationGrantRefreshRetry();
-        }
-        throw error;
-      }
-
-      if (!canRefresh()) {
-        return;
-      }
-      setParticipationGrantRefreshWarning('');
-      scheduleParticipationGrantRefresh();
-    };
+    const refreshCoordinator = new RoomRefreshCoordinator({
+      ...(preflightParticipationGrantLeaseManager === undefined
+        ? {}
+        : { participationGrantLeaseManager: preflightParticipationGrantLeaseManager }),
+      isCurrent: isCurrentLifecycle,
+      updateRtcConfiguration: (configuration) => {
+        sessionRef.current?.updateRtcConfiguration(configuration, { restartIce: true });
+      },
+      onParticipationGrantWarning: setParticipationGrantRefreshWarning,
+      onTurnWarning: setTurnRefreshWarning,
+      ...(onParticipationGrantAccessFailure === undefined
+        ? {}
+        : { onParticipationGrantAccessFailure }),
+    });
+    const ensureFreshParticipationGrant = () => refreshCoordinator.ensureFreshParticipationGrant();
     ensureFreshParticipationGrantRef.current = ensureFreshParticipationGrant;
-
-    const refreshParticipationGrant = async () => {
-      try {
-        await ensureFreshParticipationGrant();
-      } catch {
-        // 공용 도우미가 제한된 사용자 경고를 반환하고 재시도를 예약한다.
-      }
-    };
-
-    const scheduleTurnRefresh = (refreshDueAtMs: number) => {
-      if (!canRefresh()) {
-        return;
-      }
-      refreshLifetime.schedule(
-        'turn',
-        () => {
-          void refreshTurnConfiguration();
-        },
-        turnCredentialRefreshDelayMs(refreshDueAtMs),
-      );
-    };
-
-    const scheduleTurnRefreshRetry = () => {
-      if (!canRefresh()) {
-        return;
-      }
-      refreshLifetime.schedule(
-        'turn',
-        () => {
-          void refreshTurnConfiguration();
-        },
-        30_000,
-      );
-    };
-
-    const refreshTurnConfiguration = async () => {
-      const turnCredentialsUrl = endpoints?.turnCredentialsUrl;
-      if (turnCredentialsUrl === undefined || !canRefresh()) {
-        return;
-      }
-
-      try {
-        await ensureFreshParticipationGrant();
-      } catch {
-        if (canRefresh()) {
-          scheduleTurnRefreshRetry();
-        }
-        return;
-      }
-
-      if (!canRefresh()) {
-        return;
-      }
-
-      try {
-        const loaded = await loadRtcConfiguration(turnCredentialsUrl, turnRequestController.signal);
-        if (!canRefresh()) {
-          return;
-        }
-
-        sessionRef.current?.updateRtcConfiguration(loaded.configuration, {
-          restartIce: true,
-        });
-        setTurnRefreshWarning('');
-        if (loaded.turnRefreshDueAtMs !== null) {
-          scheduleTurnRefresh(loaded.turnRefreshDueAtMs);
-        }
-      } catch {
-        if (!canRefresh()) {
-          return;
-        }
-        setTurnRefreshWarning(
-          'TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지하며 곧 다시 시도합니다.',
-        );
-        scheduleTurnRefreshRetry();
-      }
-    };
+    const stopBackgroundRefreshes = () => refreshCoordinator.stop();
 
     const handleSessionSnapshot = (nextSnapshot: RoomSessionSnapshot) => {
       if (nextSnapshot.status === 'error' || nextSnapshot.status === 'ended') {
@@ -298,17 +159,14 @@ export function ActiveRoom({
             } catch (error) {
               throw new RoomStartupFailure('endpoint-configuration', error);
             }
-            endpoints = resolvedEndpoints;
+            refreshCoordinator.setTurnCredentialsUrl(resolvedEndpoints.turnCredentialsUrl);
 
             if (resolvedEndpoints.participationGrantRefreshUrl !== null) {
               try {
-                if (participationGrantLeaseManager === null) {
-                  participationGrantLeaseManager = new ParticipationGrantLeaseManager({
-                    endpoint: resolvedEndpoints.participationGrantRefreshUrl,
-                    roomId,
-                  });
-                  ownsParticipationGrantLeaseManager = true;
-                }
+                refreshCoordinator.configureParticipationGrant(
+                  resolvedEndpoints.participationGrantRefreshUrl,
+                  roomId,
+                );
                 await ensureFreshParticipationGrant();
               } catch (error) {
                 throw new RoomStartupFailure('participation-grant', error);
@@ -319,7 +177,7 @@ export function ActiveRoom({
             try {
               loaded = await loadRtcConfiguration(
                 resolvedEndpoints.turnCredentialsUrl,
-                turnRequestController.signal,
+                refreshCoordinator.turnRequestSignal,
               );
             } catch (error) {
               throw new RoomStartupFailure('turn-configuration', error);
@@ -341,7 +199,7 @@ export function ActiveRoom({
                     preparedMediaStream,
                     ...(initialInputEnabled === undefined ? {} : { initialInputEnabled }),
                     ...(hostCapability === undefined ? {} : { hostCapability }),
-                    ...(participationGrantLeaseManager === null
+                    ...(!refreshCoordinator.hasParticipationGrantManager()
                       ? {}
                       : {
                           beforeSignalingConnect: () => ensureFreshParticipationGrantRef.current(),
@@ -359,7 +217,7 @@ export function ActiveRoom({
 
             await session.join();
             if (loaded.turnRefreshDueAtMs !== null) {
-              scheduleTurnRefresh(loaded.turnRefreshDueAtMs);
+              refreshCoordinator.scheduleTurnRefresh(loaded.turnRefreshDueAtMs);
             }
           },
           {
