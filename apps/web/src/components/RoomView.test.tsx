@@ -4,13 +4,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { ChatMessage } from '@round/rtc-core';
 import { describe, expect, it, vi } from 'vitest';
 
+import { RoomView } from './RoomView';
+import { connectionDiagnosticAdvice } from './ConnectionDiagnosticsPanel';
 import {
-  connectionDiagnosticAdvice,
   countNewLocalDeliveryIssues,
   countNewRemoteMessages,
-  RoomView,
   shouldSubmitChatOnEnter,
-} from './RoomView';
+} from './RoomChatPanel';
 
 describe('진단 안내', () => {
   it.each([
