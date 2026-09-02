@@ -18,7 +18,11 @@ import {
   measurePeerConnections,
   type PeerConnectionDiagnostics,
 } from './connection-diagnostics.js';
-import { PeerConnectionLifecycle } from './peer-connection-lifecycle.js';
+import { LocalInputLifecycle } from './local-input-lifecycle.js';
+import {
+  PeerConnectionLifecycle,
+  type PeerMediaSenderUpdate,
+} from './peer-connection-lifecycle.js';
 import { PEER_DATA_CHANNEL_LABEL, PeerDataChannel } from './peer-data-channel.js';
 import {
   ChatSendError,
@@ -26,11 +30,7 @@ import {
   type ChatMessage,
   type ChatRecipientDeliveryState,
 } from './room-chat.js';
-import {
-  type PeerMediaSenderUpdate,
-  ScreenShareLifecycle,
-  type ScreenShareStartResult,
-} from './screen-share-lifecycle.js';
+import { ScreenShareLifecycle, type ScreenShareStartResult } from './screen-share-lifecycle.js';
 import { SignalingTransport, SignalingTransportError } from './signaling-transport.js';
 export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
 
@@ -379,21 +379,14 @@ export class RoomSession {
   readonly #remoteMediaStates = new Map<string, ParticipantMediaDataMessage>();
   readonly #staleSelfIds = new Set<string>();
   readonly #exhaustedPeerIds = new Set<string>();
-  readonly #localTrackEndedListeners = new Map<MediaStreamTrack, EventListener>();
-  readonly #lastInputEnabled = { audio: true, video: true };
-  readonly #endedInputKinds = new Set<'audio' | 'video'>();
   readonly #signalingTransport: SignalingTransport;
   readonly #chat: RoomChatLedger;
   readonly #screenShare: ScreenShareLifecycle;
+  readonly #localInput: LocalInputLifecycle;
 
   #rtcConfiguration: RTCConfiguration | undefined;
   #localStream: MediaStream | null = null;
   #videoQualityMode: VideoQualityMode = 'standard';
-  #inputChange: {
-    kind: 'audio' | 'video';
-    enabled: boolean;
-    track: MediaStreamTrack | null;
-  } | null = null;
   #status: RoomSessionStatus = 'idle';
   #selfId: string | null = null;
   #selfRole: ParticipantRole | null = null;
@@ -431,6 +424,11 @@ export class RoomSession {
     this.#options = { ...options, roomId, displayName };
     this.#recoveryOptions = resolveRecoveryOptions(options.recovery);
     this.#chat = new RoomChatLedger(options.maxChatMessages ?? 200);
+    const onLocalMediaChanged = () => {
+      this.#syncLocalParticipantMedia();
+      this.#broadcastMediaState();
+      this.#emit();
+    };
     this.#screenShare = new ScreenShareLifecycle({
       isRoomActive: () => !this.#disposed && this.#status === 'active',
       isDisposed: () => this.#disposed,
@@ -447,12 +445,35 @@ export class RoomSession {
       recoverPeersAfterSenderFailure: (failures, phase) =>
         this.#recoverPeersAfterSenderFailure(failures, phase),
       requestLocalRenegotiation: (peer) => this.#requestLocalRenegotiation(peer),
-      onStateChanged: () => {
-        this.#syncLocalParticipantMedia();
-        this.#broadcastMediaState();
-        this.#emit();
-      },
+      onStateChanged: onLocalMediaChanged,
     });
+    this.#localInput = new LocalInputLifecycle(
+      {
+        isRoomActive: () => !this.#disposed && this.#status === 'active',
+        isDisposed: () => this.#disposed,
+        canSelectInput: (kind) =>
+          !this.#screenShare.isTransitioning() &&
+          (kind !== 'video' || !this.#screenShare.isSharing()),
+        isVideoToggleBlocked: () => this.#screenShare.hasActiveTrack(),
+        getMediaDevices: () => this.#getMediaDevices(),
+        getInputConstraints: (kind) => this.#options.mediaConstraints?.[kind],
+        createMediaStream: () => (this.#options.mediaStreamFactory ?? (() => new MediaStream()))(),
+        getLocalStream: () => this.#localStream,
+        setLocalStream: (stream) => {
+          this.#localStream = stream;
+        },
+        getPeers: () => this.#peers.values(),
+        isCurrentPeer: (peer) => this.#isCurrentPeer(peer),
+        replacePeerTrack: (peer, sender, track) => this.#replacePeerTrack(peer, sender, track),
+        rollbackSenderUpdates: (updates) => this.#rollbackSenderUpdates(updates),
+        recoverPeersAfterSenderFailure: (failures, phase) =>
+          this.#recoverPeersAfterSenderFailure(failures, phase, 'media-device-sender-recovery'),
+        requestLocalRenegotiation: (peer) => this.#requestLocalRenegotiation(peer),
+        onInputTrackEnded: (track) => this.#screenShare.removeRetainedCameraTrack(track),
+        onStateChanged: onLocalMediaChanged,
+      },
+      options.initialInputEnabled,
+    );
     this.#signalingTransport = new SignalingTransport({
       url: this.#options.signalingUrl,
       roomId,
@@ -484,13 +505,8 @@ export class RoomSession {
       },
     });
     this.#rtcConfiguration = snapshotRtcConfiguration(options.rtcConfiguration);
-    Object.assign(this.#lastInputEnabled, options.initialInputEnabled);
     if (options.preparedMediaStream !== undefined) {
-      this.#localStream = options.preparedMediaStream;
-      if (this.#localStream !== null) {
-        this.#normalizeLocalVideoTracks(this.#localStream);
-      }
-      this.#attachLocalTrackEndedListeners(this.#localStream?.getTracks() ?? []);
+      this.#localInput.adoptStream(options.preparedMediaStream);
     }
     this.#snapshot = this.#buildSnapshot();
   }
@@ -710,147 +726,20 @@ export class RoomSession {
     this.#emit();
   }
 
-  async selectInputDevice(kind: 'audio' | 'video', deviceId: string): Promise<boolean> {
-    if (
-      this.#disposed ||
-      this.#status !== 'active' ||
-      this.#inputChange !== null ||
-      this.#screenShare.isTransitioning() ||
-      (kind === 'video' && this.#screenShare.isSharing())
-    )
-      return false;
-
-    const currentTracks = this.#liveLocalTracks(kind);
-    const operation = {
-      kind,
-      enabled:
-        currentTracks.length > 0
-          ? currentTracks.some((track) => track.enabled)
-          : this.#lastInputEnabled[kind],
-      track: null as MediaStreamTrack | null,
-    };
-    this.#inputChange = operation;
-    const updates: PeerMediaSenderUpdate[] = [];
-    let committed = false;
-    try {
-      const devices = this.#getMediaDevices();
-      if (devices === undefined) return false;
-      const defaults = this.#options.mediaConstraints?.[kind];
-      const constraints = {
-        ...(typeof defaults === 'object' ? defaults : {}),
-        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-      };
-      const acquired = await devices.getUserMedia({
-        audio: false,
-        video: false,
-        [kind]: constraints,
-      });
-      const next = acquired
-        .getTracks()
-        .find((track) => track.kind === kind && track.readyState === 'live');
-      for (const track of acquired.getTracks()) {
-        if (track !== next) track.stop();
-      }
-      operation.track = next ?? null;
-      if (next === undefined || this.#disposed) return false;
-      // 모든 송신자 교체가 끝나기 전에는 새 장치의 소리·영상을 보내지 않는다.
-      next.enabled = false;
-      const stream =
-        this.#localStream ?? (this.#options.mediaStreamFactory ?? (() => new MediaStream()))();
-
-      for (const peer of this.#peers.values()) {
-        if (!this.#isCurrentPeer(peer)) continue;
-        const sender = kind === 'video' ? peer.videoSender : peer.audioSender;
-        if (sender === null) {
-          const added = peer.connection.addTrack(next, stream);
-          if (kind === 'video') peer.videoSender = added;
-          else peer.audioSender = added;
-          updates.push({ peer, sender: added, previousTrack: null, added: true });
-        } else {
-          const previousTrack = sender.track;
-          if (await this.#replacePeerTrack(peer, sender, next)) {
-            updates.push({ peer, sender, previousTrack, added: false });
-          }
-        }
-        if (this.#disposed || next.readyState === 'ended') return false;
-      }
-
-      for (const previous of stream.getTracks().filter((track) => track.kind === kind)) {
-        this.#detachLocalTrackEndedListener(previous);
-        stream.removeTrack(previous);
-        previous.stop();
-      }
-      stream.addTrack(next);
-      this.#localStream = stream;
-      next.enabled = operation.enabled;
-      committed = true;
-      this.#endedInputKinds.delete(kind);
-      this.#attachLocalTrackEndedListeners([next]);
-      this.#syncLocalParticipantMedia();
-      this.#broadcastMediaState();
-      this.#emit();
-      for (const update of updates) {
-        if (update.added && this.#isCurrentPeer(update.peer))
-          this.#requestLocalRenegotiation(update.peer);
-      }
-      return true;
-    } catch {
-      return false;
-    } finally {
-      if (!committed) {
-        operation.track?.stop();
-        const failures = await this.#rollbackSenderUpdates(updates);
-        this.#recoverPeersAfterSenderFailure(
-          failures,
-          '장치 교체 취소',
-          'media-device-sender-recovery',
-        );
-      }
-      if (this.#inputChange === operation) this.#inputChange = null;
-    }
+  selectInputDevice(kind: 'audio' | 'video', deviceId: string): Promise<boolean> {
+    return this.#localInput.select(kind, deviceId);
   }
 
   toggleAudio(): boolean {
-    const tracks = this.#liveLocalTracks('audio');
-    if (tracks.length === 0) {
-      return false;
-    }
-
-    const enabled = !tracks.some((track) => track.enabled);
-    this.#lastInputEnabled.audio = enabled;
-    if (this.#inputChange?.kind === 'audio') this.#inputChange.enabled = enabled;
-    for (const track of tracks) {
-      track.enabled = enabled;
-    }
-    this.#syncLocalParticipantMedia();
-    this.#broadcastMediaState();
-    this.#emit();
-    return enabled;
+    return this.#localInput.toggle('audio');
   }
 
   toggleVideo(): boolean {
-    if (this.#screenShare.hasActiveTrack()) {
-      return false;
-    }
-    const tracks = this.#liveLocalTracks('video');
-    if (tracks.length === 0) {
-      return false;
-    }
-
-    const enabled = !tracks.some((track) => track.enabled);
-    this.#lastInputEnabled.video = enabled;
-    if (this.#inputChange?.kind === 'video') this.#inputChange.enabled = enabled;
-    for (const track of tracks) {
-      track.enabled = enabled;
-    }
-    this.#syncLocalParticipantMedia();
-    this.#broadcastMediaState();
-    this.#emit();
-    return enabled;
+    return this.#localInput.toggle('video');
   }
 
   startScreenShare(): Promise<ScreenShareStartResult> {
-    if (this.#disposed || this.#status !== 'active' || this.#inputChange !== null) {
+    if (this.#disposed || this.#status !== 'active' || this.#localInput.isChanging()) {
       return Promise.resolve('cancelled');
     }
     return this.#screenShare.start();
@@ -1058,19 +947,6 @@ export class RoomSession {
     );
   }
 
-  #normalizeLocalVideoTracks(stream: MediaStream): void {
-    const videoTracks = stream.getVideoTracks();
-    const selectedTrack =
-      videoTracks.find((track) => track.readyState === 'live') ?? videoTracks[0] ?? null;
-    for (const track of videoTracks) {
-      if (track === selectedTrack) {
-        continue;
-      }
-      stream.removeTrack(track);
-      track.stop();
-    }
-  }
-
   async #prepareMedia(): Promise<void> {
     if (this.#options.preparedMediaStream !== undefined) {
       this.#emit();
@@ -1099,9 +975,7 @@ export class RoomSession {
         }
         return;
       }
-      this.#normalizeLocalVideoTracks(stream);
-      this.#localStream = stream;
-      this.#attachLocalTrackEndedListeners(stream.getTracks());
+      this.#localInput.adoptStream(stream);
     } catch (error) {
       this.#warning = {
         code: 'media-permission-denied',
@@ -1491,10 +1365,7 @@ export class RoomSession {
       fromPeerId,
       kind,
     };
-    this.#lastInputEnabled[kind] = false;
-    if (this.#inputChange?.kind === kind) {
-      this.#inputChange.enabled = false;
-    }
+    this.#localInput.setDesiredEnabled(kind, false);
 
     if (kind === 'video') {
       if (this.#screenShare.cancelPendingStart(true)) {
@@ -1513,9 +1384,7 @@ export class RoomSession {
       }
       this.#screenShare.disableCameraTracks();
     } else {
-      for (const track of this.#liveLocalTracks('audio')) {
-        track.enabled = false;
-      }
+      this.#localInput.disableTracks('audio');
     }
     this.#syncLocalParticipantMedia();
     this.#broadcastMediaState();
@@ -2480,69 +2349,16 @@ export class RoomSession {
   }
 
   #cleanupAllResources(): void {
-    this.#inputChange?.track?.stop();
-    this.#inputChange = null;
     this.#signalingTransport.clearPendingRequests();
     this.#cleanupPeerResources();
     this.#remoteMediaStates.clear();
 
-    this.#detachLocalTrackEndedListeners();
     const ownedTracks = new Set([
-      ...(this.#localStream?.getTracks() ?? []),
+      ...this.#localInput.takeOwnedTracks(),
       ...this.#screenShare.takeOwnedTracks(),
     ]);
     for (const track of ownedTracks) {
       track.stop();
-    }
-    this.#localStream = null;
-    this.#endedInputKinds.clear();
-  }
-
-  #attachLocalTrackEndedListeners(tracks: readonly MediaStreamTrack[]): void {
-    for (const track of [...tracks]) {
-      if (this.#localTrackEndedListeners.has(track)) {
-        continue;
-      }
-      this.#lastInputEnabled[track.kind === 'audio' ? 'audio' : 'video'] = track.enabled;
-      const listener: EventListener = () => {
-        this.#handleLocalTrackEnded(track);
-      };
-      this.#localTrackEndedListeners.set(track, listener);
-      track.addEventListener('ended', listener);
-      if (track.readyState === 'ended') {
-        this.#handleLocalTrackEnded(track);
-      }
-    }
-  }
-
-  #handleLocalTrackEnded(track: MediaStreamTrack): void {
-    const stream = this.#localStream;
-    if (this.#disposed || stream === null || !this.#localTrackEndedListeners.has(track)) {
-      this.#detachLocalTrackEndedListener(track);
-      return;
-    }
-
-    this.#detachLocalTrackEndedListener(track);
-    this.#endedInputKinds.add(track.kind === 'audio' ? 'audio' : 'video');
-    this.#screenShare.removeRetainedCameraTrack(track);
-    stream.removeTrack(track);
-    this.#syncLocalParticipantMedia();
-    this.#broadcastMediaState();
-    this.#emit();
-  }
-
-  #detachLocalTrackEndedListener(track: MediaStreamTrack): void {
-    const listener = this.#localTrackEndedListeners.get(track);
-    if (listener === undefined) {
-      return;
-    }
-    track.removeEventListener('ended', listener);
-    this.#localTrackEndedListeners.delete(track);
-  }
-
-  #detachLocalTrackEndedListeners(): void {
-    for (const track of [...this.#localTrackEndedListeners.keys()]) {
-      this.#detachLocalTrackEndedListener(track);
     }
   }
 
@@ -2657,8 +2473,8 @@ export class RoomSession {
   }
 
   #getLocalMediaSnapshot(): LocalMediaSnapshot {
-    const audioTracks = this.#liveLocalTracks('audio');
-    const videoTracks = this.#liveLocalTracks('video');
+    const audioTracks = this.#localInput.liveTracks('audio');
+    const videoTracks = this.#localInput.liveTracks('video');
     const screenSharing = this.#screenShare.isSharing();
     return {
       audioAvailable: audioTracks.length > 0,
@@ -2667,14 +2483,6 @@ export class RoomSession {
       videoEnabled: videoTracks.some((track) => track.enabled),
       videoSource: screenSharing ? 'screen' : 'camera',
     };
-  }
-
-  #liveLocalTracks(kind: 'audio' | 'video'): MediaStreamTrack[] {
-    const tracks =
-      kind === 'audio'
-        ? (this.#localStream?.getAudioTracks() ?? [])
-        : (this.#localStream?.getVideoTracks() ?? []);
-    return tracks.filter((track) => track.readyState === 'live');
   }
 
   #buildSnapshot(): RoomSessionSnapshot {
@@ -2697,7 +2505,7 @@ export class RoomSession {
       warning:
         this.#warning !== null
           ? { ...this.#warning }
-          : this.#endedInputKinds.size > 0
+          : this.#localInput.hasEndedInput()
             ? {
                 code: 'local-media-ended',
                 message: '마이크 또는 카메라 연결이 종료되었습니다.',

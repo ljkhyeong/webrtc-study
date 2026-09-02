@@ -1,13 +1,9 @@
-import type { PeerConnectionLifecycle } from './peer-connection-lifecycle.js';
+import type {
+  PeerConnectionLifecycle,
+  PeerMediaSenderUpdate,
+} from './peer-connection-lifecycle.js';
 
 export type ScreenShareStartResult = 'started' | 'recovering' | 'cancelled' | 'failed';
-
-export interface PeerMediaSenderUpdate {
-  readonly peer: PeerConnectionLifecycle;
-  readonly sender: RTCRtpSender;
-  readonly previousTrack: MediaStreamTrack | null;
-  readonly added: boolean;
-}
 
 interface ScreenShareLifecycleOptions {
   readonly isRoomActive: () => boolean;

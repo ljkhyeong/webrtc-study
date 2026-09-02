@@ -6,6 +6,13 @@ type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 
 const MAX_RETIRED_NEGOTIATION_IDS = 8;
 
+export interface PeerMediaSenderUpdate {
+  readonly peer: PeerConnectionLifecycle;
+  readonly sender: RTCRtpSender;
+  readonly previousTrack: MediaStreamTrack | null;
+  readonly added: boolean;
+}
+
 interface PendingRemoteCandidates {
   readonly candidates: (SerializedIceCandidate | null)[];
   readonly overflowWarned: boolean;
