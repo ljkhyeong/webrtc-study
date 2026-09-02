@@ -31,6 +31,7 @@ import {
   type ChatRecipientDeliveryState,
 } from './room-chat.js';
 import { ScreenShareLifecycle, type ScreenShareStartResult } from './screen-share-lifecycle.js';
+import { SignalingRecoveryLifecycle } from './signaling-recovery-lifecycle.js';
 import { SignalingTransport, SignalingTransportError } from './signaling-transport.js';
 export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
 
@@ -219,8 +220,6 @@ interface ResolvedRecoveryOptions {
 
 type RelayClientMessage = Extract<ClientMessage, { to: string }>;
 
-type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
-
 // 일반적인 ICE 후보 수집량은 이 값보다 훨씬 적다. 초과 시 최신 후보를 유지한다.
 const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
 const SIGNALING_SESSION_SUPERSEDED_CLOSE_CODE = 4002;
@@ -371,7 +370,6 @@ function safeSignalingErrorMessage(code: SignalingErrorCode): string {
 export class RoomSession {
   readonly #options: RoomSessionOptions;
   readonly #recoveryOptions: ResolvedRecoveryOptions;
-  readonly #serializedJoinMessage: string;
   readonly #listeners = new Set<RoomSessionListener>();
   readonly #participants = new Map<string, MutableParticipant>();
   readonly #peers = new Map<string, PeerContext>();
@@ -380,6 +378,7 @@ export class RoomSession {
   readonly #staleSelfIds = new Set<string>();
   readonly #exhaustedPeerIds = new Set<string>();
   readonly #signalingTransport: SignalingTransport;
+  readonly #signalingRecovery: SignalingRecoveryLifecycle;
   readonly #chat: RoomChatLedger;
   readonly #screenShare: ScreenShareLifecycle;
   readonly #localInput: LocalInputLifecycle;
@@ -398,12 +397,6 @@ export class RoomSession {
   #error: RoomIssue | null = null;
   #snapshot: RoomSessionSnapshot;
   #joinPromise: Promise<void> | null = null;
-  #resolveJoined: (() => void) | null = null;
-  #rejectJoined: ((reason: unknown) => void) | null = null;
-  #joinTimeout: TimerHandle | null = null;
-  #reconnectDelayTimer: TimerHandle | null = null;
-  #cancelReconnectDelay: (() => void) | null = null;
-  #reconnectPromise: Promise<void> | null = null;
   #leaving = false;
   #disposed = false;
 
@@ -495,13 +488,48 @@ export class RoomSession {
         this.#handleSocketClose(error, event);
       },
     });
-    this.#serializedJoinMessage = serializeClientMessage({
+    const serializedJoinMessage = serializeClientMessage({
       v: PROTOCOL_VERSION,
       type: 'room.join',
       roomId,
       payload: {
         displayName,
         ...(options.hostCapability === undefined ? {} : { hostCapability: options.hostCapability }),
+      },
+    });
+    this.#signalingRecovery = new SignalingRecoveryLifecycle({
+      transport: this.#signalingTransport,
+      serializedJoinMessage,
+      roomJoinTimeoutMs: this.#recoveryOptions.roomJoinTimeoutMs,
+      maxReconnectAttempts: this.#recoveryOptions.maxReconnectAttempts,
+      reconnectDelay: (attempt) => this.#reconnectDelay(attempt),
+      isCancelled: () => this.#leaving || this.#disposed,
+      isRoomActive: () => this.#status === 'active',
+      createJoinTimeoutError: () =>
+        new RoomSessionFailure(
+          'room-join-timeout',
+          'The signaling server did not confirm room entry within ' +
+            this.#recoveryOptions.roomJoinTimeoutMs +
+            'ms',
+        ),
+      createJoinIncompleteError: () =>
+        new RoomSessionFailure(
+          'signaling-closed',
+          'Signaling connection closed while room entry was completing',
+        ),
+      onReconnectAttemptFailed: (error) => this.#handleReconnectAttemptFailure(error),
+      onReconnectExhausted: (lastFailureMessage) => {
+        this.#finishReconnectFailure({
+          code: 'reconnect-exhausted',
+          message:
+            'Could not reconnect after ' +
+            this.#recoveryOptions.maxReconnectAttempts +
+            ' attempts. ' +
+            lastFailureMessage,
+        });
+      },
+      onUnexpectedFailure: (error) => {
+        this.#finishReconnectFailure(this.#issueFromError(error, 'reconnect-exhausted'));
       },
     });
     this.#rtcConfiguration = snapshotRtcConfiguration(options.rtcConfiguration);
@@ -695,7 +723,7 @@ export class RoomSession {
 
     this.#leaving = true;
     this.#disposed = true;
-    this.#cancelReconnectWait();
+    this.#signalingRecovery.cancelReconnectWait();
 
     if (this.#signalingTransport.isOpen()) {
       try {
@@ -709,12 +737,10 @@ export class RoomSession {
       }
     }
 
-    this.#resolveJoined = null;
     this.#signalingTransport.cancelConnect(
       new Error('Room session ended before signaling connected'),
     );
-    this.#rejectJoined?.(new Error('Room session ended before joining'));
-    this.#clearJoinedWait();
+    this.#signalingRecovery.rejectJoin(new Error('Room session ended before joining'));
     this.#signalingTransport.close();
     this.#cleanupAllResources();
     this.#exhaustedPeerIds.clear();
@@ -923,7 +949,7 @@ export class RoomSession {
       }
 
       this.#setStatus('joining');
-      await this.#joinRoom();
+      await this.#signalingRecovery.joinRoom();
     } catch (error) {
       if (!this.#leaving) {
         this.#cleanupAllResources();
@@ -986,54 +1012,6 @@ export class RoomSession {
     this.#emit();
   }
 
-  #joinRoom(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const settleJoined = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        this.#clearJoinedWait();
-        resolve();
-      };
-      const settleError = (error: unknown) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        this.#clearJoinedWait();
-        reject(error);
-      };
-
-      this.#resolveJoined = settleJoined;
-      this.#rejectJoined = settleError;
-      this.#joinTimeout = globalThis.setTimeout(() => {
-        settleError(
-          new RoomSessionFailure(
-            'room-join-timeout',
-            `The signaling server did not confirm room entry within ${this.#recoveryOptions.roomJoinTimeoutMs}ms`,
-          ),
-        );
-      }, this.#recoveryOptions.roomJoinTimeoutMs);
-
-      try {
-        this.#signalingTransport.sendSerialized(this.#serializedJoinMessage);
-      } catch (error) {
-        settleError(error);
-      }
-    });
-  }
-
-  #clearJoinedWait(): void {
-    if (this.#joinTimeout !== null) {
-      globalThis.clearTimeout(this.#joinTimeout);
-      this.#joinTimeout = null;
-    }
-    this.#resolveJoined = null;
-    this.#rejectJoined = null;
-  }
-
   #rememberStaleSelfId(): void {
     if (this.#selfId === null) {
       return;
@@ -1045,6 +1023,28 @@ export class RoomSession {
     }
   }
 
+  #resetRoomMembershipForReconnect(): void {
+    this.#cleanupPeerResources();
+    this.#participants.clear();
+    this.#remoteMediaStates.clear();
+    this.#selfId = null;
+    this.#selfRole = null;
+    this.#canModerateMedia = false;
+  }
+
+  #handleReconnectAttemptFailure(error: unknown): RoomIssue {
+    const issue = this.#issueFromError(error, 'reconnect-attempt-failed');
+    this.#signalingTransport.close(1000, 'reconnect retry');
+    this.#resetRoomMembershipForReconnect();
+    this.#warning = {
+      code: 'signaling-reconnecting',
+      message: issue.message,
+    };
+    this.#warningPeerId = null;
+    this.#setStatus('reconnecting');
+    return issue;
+  }
+
   #beginReconnect(reason: RoomIssue): void {
     if (this.#leaving || this.#disposed) {
       return;
@@ -1052,12 +1052,7 @@ export class RoomSession {
 
     this.#rememberStaleSelfId();
     this.#exhaustedPeerIds.clear();
-    this.#cleanupPeerResources();
-    this.#participants.clear();
-    this.#remoteMediaStates.clear();
-    this.#selfId = null;
-    this.#selfRole = null;
-    this.#canModerateMedia = false;
+    this.#resetRoomMembershipForReconnect();
     this.#error = null;
     this.#warning = {
       code: 'signaling-reconnecting',
@@ -1065,90 +1060,7 @@ export class RoomSession {
     };
     this.#warningPeerId = null;
     this.#setStatus('reconnecting');
-
-    if (this.#reconnectPromise !== null) {
-      return;
-    }
-
-    const reconnect = this.#performReconnect(reason);
-    this.#reconnectPromise = reconnect;
-    void reconnect
-      .catch((error: unknown) => {
-        if (!this.#leaving && !this.#disposed) {
-          this.#finishReconnectFailure(this.#issueFromError(error, 'reconnect-exhausted'));
-        }
-      })
-      .finally(() => {
-        if (this.#reconnectPromise === reconnect) {
-          this.#reconnectPromise = null;
-        }
-      });
-  }
-
-  async #performReconnect(initialFailure: RoomIssue): Promise<void> {
-    let lastIssue: RoomIssue = {
-      code: initialFailure.code,
-      message: initialFailure.message,
-    };
-
-    for (let attempt = 0; attempt < this.#recoveryOptions.maxReconnectAttempts; attempt += 1) {
-      if (this.#leaving || this.#disposed) {
-        return;
-      }
-
-      if (attempt > 0) {
-        await this.#waitForReconnectDelay(this.#reconnectDelay(attempt));
-        if (this.#leaving || this.#disposed) {
-          return;
-        }
-      }
-
-      try {
-        await this.#signalingTransport.connect();
-        if (this.#leaving || this.#disposed) {
-          return;
-        }
-
-        const attemptSocket = this.#signalingTransport.socket;
-        await this.#joinRoom();
-        if (
-          attemptSocket !== null &&
-          this.#signalingTransport.socket === attemptSocket &&
-          attemptSocket.readyState === attemptSocket.OPEN &&
-          this.#status === 'active'
-        ) {
-          return;
-        }
-        throw new RoomSessionFailure(
-          'signaling-closed',
-          'Signaling connection closed while room entry was completing',
-        );
-      } catch (error) {
-        if (this.#leaving || this.#disposed) {
-          return;
-        }
-        lastIssue = this.#issueFromError(error, 'reconnect-attempt-failed');
-        this.#clearJoinedWait();
-        this.#signalingTransport.close(1000, 'reconnect retry');
-        this.#cleanupPeerResources();
-        this.#participants.clear();
-        this.#remoteMediaStates.clear();
-        this.#selfId = null;
-        this.#selfRole = null;
-        this.#canModerateMedia = false;
-        this.#warning = {
-          code: 'signaling-reconnecting',
-          message: lastIssue.message,
-        };
-        this.#warningPeerId = null;
-        this.#setStatus('reconnecting');
-      }
-    }
-
-    this.#finishReconnectFailure({
-      code: 'reconnect-exhausted',
-      message: `Could not reconnect after ${this.#recoveryOptions.maxReconnectAttempts} attempts. ${lastIssue.message}`,
-    });
+    this.#signalingRecovery.startReconnect(reason);
   }
 
   #reconnectDelay(attempt: number): number {
@@ -1156,36 +1068,12 @@ export class RoomSession {
     return Math.min(exponential, this.#recoveryOptions.reconnectMaxDelayMs);
   }
 
-  #waitForReconnectDelay(delayMs: number): Promise<void> {
-    if (delayMs === 0) {
-      return Promise.resolve();
-    }
-
-    return new Promise((resolve) => {
-      const finish = () => {
-        if (this.#reconnectDelayTimer !== null) {
-          globalThis.clearTimeout(this.#reconnectDelayTimer);
-          this.#reconnectDelayTimer = null;
-        }
-        this.#cancelReconnectDelay = null;
-        resolve();
-      };
-      this.#cancelReconnectDelay = finish;
-      this.#reconnectDelayTimer = globalThis.setTimeout(finish, delayMs);
-    });
-  }
-
-  #cancelReconnectWait(): void {
-    this.#cancelReconnectDelay?.();
-  }
-
   #finishReconnectFailure(issue: RoomIssue): void {
     if (this.#leaving || this.#disposed) {
       return;
     }
     this.#disposed = true;
-    this.#cancelReconnectWait();
-    this.#clearJoinedWait();
+    this.#signalingRecovery.cancelReconnectWait();
     this.#signalingTransport.close(1000, 'reconnect exhausted');
     this.#cleanupAllResources();
     this.#participants.clear();
@@ -1200,8 +1088,7 @@ export class RoomSession {
   }
 
   #handleSocketClose(error: SignalingTransportError, event: CloseEvent): void {
-    this.#rejectJoined?.(error);
-    this.#clearJoinedWait();
+    this.#signalingRecovery.rejectJoin(error);
 
     if (this.#leaving || this.#disposed) {
       return;
@@ -1344,7 +1231,7 @@ export class RoomSession {
       this.#warningPeerId = null;
     }
     this.#setStatus('active');
-    this.#resolveJoined?.();
+    this.#signalingRecovery.resolveJoin();
 
     await Promise.all(offerPromises);
   }
@@ -2364,8 +2251,7 @@ export class RoomSession {
 
   #handleServerError(code: SignalingErrorCode, requestId: string | undefined): void {
     const error = new RoomSessionFailure(code, safeSignalingErrorMessage(code));
-    if (this.#rejectJoined !== null) {
-      this.#rejectJoined(error);
+    if (this.#signalingRecovery.rejectJoin(error)) {
       return;
     }
 
@@ -2415,8 +2301,7 @@ export class RoomSession {
       return;
     }
     this.#disposed = true;
-    this.#cancelReconnectWait();
-    this.#clearJoinedWait();
+    this.#signalingRecovery.cancelReconnectWait();
     this.#signalingTransport.close(1000, 'fatal signaling error');
     this.#cleanupAllResources();
     this.#exhaustedPeerIds.clear();
