@@ -20,6 +20,12 @@ import {
 } from './connection-diagnostics.js';
 import { PeerConnectionLifecycle } from './peer-connection-lifecycle.js';
 import { PEER_DATA_CHANNEL_LABEL, PeerDataChannel } from './peer-data-channel.js';
+import {
+  ChatSendError,
+  RoomChatLedger,
+  type ChatMessage,
+  type ChatRecipientDeliveryState,
+} from './room-chat.js';
 import { SignalingTransport, SignalingTransportError } from './signaling-transport.js';
 export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
 
@@ -110,31 +116,6 @@ export interface ModerationNotice {
   readonly kind: ModeratedMediaKind;
 }
 
-export type ChatDeliveryState = 'pending' | 'sent' | 'partial' | 'failed' | 'received';
-
-export interface ChatMessage {
-  readonly id: string;
-  readonly senderId: string;
-  readonly senderName: string;
-  readonly text: string;
-  readonly sentAt: number;
-  readonly isLocal: boolean;
-  readonly deliveryState: ChatDeliveryState;
-}
-
-export type ChatSendErrorCode =
-  'room-not-active' | 'message-id-conflict' | 'peer-unavailable' | 'queue-full';
-
-export class ChatSendError extends Error {
-  constructor(
-    readonly code: ChatSendErrorCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ChatSendError';
-  }
-}
-
 export interface RoomSessionSnapshot {
   readonly roomId: string;
   readonly status: RoomSessionStatus;
@@ -217,8 +198,6 @@ interface MutableParticipant {
 
 type PeerContext = PeerConnectionLifecycle;
 
-type ChatRecipientDeliveryState = 'pending' | 'acknowledged' | 'failed';
-
 interface OutboundChatTargets {
   readonly peers: PeerContext[];
   readonly recipientStates: Map<string, ChatRecipientDeliveryState>;
@@ -248,11 +227,6 @@ type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 
 // 일반적인 ICE 후보 수집량은 이 값보다 훨씬 적다. 초과 시 최신 후보를 유지한다.
 const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
-// 완전히 폐기된 로컬 ID에는 피어 ACK/중복 제거 윈도 크기를 동일하게 적용한다.
-// 현재의 신뢰성·순서 보장 채널에서는 이보다 많은 새 확인 응답이 앞지를 수 없으며,
-// 분리된 채널은 핸들러가 제거된다. 표시 중이거나 대기 중인 ID는 이 FIFO 한도와
-// 별도로 계속 고정한다.
-const MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS = 128;
 const SIGNALING_SESSION_SUPERSEDED_CLOSE_CODE = 4002;
 const SIGNALING_SESSION_SUPERSEDED_REASON = 'Participation session superseded';
 const DEFAULT_SIGNALING_CONNECT_TIMEOUT_MS = 8_000;
@@ -433,16 +407,13 @@ export class RoomSession {
   readonly #peers = new Map<string, PeerContext>();
   readonly #remoteStreams = new Map<string, MediaStream>();
   readonly #remoteMediaStates = new Map<string, ParticipantMediaDataMessage>();
-  readonly #activeLocalMessageIds = new Set<string>();
-  readonly #recentlyRetiredLocalMessageIds = new Set<string>();
   readonly #staleSelfIds = new Set<string>();
   readonly #exhaustedPeerIds = new Set<string>();
   readonly #localTrackEndedListeners = new Map<MediaStreamTrack, EventListener>();
-  readonly #localChatRecipientStates = new Map<string, Map<string, ChatRecipientDeliveryState>>();
-  readonly #messages: ChatMessage[] = [];
   readonly #lastInputEnabled = { audio: true, video: true };
   readonly #endedInputKinds = new Set<'audio' | 'video'>();
   readonly #signalingTransport: SignalingTransport;
+  readonly #chat: RoomChatLedger;
 
   #rtcConfiguration: RTCConfiguration | undefined;
   #localStream: MediaStream | null = null;
@@ -499,6 +470,7 @@ export class RoomSession {
 
     this.#options = { ...options, roomId, displayName };
     this.#recoveryOptions = resolveRecoveryOptions(options.recovery);
+    this.#chat = new RoomChatLedger(options.maxChatMessages ?? 200);
     this.#signalingTransport = new SignalingTransport({
       url: this.#options.signalingUrl,
       roomId,
@@ -1356,15 +1328,7 @@ export class RoomSession {
 
     const normalizedText = text.trim();
     const messageId = (this.#options.createId ?? defaultCreateId)();
-    if (
-      this.#activeLocalMessageIds.has(messageId) ||
-      this.#recentlyRetiredLocalMessageIds.has(messageId)
-    ) {
-      throw new ChatSendError(
-        'message-id-conflict',
-        `Chat message id ${messageId} is already in use`,
-      );
-    }
+    this.#chat.assertLocalMessageIdAvailable(messageId);
     const wireMessage: ChatDataMessage = {
       type: 'chat.message',
       id: messageId,
@@ -1373,34 +1337,22 @@ export class RoomSession {
       text: normalizedText,
     };
     const serializedMessage = serializePeerDataMessage(wireMessage);
-    const message: ChatMessage = {
+    const message: Omit<ChatMessage, 'deliveryState'> = {
       id: wireMessage.id,
       senderId: wireMessage.senderId,
       senderName: this.#options.displayName,
       text: wireMessage.text,
       sentAt: wireMessage.sentAt,
       isLocal: true,
-      deliveryState: 'pending',
     };
 
     const targets = this.#enqueueOutboundChat(wireMessage, serializedMessage);
-    const deliveryState = this.#aggregateChatDeliveryState(targets.recipientStates);
-    if (deliveryState === 'pending') {
-      this.#localChatRecipientStates.set(wireMessage.id, targets.recipientStates);
-    }
-    const initialMessage: ChatMessage = {
-      ...message,
-      deliveryState,
-    };
-    this.#rememberMessage(initialMessage);
+    const storedMessage = this.#chat.recordOutgoing(message, targets.recipientStates);
     for (const peer of targets.peers) {
       peer.data.flush();
     }
     this.#emit();
-    return (
-      this.#messages.find((candidate) => candidate.isLocal && candidate.id === message.id) ??
-      initialMessage
-    );
+    return storedMessage;
   }
 
   async #performJoin(): Promise<void> {
@@ -2198,7 +2150,7 @@ export class RoomSession {
         if (participant === undefined) {
           return;
         }
-        this.#rememberMessage({
+        this.#chat.recordReceived({
           id: message.id,
           senderId: peerId,
           senderName: participant.displayName,
@@ -2221,8 +2173,8 @@ export class RoomSession {
         this.#emit();
       },
       onChatAcknowledged: (messageId) =>
-        this.#markLocalChatRecipientState(messageId, peerId, 'acknowledged'),
-      onChatFailed: (messageId) => this.#markLocalChatRecipientState(messageId, peerId, 'failed'),
+        this.#chat.markLocalRecipient(messageId, peerId, 'acknowledged'),
+      onChatFailed: (messageId) => this.#chat.markLocalRecipient(messageId, peerId, 'failed'),
       onRateLimited: () => {
         if (this.#warning === null) {
           this.#setPeerWarning(
@@ -2735,97 +2687,6 @@ export class RoomSession {
     };
   }
 
-  #markLocalChatRecipientState(
-    messageId: string,
-    peerId: string,
-    state: Exclude<ChatRecipientDeliveryState, 'pending'>,
-  ): boolean {
-    const recipientStates = this.#localChatRecipientStates.get(messageId);
-    if (recipientStates?.get(peerId) !== 'pending') {
-      return false;
-    }
-
-    recipientStates.set(peerId, state);
-    return this.#syncLocalChatDeliveryState(messageId, recipientStates);
-  }
-
-  #syncLocalChatDeliveryState(
-    messageId: string,
-    recipientStates: ReadonlyMap<string, ChatRecipientDeliveryState>,
-  ): boolean {
-    const index = this.#messages.findIndex(
-      (message) => message.id === messageId && message.isLocal,
-    );
-    const deliveryState = this.#aggregateChatDeliveryState(recipientStates);
-    if (deliveryState !== 'pending') {
-      this.#localChatRecipientStates.delete(messageId);
-      this.#retireLocalMessageIdIfUnused(messageId);
-    }
-    if (index < 0) {
-      return false;
-    }
-    const message = this.#messages[index]!;
-    if (message.deliveryState === deliveryState) {
-      return false;
-    }
-    this.#messages[index] = { ...message, deliveryState };
-    return true;
-  }
-
-  #aggregateChatDeliveryState(
-    recipientStates: ReadonlyMap<string, ChatRecipientDeliveryState>,
-  ): Exclude<ChatDeliveryState, 'received'> {
-    let sentCount = 0;
-    let failedCount = 0;
-    for (const state of recipientStates.values()) {
-      if (state === 'pending') {
-        return 'pending';
-      }
-      if (state === 'acknowledged') {
-        sentCount += 1;
-      } else {
-        failedCount += 1;
-      }
-    }
-
-    if (failedCount === 0) {
-      return 'sent';
-    }
-    return sentCount === 0 ? 'failed' : 'partial';
-  }
-
-  #rememberMessage(message: ChatMessage): void {
-    if (message.isLocal) {
-      this.#activeLocalMessageIds.add(message.id);
-    }
-    this.#messages.push(message);
-
-    const maxMessages = this.#options.maxChatMessages ?? 200;
-    while (this.#messages.length > maxMessages) {
-      const removed = this.#messages.shift() as ChatMessage;
-      if (removed.isLocal) {
-        this.#retireLocalMessageIdIfUnused(removed.id);
-      }
-    }
-  }
-
-  #retireLocalMessageIdIfUnused(messageId: string): void {
-    if (
-      !this.#activeLocalMessageIds.has(messageId) ||
-      this.#localChatRecipientStates.has(messageId) ||
-      this.#messages.some((message) => message.isLocal && message.id === messageId)
-    ) {
-      return;
-    }
-
-    this.#activeLocalMessageIds.delete(messageId);
-    this.#recentlyRetiredLocalMessageIds.add(messageId);
-    while (this.#recentlyRetiredLocalMessageIds.size > MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS) {
-      const oldest = this.#recentlyRetiredLocalMessageIds.values().next().value as string;
-      this.#recentlyRetiredLocalMessageIds.delete(oldest);
-    }
-  }
-
   #upsertParticipant(participant: Participant, isLocal: boolean): void {
     const existing = this.#participants.get(participant.peerId);
     if (existing !== undefined) {
@@ -3189,7 +3050,7 @@ export class RoomSession {
         ...participant,
       })),
       localMedia: this.#getLocalMediaSnapshot(),
-      messages: this.#messages.map((message) => ({ ...message })),
+      messages: this.#chat.snapshot(),
       lastModerationNotice:
         this.#lastModerationNotice === null ? null : { ...this.#lastModerationNotice },
       warning:

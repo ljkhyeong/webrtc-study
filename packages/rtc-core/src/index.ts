@@ -12,10 +12,13 @@ export {
 
 export {
   ChatSendError,
-  RoomSession,
   type ChatDeliveryState,
   type ChatMessage,
   type ChatSendErrorCode,
+} from './room-chat.js';
+
+export {
+  RoomSession,
   type LocalMediaSnapshot,
   type ModerationNotice,
   type ParticipantSnapshot,
