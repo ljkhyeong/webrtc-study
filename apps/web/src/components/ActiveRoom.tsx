@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   RoomSession,
   type RoomConnectionDiagnostics,
   type RoomSessionOptions,
-  type RoomSessionSnapshot,
 } from '@round/rtc-core';
 import { RoomView } from './RoomView';
 import { MediaDeviceDialog } from './MediaDeviceDialog';
@@ -71,8 +70,9 @@ export function ActiveRoom({
 }: ActiveRoomProps) {
   const sessionRef = useRef<RoomSession | null>(null);
   const lifecycleRef = useRef(0);
+  const refreshCoordinatorRef = useRef<RoomRefreshCoordinator | null>(null);
   const ensureFreshParticipationGrantRef = useRef<() => Promise<void>>(async () => {});
-  const [snapshot, setSnapshot] = useState<RoomSessionSnapshot | null>(null);
+  const [subscribedSession, setSubscribedSession] = useState<RoomSession | null>(null);
   const [startupError, setStartupError] = useState<RoomStartupErrorCode | null>(null);
   const [actionWarning, setActionWarning] = useState('');
   const [actionError, setActionError] = useState('');
@@ -82,6 +82,15 @@ export function ActiveRoom({
   const [audioOutput, setAudioOutput] = useState({ deviceId: '' });
   const outputDeviceId = audioOutput.deviceId;
   const [outputWarning, setOutputWarning] = useState('');
+  const subscribeToSession = useCallback(
+    (onStoreChange: () => void) => subscribedSession?.subscribe(onStoreChange) ?? (() => {}),
+    [subscribedSession],
+  );
+  const readSessionSnapshot = useCallback(
+    () => subscribedSession?.getSnapshot() ?? null,
+    [subscribedSession],
+  );
+  const snapshot = useSyncExternalStore(subscribeToSession, readSessionSnapshot, () => null);
 
   useEffect(() => {
     setOutputWarning('');
@@ -116,7 +125,6 @@ export function ActiveRoom({
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
     let isCurrentSession = true;
-    let unsubscribe = () => {};
     const isCurrentLifecycle = () => isCurrentSession && lifecycleRef.current === lifecycle;
     const refreshCoordinator = new RoomRefreshCoordinator({
       ...(preflightParticipationGrantLeaseManager === undefined
@@ -132,16 +140,10 @@ export function ActiveRoom({
         ? {}
         : { onParticipationGrantAccessFailure }),
     });
+    refreshCoordinatorRef.current = refreshCoordinator;
     const ensureFreshParticipationGrant = () => refreshCoordinator.ensureFreshParticipationGrant();
     ensureFreshParticipationGrantRef.current = ensureFreshParticipationGrant;
     const stopBackgroundRefreshes = () => refreshCoordinator.stop();
-
-    const handleSessionSnapshot = (nextSnapshot: RoomSessionSnapshot) => {
-      if (nextSnapshot.status === 'error' || nextSnapshot.status === 'ended') {
-        stopBackgroundRefreshes();
-      }
-      setSnapshot(nextSnapshot);
-    };
 
     const startSession = async () => {
       try {
@@ -209,11 +211,10 @@ export function ActiveRoom({
               );
               sessionRef.current = session;
             }
+            setSubscribedSession(session);
 
             setActionWarning('');
             setActionError('');
-            handleSessionSnapshot(session.getSnapshot());
-            unsubscribe = session.subscribe(handleSessionSnapshot);
 
             await session.join();
             if (loaded.turnRefreshDueAtMs !== null) {
@@ -246,7 +247,6 @@ export function ActiveRoom({
 
     return () => {
       isCurrentSession = false;
-      unsubscribe();
       // React StrictMode는 개발 환경에서 effect를 즉시 다시 실행한다. 정리를 미루면
       // 두 번째 설정이 일회용 세션과 전달받은 입장 전 track을 재사용할 수 있다.
       queueMicrotask(() => {
@@ -263,6 +263,9 @@ export function ActiveRoom({
           return;
         }
         stopBackgroundRefreshes();
+        if (refreshCoordinatorRef.current === refreshCoordinator) {
+          refreshCoordinatorRef.current = null;
+        }
         if (ensureFreshParticipationGrantRef.current === ensureFreshParticipationGrant) {
           ensureFreshParticipationGrantRef.current = async () => {};
         }
@@ -285,8 +288,14 @@ export function ActiveRoom({
     takePreparedMediaStream,
   ]);
 
+  useEffect(() => {
+    if (snapshot?.status === 'error' || snapshot?.status === 'ended') {
+      refreshCoordinatorRef.current?.stop();
+    }
+  }, [snapshot?.status, subscribedSession]);
+
   const participants = useMemo<ParticipantView[]>(() => {
-    const session = sessionRef.current;
+    const session = subscribedSession;
     if (!snapshot || !session) {
       return [];
     }
@@ -301,13 +310,14 @@ export function ActiveRoom({
         stream: stream ?? undefined,
       };
     });
-  }, [snapshot]);
+  }, [snapshot, subscribedSession]);
 
   const messages = snapshot?.messages ?? [];
 
   const handleLeave = () => {
     const session = sessionRef.current;
     sessionRef.current = null;
+    setSubscribedSession(null);
     if (session) {
       void session.leave();
     }
@@ -344,7 +354,7 @@ export function ActiveRoom({
     videoEnabled: false,
     videoSource: 'camera' as const,
   };
-  const localAudioTrack = sessionRef.current?.getLocalStream()?.getAudioTracks()[0] ?? null;
+  const localAudioTrack = subscribedSession?.getLocalStream()?.getAudioTracks()[0] ?? null;
   const hasFailedRemotePeer = participants.some(
     (participant) => !participant.isLocal && participant.connectionState === 'failed',
   );
@@ -477,7 +487,7 @@ export function ActiveRoom({
           audioTrack={localAudioTrack}
           audioEnabled={localMedia.audioEnabled}
           videoDeviceId={
-            sessionRef.current?.getLocalStream()?.getVideoTracks()[0]?.getSettings().deviceId ?? ''
+            subscribedSession?.getLocalStream()?.getVideoTracks()[0]?.getSettings().deviceId ?? ''
           }
           screenSharing={snapshot?.screenSharing ?? false}
           active={status === 'active'}
