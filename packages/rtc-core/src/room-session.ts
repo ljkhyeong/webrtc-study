@@ -2,15 +2,11 @@ import {
   PROTOCOL_VERSION,
   serializeClientMessage,
   serializePeerDataMessage,
-  type AnswerDescription,
   type ChatDataMessage,
-  type ClientMessage,
   type ModeratedMediaKind,
-  type OfferDescription,
   type Participant,
   type ParticipantMediaDataMessage,
   type ParticipantRole,
-  type SerializedIceCandidate,
   type ServerMessage,
   type SignalingErrorCode,
 } from '@round/protocol';
@@ -24,6 +20,7 @@ import {
   type PeerMediaSenderUpdate,
 } from './peer-connection-lifecycle.js';
 import { PEER_DATA_CHANNEL_LABEL, PeerDataChannel } from './peer-data-channel.js';
+import { PeerNegotiationLifecycle } from './peer-negotiation-lifecycle.js';
 import {
   ChatSendError,
   RoomChatLedger,
@@ -218,8 +215,6 @@ interface ResolvedRecoveryOptions {
   readonly peerRecoveryTimeoutMs: number;
 }
 
-type RelayClientMessage = Extract<ClientMessage, { to: string }>;
-
 // 일반적인 ICE 후보 수집량은 이 값보다 훨씬 적다. 초과 시 최신 후보를 유지한다.
 const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
 const SIGNALING_SESSION_SUPERSEDED_CLOSE_CODE = 4002;
@@ -378,6 +373,7 @@ export class RoomSession {
   readonly #staleSelfIds = new Set<string>();
   readonly #exhaustedPeerIds = new Set<string>();
   readonly #signalingTransport: SignalingTransport;
+  readonly #peerNegotiation: PeerNegotiationLifecycle;
   readonly #signalingRecovery: SignalingRecoveryLifecycle;
   readonly #chat: RoomChatLedger;
   readonly #screenShare: ScreenShareLifecycle;
@@ -487,6 +483,24 @@ export class RoomSession {
       onClose: (error, event) => {
         this.#handleSocketClose(error, event);
       },
+    });
+    this.#peerNegotiation = new PeerNegotiationLifecycle({
+      roomId,
+      transport: this.#signalingTransport,
+      maxPendingRemoteCandidates: MAX_PENDING_REMOTE_ICE_CANDIDATES,
+      createNegotiationId: defaultCreateId,
+      getPeer: (peerId) => this.#peers.get(peerId),
+      ensurePeer: (peerId) => this.#ensurePeer(peerId),
+      replacePeer: (peerId, preservePendingCandidates, connectionAttempt) =>
+        this.#replacePeer(peerId, preservePendingCandidates, connectionAttempt),
+      isCurrentPeer: (peer) => this.#isCurrentPeer(peer),
+      isRoomReconnecting: () => this.#status === 'reconnecting',
+      setPeerConnectionStatus: (peerId, status) => this.#setPeerConnectionStatus(peerId, status),
+      setPeerWarning: (peerId, code, message) => this.#setPeerWarning(peerId, code, message),
+      failPeerConnectionTimeout: (peer) => this.#failPeerConnectionTimeout(peer),
+      finishPeerRecovery: (peer) => this.#finishPeerRecovery(peer),
+      updateVideoQuality: (peer) => this.#updateVideoQuality(peer),
+      onNegotiationSettled: (peer) => this.#drainPendingLocalRenegotiation(peer),
     });
     const serializedJoinMessage = serializeClientMessage({
       v: PROTOCOL_VERSION,
@@ -889,7 +903,7 @@ export class RoomSession {
         `Recreated the connection to ${failedPeer.peerId} after ${phase} failed: ${getErrorMessage(error)}`,
       );
       if (shouldOffer) {
-        void this.#createOffer(replacement.peerId).catch((offerError: unknown) => {
+        void this.#peerNegotiation.createOffer(replacement.peerId).catch((offerError: unknown) => {
           if (this.#isCurrentPeer(replacement)) {
             this.#failPeer(replacement.peerId, offerError);
           }
@@ -1133,7 +1147,7 @@ export class RoomSession {
           if (this.#staleSelfIds.has(message.from) || this.#exhaustedPeerIds.has(message.from)) {
             return;
           }
-          await this.#handleOffer(
+          await this.#peerNegotiation.handleOffer(
             message.from,
             message.payload.description,
             message.payload.negotiationId,
@@ -1143,7 +1157,7 @@ export class RoomSession {
           if (this.#staleSelfIds.has(message.from) || this.#exhaustedPeerIds.has(message.from)) {
             return;
           }
-          await this.#handleAnswer(
+          await this.#peerNegotiation.handleAnswer(
             message.from,
             message.payload.description,
             message.payload.negotiationId,
@@ -1153,7 +1167,7 @@ export class RoomSession {
           if (this.#staleSelfIds.has(message.from) || this.#exhaustedPeerIds.has(message.from)) {
             return;
           }
-          await this.#handleIce(
+          await this.#peerNegotiation.handleIce(
             message.from,
             message.payload.candidate,
             message.payload.negotiationId,
@@ -1220,7 +1234,7 @@ export class RoomSession {
       )
       .map(async (participant) => {
         try {
-          await this.#createOffer(participant.peerId);
+          await this.#peerNegotiation.createOffer(participant.peerId);
         } catch (error) {
           this.#scheduleInitialOfferRetry(participant.peerId, error);
         }
@@ -1276,276 +1290,6 @@ export class RoomSession {
     this.#syncLocalParticipantMedia();
     this.#broadcastMediaState();
     this.#emit();
-  }
-
-  async #createOffer(
-    peerId: string,
-    options: { readonly iceRestart?: boolean } = {},
-  ): Promise<boolean> {
-    const peer = this.#ensurePeer(peerId);
-    if (peer.makingOffer || peer.hasRemoteOffersInProgress()) {
-      return false;
-    }
-    if (peer.connection.signalingState !== 'stable') {
-      if (options.iceRestart === true) {
-        this.#setPeerWarning(
-          peerId,
-          'peer-restart-deferred',
-          `ICE restart for ${peerId} is waiting for stable signaling`,
-        );
-      }
-      return false;
-    }
-
-    peer.makingOffer = true;
-    const negotiationId = peer.startLocalNegotiation(defaultCreateId);
-    peer.remoteDescriptionSet = false;
-    peer.resetLocalDescription();
-    if (options.iceRestart === true) {
-      peer.clearPendingRemoteCandidates();
-    }
-    this.#setPeerConnectionStatus(peerId, 'negotiating');
-
-    if (!peer.data.isAttached()) {
-      peer.data.attach(
-        peer.connection.createDataChannel(PEER_DATA_CHANNEL_LABEL, {
-          ordered: true,
-        }),
-      );
-    }
-
-    try {
-      const offer =
-        options.iceRestart === true
-          ? await peer.connection.createOffer({ iceRestart: true })
-          : await peer.connection.createOffer();
-      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
-        return false;
-      }
-      await peer.connection.setLocalDescription(offer);
-      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
-        return false;
-      }
-      void this.#updateVideoQuality(peer);
-      const description = peer.connection.localDescription ?? offer;
-      peer.captureLocalIceUsernameFragments(description.sdp);
-      this.#publishLocalDescription(peer, {
-        v: PROTOCOL_VERSION,
-        type: 'rtc.offer',
-        roomId: this.#options.roomId,
-        to: peerId,
-        payload: {
-          negotiationId,
-          description: {
-            type: 'offer',
-            ...(description.sdp === undefined ? {} : { sdp: description.sdp }),
-          },
-        },
-      });
-      return true;
-    } catch (error) {
-      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
-        return false;
-      }
-      throw error;
-    } finally {
-      peer.makingOffer = false;
-      this.#drainPendingLocalRenegotiation(peer);
-    }
-  }
-
-  async #handleOffer(
-    peerId: string,
-    description: OfferDescription,
-    negotiationId?: string,
-  ): Promise<void> {
-    const existing = this.#peers.get(peerId);
-    if (existing !== undefined && !existing.canAcceptRemoteOffer(negotiationId)) {
-      return;
-    }
-    if (existing?.connection.connectionState === 'failed' && existing.connectionAttempt > 0) {
-      this.#failPeerConnectionTimeout(existing);
-      return;
-    }
-    const peer =
-      existing?.connection.connectionState === 'failed'
-        ? this.#replacePeer(peerId, true, existing.connectionAttempt + 1)
-        : this.#ensurePeer(peerId);
-    peer.replaceNegotiationId(negotiationId ?? null);
-    const acceptedNegotiationId = peer.negotiationId;
-    peer.beginRemoteOffer(acceptedNegotiationId);
-    try {
-      peer.remoteDescriptionSet = false;
-      this.#setPeerConnectionStatus(peerId, 'negotiating');
-      await peer.connection.setRemoteDescription(description);
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
-        return;
-      }
-      peer.remoteDescriptionSet = true;
-      await this.#flushPendingCandidates(peer, acceptedNegotiationId);
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
-        return;
-      }
-
-      peer.resetLocalDescription();
-      const answer = await peer.connection.createAnswer();
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
-        return;
-      }
-      await peer.connection.setLocalDescription(answer);
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
-        return;
-      }
-      void this.#updateVideoQuality(peer);
-      const localDescription = peer.connection.localDescription ?? answer;
-      peer.captureLocalIceUsernameFragments(localDescription.sdp);
-      this.#publishLocalDescription(peer, {
-        v: PROTOCOL_VERSION,
-        type: 'rtc.answer',
-        roomId: this.#options.roomId,
-        to: peerId,
-        payload: {
-          ...(peer.negotiationId === null ? {} : { negotiationId: peer.negotiationId }),
-          description: {
-            type: 'answer',
-            ...(localDescription.sdp === undefined ? {} : { sdp: localDescription.sdp }),
-          },
-        },
-      });
-      if (peer.connection.connectionState === 'connected') {
-        this.#finishPeerRecovery(peer);
-      }
-    } catch (error) {
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
-        return;
-      }
-      throw error;
-    } finally {
-      peer.endRemoteOffer(acceptedNegotiationId);
-      this.#drainPendingLocalRenegotiation(peer);
-    }
-  }
-
-  async #handleAnswer(
-    peerId: string,
-    description: AnswerDescription,
-    negotiationId?: string,
-  ): Promise<void> {
-    const peer = this.#peers.get(peerId);
-    if (
-      peer === undefined ||
-      !peer.matchesNegotiation(negotiationId) ||
-      !peer.localDescriptionPublished ||
-      peer.connection.signalingState !== 'have-local-offer'
-    ) {
-      return;
-    }
-    const acceptedNegotiationId = peer.negotiationId;
-    try {
-      await peer.connection.setRemoteDescription(description);
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
-        return;
-      }
-      peer.remoteDescriptionSet = true;
-      await this.#flushPendingCandidates(peer, acceptedNegotiationId);
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
-        return;
-      }
-      if (peer.connection.connectionState === 'connected') {
-        this.#finishPeerRecovery(peer);
-      }
-      void this.#updateVideoQuality(peer);
-      this.#drainPendingLocalRenegotiation(peer);
-    } catch (error) {
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
-        return;
-      }
-      throw error;
-    }
-  }
-
-  async #handleIce(
-    peerId: string,
-    candidate: SerializedIceCandidate | null,
-    negotiationId?: string,
-  ): Promise<void> {
-    const peer = this.#ensurePeer(peerId);
-    if (!peer.adoptOrMatchCandidateNegotiation(negotiationId)) {
-      return;
-    }
-    const acceptedNegotiationId = peer.negotiationId;
-    if (peer.connection.connectionState === 'failed' || !peer.remoteDescriptionSet) {
-      if (peer.queueRemoteCandidate(candidate, MAX_PENDING_REMOTE_ICE_CANDIDATES)) {
-        this.#setPeerWarning(
-          peer.peerId,
-          'ice-candidate-queue-overflow',
-          `Oldest pending ICE candidate for ${peer.peerId} was discarded`,
-        );
-      }
-      return;
-    }
-
-    await this.#addIceCandidate(peer, candidate, acceptedNegotiationId);
-  }
-
-  async #flushPendingCandidates(peer: PeerContext, negotiationId: string | null): Promise<void> {
-    const candidates = peer.takePendingRemoteCandidates();
-    for (const candidate of candidates) {
-      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
-        return;
-      }
-      await this.#addIceCandidate(peer, candidate, negotiationId);
-    }
-  }
-
-  async #addIceCandidate(
-    peer: PeerContext,
-    candidate: SerializedIceCandidate | null,
-    negotiationId: string | null,
-  ): Promise<void> {
-    try {
-      await peer.connection.addIceCandidate(candidate);
-    } catch (error) {
-      if (this.#isCurrentNegotiation(peer, negotiationId)) {
-        this.#setPeerWarning(
-          peer.peerId,
-          'ice-candidate-rejected',
-          `Ignored an ICE candidate for ${peer.peerId}: ${getErrorMessage(error)}`,
-        );
-      }
-    }
-  }
-
-  #publishLocalDescription(peer: PeerContext, message: RelayClientMessage): void {
-    if (!this.#isCurrentPeer(peer)) {
-      return;
-    }
-    this.#signalingTransport.sendRelay(message);
-    const candidates = peer.publishLocalDescription();
-    for (const candidate of candidates) {
-      this.#sendLocalCandidate(peer, candidate);
-    }
-  }
-
-  #sendLocalCandidate(peer: PeerContext, candidate: SerializedIceCandidate | null): void {
-    if (
-      !this.#isCurrentPeer(peer) ||
-      !peer.candidateMatchesCurrentLocalNegotiation(candidate) ||
-      !this.#signalingTransport.isOpen() ||
-      this.#status === 'reconnecting'
-    ) {
-      return;
-    }
-    this.#signalingTransport.sendRelay({
-      v: PROTOCOL_VERSION,
-      type: 'rtc.ice',
-      roomId: this.#options.roomId,
-      to: peer.peerId,
-      payload: {
-        ...(peer.negotiationId === null ? {} : { negotiationId: peer.negotiationId }),
-        candidate,
-      },
-    });
   }
 
   #createPeerDataChannel(peerId: string): PeerDataChannel {
@@ -1661,16 +1405,7 @@ export class RoomSession {
     }
 
     connection.onicecandidate = (event) => {
-      if (!this.#isCurrentPeer(peer) || !this.#signalingTransport.isOpen()) {
-        return;
-      }
-      const candidate =
-        event.candidate === null ? null : (event.candidate.toJSON() as SerializedIceCandidate);
-      if (!peer.localDescriptionPublished) {
-        peer.queueLocalCandidate(candidate);
-        return;
-      }
-      this.#sendLocalCandidate(peer, candidate);
+      this.#peerNegotiation.handleLocalIceCandidate(peer, event.candidate);
     };
 
     connection.ontrack = (event) => {
@@ -1741,10 +1476,6 @@ export class RoomSession {
     return !peer.closed && this.#peers.get(peer.peerId) === peer;
   }
 
-  #isCurrentNegotiation(peer: PeerContext, negotiationId: string | null): boolean {
-    return this.#isCurrentPeer(peer) && peer.negotiationId === negotiationId;
-  }
-
   #isPeerRecoveryInitiator(peerId: string): boolean {
     return this.#selfId !== null && this.#selfId < peerId;
   }
@@ -1772,7 +1503,8 @@ export class RoomSession {
     }
 
     peer.pendingLocalRenegotiation = false;
-    void this.#createOffer(peer.peerId)
+    void this.#peerNegotiation
+      .createOffer(peer.peerId)
       .then((published) => {
         if (!published && this.#isCurrentPeer(peer)) {
           peer.pendingLocalRenegotiation = true;
@@ -1824,7 +1556,8 @@ export class RoomSession {
           return;
         }
       }
-      void this.#createOffer(retryPeer.peerId)
+      void this.#peerNegotiation
+        .createOffer(retryPeer.peerId)
         .then((offerPublished) => {
           if (!offerPublished) {
             return;
@@ -1925,7 +1658,7 @@ export class RoomSession {
         `Recreated the connection to ${peer.peerId} after ICE recovery timed out`,
       );
       if (shouldOffer) {
-        void this.#createOffer(replacement.peerId).catch((error: unknown) => {
+        void this.#peerNegotiation.createOffer(replacement.peerId).catch((error: unknown) => {
           if (this.#isCurrentPeer(replacement)) {
             this.#failPeer(replacement.peerId, error);
           }
@@ -1936,15 +1669,17 @@ export class RoomSession {
     if (!this.#isPeerRecoveryInitiator(peer.peerId)) {
       return;
     }
-    void this.#createOffer(peer.peerId, { iceRestart: true }).catch((error: unknown) => {
-      if (this.#isCurrentPeer(peer)) {
-        this.#setPeerWarning(
-          peer.peerId,
-          'peer-ice-restart-failed',
-          `ICE restart for ${peer.peerId} failed: ${getErrorMessage(error)}`,
-        );
-      }
-    });
+    void this.#peerNegotiation
+      .createOffer(peer.peerId, { iceRestart: true })
+      .catch((error: unknown) => {
+        if (this.#isCurrentPeer(peer)) {
+          this.#setPeerWarning(
+            peer.peerId,
+            'peer-ice-restart-failed',
+            `ICE restart for ${peer.peerId} failed: ${getErrorMessage(error)}`,
+          );
+        }
+      });
   }
 
   #finishPeerRecovery(peer: PeerContext): void {
