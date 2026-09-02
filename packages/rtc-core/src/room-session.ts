@@ -26,6 +26,11 @@ import {
   type ChatMessage,
   type ChatRecipientDeliveryState,
 } from './room-chat.js';
+import {
+  type PeerMediaSenderUpdate,
+  ScreenShareLifecycle,
+  type ScreenShareStartResult,
+} from './screen-share-lifecycle.js';
 import { SignalingTransport, SignalingTransportError } from './signaling-transport.js';
 export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
 
@@ -79,8 +84,6 @@ export interface RoomIssue {
   readonly code: RoomIssueCode;
   readonly message: string;
 }
-
-export type ScreenShareStartResult = 'started' | 'recovering' | 'cancelled' | 'failed';
 
 export interface LocalMediaSnapshot {
   readonly audioAvailable: boolean;
@@ -216,13 +219,6 @@ interface ResolvedRecoveryOptions {
 
 type RelayClientMessage = Extract<ClientMessage, { to: string }>;
 
-interface MediaSenderUpdate {
-  readonly peer: PeerContext;
-  readonly sender: RTCRtpSender;
-  readonly previousTrack: MediaStreamTrack | null;
-  readonly added: boolean;
-}
-
 type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 
 // 일반적인 ICE 후보 수집량은 이 값보다 훨씬 적다. 초과 시 최신 후보를 유지한다.
@@ -239,14 +235,6 @@ const DEFAULT_RECONNECT_INITIAL_DELAY_MS = 500;
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 4_000;
 const DEFAULT_PEER_DISCONNECTED_GRACE_MS = 3_000;
 const DEFAULT_PEER_RECOVERY_TIMEOUT_MS = 8_000;
-const SCREEN_SHARE_CONSTRAINTS: DisplayMediaStreamOptions = {
-  video: {
-    width: { ideal: 1280, max: 1280 },
-    height: { ideal: 720, max: 720 },
-    frameRate: { ideal: 15, max: 15 },
-  },
-  audio: false,
-};
 class RoomSessionFailure extends Error {
   constructor(
     readonly code: RoomIssueCode,
@@ -351,24 +339,6 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isDisplayMediaCancellation(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null || !('name' in error)) {
-    return false;
-  }
-  return error.name === 'NotAllowedError' || error.name === 'AbortError';
-}
-
-function preferDetailedScreenContent(track: MediaStreamTrack): void {
-  if (!('contentHint' in track)) {
-    return;
-  }
-  try {
-    track.contentHint = 'detail';
-  } catch {
-    // 일부 엔진은 contentHint를 노출하지만 표준화된 모든 값을 허용하지는 않는다.
-  }
-}
-
 function safeSignalingErrorMessage(code: SignalingErrorCode): string {
   switch (code) {
     case 'INVALID_MESSAGE':
@@ -414,26 +384,16 @@ export class RoomSession {
   readonly #endedInputKinds = new Set<'audio' | 'video'>();
   readonly #signalingTransport: SignalingTransport;
   readonly #chat: RoomChatLedger;
+  readonly #screenShare: ScreenShareLifecycle;
 
   #rtcConfiguration: RTCConfiguration | undefined;
   #localStream: MediaStream | null = null;
-  #cameraVideoTracks: MediaStreamTrack[] = [];
   #videoQualityMode: VideoQualityMode = 'standard';
   #inputChange: {
     kind: 'audio' | 'video';
     enabled: boolean;
     track: MediaStreamTrack | null;
   } | null = null;
-  #pendingScreenTrack: MediaStreamTrack | null = null;
-  #screenTrack: MediaStreamTrack | null = null;
-  #screenTrackEndedListener: EventListener | null = null;
-  #screenShareCreatedLocalStream = false;
-  #screenShareStartPromise: Promise<ScreenShareStartResult> | null = null;
-  #screenShareStopPromise: Promise<boolean> | null = null;
-  #screenShareStopTrack: MediaStreamTrack | null = null;
-  #screenShareStopGeneration = 0;
-  #screenShareStopDisableCamera = false;
-  #screenShareOperation = 0;
   #status: RoomSessionStatus = 'idle';
   #selfId: string | null = null;
   #selfRole: ParticipantRole | null = null;
@@ -471,6 +431,28 @@ export class RoomSession {
     this.#options = { ...options, roomId, displayName };
     this.#recoveryOptions = resolveRecoveryOptions(options.recovery);
     this.#chat = new RoomChatLedger(options.maxChatMessages ?? 200);
+    this.#screenShare = new ScreenShareLifecycle({
+      isRoomActive: () => !this.#disposed && this.#status === 'active',
+      isDisposed: () => this.#disposed,
+      getMediaDevices: () => this.#getMediaDevices(),
+      createMediaStream: () => (this.#options.mediaStreamFactory ?? (() => new MediaStream()))(),
+      getLocalStream: () => this.#localStream,
+      setLocalStream: (stream) => {
+        this.#localStream = stream;
+      },
+      getPeers: () => this.#peers.values(),
+      isCurrentPeer: (peer) => this.#isCurrentPeer(peer),
+      replacePeerTrack: (peer, sender, track) => this.#replacePeerTrack(peer, sender, track),
+      rollbackSenderUpdates: (updates) => this.#rollbackSenderUpdates(updates),
+      recoverPeersAfterSenderFailure: (failures, phase) =>
+        this.#recoverPeersAfterSenderFailure(failures, phase),
+      requestLocalRenegotiation: (peer) => this.#requestLocalRenegotiation(peer),
+      onStateChanged: () => {
+        this.#syncLocalParticipantMedia();
+        this.#broadcastMediaState();
+        this.#emit();
+      },
+    });
     this.#signalingTransport = new SignalingTransport({
       url: this.#options.signalingUrl,
       roomId,
@@ -539,8 +521,7 @@ export class RoomSession {
     const update = peer.videoQualityUpdate.then(async () => {
       const sender = peer.videoSender;
       if (!this.#isCurrentPeer(peer) || sender?.track == null) return true;
-      const screen =
-        sender.track === this.#screenTrack || sender.track === this.#pendingScreenTrack;
+      const screen = this.#screenShare.ownsVideoTrack(sender.track);
       const limited = this.#videoQualityMode === 'data-saver' && !screen;
       if (!limited && !peer.videoQualityLimited) return true;
       try {
@@ -734,9 +715,8 @@ export class RoomSession {
       this.#disposed ||
       this.#status !== 'active' ||
       this.#inputChange !== null ||
-      this.#screenShareStartPromise !== null ||
-      this.#screenShareStopPromise !== null ||
-      (kind === 'video' && this.#screenTrack !== null)
+      this.#screenShare.isTransitioning() ||
+      (kind === 'video' && this.#screenShare.isSharing())
     )
       return false;
 
@@ -750,7 +730,7 @@ export class RoomSession {
       track: null as MediaStreamTrack | null,
     };
     this.#inputChange = operation;
-    const updates: MediaSenderUpdate[] = [];
+    const updates: PeerMediaSenderUpdate[] = [];
     let committed = false;
     try {
       const devices = this.#getMediaDevices();
@@ -849,7 +829,7 @@ export class RoomSession {
   }
 
   toggleVideo(): boolean {
-    if (this.#screenTrack !== null) {
+    if (this.#screenShare.hasActiveTrack()) {
       return false;
     }
     const tracks = this.#liveLocalTracks('video');
@@ -870,36 +850,14 @@ export class RoomSession {
   }
 
   startScreenShare(): Promise<ScreenShareStartResult> {
-    if (
-      this.#disposed ||
-      this.#status !== 'active' ||
-      this.#screenShareStopPromise !== null ||
-      this.#inputChange !== null
-    ) {
+    if (this.#disposed || this.#status !== 'active' || this.#inputChange !== null) {
       return Promise.resolve('cancelled');
     }
-    if (this.#screenShareStartPromise !== null) {
-      return this.#screenShareStartPromise;
-    }
-    if (this.#pendingScreenTrack !== null || this.#screenTrack !== null) {
-      return Promise.resolve('cancelled');
-    }
-    if (this.#getMediaDevices()?.getDisplayMedia === undefined) {
-      return Promise.resolve('failed');
-    }
-
-    const operation = ++this.#screenShareOperation;
-    const startPromise = this.#performStartScreenShare(operation).finally(() => {
-      if (this.#screenShareStartPromise === startPromise) {
-        this.#screenShareStartPromise = null;
-      }
-    });
-    this.#screenShareStartPromise = startPromise;
-    return startPromise;
+    return this.#screenShare.start();
   }
 
   stopScreenShare(): Promise<boolean> {
-    return this.#requestScreenShareStop(false);
+    return this.#screenShare.stop(false);
   }
 
   disableParticipantMedia(peerId: string, kind: ModeratedMediaKind): boolean {
@@ -929,140 +887,6 @@ export class RoomSession {
     } catch {
       return false;
     }
-  }
-
-  async #performStartScreenShare(operation: number): Promise<ScreenShareStartResult> {
-    const mediaDevices = this.#getMediaDevices();
-    if (mediaDevices?.getDisplayMedia === undefined) {
-      return 'failed';
-    }
-
-    let displayStream: MediaStream;
-    try {
-      displayStream = await mediaDevices.getDisplayMedia(SCREEN_SHARE_CONSTRAINTS);
-    } catch (error) {
-      return isDisplayMediaCancellation(error) ? 'cancelled' : 'failed';
-    }
-
-    const screenTrack = displayStream.getVideoTracks().find((track) => track.readyState === 'live');
-    for (const track of displayStream.getTracks()) {
-      if (track !== screenTrack) {
-        track.stop();
-      }
-    }
-    if (screenTrack !== undefined) {
-      preferDetailedScreenContent(screenTrack);
-      this.#pendingScreenTrack = screenTrack;
-    }
-    if (screenTrack === undefined) {
-      return 'failed';
-    }
-    if (!this.#ownsScreenShareStart(operation, screenTrack)) {
-      screenTrack.stop();
-      if (this.#pendingScreenTrack === screenTrack) {
-        this.#pendingScreenTrack = null;
-      }
-      return 'cancelled';
-    }
-
-    let localStream = this.#localStream;
-    const createdLocalStream = localStream === null;
-    if (localStream === null) {
-      try {
-        const factory = this.#options.mediaStreamFactory ?? (() => new MediaStream());
-        localStream = factory();
-      } catch {
-        screenTrack.stop();
-        if (this.#pendingScreenTrack === screenTrack) {
-          this.#pendingScreenTrack = null;
-        }
-        return 'failed';
-      }
-    }
-
-    const cameraTracks = [...localStream.getVideoTracks()];
-    const primaryCameraTrack = cameraTracks.find((track) => track.readyState === 'live') ?? null;
-    const senderUpdates: MediaSenderUpdate[] = [];
-    const senderFailures = new Map<PeerContext, unknown>();
-
-    for (const peer of this.#peers.values()) {
-      if (!this.#isCurrentPeer(peer)) {
-        continue;
-      }
-      try {
-        if (peer.videoSender === null) {
-          const sender = peer.connection.addTrack(screenTrack, localStream);
-          peer.videoSender = sender;
-          senderUpdates.push({
-            peer,
-            sender,
-            previousTrack: null,
-            added: true,
-          });
-          continue;
-        }
-
-        const sender = peer.videoSender;
-        const previousTrack = sender.track ?? primaryCameraTrack;
-        if (await this.#replacePeerTrack(peer, sender, screenTrack)) {
-          senderUpdates.push({ peer, sender, previousTrack, added: false });
-        }
-        if (!this.#ownsScreenShareStart(operation, screenTrack)) {
-          break;
-        }
-      } catch (error) {
-        senderFailures.set(peer, error);
-        if (!this.#ownsScreenShareStart(operation, screenTrack)) {
-          break;
-        }
-      }
-    }
-
-    if (!this.#ownsScreenShareStart(operation, screenTrack)) {
-      screenTrack.stop();
-      const rollbackFailures = await this.#rollbackSenderUpdates(senderUpdates);
-      for (const [peer, error] of rollbackFailures) {
-        senderFailures.set(peer, error);
-      }
-      if (this.#pendingScreenTrack === screenTrack) {
-        this.#pendingScreenTrack = null;
-      }
-      this.#recoverPeersAfterSenderFailure(senderFailures, 'starting screen share');
-      return 'cancelled';
-    }
-
-    for (const cameraTrack of cameraTracks) {
-      localStream.removeTrack(cameraTrack);
-    }
-    localStream.addTrack(screenTrack);
-    this.#localStream = localStream;
-    this.#cameraVideoTracks = cameraTracks;
-    this.#pendingScreenTrack = null;
-    this.#screenTrack = screenTrack;
-    this.#screenShareCreatedLocalStream = createdLocalStream;
-    const endedListener: EventListener = () => {
-      void this.#requestScreenShareStop(false);
-    };
-    this.#screenTrackEndedListener = endedListener;
-    screenTrack.addEventListener('ended', endedListener);
-
-    this.#syncLocalParticipantMedia();
-    this.#broadcastMediaState();
-    this.#emit();
-
-    for (const update of senderUpdates) {
-      if (!update.added || !this.#isCurrentPeer(update.peer)) {
-        continue;
-      }
-      this.#requestLocalRenegotiation(update.peer);
-    }
-    this.#recoverPeersAfterSenderFailure(senderFailures, 'starting screen share');
-
-    if (screenTrack.readyState === 'ended') {
-      await this.#requestScreenShareStop(false);
-      return 'cancelled';
-    }
-    return senderFailures.size === 0 ? 'started' : 'recovering';
   }
 
   async #replacePeerTrack(
@@ -1095,7 +919,7 @@ export class RoomSession {
   }
 
   async #rollbackSenderUpdates(
-    senderUpdates: readonly MediaSenderUpdate[],
+    senderUpdates: readonly PeerMediaSenderUpdate[],
   ): Promise<Map<PeerContext, unknown>> {
     const failures = new Map<PeerContext, unknown>();
     for (const update of [...senderUpdates].reverse()) {
@@ -1120,168 +944,6 @@ export class RoomSession {
       }
     }
     return failures;
-  }
-
-  #requestScreenShareStop(disableCamera: boolean): Promise<boolean> {
-    if (this.#disposed) {
-      return Promise.resolve(false);
-    }
-    if (this.#screenShareStopPromise !== null) {
-      if (disableCamera && !this.#screenShareStopDisableCamera) {
-        this.#screenShareStopDisableCamera = true;
-        this.#disableCameraTracks();
-      }
-      return this.#screenShareStopPromise;
-    }
-
-    const screenTrack = this.#screenTrack;
-    if (screenTrack === null) {
-      this.#invalidatePendingScreenShareStart(disableCamera);
-      return Promise.resolve(false);
-    }
-
-    const generation = ++this.#screenShareOperation;
-    this.#screenShareStopTrack = screenTrack;
-    this.#screenShareStopGeneration = generation;
-    this.#screenShareStopDisableCamera = disableCamera;
-    if (disableCamera) {
-      this.#disableCameraTracks();
-    }
-    this.#detachScreenTrackEndedListener();
-    screenTrack.stop();
-
-    let resolveStop!: (result: boolean) => void;
-    let rejectStop!: (reason: unknown) => void;
-    const stopPromise = new Promise<boolean>((resolve, reject) => {
-      resolveStop = resolve;
-      rejectStop = reject;
-    });
-    const finishStop = () => {
-      if (this.#screenShareStopPromise === stopPromise) {
-        this.#screenShareStopPromise = null;
-        this.#screenShareStopTrack = null;
-        this.#screenShareStopGeneration = 0;
-        this.#screenShareStopDisableCamera = false;
-      }
-    };
-    this.#screenShareStopPromise = stopPromise;
-    void this.#performStopScreenShare(screenTrack, generation).then(
-      (result) => {
-        finishStop();
-        resolveStop(result);
-      },
-      (error: unknown) => {
-        finishStop();
-        rejectStop(error);
-      },
-    );
-    return stopPromise;
-  }
-
-  async #performStopScreenShare(
-    screenTrack: MediaStreamTrack,
-    generation: number,
-  ): Promise<boolean> {
-    const cameraTracks = [...this.#cameraVideoTracks];
-    const primaryCameraTrack = cameraTracks.find((track) => track.readyState === 'live') ?? null;
-    const senderFailures = new Map<PeerContext, unknown>();
-
-    const localStream = this.#localStream;
-    localStream?.removeTrack(screenTrack);
-    for (const cameraTrack of cameraTracks) {
-      if (cameraTrack.readyState === 'live' && localStream !== null) {
-        localStream.addTrack(cameraTrack);
-      }
-    }
-    if (
-      this.#screenShareCreatedLocalStream &&
-      localStream !== null &&
-      localStream.getTracks().length === 0
-    ) {
-      this.#localStream = null;
-    }
-    if (this.#screenShareStopDisableCamera) {
-      this.#disableCameraTracks();
-    }
-    this.#syncLocalParticipantMedia();
-    this.#broadcastMediaState();
-    this.#emit();
-
-    for (const peer of [...this.#peers.values()]) {
-      if (!this.#ownsScreenShareStop(screenTrack, generation)) {
-        return false;
-      }
-      if (!this.#isCurrentPeer(peer) || peer.videoSender === null) {
-        continue;
-      }
-      try {
-        await this.#replacePeerTrack(peer, peer.videoSender, primaryCameraTrack);
-      } catch (error) {
-        senderFailures.set(peer, error);
-      }
-      if (!this.#ownsScreenShareStop(screenTrack, generation)) {
-        return false;
-      }
-    }
-
-    if (!this.#ownsScreenShareStop(screenTrack, generation)) {
-      return false;
-    }
-    if (this.#screenShareStopDisableCamera) {
-      this.#disableCameraTracks();
-    }
-    this.#screenTrack = null;
-    this.#cameraVideoTracks = [];
-    this.#screenShareCreatedLocalStream = false;
-
-    this.#recoverPeersAfterSenderFailure(senderFailures, 'restoring camera after screen share');
-    return senderFailures.size === 0;
-  }
-
-  #ownsScreenShareStart(operation: number, screenTrack: MediaStreamTrack): boolean {
-    return (
-      !this.#disposed &&
-      this.#status === 'active' &&
-      this.#screenShareOperation === operation &&
-      this.#pendingScreenTrack === screenTrack &&
-      screenTrack.readyState === 'live' &&
-      this.#screenTrack === null &&
-      this.#screenShareStopPromise === null
-    );
-  }
-
-  #ownsScreenShareStop(screenTrack: MediaStreamTrack, generation: number): boolean {
-    return (
-      !this.#disposed &&
-      this.#screenShareOperation === generation &&
-      this.#screenShareStopGeneration === generation &&
-      this.#screenShareStopTrack === screenTrack &&
-      this.#screenTrack === screenTrack
-    );
-  }
-
-  #invalidatePendingScreenShareStart(disableCamera: boolean): boolean {
-    if (this.#screenShareStartPromise === null || this.#screenTrack !== null) {
-      return false;
-    }
-    ++this.#screenShareOperation;
-    if (disableCamera) {
-      this.#disableCameraTracks();
-    }
-    this.#pendingScreenTrack?.stop();
-    return true;
-  }
-
-  #disableCameraTracks(): void {
-    const cameraTracks = new Set([
-      ...this.#cameraVideoTracks,
-      ...(this.#localStream?.getVideoTracks() ?? []),
-    ]);
-    for (const track of cameraTracks) {
-      if (track !== this.#screenTrack && track !== this.#pendingScreenTrack) {
-        track.enabled = false;
-      }
-    }
   }
 
   #recoverPeersAfterSenderFailure(
@@ -1835,21 +1497,21 @@ export class RoomSession {
     }
 
     if (kind === 'video') {
-      if (this.#invalidatePendingScreenShareStart(true)) {
+      if (this.#screenShare.cancelPendingStart(true)) {
         this.#syncLocalParticipantMedia();
         this.#broadcastMediaState();
         this.#emit();
         return;
       }
-      if (this.#screenTrack !== null || this.#screenShareStopPromise !== null) {
-        const stopPromise = this.#requestScreenShareStop(true);
+      if (this.#screenShare.isSharingOrStopping()) {
+        const stopPromise = this.#screenShare.stop(true);
         this.#syncLocalParticipantMedia();
         this.#broadcastMediaState();
         this.#emit();
         await stopPromise;
         return;
       }
-      this.#disableCameraTracks();
+      this.#screenShare.disableCameraTracks();
     } else {
       for (const track of this.#liveLocalTracks('audio')) {
         track.enabled = false;
@@ -2818,7 +2480,6 @@ export class RoomSession {
   }
 
   #cleanupAllResources(): void {
-    ++this.#screenShareOperation;
     this.#inputChange?.track?.stop();
     this.#inputChange = null;
     this.#signalingTransport.clearPendingRequests();
@@ -2826,24 +2487,14 @@ export class RoomSession {
     this.#remoteMediaStates.clear();
 
     this.#detachLocalTrackEndedListeners();
-    this.#detachScreenTrackEndedListener();
     const ownedTracks = new Set([
       ...(this.#localStream?.getTracks() ?? []),
-      ...this.#cameraVideoTracks,
-      ...(this.#pendingScreenTrack === null ? [] : [this.#pendingScreenTrack]),
-      ...(this.#screenTrack === null ? [] : [this.#screenTrack]),
+      ...this.#screenShare.takeOwnedTracks(),
     ]);
     for (const track of ownedTracks) {
       track.stop();
     }
     this.#localStream = null;
-    this.#cameraVideoTracks = [];
-    this.#pendingScreenTrack = null;
-    this.#screenTrack = null;
-    this.#screenShareCreatedLocalStream = false;
-    this.#screenShareStopTrack = null;
-    this.#screenShareStopGeneration = 0;
-    this.#screenShareStopDisableCamera = false;
     this.#endedInputKinds.clear();
   }
 
@@ -2873,10 +2524,7 @@ export class RoomSession {
 
     this.#detachLocalTrackEndedListener(track);
     this.#endedInputKinds.add(track.kind === 'audio' ? 'audio' : 'video');
-    const retainedCameraIndex = this.#cameraVideoTracks.indexOf(track);
-    if (retainedCameraIndex >= 0) {
-      this.#cameraVideoTracks.splice(retainedCameraIndex, 1);
-    }
+    this.#screenShare.removeRetainedCameraTrack(track);
     stream.removeTrack(track);
     this.#syncLocalParticipantMedia();
     this.#broadcastMediaState();
@@ -2896,13 +2544,6 @@ export class RoomSession {
     for (const track of [...this.#localTrackEndedListeners.keys()]) {
       this.#detachLocalTrackEndedListener(track);
     }
-  }
-
-  #detachScreenTrackEndedListener(): void {
-    if (this.#screenTrack !== null && this.#screenTrackEndedListener !== null) {
-      this.#screenTrack.removeEventListener('ended', this.#screenTrackEndedListener);
-    }
-    this.#screenTrackEndedListener = null;
   }
 
   #handleServerError(code: SignalingErrorCode, requestId: string | undefined): void {
@@ -3018,7 +2659,7 @@ export class RoomSession {
   #getLocalMediaSnapshot(): LocalMediaSnapshot {
     const audioTracks = this.#liveLocalTracks('audio');
     const videoTracks = this.#liveLocalTracks('video');
-    const screenSharing = this.#screenTrack !== null && this.#screenTrack.readyState === 'live';
+    const screenSharing = this.#screenShare.isSharing();
     return {
       audioAvailable: audioTracks.length > 0,
       audioEnabled: audioTracks.some((track) => track.enabled),
@@ -3043,8 +2684,8 @@ export class RoomSession {
       selfId: this.#selfId,
       selfRole: this.#selfRole,
       canModerateMedia: this.#canModerateMedia,
-      screenShareAvailable: this.#getMediaDevices()?.getDisplayMedia !== undefined,
-      screenSharing: this.#screenTrack !== null && this.#screenTrack.readyState === 'live',
+      screenShareAvailable: this.#screenShare.isAvailable(),
+      screenSharing: this.#screenShare.isSharing(),
       videoQualityMode: this.#videoQualityMode,
       participants: [...this.#participants.values()].map((participant) => ({
         ...participant,

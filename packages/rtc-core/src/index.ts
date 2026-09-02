@@ -17,6 +17,8 @@ export {
   type ChatSendErrorCode,
 } from './room-chat.js';
 
+export type { ScreenShareStartResult } from './screen-share-lifecycle.js';
+
 export {
   RoomSession,
   type LocalMediaSnapshot,
@@ -32,7 +34,6 @@ export {
   type RoomSessionRecoveryOptions,
   type RoomSessionSnapshot,
   type RoomSessionStatus,
-  type ScreenShareStartResult,
   type VideoQualityMode,
   type VideoSource,
 } from './room-session.js';
