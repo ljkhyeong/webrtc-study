@@ -146,7 +146,7 @@ describe('RoomView connection state', () => {
     expect(markup).toContain('role="status"');
   });
 
-  it('renders every typed system notice with its own severity', () => {
+  it('시스템 안내마다 오류·경고에 맞는 알림 역할을 적용한다', () => {
     const markup = renderRoom({
       status: 'active',
       systemNotices: [
@@ -165,10 +165,9 @@ describe('RoomView connection state', () => {
     expect(markup).toContain('작업 오류');
     expect(markup).toContain('참여권 갱신 경고');
     expect(markup).toContain('TURN 갱신 경고');
-    expect(markup.match(/room-notice--error/g)).toHaveLength(2);
-    expect(markup.match(/room-notice--warning/g)).toHaveLength(2);
-    expect(markup.match(/role="alert"/g)).toHaveLength(2);
-    expect(markup.match(/role="status"/g)).toHaveLength(2);
+    const document = new DOMParser().parseFromString(markup, 'text/html');
+    expect(document.querySelectorAll('.room-notice--error[role="alert"]')).toHaveLength(2);
+    expect(document.querySelectorAll('.room-notice--warning[role="status"]')).toHaveLength(2);
   });
 
   it('shows pending, partial, and failed local delivery states instead of false success', () => {

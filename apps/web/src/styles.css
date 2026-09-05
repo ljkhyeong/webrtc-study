@@ -2296,6 +2296,27 @@ textarea:focus-visible {
   color: #65767b;
 }
 
+.chat-composer__help {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  grid-column: 1 / -1;
+  color: #a5b5ba;
+  font-size: 0.68rem;
+}
+
+.chat-composer__notice {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #ffb6a9;
+  font-size: 0.75rem;
+}
+
+.chat-composer__notice:empty {
+  display: none;
+}
+
 .chat-composer button {
   display: grid;
   width: 44px;

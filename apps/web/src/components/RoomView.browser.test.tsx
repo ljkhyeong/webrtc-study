@@ -98,6 +98,70 @@ describe('RoomView 브라우저 동작', () => {
     expect(props.onLeave).toHaveBeenCalledOnce();
   });
 
+  it.each(['채팅 초안', '화면 공유'] as const)(
+    '%s이 있을 때 재입장을 확인하고 취소는 현재 방을 유지하며 승인은 한 번만 실행한다',
+    (reason) => {
+      const props = roomViewProps();
+      act(() =>
+        root.render(
+          <RoomView
+            {...props}
+            status={reason === '채팅 초안' ? 'error' : 'active'}
+            errorMessage={reason === '채팅 초안' ? '연결이 종료되었습니다.' : undefined}
+            peerRecoveryMessage={reason === '화면 공유' ? '참가자 연결 실패' : undefined}
+            screenSharing={reason === '화면 공유'}
+          />,
+        ),
+      );
+      const textarea = container.querySelector('textarea')!;
+      const reconnect = container.querySelector<HTMLButtonElement>(
+        '.connecting-layer__actions button',
+      )!;
+      act(() => {
+        if (reason === '채팅 초안') {
+          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+            textarea,
+            '아직 작성 중인 질문',
+          );
+          textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        reconnect.click();
+      });
+      expect(props.onReconnect).not.toHaveBeenCalled();
+      expect(container.querySelector('dialog')?.textContent).toContain('방에 다시 입장할까요?');
+      act(() =>
+        container.querySelector('dialog')!.dispatchEvent(new Event('cancel', { cancelable: true })),
+      );
+      expect(container.querySelector('dialog')).toBeNull();
+      expect(container.querySelector('textarea')).toBe(textarea);
+      expect(textarea.value).toBe(reason === '채팅 초안' ? '아직 작성 중인 질문' : '');
+      expect(props.onReconnect).not.toHaveBeenCalled();
+      act(() => reconnect.click());
+      const confirm = container.querySelector<HTMLButtonElement>('dialog button:last-child')!;
+      act(() => {
+        confirm.click();
+        confirm.click();
+        reconnect.click();
+      });
+      expect(props.onReconnect).toHaveBeenCalledOnce();
+      expect(props.onLeave).not.toHaveBeenCalled();
+    },
+  );
+
+  it('초안·공유가 없으면 재입장을 바로 실행하고 반복 클릭은 합친다', () => {
+    const props = roomViewProps();
+    act(() => root.render(<RoomView {...props} peerRecoveryMessage="참가자 연결 실패" />));
+    const reconnect = container.querySelector<HTMLButtonElement>(
+      '.connecting-layer__actions button',
+    )!;
+    act(() => {
+      reconnect.click();
+      reconnect.click();
+    });
+    expect(container.querySelector('dialog')).toBeNull();
+    expect(props.onReconnect).toHaveBeenCalledOnce();
+  });
+
   it('뒤로가기 확인 결과를 이동 처리에 넘기고 확인 중 방이 닫히면 이동도 취소한다', async () => {
     const props = roomViewProps();
     let guard: LeaveGuard | null = null;

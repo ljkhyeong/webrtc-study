@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
 
 export function LeaveRoomDialog({
+  action,
   hasDraft,
   screenSharing,
   onCancel,
   onConfirm,
 }: {
+  action: 'leave' | 'reconnect';
   hasDraft: boolean;
   screenSharing: boolean;
   onCancel: () => void;
@@ -27,7 +29,12 @@ export function LeaveRoomDialog({
         onCancel();
       }}
     >
-      <h2 id="leave-room-title">스터디룸에서 나갈까요?</h2>
+      <h2 id="leave-room-title">
+        {action === 'reconnect' ? '방에 다시 입장할까요?' : '스터디룸에서 나갈까요?'}
+      </h2>
+      {action === 'reconnect' ? (
+        <p>현재 방 연결을 종료하고 입장 준비 화면으로 돌아갑니다.</p>
+      ) : null}
       {hasDraft ? (
         <p>아직 보내지 않은 메시지가 있습니다. 나가면 작성 중인 내용이 사라집니다.</p>
       ) : null}
@@ -37,10 +44,10 @@ export function LeaveRoomDialog({
       <p>이 방의 대화 기록은 나간 뒤 다시 볼 수 없습니다.</p>
       <div className="leave-room-dialog__actions">
         <button type="button" autoFocus onClick={onCancel}>
-          계속 참여하기
+          {action === 'reconnect' ? '취소' : '계속 참여하기'}
         </button>
         <button type="button" onClick={onConfirm}>
-          방에서 나가기
+          {action === 'reconnect' ? '방 다시 입장' : '방에서 나가기'}
         </button>
       </div>
     </dialog>

@@ -3,6 +3,8 @@ import type { ChatDeliveryState, ChatMessage } from '@round/rtc-core';
 import { CloseIcon, MessageIcon, SendIcon } from './Icons';
 import { ChatMessageContent } from './ChatMessageContent';
 
+const MAX_COMPOSER_LENGTH = 1000;
+
 interface ChatMessageIdentity {
   readonly id: string;
   readonly senderId: string;
@@ -126,6 +128,34 @@ export function RoomChatPanel({
   onDraftChange,
 }: RoomChatPanelProps) {
   const [message, setMessage] = useState('');
+  const [pasteNotice, setPasteNotice] = useState('');
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const input = composerRef.current;
+    if (!open || !input) return;
+    const resize = () => {
+      input.style.height = 'auto';
+      input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
+    };
+    resize();
+    if (typeof ResizeObserver === 'undefined') return;
+    let previousWidth = input.clientWidth;
+    let resizeFrame: number | null = null;
+    const observer = new ResizeObserver(() => {
+      if (input.clientWidth === previousWidth) return;
+      previousWidth = input.clientWidth;
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null;
+        resize();
+      });
+    });
+    observer.observe(input);
+    return () => {
+      observer.disconnect();
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+    };
+  }, [message, open]);
   const hasDraft = Boolean(message.trim());
   useLayoutEffect(() => {
     onDraftChange?.(hasDraft);
@@ -248,6 +278,7 @@ export function RoomChatPanel({
     if (!message.trim()) return;
     if (onSendMessage(message)) {
       setMessage('');
+      setPasteNotice('');
       showLatestMessages();
     }
   };
@@ -388,12 +419,29 @@ export function RoomChatPanel({
             메시지
           </label>
           <textarea
+            ref={composerRef}
             id="chat-message"
             rows={1}
-            maxLength={1000}
+            maxLength={MAX_COMPOSER_LENGTH}
+            aria-describedby="chat-composer-help chat-composer-count chat-composer-notice"
             placeholder="메시지 입력"
             value={message}
-            onChange={(event) => setMessage(event.target.value)}
+            onChange={(event) => {
+              setMessage(event.target.value);
+              setPasteNotice('');
+            }}
+            onPaste={(event) => {
+              const input = event.currentTarget;
+              const pasted = event.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n');
+              const nextLength =
+                input.value.length - (input.selectionEnd - input.selectionStart) + pasted.length;
+              if (nextLength > MAX_COMPOSER_LENGTH) {
+                event.preventDefault();
+                setPasteNotice(
+                  '1,000자를 넘어 붙여넣지 않았습니다. 내용을 줄여 다시 붙여넣으세요.',
+                );
+              } else setPasteNotice('');
+            }}
             onCompositionStart={() => {
               chatCompositionActive.current = true;
             }}
@@ -419,6 +467,19 @@ export function RoomChatPanel({
           <button type="submit" aria-label="메시지 보내기" disabled={!message.trim()}>
             <SendIcon />
           </button>
+          <div className="chat-composer__help">
+            <span id="chat-composer-help">Enter 전송 · Shift+Enter 줄바꿈</span>
+            <span
+              id="chat-composer-count"
+              title="최대 1,000자. 이모지 등 일부 문자는 2자 이상으로 계산됩니다."
+            >
+              {message.length.toLocaleString('ko-KR')} / 1,000자
+            </span>
+          </div>
+          <p id="chat-composer-notice" className="chat-composer__notice" role="status">
+            {pasteNotice ||
+              (message.length >= MAX_COMPOSER_LENGTH ? '입력 한도 1,000자에 도달했습니다.' : '')}
+          </p>
         </form>
       </aside>
 

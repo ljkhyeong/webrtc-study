@@ -138,24 +138,24 @@ export function RoomView({
 }: RoomViewProps) {
   const [chatOpen, setChatOpen] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
-  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<'leave' | 'reconnect' | null>(null);
   const leaveConfirmed = useRef(false);
   const navigationDecision = useRef<((accepted: boolean) => void) | null>(null);
   const needsLeaveConfirmation = hasDraft || screenSharing;
   useLayoutEffect(() => {
     registerLeaveGuard?.(() => {
       if (!needsLeaveConfirmation || leaveConfirmed.current) return true;
-      if (navigationDecision.current || confirmLeave) return false;
+      if (navigationDecision.current || confirmAction) return false;
       return new Promise<boolean>((resolve) => {
         navigationDecision.current = resolve;
-        setConfirmLeave(true);
+        setConfirmAction('leave');
       });
     });
     return () => registerLeaveGuard?.(null);
-  }, [registerLeaveGuard, needsLeaveConfirmation, confirmLeave]);
+  }, [registerLeaveGuard, needsLeaveConfirmation, confirmAction]);
   useEffect(() => () => navigationDecision.current?.(false), []);
   const cancelLeave = () => {
-    setConfirmLeave(false);
+    setConfirmAction(null);
     navigationDecision.current?.(false);
     navigationDecision.current = null;
   };
@@ -169,18 +169,25 @@ export function RoomView({
     window.addEventListener('beforeunload', beforeUnload);
     return () => window.removeEventListener('beforeunload', beforeUnload);
   }, [needsLeaveConfirmation]);
-  const requestLeave = () => {
-    if (needsLeaveConfirmation) setConfirmLeave(true);
-    else onLeave();
+  const requestExit = (action: 'leave' | 'reconnect') => {
+    if (leaveConfirmed.current || confirmAction || navigationDecision.current) return;
+    if (needsLeaveConfirmation) setConfirmAction(action);
+    else {
+      leaveConfirmed.current = true;
+      if (action === 'reconnect') onReconnect();
+      else onLeave();
+    }
   };
   const leaveAfterConfirmation = () => {
+    if (leaveConfirmed.current || !confirmAction) return;
     leaveConfirmed.current = true;
     const navigate = navigationDecision.current;
     navigationDecision.current = null;
+    setConfirmAction(null);
     if (navigate) {
-      setConfirmLeave(false);
       navigate(true);
-    } else onLeave();
+    } else if (confirmAction === 'reconnect') onReconnect();
+    else onLeave();
   };
   const [pinnedPeerId, setPinnedPeerId] = useState<string | null>(null);
   const stageRef = useRef<HTMLElement>(null);
@@ -430,10 +437,10 @@ export function RoomView({
               </p>
               {terminalConnectionError ? (
                 <div className="connecting-layer__actions">
-                  <button type="button" onClick={onReconnect}>
+                  <button type="button" onClick={() => requestExit('reconnect')}>
                     다시 연결
                   </button>
-                  <button type="button" onClick={requestLeave}>
+                  <button type="button" onClick={() => requestExit('leave')}>
                     나가기
                   </button>
                 </div>
@@ -451,10 +458,10 @@ export function RoomView({
                 <div className="room-notice room-notice--warning" role="alert">
                   <span>{peerRecoveryMessage}</span>
                   <div className="connecting-layer__actions">
-                    <button type="button" onClick={onReconnect}>
+                    <button type="button" onClick={() => requestExit('reconnect')}>
                       방 다시 입장
                     </button>
-                    <button type="button" onClick={requestLeave}>
+                    <button type="button" onClick={() => requestExit('leave')}>
                       나가기
                     </button>
                   </div>
@@ -508,8 +515,9 @@ export function RoomView({
           onDraftChange={setHasDraft}
         />
       </main>
-      {confirmLeave ? (
+      {confirmAction ? (
         <LeaveRoomDialog
+          action={confirmAction}
           hasDraft={hasDraft}
           screenSharing={screenSharing}
           onCancel={cancelLeave}
@@ -606,7 +614,7 @@ export function RoomView({
         <button
           className="control-button control-button--leave"
           type="button"
-          onClick={requestLeave}
+          onClick={() => requestExit('leave')}
         >
           <PhoneOffIcon />
           <span>나가기</span>
