@@ -21,6 +21,39 @@ describe('손들기', () => {
     await harness.session.leave();
   });
 
+  it('서버 순서를 적용하고 이전 개정과 지원 참가자의 늦은 직접 메시지로 덮어쓰지 않는다', async () => {
+    await joinSession(harness, [
+      { peerId: 'peer-a', displayName: '가온' },
+      { peerId: 'peer-b', displayName: '나래' },
+    ]);
+    expect(harness.socket.messagesOfType('room.hand.sync')).toHaveLength(1);
+    const receive = (revision: number, peerIds: string[]) =>
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'room.hand.state',
+        roomId: ROOM_ID,
+        payload: { revision, peerIds, supportedPeerIds: ['self', 'peer-a', 'peer-b'] },
+      });
+    receive(3, ['peer-b', 'peer-a']);
+    await flushMicrotasks();
+    receive(2, ['peer-a']);
+    await flushMicrotasks();
+    harness.peerConnections[0]!.channels[0]!.receive({ type: 'participant.hand', raised: false });
+    expect(harness.session.getSnapshot().handQueue?.peerIds).toEqual(['peer-b', 'peer-a']);
+    expect(
+      harness.session.getSnapshot().participants.find((p) => p.peerId === 'peer-a')?.handRaised,
+    ).toBe(true);
+    harness.session.setHandRaised(true);
+    expect(harness.socket.messagesOfType('room.hand.update').at(-1)?.payload).toEqual({
+      raised: true,
+    });
+    receive(4, ['peer-b', 'peer-a', 'self']);
+    await flushMicrotasks();
+    expect(harness.session.getSnapshot().handQueue?.peerIds).toHaveLength(3);
+    await harness.session.leave();
+    expect(harness.session.getSnapshot().handQueue).toBeNull();
+  });
+
   it('미디어 없이 손을 들고 늦게 연결된 참가자에게 마지막 상태만 보낸다', async () => {
     harness = createHarness({ preparedMediaStream: null });
     expect(harness.session.setHandRaised(true)).toBe(false);

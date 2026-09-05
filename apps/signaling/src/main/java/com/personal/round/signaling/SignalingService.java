@@ -77,6 +77,7 @@ public class SignalingService implements SmartLifecycle {
 	private final Map<String, Peer> connectedPeers = new HashMap<>();
 	private final Map<String, LinkedHashMap<String, Peer>> rooms = new HashMap<>();
 	private final Map<String, RoomStudyState> studyStates = new HashMap<>();
+	private final Map<String, RoomHandQueue> handQueues = new HashMap<>();
 	// 대체된 피어는 방 상태에서 즉시 제거하지만 close가 반환될 때까지 입장 예약은 유지한다.
 	private final Map<String, Peer> pendingTerminalCleanup = new HashMap<>();
 	private final SignalingOutboundDispatcher<Peer> outboundDispatcher;
@@ -258,6 +259,7 @@ public class SignalingService implements SmartLifecycle {
 					case ClientMessage.Relay relay -> relay(peer, relay, workPlan);
 					case ClientMessage.Reconnect reconnect -> reconnect(peer, reconnect, workPlan);
 					case ClientMessage.Study study -> study(peer, study, workPlan);
+					case ClientMessage.Hand hand -> hand(peer, hand, workPlan);
 					case ClientMessage.Moderation moderation -> moderate(peer, moderation, workPlan);
 				}
 			}
@@ -708,6 +710,34 @@ public class SignalingService implements SmartLifecycle {
 		}
 	}
 
+	private void hand(Peer peer, ClientMessage.Hand message, WorkPlan workPlan) {
+		if (peer.roomId == null) {
+			sendError(peer, SignalingErrorCode.NOT_IN_ROOM, "방에 먼저 입장해 주세요.", message.roomId(), message.requestId(), workPlan);
+			return;
+		}
+		if (!peer.roomId.equals(message.roomId())) {
+			sendError(peer, SignalingErrorCode.ROOM_MISMATCH, "입장한 방과 요청한 방이 다릅니다.", peer.roomId, message.requestId(), workPlan);
+			return;
+		}
+		RoomHandQueue queue = handQueues.computeIfAbsent(peer.roomId, ignored -> new RoomHandQueue());
+		if (!queue.update(peer.peerId, message.raised())) {
+			enqueue(peer, serverMessageEncoder.handState(peer.roomId, message.requestId(), queue.snapshot()), workPlan);
+			return;
+		}
+		ArrayDeque<PendingOutbound> pending = new ArrayDeque<>();
+		appendHandState(peer.roomId, rooms.get(peer.roomId), queue, message.requestId(), pending);
+		enqueueAllLocked(pending, workPlan);
+	}
+
+	private void appendHandState(String roomId, Map<String, Peer> room, RoomHandQueue queue,
+			String requestId, ArrayDeque<PendingOutbound> pending) {
+		TextMessage state = serverMessageEncoder.handState(roomId, requestId, queue.snapshot());
+		for (Peer target : room.values()) {
+			// 새 메시지를 요청한 웹에만 전송해 구버전 클라이언트의 통화를 유지한다.
+			if (queue.subscribes(target.peerId)) pending.addLast(new PendingOutbound(target, state));
+		}
+	}
+
 	private void study(Peer peer, ClientMessage.Study message, WorkPlan workPlan) {
 		if (peer.roomId == null) {
 			sendError(peer, SignalingErrorCode.NOT_IN_ROOM, "방에 먼저 입장해 주세요.", message.roomId(), message.requestId(), workPlan);
@@ -949,6 +979,7 @@ public class SignalingService implements SmartLifecycle {
 		if (room.isEmpty()) {
 			rooms.remove(roomId, room);
 			studyStates.remove(roomId);
+			handQueues.remove(roomId);
 			refreshMetricsLocked();
 			return;
 		}
@@ -958,12 +989,11 @@ public class SignalingService implements SmartLifecycle {
 		}
 
 		TextMessage left = serverMessageEncoder.peerLeft(roomId, peer.peerId);
-		if (pendingOutbound == null) {
-			broadcast(room, left, null, workPlan);
-		}
-		else {
-			appendBroadcast(room, left, null, pendingOutbound);
-		}
+		ArrayDeque<PendingOutbound> pending = pendingOutbound == null ? new ArrayDeque<>() : pendingOutbound;
+		appendBroadcast(room, left, null, pending);
+		RoomHandQueue queue = handQueues.get(roomId);
+		if (queue != null && queue.remove(peer.peerId)) appendHandState(roomId, room, queue, null, pending);
+		if (pendingOutbound == null) enqueueAllLocked(pending, workPlan);
 	}
 
 	private void broadcast(
@@ -1182,6 +1212,7 @@ public class SignalingService implements SmartLifecycle {
 				inboundLimiter.clear();
 				rooms.clear();
 				studyStates.clear();
+				handQueues.clear();
 				refreshMetricsLocked();
 			}
 			closeSessionsConcurrently(sessions, closeDeadlineNanos);

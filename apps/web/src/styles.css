@@ -2959,6 +2959,66 @@ textarea:focus-visible {
 .room-study-region {
   min-width: 0;
 }
+
+.room-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(210px, 1fr);
+  min-width: 0;
+  background: #142229;
+}
+
+.room-tools > .room-study-region {
+  grid-column: auto;
+}
+
+.room-hand-queue {
+  min-width: 0;
+  border-bottom: 1px solid rgb(255 255 255 / 12%);
+  color: #e4ecec;
+  font-size: 0.76rem;
+}
+
+.room-hand-queue summary {
+  padding: 14px 16px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.room-hand-queue__body {
+  max-height: 190px;
+  overflow: auto;
+  padding: 0 16px 14px;
+  line-height: 1.5;
+}
+
+.room-hand-queue ol {
+  margin: 0;
+  padding-left: 24px;
+}
+.room-hand-queue li {
+  padding: 5px 0;
+  overflow-wrap: anywhere;
+}
+.room-hand-queue small {
+  color: #b1c3c8;
+}
+.leave-room-dialog__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.leave-room-dialog__actions button:last-child {
+  color: #913424;
+}
+
+@media (max-width: 760px) {
+  .room-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .room-hand-queue summary {
+    padding: 10px 12px;
+  }
+}
 .room-study {
   position: relative;
   z-index: 15;

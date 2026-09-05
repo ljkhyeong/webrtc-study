@@ -80,6 +80,17 @@ public final class ServerMessageEncoder {
 		return textMessage(message);
 	}
 
+	public TextMessage handState(String roomId, String requestId, HandQueueState state) {
+		ObjectNode message = base("room.hand.state", roomId);
+		if (requestId != null) message.put("requestId", requestId);
+		ObjectNode payload = message.putObject("payload").put("revision", state.revision());
+		ArrayNode queue = payload.putArray("peerIds");
+		state.peerIds().forEach(queue::add);
+		ArrayNode supported = payload.putArray("supportedPeerIds");
+		state.supportedPeerIds().forEach(supported::add);
+		return textMessage(message);
+	}
+
 	public TextMessage peerReconnect(String roomId, String peerId, String connectionId, boolean initiator) {
 		ObjectNode message = base("peer.reconnect", roomId);
 		message.putObject("payload")

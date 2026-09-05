@@ -3,13 +3,18 @@ package com.personal.round.protocol;
 import tools.jackson.databind.node.ObjectNode;
 
 public sealed interface ClientMessage
-		permits ClientMessage.Join, ClientMessage.Leave, ClientMessage.Relay, ClientMessage.Moderation, ClientMessage.Reconnect, ClientMessage.Study {
+		permits ClientMessage.Join, ClientMessage.Leave, ClientMessage.Relay, ClientMessage.Moderation, ClientMessage.Reconnect, ClientMessage.Study, ClientMessage.Hand {
 
 	String type();
 
 	String roomId();
 
 	String requestId();
+
+	record Hand(String roomId, String requestId, Boolean raised) implements ClientMessage {
+		@Override
+		public String type() { return raised == null ? "room.hand.sync" : "room.hand.update"; }
+	}
 
 	record Join(String roomId, String requestId, String displayName, String hostCapability)
 			implements ClientMessage {

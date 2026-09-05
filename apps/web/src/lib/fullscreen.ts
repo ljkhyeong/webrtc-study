@@ -11,6 +11,16 @@ interface WebkitFullscreenDocument extends Document {
   webkitExitFullscreen?: () => void | Promise<void>;
 }
 
+export function isVideoFullscreen(video: HTMLVideoElement, container?: HTMLElement): boolean {
+  const owner =
+    document.fullscreenElement ?? (document as WebkitFullscreenDocument).webkitFullscreenElement;
+  return (
+    owner === video ||
+    (container !== undefined && owner === container) ||
+    (video as WebkitFullscreenVideoElement).webkitDisplayingFullscreen === true
+  );
+}
+
 export async function enterVideoFullscreen(
   video: HTMLVideoElement,
   container?: HTMLElement,

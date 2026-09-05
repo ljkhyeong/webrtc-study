@@ -6,6 +6,7 @@ import {
   type ChatDataMessage,
   type StudyCommand,
   type StudyState,
+  type HandQueueState,
   type ModeratedMediaKind,
   type Participant,
   type ParticipantHandDataMessage,
@@ -132,6 +133,7 @@ export interface RoomStudySnapshot extends StudyState {
 }
 
 export interface RoomSessionSnapshot {
+  readonly handQueue?: HandQueueState | null;
   readonly study?: RoomStudySnapshot | null;
   readonly studyPending?: boolean;
   readonly studyNotice?: string | null;
@@ -413,6 +415,7 @@ export class RoomSession {
   #localStream: MediaStream | null = null;
   #videoQualityMode: VideoQualityMode = 'standard';
   #handRaised = false;
+  #handQueue: HandQueueState | null = null;
   #status: RoomSessionStatus = 'idle';
   #selfId: string | null = null;
   #selfRole: ParticipantRole | null = null;
@@ -885,6 +888,7 @@ export class RoomSession {
   setHandRaised(raised: boolean): boolean {
     if (this.#disposed || this.#status !== 'active' || this.#selfId === null) return false;
     if (this.#handRaised === raised) return true;
+    if (!this.#sendHandRequest(raised)) return false;
     this.#handRaised = raised;
     const participant = this.#participants.get(this.#selfId);
     if (participant !== undefined) participant.handRaised = raised;
@@ -894,6 +898,25 @@ export class RoomSession {
       peer.data.publishHandState(message);
     }
     return true;
+  }
+
+  #sendHandRequest(raised?: boolean): boolean {
+    try {
+      this.#signalingTransport.send(
+        raised === undefined
+          ? { v: PROTOCOL_VERSION, type: 'room.hand.sync', roomId: this.#options.roomId }
+          : {
+              v: PROTOCOL_VERSION,
+              type: 'room.hand.update',
+              roomId: this.#options.roomId,
+              requestId: `hand-update-${defaultCreateId()}`,
+              payload: { raised },
+            },
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   setScreenShareQuality(quality: ScreenShareQuality): boolean {
@@ -1385,6 +1408,31 @@ export class RoomSession {
   ): Promise<void> {
     try {
       switch (message.type) {
+        case 'room.hand.state': {
+          if (
+            this.#status !== 'active' ||
+            (this.#handQueue && message.payload.revision < this.#handQueue.revision)
+          )
+            return;
+          this.#handQueue = {
+            ...message.payload,
+            peerIds: [...message.payload.peerIds],
+            supportedPeerIds: [...message.payload.supportedPeerIds],
+          };
+          const raised = new Set(message.payload.peerIds);
+          for (const id of message.payload.supportedPeerIds) {
+            const participant = this.#participants.get(id);
+            if (participant) participant.handRaised = raised.has(id);
+          }
+          const wasRaised = this.#handRaised;
+          this.#handRaised = this.#selfId !== null && raised.has(this.#selfId);
+          if (wasRaised !== this.#handRaised) {
+            for (const peer of this.#peers.values())
+              peer.data.publishHandState(this.#currentHandDataMessage());
+          }
+          this.#emit();
+          return;
+        }
         case 'room.joined':
           await this.#handleRoomJoined(
             message.payload.peerId,
@@ -1566,6 +1614,7 @@ export class RoomSession {
       this.#warningPeerId = null;
     }
     this.#setStatus('active');
+    this.#sendHandRequest(this.#handRaised ? true : undefined);
     this.#signalingRecovery.resolveJoin();
 
     await Promise.all(offerPromises);
@@ -1657,6 +1706,7 @@ export class RoomSession {
         this.#emit();
       },
       onHandState: (message) => {
+        if (this.#handQueue?.supportedPeerIds.includes(peerId)) return;
         const participant = this.#participants.get(peerId);
         if (participant === undefined || participant.handRaised === message.raised) return;
         participant.handRaised = message.raised;
@@ -2304,6 +2354,7 @@ export class RoomSession {
   }
 
   #cleanupPeerResources(): void {
+    this.#handQueue = null;
     this.#clearStudyCommand();
     this.#study = null;
     this.#studyNotice = null;
@@ -2335,6 +2386,7 @@ export class RoomSession {
   }
 
   #handleServerError(code: SignalingErrorCode, requestId: string | undefined): void {
+    if (requestId?.startsWith('hand-update-') && this.#status === 'active') this.#sendHandRequest();
     if (requestId === this.#studyCommandId) {
       this.#clearStudyCommand();
       this.#studyNotice = '타이머와 주제 변경 요청을 처리하지 못했습니다.';
@@ -2464,6 +2516,14 @@ export class RoomSession {
     return {
       roomId: this.#options.roomId,
       study: this.#study === null ? null : { ...this.#study },
+      handQueue:
+        this.#handQueue === null
+          ? null
+          : {
+              ...this.#handQueue,
+              peerIds: [...this.#handQueue.peerIds],
+              supportedPeerIds: [...this.#handQueue.supportedPeerIds],
+            },
       studyPending: this.#studyCommandId !== null,
       studyNotice: this.#studyNotice,
       status: this.#status,

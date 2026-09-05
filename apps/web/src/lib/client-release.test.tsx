@@ -28,7 +28,10 @@ describe('입장 전 호환성과 새 배포 확인', () => {
       .fn()
       .mockResolvedValueOnce(
         new Response(
-          JSON.stringify({ protocolVersion: 3, capabilities: ['peer.reconnect', 'room.study'] }),
+          JSON.stringify({
+            protocolVersion: 3,
+            capabilities: ['peer.reconnect', 'room.study', 'room.hand'],
+          }),
         ),
       )
       .mockResolvedValueOnce(

@@ -1,4 +1,6 @@
 import { RoomStudyPanel } from './RoomStudyPanel';
+import { RoomHandQueue } from './RoomHandQueue';
+import { LeaveRoomDialog } from './LeaveRoomDialog';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   ChatMessage,
@@ -6,6 +8,7 @@ import type {
   RoomSessionStatus,
   RoomStudySnapshot,
   StudyCommand,
+  HandQueueState,
 } from '@round/rtc-core';
 import {
   CameraIcon,
@@ -46,6 +49,7 @@ type InviteCopyState =
   | { readonly status: 'error'; readonly inviteUrl: string };
 
 interface RoomViewProps {
+  handQueue?: HandQueueState | null;
   study?: RoomStudySnapshot | null | undefined;
   studyPending?: boolean | undefined;
   studyNotice?: string | null | undefined;
@@ -88,6 +92,7 @@ interface RoomViewProps {
 }
 
 export function RoomView({
+  handQueue = null,
   study = null,
   studyPending = false,
   studyNotice = null,
@@ -129,6 +134,28 @@ export function RoomView({
   onLeave,
 }: RoomViewProps) {
   const [chatOpen, setChatOpen] = useState(false);
+  const [hasDraft, setHasDraft] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const leaveConfirmed = useRef(false);
+  const needsLeaveConfirmation = hasDraft || screenSharing;
+  useEffect(() => {
+    if (!needsLeaveConfirmation) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (leaveConfirmed.current) return;
+      event.preventDefault();
+      event.returnValue = 'true';
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
+  }, [needsLeaveConfirmation]);
+  const requestLeave = () => {
+    if (needsLeaveConfirmation) setConfirmLeave(true);
+    else onLeave();
+  };
+  const leaveAfterConfirmation = () => {
+    leaveConfirmed.current = true;
+    onLeave();
+  };
   const [pinnedPeerId, setPinnedPeerId] = useState<string | null>(null);
   const stageRef = useRef<HTMLElement>(null);
   const activePinnedPeerId =
@@ -231,7 +258,7 @@ export function RoomView({
       }`;
   return (
     <div
-      className={`room-shell${onStudyCommand && onSyncStudy ? ' room-shell--study' : ''}${chatOpen ? ' room-shell--chat-open' : ''}`}
+      className={`room-shell${(onStudyCommand && onSyncStudy) || handQueue ? ' room-shell--study' : ''}${chatOpen ? ' room-shell--chat-open' : ''}`}
     >
       <header className="room-header">
         <div className="room-header__brand">
@@ -296,19 +323,24 @@ export function RoomView({
         </div>
       ) : null}
 
-      {onStudyCommand && onSyncStudy ? (
-        <RoomStudyPanel
-          state={study}
-          canControl={canModerateMedia}
-          hostPresent={
-            canModerateMedia || participants.some((participant) => participant.role === 'host')
-          }
-          active={status === 'active'}
-          pending={studyPending}
-          notice={studyNotice}
-          onCommand={onStudyCommand}
-          onSync={onSyncStudy}
-        />
+      {(onStudyCommand && onSyncStudy) || handQueue ? (
+        <div className="room-tools">
+          {onStudyCommand && onSyncStudy ? (
+            <RoomStudyPanel
+              state={study}
+              canControl={canModerateMedia}
+              hostPresent={
+                canModerateMedia || participants.some((participant) => participant.role === 'host')
+              }
+              active={status === 'active'}
+              pending={studyPending}
+              notice={studyNotice}
+              onCommand={onStudyCommand}
+              onSync={onSyncStudy}
+            />
+          ) : null}
+          <RoomHandQueue state={handQueue} participants={participants} active={isActive} />
+        </div>
       ) : null}
       <main className="room-workspace">
         <p className="sr-only" aria-live="polite" aria-atomic="true">
@@ -327,6 +359,11 @@ export function RoomView({
               onRetryPeer={status === 'active' ? onRetryPeer : undefined}
               key={participant.peerId}
               participant={participant}
+              handPosition={
+                handQueue?.peerIds.includes(participant.peerId)
+                  ? handQueue.peerIds.indexOf(participant.peerId) + 1
+                  : undefined
+              }
               audioOutput={audioOutput}
               onSelectDevices={onSelectDevices}
               pinned={participant.peerId === activePinnedPeerId}
@@ -370,7 +407,7 @@ export function RoomView({
                   <button type="button" onClick={onReconnect}>
                     다시 연결
                   </button>
-                  <button type="button" onClick={onLeave}>
+                  <button type="button" onClick={requestLeave}>
                     나가기
                   </button>
                 </div>
@@ -391,7 +428,7 @@ export function RoomView({
                     <button type="button" onClick={onReconnect}>
                       방 다시 입장
                     </button>
-                    <button type="button" onClick={onLeave}>
+                    <button type="button" onClick={requestLeave}>
                       나가기
                     </button>
                   </div>
@@ -442,8 +479,17 @@ export function RoomView({
           onSendMessage={onSendMessage}
           onClose={closeChat}
           onNotificationChange={setChatNotifications}
+          onDraftChange={setHasDraft}
         />
       </main>
+      {confirmLeave ? (
+        <LeaveRoomDialog
+          hasDraft={hasDraft}
+          screenSharing={screenSharing}
+          onCancel={() => setConfirmLeave(false)}
+          onConfirm={leaveAfterConfirmation}
+        />
+      ) : null}
 
       <footer className="control-dock" aria-label="통화 제어">
         <button
@@ -531,7 +577,11 @@ export function RoomView({
           {chatNotificationCount > 0 ? <b>{Math.min(chatNotificationCount, 9)}</b> : null}
         </button>
         <span className="control-dock__divider" />
-        <button className="control-button control-button--leave" type="button" onClick={onLeave}>
+        <button
+          className="control-button control-button--leave"
+          type="button"
+          onClick={requestLeave}
+        >
           <PhoneOffIcon />
           <span>나가기</span>
         </button>

@@ -38,4 +38,4 @@ export {
   type VideoQualityMode,
   type VideoSource,
 } from './room-session.js';
-export type { StudyCommand, StudyMode } from '@round/protocol';
+export type { StudyCommand, StudyMode, HandQueueState } from '@round/protocol';

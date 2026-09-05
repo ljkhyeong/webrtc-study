@@ -20,6 +20,7 @@ interface RoomChatPanelProps {
   readonly onSendMessage: (text: string) => boolean;
   readonly onClose: () => void;
   readonly onNotificationChange: (summary: ChatNotificationSummary) => void;
+  readonly onDraftChange?: (hasDraft: boolean) => void;
 }
 
 interface ChatEnterState {
@@ -122,8 +123,13 @@ export function RoomChatPanel({
   onRetryMessage,
   onClose,
   onNotificationChange,
+  onDraftChange,
 }: RoomChatPanelProps) {
   const [message, setMessage] = useState('');
+  const hasDraft = Boolean(message.trim());
+  useEffect(() => {
+    onDraftChange?.(hasDraft);
+  }, [hasDraft, onDraftChange]);
   const [search, setSearch] = useState('');
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
   const query = search.trim().normalize('NFC').toLocaleLowerCase('ko-KR');

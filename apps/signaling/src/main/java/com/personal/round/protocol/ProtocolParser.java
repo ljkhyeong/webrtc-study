@@ -49,12 +49,27 @@ public class ProtocolParser {
 			case "room.leave" -> parseLeave(message);
 			case "peer.reconnect" -> parseReconnect(message);
 			case "room.study.sync", "room.study.update" -> parseStudy(message, type);
+			case "room.hand.sync", "room.hand.update" -> parseHand(message, type);
 			case "rtc.offer" -> parseDescriptionRelay(message, "offer");
 			case "rtc.answer" -> parseDescriptionRelay(message, "answer");
 			case "rtc.ice" -> parseIceRelay(message);
 			case "moderation.media.disable" -> parseModeration(message);
 			default -> throw fail("$.type", "must be a supported client message type");
 		};
+	}
+
+	private ClientMessage.Hand parseHand(ObjectNode message, String type) {
+		boolean sync = type.equals("room.hand.sync");
+		exactKeys(message, sync ? Set.of("v", "type", "roomId", "requestId")
+				: Set.of("v", "type", "roomId", "requestId", "payload"), "$");
+		String roomId = roomId(message.get("roomId"), "$.roomId");
+		String requestId = optionalNonBlankString(message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId");
+		if (sync) return new ClientMessage.Hand(roomId, requestId, null);
+		ObjectNode payload = object(message.get("payload"), "$.payload");
+		exactKeys(payload, Set.of("raised"), "$.payload");
+		JsonNode raised = payload.get("raised");
+		if (raised == null || !raised.isBoolean()) throw fail("$.payload.raised", "must be boolean");
+		return new ClientMessage.Hand(roomId, requestId, raised.asBoolean());
 	}
 
 	private ClientMessage.Study parseStudy(ObjectNode message, String type) {

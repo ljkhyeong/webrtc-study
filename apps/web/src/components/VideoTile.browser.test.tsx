@@ -79,6 +79,39 @@ describe('VideoTile browser behavior', () => {
     document.body.replaceChildren();
   });
 
+  it('전체 화면 닫기 버튼과 브라우저 자체 종료 뒤에 버튼 상태를 복원한다', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const fullscreen = installFullscreenDocument();
+    const root = createRoot(document.body);
+    try {
+      await act(async () =>
+        root.render(<VideoTile participant={remoteParticipant({} as MediaStream, 'screen')} />),
+      );
+      const tile = document.querySelector('article')!;
+      Object.defineProperty(tile, 'requestFullscreen', {
+        configurable: true,
+        value: async () => {
+          fullscreen.enter(tile);
+          document.dispatchEvent(new Event('fullscreenchange'));
+        },
+      });
+      const button = () => document.querySelector<HTMLButtonElement>('[aria-label*="전체 화면"]')!;
+      await act(async () => button().click());
+      expect(button().textContent).toContain('전체 화면 닫기');
+      await act(async () => button().click());
+      expect(document.fullscreenElement).toBeNull();
+      expect(button().textContent).not.toContain('닫기');
+      await act(async () => button().click());
+      await act(async () => {
+        await document.exitFullscreen();
+        document.dispatchEvent(new Event('fullscreenchange'));
+      });
+      expect(button().textContent).not.toContain('닫기');
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
   it('개인 음량과 음소거를 스트림·스피커 교체 뒤에도 유지하고 상대 마이크를 바꾸지 않는다', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
     const root = createRoot(document.body);

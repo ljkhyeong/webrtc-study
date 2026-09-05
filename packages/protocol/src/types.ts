@@ -108,12 +108,21 @@ interface PeerReconnectClientMessage extends ClientMessageBase {
 interface StudySyncClientMessage extends ClientMessageBase {
   type: 'room.study.sync';
 }
+interface HandSyncClientMessage extends ClientMessageBase {
+  type: 'room.hand.sync';
+}
+interface HandUpdateClientMessage extends ClientMessageBase {
+  type: 'room.hand.update';
+  payload: { raised: boolean };
+}
 interface StudyUpdateClientMessage extends ClientMessageBase {
   type: 'room.study.update';
   payload: StudyCommand & { expectedRevision: number };
 }
 
 export type ClientMessage =
+  | HandSyncClientMessage
+  | HandUpdateClientMessage
   | StudySyncClientMessage
   | StudyUpdateClientMessage
   | PeerReconnectClientMessage
@@ -214,8 +223,19 @@ interface StudyStateServerMessage extends ServerMessageBase {
   requestId?: string;
   payload: StudyState & { conflict: boolean };
 }
+export interface HandQueueState {
+  revision: number;
+  peerIds: string[];
+  supportedPeerIds: string[];
+}
+interface HandStateServerMessage extends ServerMessageBase {
+  type: 'room.hand.state';
+  requestId?: string;
+  payload: HandQueueState;
+}
 
 export type ServerMessage =
+  | HandStateServerMessage
   | StudyStateServerMessage
   | PeerReconnectServerMessage
   | RoomJoinedServerMessage

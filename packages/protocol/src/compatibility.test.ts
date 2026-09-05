@@ -6,7 +6,7 @@ describe('입장 전 서버 호환성', () => {
     expect(
       supportsCurrentClient({
         protocolVersion: 3,
-        capabilities: ['room.study', 'peer.reconnect', 'future'],
+        capabilities: ['room.study', 'peer.reconnect', 'room.hand', 'future'],
       }),
     ).toBe(true);
     for (const value of [
@@ -15,6 +15,7 @@ describe('입장 전 서버 호환성', () => {
       {},
       { protocolVersion: 2, capabilities: ['room.study', 'peer.reconnect'] },
       { protocolVersion: 3, capabilities: ['peer.reconnect'] },
+      { protocolVersion: 3, capabilities: ['peer.reconnect', 'room.study'] },
       { protocolVersion: 3, capabilities: ['room.study', 'peer.reconnect', null] },
     ]) {
       expect(supportsCurrentClient(value)).toBe(false);

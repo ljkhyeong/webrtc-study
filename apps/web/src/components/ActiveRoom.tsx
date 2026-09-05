@@ -432,6 +432,7 @@ export function ActiveRoom({
         status={status}
         statusLabel={roomStatusLabel(status, participants)}
         participants={participants}
+        handQueue={snapshot?.handQueue ?? null}
         audioOutput={audioOutput}
         messages={messages}
         audioAvailable={localMedia.audioAvailable}
@@ -472,7 +473,8 @@ export function ActiveRoom({
           sessionRef.current?.retryPeer(peerId);
         }}
         onSetHandRaised={(raised) => {
-          sessionRef.current?.setHandRaised(raised);
+          if (!sessionRef.current?.setHandRaised(raised))
+            setActionError('손들기 요청을 보내지 못했습니다. 연결 상태를 확인해 주세요.');
         }}
         onToggleScreenShare={() => {
           const session = sessionRef.current;

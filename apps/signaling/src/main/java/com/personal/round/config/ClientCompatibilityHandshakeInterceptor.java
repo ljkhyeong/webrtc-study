@@ -22,7 +22,7 @@ public final class ClientCompatibilityHandshakeInterceptor implements HandshakeI
 		this.originPolicy = originPolicy;
 		this.responseBody = mapper.writeValueAsBytes(Map.of(
 				"protocolVersion", ProtocolParser.PROTOCOL_VERSION,
-				"capabilities", List.of("peer.reconnect", "room.study")));
+				"capabilities", List.of("peer.reconnect", "room.study", "room.hand")));
 	}
 
 	@Override

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ParticipantSnapshot, PeerConnectionStatus } from '@round/rtc-core';
-import { enterVideoFullscreen, exitVideoFullscreen } from '../lib/fullscreen';
+import { enterVideoFullscreen, exitVideoFullscreen, isVideoFullscreen } from '../lib/fullscreen';
 import { CameraOffIcon, FullscreenIcon, HandIcon, MicOffIcon } from './Icons';
 import { ParticipantAudioControls } from './ParticipantAudioControls';
 import { useScreenShareView } from './useScreenShareView';
@@ -17,6 +17,7 @@ const DEFAULT_AUDIO_OUTPUT: AudioOutputSelection = { deviceId: '' };
 
 interface VideoTileProps {
   participant: ParticipantView;
+  handPosition?: number | undefined;
   qualityVisible?: boolean;
   audioOutput?: AudioOutputSelection | undefined;
   onSelectDevices?: () => void;
@@ -47,6 +48,7 @@ function connectionLabel(connectionState: PeerConnectionStatus) {
 
 export function VideoTile({
   participant,
+  handPosition,
   qualityVisible = false,
   audioOutput = DEFAULT_AUDIO_OUTPUT,
   onSelectDevices,
@@ -70,6 +72,23 @@ export function VideoTile({
   const [previewHidden, setPreviewHidden] = useState(false);
   const outputChange = useRef(Promise.resolve());
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const update = () => setFullscreen(isVideoFullscreen(video, tileRef.current ?? undefined));
+    update();
+    document.addEventListener('fullscreenchange', update);
+    document.addEventListener('webkitfullscreenchange', update);
+    video.addEventListener('webkitbeginfullscreen', update);
+    video.addEventListener('webkitendfullscreen', update);
+    return () => {
+      document.removeEventListener('fullscreenchange', update);
+      document.removeEventListener('webkitfullscreenchange', update);
+      video.removeEventListener('webkitbeginfullscreen', update);
+      video.removeEventListener('webkitendfullscreen', update);
+    };
+  }, [participant.stream]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -171,6 +190,18 @@ export function VideoTile({
     if (video === null) {
       return;
     }
+    if (isVideoFullscreen(video, tileRef.current ?? undefined)) {
+      const closeAttempt = ++fullscreenAttemptRef.current;
+      setFullscreenError(null);
+      const exited = await exitVideoFullscreen(video, undefined, tileRef.current ?? undefined);
+      if (fullscreenAttemptRef.current !== closeAttempt) return;
+      setFullscreen(isVideoFullscreen(video, tileRef.current ?? undefined));
+      if (!exited)
+        setFullscreenError(
+          '전체 화면을 닫지 못했습니다. Esc 또는 브라우저의 뒤로가기를 사용해 주세요.',
+        );
+      return;
+    }
 
     const attempt = fullscreenAttemptRef.current + 1;
     fullscreenAttemptRef.current = attempt;
@@ -194,6 +225,7 @@ export function VideoTile({
         '화면 공유를 전체 화면으로 열지 못했습니다. 브라우저의 전체 화면 기능을 사용해 주세요.',
       );
     }
+    setFullscreen(isVideoFullscreen(video, container));
   }
 
   return (
@@ -286,7 +318,7 @@ export function VideoTile({
             aria-label={`${participant.displayName} 손들기`}
           >
             <HandIcon />
-            손들기
+            손들기{handPosition ? ` · ${handPosition}번` : ''}
           </span>
         ) : null}
         {participant.role === 'host' ? <span>방장</span> : null}
@@ -334,11 +366,11 @@ export function VideoTile({
           ) : null}
           <button
             type="button"
-            aria-label={`${participant.displayName}의 화면 공유 전체 화면으로 보기`}
+            aria-label={`${participant.displayName}의 화면 공유 ${fullscreen ? '전체 화면 닫기' : '전체 화면으로 보기'}`}
             onClick={() => void openFullscreen()}
           >
             <FullscreenIcon />
-            <span>전체 화면</span>
+            <span>{fullscreen ? '전체 화면 닫기' : '전체 화면'}</span>
           </button>
         </div>
       ) : null}

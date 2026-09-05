@@ -46,6 +46,12 @@ describe('RoomView 브라우저 동작', () => {
       value: true,
     });
     Element.prototype.scrollIntoView = vi.fn();
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false;
+    };
     window.history.replaceState({}, '', '/room/abcd-efgh-jkmp?source=invite#chat');
     container = document.createElement('div');
     document.body.append(container);
@@ -56,6 +62,72 @@ describe('RoomView 브라우저 동작', () => {
     act(() => root.unmount());
     document.body.replaceChildren();
     vi.restoreAllMocks();
+    Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
+    Reflect.deleteProperty(HTMLDialogElement.prototype, 'close');
+  });
+
+  it('작성 중인 채팅의 퇴장을 확인하고 취소하면 입력을 유지하며 보낸 뒤에는 바로 나간다', () => {
+    const props = roomViewProps();
+    act(() => root.render(<RoomView {...props} />));
+    const textarea = container.querySelector('textarea')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+        textarea,
+        '아직 작성 중인 질문',
+      );
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    act(() => container.querySelector<HTMLButtonElement>('.control-button--leave')!.click());
+    expect(props.onLeave).not.toHaveBeenCalled();
+    const cancel = container.querySelector<HTMLButtonElement>('dialog button')!;
+    act(() => cancel.click());
+    expect(container.querySelector('dialog')).toBeNull();
+    expect(textarea.value).toBe('아직 작성 중인 질문');
+    act(() =>
+      textarea.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+    );
+    const cleanUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(cleanUnload);
+    expect(cleanUnload.defaultPrevented).toBe(false);
+    act(() => container.querySelector<HTMLButtonElement>('.control-button--leave')!.click());
+    expect(props.onLeave).toHaveBeenCalledOnce();
+  });
+
+  it('화면 공유 중 확인한 뒤에만 나가며 서버의 손들기 순서를 목록과 배지에 표시한다', () => {
+    const props = roomViewProps();
+    const participants = ['a', 'b'].map((peerId) => ({
+      peerId,
+      displayName: peerId === 'a' ? '가온' : '나래',
+      role: 'participant' as const,
+      isLocal: peerId === 'a',
+      connectionState: 'connected' as const,
+      audioEnabled: false,
+      videoEnabled: false,
+      videoSource: 'camera' as const,
+      handRaised: true,
+    }));
+    act(() =>
+      root.render(
+        <RoomView
+          {...props}
+          screenSharing
+          participants={participants}
+          handQueue={{ revision: 2, peerIds: ['b', 'a'], supportedPeerIds: ['a', 'b'] }}
+        />,
+      ),
+    );
+    expect(
+      [...container.querySelectorAll('.room-hand-queue li')].map((el) => el.textContent),
+    ).toEqual(['나래', '가온 (나)']);
+    expect(container.querySelector('[aria-label="나래 손들기"]')?.textContent).toContain('1번');
+    act(() => container.querySelector<HTMLButtonElement>('.control-button--leave')!.click());
+    expect(props.onLeave).not.toHaveBeenCalled();
+    expect(container.querySelector('dialog')?.textContent).toContain('화면 공유와 통화가 종료');
+    act(() => container.querySelector<HTMLButtonElement>('dialog button:last-child')!.click());
+    expect(props.onLeave).toHaveBeenCalledOnce();
   });
 
   it('손들기 버튼과 참가자 배지를 갱신하고 재연결 중에는 조작을 막는다', () => {

@@ -64,6 +64,15 @@ export function parseClientMessage(input: unknown): ClientMessage {
       relayEnvelope(message);
       validateModerationMediaDisablePayload(message.payload, '$.payload');
       return message as unknown as ClientMessage;
+    case 'room.hand.update': {
+      exactKeys(message, ['v', 'type', 'roomId', 'requestId', 'payload'], '$');
+      roomId(message.roomId, '$.roomId');
+      optionalIdentifier(message.requestId, '$.requestId');
+      const payload = record(message.payload, '$.payload');
+      exactKeys(payload, ['raised'], '$.payload');
+      if (typeof payload.raised !== 'boolean') fail('$.payload.raised', 'must be boolean');
+      return message as unknown as ClientMessage;
+    }
     case 'room.study.update':
       exactKeys(message, ['v', 'type', 'roomId', 'requestId', 'payload'], '$');
       roomId(message.roomId, '$.roomId');
@@ -75,6 +84,7 @@ export function parseClientMessage(input: unknown): ClientMessage {
       relayEnvelope(message);
       return message as unknown as ClientMessage;
     case 'room.study.sync':
+    case 'room.hand.sync':
     case 'room.leave':
       exactKeys(message, ['v', 'type', 'roomId', 'requestId'], '$');
       roomId(message.roomId, '$.roomId');
@@ -110,6 +120,30 @@ function validateServerMessage(message: UnknownRecord): ServerMessage {
   literal(message.v, PROTOCOL_VERSION, '$.v');
 
   switch (message.type) {
+    case 'room.hand.state': {
+      exactKeys(message, ['v', 'type', 'roomId', 'requestId', 'payload'], '$');
+      roomId(message.roomId, '$.roomId');
+      optionalIdentifier(message.requestId, '$.requestId');
+      const payload = record(message.payload, '$.payload');
+      exactKeys(payload, ['revision', 'peerIds', 'supportedPeerIds'], '$.payload');
+      if (!Number.isSafeInteger(payload.revision) || (payload.revision as number) < 0)
+        fail('$.payload.revision', 'must be a nonnegative safe integer');
+      for (const key of ['peerIds', 'supportedPeerIds']) {
+        const ids = payload[key];
+        if (!Array.isArray(ids) || ids.length > 6)
+          fail(`$.payload.${key}`, 'must contain at most 6 participants');
+        for (const id of ids) boundedNonBlankString(id, MAX_PEER_ID_LENGTH, `$.payload.${key}`);
+        if (new Set(ids).size !== ids.length)
+          fail(`$.payload.${key}`, 'must not contain duplicates');
+      }
+      if (
+        !(payload.peerIds as string[]).every((id) =>
+          (payload.supportedPeerIds as string[]).includes(id),
+        )
+      )
+        fail('$.payload.peerIds', 'must contain only supported participants');
+      return message as unknown as ServerMessage;
+    }
     case 'room.study.state':
       exactKeys(message, ['v', 'type', 'roomId', 'requestId', 'payload'], '$');
       roomId(message.roomId, '$.roomId');
