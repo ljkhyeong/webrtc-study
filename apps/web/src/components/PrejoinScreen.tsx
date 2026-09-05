@@ -144,8 +144,8 @@ export function PrejoinScreen({
     });
   };
 
-  const handleJoinWithMedia = () => {
-    if (snapshot.status === 'checking') {
+  const handleJoin = (withMedia: boolean) => {
+    if (withMedia && snapshot.status === 'checking') {
       return;
     }
     const safeName = sanitizeDisplayName(displayName);
@@ -159,26 +159,15 @@ export function PrejoinScreen({
       if (beforeJoin && !(await beforeJoin())) return;
       if (!actionLifetimeRef.current) return;
       const controller = controllerRef.current;
-      const initialInputEnabled = controller?.getInputEnabled();
-      const stream = controller?.takeStream() ?? null;
-      onJoin(safeName, stream, normalizedHostCapability, initialInputEnabled);
-      actionLifetimeRef.current = false;
-    });
-  };
-
-  const handleJoinWithoutMedia = () => {
-    const safeName = sanitizeDisplayName(displayName);
-    if (!safeName) {
-      setNameError('스터디에서 사용할 이름을 입력해 주세요.');
-      nameInputRef.current?.focus();
-      return;
-    }
-    runAuthorized(async () => {
-      if (beforeJoin && !(await beforeJoin())) return;
-      if (!actionLifetimeRef.current) return;
-      controllerRef.current?.dispose();
-      controllerRef.current = null;
-      onJoin(safeName, null, normalizedHostCapability);
+      if (withMedia) {
+        const initialInputEnabled = controller?.getInputEnabled();
+        const stream = controller?.takeStream() ?? null;
+        onJoin(safeName, stream, normalizedHostCapability, initialInputEnabled);
+      } else {
+        controller?.dispose();
+        controllerRef.current = null;
+        onJoin(safeName, null, normalizedHostCapability);
+      }
       actionLifetimeRef.current = false;
     });
   };
@@ -339,7 +328,7 @@ export function PrejoinScreen({
                 className="prejoin-text-action"
                 type="button"
                 disabled={hostCapabilityInvalid || authorizationPending}
-                onClick={handleJoinWithoutMedia}
+                onClick={() => handleJoin(false)}
               >
                 카메라·마이크 없이 입장
               </button>
@@ -347,73 +336,48 @@ export function PrejoinScreen({
           ) : (
             <>
               <div className="prejoin-device-fields">
-                <label>
-                  <span>마이크</span>
-                  <select
-                    value={
-                      snapshot.localMedia.audioAvailable
-                        ? (snapshot.selectedAudioInputId ?? '')
-                        : ''
-                    }
-                    disabled={
-                      isChecking || authorizationPending || snapshot.audioInputs.length === 0
-                    }
-                    onChange={(event) => {
-                      const deviceId = event.currentTarget.value;
-                      const controller = controllerRef.current;
-                      if (controller !== null) {
-                        runAuthorized(() => controller.selectAudioInput(deviceId));
-                      }
-                    }}
-                  >
-                    {!snapshot.localMedia.audioAvailable && snapshot.audioInputs.length > 0 ? (
-                      <option value="">마이크를 선택해 주세요</option>
-                    ) : null}
-                    {snapshot.audioInputs.length === 0 ? (
-                      <option value="">사용 가능한 마이크 없음</option>
-                    ) : (
-                      snapshot.audioInputs.map((device) => (
-                        <option key={device.deviceId} value={device.deviceId}>
-                          {device.label}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
-
-                <label>
-                  <span>카메라</span>
-                  <select
-                    value={
-                      snapshot.localMedia.videoAvailable
-                        ? (snapshot.selectedVideoInputId ?? '')
-                        : ''
-                    }
-                    disabled={
-                      isChecking || authorizationPending || snapshot.videoInputs.length === 0
-                    }
-                    onChange={(event) => {
-                      const deviceId = event.currentTarget.value;
-                      const controller = controllerRef.current;
-                      if (controller !== null) {
-                        runAuthorized(() => controller.selectVideoInput(deviceId));
-                      }
-                    }}
-                  >
-                    {!snapshot.localMedia.videoAvailable && snapshot.videoInputs.length > 0 ? (
-                      <option value="">카메라를 선택해 주세요</option>
-                    ) : null}
-                    {snapshot.videoInputs.length === 0 ? (
-                      <option value="">사용 가능한 카메라 없음</option>
-                    ) : (
-                      snapshot.videoInputs.map((device) => (
-                        <option key={device.deviceId} value={device.deviceId}>
-                          {device.label}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
+                {(['audio', 'video'] as const).map((kind) => {
+                  const label = kind === 'audio' ? '마이크' : '카메라';
+                  const inputs = snapshot[`${kind}Inputs`];
+                  const available = snapshot.localMedia[`${kind}Available`];
+                  const selectedInputId =
+                    kind === 'audio'
+                      ? snapshot.selectedAudioInputId
+                      : snapshot.selectedVideoInputId;
+                  return (
+                    <label key={kind}>
+                      <span>{label}</span>
+                      <select
+                        value={available ? (selectedInputId ?? '') : ''}
+                        disabled={isChecking || authorizationPending || inputs.length === 0}
+                        onChange={(event) => {
+                          const deviceId = event.currentTarget.value;
+                          const controller = controllerRef.current;
+                          if (controller !== null) {
+                            runAuthorized(() =>
+                              kind === 'audio'
+                                ? controller.selectAudioInput(deviceId)
+                                : controller.selectVideoInput(deviceId),
+                            );
+                          }
+                        }}
+                      >
+                        {!available && inputs.length > 0 ? (
+                          <option value="">{label}를 선택해 주세요</option>
+                        ) : null}
+                        {inputs.length === 0 ? (
+                          <option value="">사용 가능한 {label} 없음</option>
+                        ) : (
+                          inputs.map((device) => (
+                            <option key={device.deviceId} value={device.deviceId}>
+                              {device.label}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+                  );
+                })}
               </div>
 
               <MicrophoneLevel
@@ -455,7 +419,7 @@ export function PrejoinScreen({
                   className="prejoin-primary-action"
                   type="button"
                   disabled={isChecking || hostCapabilityInvalid || authorizationPending}
-                  onClick={handleJoinWithMedia}
+                  onClick={() => handleJoin(true)}
                 >
                   {hasAnyMedia ? '이 설정으로 입장' : '카메라·마이크 없이 입장'}
                   <ArrowIcon />
@@ -465,7 +429,7 @@ export function PrejoinScreen({
                     className="prejoin-text-action"
                     type="button"
                     disabled={isChecking || hostCapabilityInvalid || authorizationPending}
-                    onClick={handleJoinWithoutMedia}
+                    onClick={() => handleJoin(false)}
                   >
                     카메라·마이크 없이 입장
                   </button>

@@ -263,27 +263,18 @@ export function buildRoomSystemNotices({
   if (status !== 'active') {
     return [];
   }
-  return [
-    ...(sessionError
-      ? [{ id: 'session-error', tone: 'error', message: sessionError } as const]
-      : []),
-    ...(actionWarning
-      ? [{ id: 'action-warning', tone: 'warning', message: actionWarning } as const]
-      : []),
-    ...(actionError ? [{ id: 'action-error', tone: 'error', message: actionError } as const] : []),
-    ...(participationGrantRefreshWarning
-      ? [
-          {
-            id: 'participation-grant-refresh',
-            tone: 'warning',
-            message: participationGrantRefreshWarning,
-          } as const,
-        ]
-      : []),
-    ...(turnRefreshWarning
-      ? [{ id: 'turn-refresh', tone: 'warning', message: turnRefreshWarning } as const]
-      : []),
+  const notices: RoomSystemNoticeView[] = [
+    { id: 'session-error', tone: 'error', message: sessionError ?? '' },
+    { id: 'action-warning', tone: 'warning', message: actionWarning ?? '' },
+    { id: 'action-error', tone: 'error', message: actionError ?? '' },
+    {
+      id: 'participation-grant-refresh',
+      tone: 'warning',
+      message: participationGrantRefreshWarning ?? '',
+    },
+    { id: 'turn-refresh', tone: 'warning', message: turnRefreshWarning ?? '' },
   ];
+  return notices.filter((notice) => notice.message);
 }
 
 interface ActiveRoomTerminalStateInput {
