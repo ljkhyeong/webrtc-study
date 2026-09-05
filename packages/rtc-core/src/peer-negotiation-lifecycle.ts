@@ -18,7 +18,7 @@ interface PeerNegotiationLifecycleOptions {
   readonly roomId: string;
   readonly transport: SignalingTransport;
   readonly maxPendingRemoteCandidates: number;
-  readonly createNegotiationId: () => string;
+  readonly createNegotiationId: (peerId: string) => string;
   readonly getPeer: (peerId: string) => PeerConnectionLifecycle | undefined;
   readonly ensurePeer: (peerId: string) => PeerConnectionLifecycle;
   readonly replacePeer: (
@@ -68,7 +68,9 @@ export class PeerNegotiationLifecycle {
     }
 
     peer.makingOffer = true;
-    const negotiationId = peer.startLocalNegotiation(this.#options.createNegotiationId);
+    const negotiationId = peer.startLocalNegotiation(() =>
+      this.#options.createNegotiationId(peerId),
+    );
     peer.remoteDescriptionSet = false;
     peer.resetLocalDescription();
     if (options.iceRestart === true) {

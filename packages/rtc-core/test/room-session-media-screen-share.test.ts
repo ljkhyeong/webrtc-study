@@ -212,6 +212,31 @@ describe('RoomSession', () => {
     await harness.session.leave();
   });
 
+  it('공유 전에 문서 품질을 선택하고 공유 중 변경을 차단한다', async () => {
+    const screenTrack = Object.assign(new FakeTrack('video'), { contentHint: '' });
+    const getDisplayMedia = vi.fn(
+      async () => new FakeMediaStream([screenTrack]) as unknown as MediaStream,
+    );
+    const harness = createHarness({ getDisplayMedia });
+    await joinSession(harness);
+    expect(harness.session.setScreenShareQuality('text')).toBe(true);
+    await expect(harness.session.startScreenShare()).resolves.toBe('started');
+    expect(getDisplayMedia).toHaveBeenCalledWith({
+      video: {
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 },
+        frameRate: { ideal: 10, max: 10 },
+      },
+      audio: false,
+    });
+    expect(screenTrack.contentHint).toBe('text');
+    expect(harness.session.setScreenShareQuality('standard')).toBe(false);
+    expect(harness.session.getSnapshot().screenShareQuality).toBe('text');
+    await harness.session.stopScreenShare();
+    expect(harness.session.getLocalStream()?.getVideoTracks()).toContain(harness.videoTrack);
+    await harness.session.leave();
+  });
+
   it('replaces camera senders with screen video and restores the disabled camera state', async () => {
     const screenTrack = Object.assign(new FakeTrack('video'), { contentHint: '' });
     const displayStream = new FakeMediaStream([screenTrack]);

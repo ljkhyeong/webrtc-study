@@ -197,6 +197,9 @@ describe('ActiveRoom mounted lifecycle', () => {
     const sessionState: { options: RoomSessionOptions | null } = { options: null };
     let joinPromise: Promise<void> | null = null;
     const session = {
+      syncStudy: vi.fn(() => true),
+      sampleParticipantActivity: vi.fn(async () => {}),
+      resetParticipantActivity: vi.fn(),
       getSnapshot: () => currentSnapshot,
       getLocalStream: () => null,
       getRemoteStream: () => null,

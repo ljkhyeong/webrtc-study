@@ -76,6 +76,7 @@ public class SignalingService implements SmartLifecycle {
 	private final Object lifecycleMonitor = new Object();
 	private final Map<String, Peer> connectedPeers = new HashMap<>();
 	private final Map<String, LinkedHashMap<String, Peer>> rooms = new HashMap<>();
+	private final Map<String, RoomStudyState> studyStates = new HashMap<>();
 	// 대체된 피어는 방 상태에서 즉시 제거하지만 close가 반환될 때까지 입장 예약은 유지한다.
 	private final Map<String, Peer> pendingTerminalCleanup = new HashMap<>();
 	private final SignalingOutboundDispatcher<Peer> outboundDispatcher;
@@ -255,6 +256,8 @@ public class SignalingService implements SmartLifecycle {
 					case ClientMessage.Join join -> join(peer, join, workPlan);
 					case ClientMessage.Leave leave -> leave(peer, leave, workPlan);
 					case ClientMessage.Relay relay -> relay(peer, relay, workPlan);
+					case ClientMessage.Reconnect reconnect -> reconnect(peer, reconnect, workPlan);
+					case ClientMessage.Study study -> study(peer, study, workPlan);
 					case ClientMessage.Moderation moderation -> moderate(peer, moderation, workPlan);
 				}
 			}
@@ -491,10 +494,12 @@ public class SignalingService implements SmartLifecycle {
 				closeSupersededParticipationSessionLocked(peer, workPlan);
 				return;
 			}
+			RoomStudyState previousStudy = studyStates.get(message.roomId());
 			closeSupersededParticipationSessionLocked(
 					existingParticipationSession,
 					workPlan);
 			rooms.putIfAbsent(message.roomId(), room);
+			if (previousStudy != null && peer.connected) studyStates.put(message.roomId(), previousStudy);
 		}
 		if (!peer.connected) {
 			if (room.isEmpty()) {
@@ -641,6 +646,91 @@ public class SignalingService implements SmartLifecycle {
 						peer.peerId,
 						message.payload()),
 				workPlan);
+	}
+
+	private void reconnect(Peer peer, ClientMessage.Reconnect message, WorkPlan workPlan) {
+		if (peer.roomId == null) {
+			sendError(
+					peer,
+					SignalingErrorCode.NOT_IN_ROOM,
+					"Join a room before sending negotiation messages.",
+					message.roomId(),
+					message.requestId(),
+					workPlan);
+			return;
+		}
+		if (!peer.roomId.equals(message.roomId())) {
+			sendError(
+					peer,
+					SignalingErrorCode.ROOM_MISMATCH,
+					"The message room does not match the joined room.",
+					peer.roomId,
+					message.requestId(),
+					workPlan);
+			return;
+		}
+		if (peer.peerId.equals(message.to())) {
+			sendError(
+					peer,
+					SignalingErrorCode.TARGET_SELF,
+					"A peer cannot relay a negotiation message to itself.",
+					peer.roomId,
+					message.requestId(),
+					workPlan);
+			return;
+		}
+
+		Map<String, Peer> room = rooms.get(peer.roomId);
+		Peer target = room == null ? null : room.get(message.to());
+		if (target == null) {
+			sendError(
+					peer,
+					SignalingErrorCode.TARGET_NOT_FOUND,
+					"The target peer is not in this room.",
+					peer.roomId,
+					message.requestId(),
+					workPlan);
+			return;
+		}
+
+		if (closeForExpiredAuthorizationLocked(target, workPlan)) {
+			sendError(peer, SignalingErrorCode.TARGET_NOT_FOUND, "상대가 방을 나갔습니다.",
+					peer.roomId, message.requestId(), workPlan);
+			return;
+		}
+		String connectionId = UUID.randomUUID().toString();
+		boolean initiator = peer.peerId.compareTo(target.peerId) < 0;
+		// 같은 작업 계획에서 양쪽에 새 연결 번호를 보내 동시 재연결 순서를 맞춘다.
+		if (enqueue(target, serverMessageEncoder.peerReconnect(
+				peer.roomId, peer.peerId, connectionId, !initiator), workPlan)) {
+			enqueue(peer, serverMessageEncoder.peerReconnect(
+					peer.roomId, target.peerId, connectionId, initiator), workPlan);
+		}
+	}
+
+	private void study(Peer peer, ClientMessage.Study message, WorkPlan workPlan) {
+		if (peer.roomId == null) {
+			sendError(peer, SignalingErrorCode.NOT_IN_ROOM, "방에 먼저 입장해 주세요.", message.roomId(), message.requestId(), workPlan);
+			return;
+		}
+		if (!peer.roomId.equals(message.roomId())) {
+			sendError(peer, SignalingErrorCode.ROOM_MISMATCH, "입장한 방과 요청한 방이 다릅니다.", peer.roomId, message.requestId(), workPlan);
+			return;
+		}
+		if (message.command() != null && peer.role != ParticipationGrant.Role.HOST) {
+			sendError(peer, SignalingErrorCode.FORBIDDEN, "방장만 타이머와 주제를 변경할 수 있습니다.", peer.roomId, message.requestId(), workPlan);
+			return;
+		}
+		RoomStudyState state = studyStates.computeIfAbsent(peer.roomId, ignored -> new RoomStudyState());
+		long now = monotonicTicker.getAsLong();
+		if (message.command() == null) {
+			enqueue(peer, serverMessageEncoder.studyState(peer.roomId, message.requestId(), state.snapshot(now), false), workPlan);
+			return;
+		}
+		boolean applied = state.apply(message.command(), now);
+		TextMessage response = serverMessageEncoder.studyState(peer.roomId, message.requestId(), state.snapshot(now), !applied);
+		if (applied) broadcast(rooms.get(peer.roomId), response, null, workPlan);
+		else enqueue(peer, response, workPlan);
 	}
 
 	private void moderate(
@@ -858,6 +948,7 @@ public class SignalingService implements SmartLifecycle {
 		}
 		if (room.isEmpty()) {
 			rooms.remove(roomId, room);
+			studyStates.remove(roomId);
 			refreshMetricsLocked();
 			return;
 		}
@@ -1090,6 +1181,7 @@ public class SignalingService implements SmartLifecycle {
 				connectedPeers.clear();
 				inboundLimiter.clear();
 				rooms.clear();
+				studyStates.clear();
 				refreshMetricsLocked();
 			}
 			closeSessionsConcurrently(sessions, closeDeadlineNanos);

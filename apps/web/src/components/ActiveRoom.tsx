@@ -78,6 +78,7 @@ export function ActiveRoom({
   const [actionError, setActionError] = useState('');
   const [participationGrantRefreshWarning, setParticipationGrantRefreshWarning] = useState('');
   const [turnRefreshWarning, setTurnRefreshWarning] = useState('');
+  const [qualityVisible, setQualityVisible] = useState(false);
   const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
   const [audioOutput, setAudioOutput] = useState({ deviceId: '' });
   const outputDeviceId = audioOutput.deviceId;
@@ -312,6 +313,51 @@ export function ActiveRoom({
     });
   }, [snapshot, subscribedSession]);
 
+  useEffect(() => {
+    const session = subscribedSession;
+    if (!session || snapshot?.status !== 'active') return;
+    let disposed = false;
+    let sampleGeneration = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const sample = async () => {
+      const generation = sampleGeneration;
+      if (disposed || document.hidden) return;
+      await session.sampleParticipantActivity(qualityVisible);
+      if (!disposed && generation === sampleGeneration && !document.hidden)
+        timer = setTimeout(() => void sample(), 500);
+    };
+    const visibility = () => {
+      sampleGeneration += 1;
+      clearTimeout(timer);
+      session.resetParticipantActivity();
+      if (!document.hidden) void sample();
+    };
+    document.addEventListener('visibilitychange', visibility);
+    void sample();
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', visibility);
+      session.resetParticipantActivity();
+    };
+  }, [subscribedSession, snapshot?.status, qualityVisible]);
+
+  useEffect(() => {
+    if (!subscribedSession || snapshot?.status !== 'active') return;
+    const sync = () => {
+      if (!document.hidden) subscribedSession.syncStudy();
+    };
+    sync();
+    const timer = setInterval(sync, 15_000);
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('online', sync);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', sync);
+      window.removeEventListener('online', sync);
+    };
+  }, [subscribedSession, snapshot?.status]);
+
   const messages = snapshot?.messages ?? [];
 
   const handleLeave = () => {
@@ -373,6 +419,15 @@ export function ActiveRoom({
   return (
     <>
       <RoomView
+        study={snapshot?.study}
+        studyPending={snapshot?.studyPending}
+        studyNotice={snapshot?.studyNotice}
+        onStudyCommand={(command) => sessionRef.current?.updateStudy(command) ?? false}
+        onSyncStudy={() => {
+          sessionRef.current?.syncStudy();
+        }}
+        qualityVisible={qualityVisible}
+        onSetQualityVisible={setQualityVisible}
         roomId={roomId}
         status={status}
         statusLabel={roomStatusLabel(status, participants)}
@@ -408,6 +463,13 @@ export function ActiveRoom({
         }}
         onToggleVideo={() => {
           sessionRef.current?.toggleVideo();
+        }}
+        onRetryMessage={(messageId, peerId) => {
+          if (!sessionRef.current?.retryChat(messageId, peerId))
+            setActionError('재전송할 수 없습니다. 상대 연결과 재전송 가능 시간을 확인해 주세요.');
+        }}
+        onRetryPeer={(peerId) => {
+          sessionRef.current?.retryPeer(peerId);
         }}
         onSetHandRaised={(raised) => {
           sessionRef.current?.setHandRaised(raised);
@@ -477,6 +539,10 @@ export function ActiveRoom({
       />
       {deviceSettingsOpen ? (
         <MediaDeviceDialog
+          screenShareQuality={snapshot?.screenShareQuality}
+          onSelectScreenShareQuality={(mode) =>
+            sessionRef.current?.setScreenShareQuality(mode) ?? false
+          }
           videoQualityMode={snapshot?.videoQualityMode ?? 'standard'}
           onSelectVideoQuality={async (mode) =>
             sessionRef.current?.setVideoQualityMode(mode) ?? false

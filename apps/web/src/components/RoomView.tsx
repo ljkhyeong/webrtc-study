@@ -1,5 +1,12 @@
+import { RoomStudyPanel } from './RoomStudyPanel';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ChatMessage, RoomConnectionDiagnostics, RoomSessionStatus } from '@round/rtc-core';
+import type {
+  ChatMessage,
+  RoomConnectionDiagnostics,
+  RoomSessionStatus,
+  RoomStudySnapshot,
+  StudyCommand,
+} from '@round/rtc-core';
 import {
   CameraIcon,
   CameraOffIcon,
@@ -38,6 +45,13 @@ type InviteCopyState =
   | { readonly status: 'error'; readonly inviteUrl: string };
 
 interface RoomViewProps {
+  study?: RoomStudySnapshot | null | undefined;
+  studyPending?: boolean | undefined;
+  studyNotice?: string | null | undefined;
+  onStudyCommand?: ((command: StudyCommand) => boolean) | undefined;
+  onSyncStudy?: (() => void) | undefined;
+  qualityVisible?: boolean;
+  onSetQualityVisible?: ((visible: boolean) => void) | undefined;
   roomId: string;
   status: RoomSessionStatus;
   statusLabel: string;
@@ -63,14 +77,23 @@ interface RoomViewProps {
   onSetHandRaised: (raised: boolean) => void;
   onDisableParticipantAudio: (peerId: string) => void;
   onDisableParticipantVideo: (peerId: string) => void;
+  onRetryMessage?: ((messageId: string, peerId: string) => void) | undefined;
   onSendMessage: (text: string) => boolean;
   onCollectConnectionDiagnostics: () => Promise<RoomConnectionDiagnostics>;
   onSelectDevices: () => void;
   onReconnect: () => void;
+  onRetryPeer?: ((peerId: string) => void) | undefined;
   onLeave: () => void;
 }
 
 export function RoomView({
+  study = null,
+  studyPending = false,
+  studyNotice = null,
+  onStudyCommand,
+  onSyncStudy,
+  qualityVisible = false,
+  onSetQualityVisible,
   roomId,
   status,
   statusLabel,
@@ -97,9 +120,11 @@ export function RoomView({
   onDisableParticipantAudio,
   onDisableParticipantVideo,
   onSendMessage,
+  onRetryMessage,
   onCollectConnectionDiagnostics,
   onSelectDevices,
   onReconnect,
+  onRetryPeer,
   onLeave,
 }: RoomViewProps) {
   const [chatOpen, setChatOpen] = useState(false);
@@ -196,7 +221,9 @@ export function RoomView({
         unseenDeliveryIssueCount > 0 ? `, 보낸 메시지 전송 문제 ${unseenDeliveryIssueCount}건` : ''
       }`;
   return (
-    <div className={`room-shell${chatOpen ? ' room-shell--chat-open' : ''}`}>
+    <div
+      className={`room-shell${onStudyCommand && onSyncStudy ? ' room-shell--study' : ''}${chatOpen ? ' room-shell--chat-open' : ''}`}
+    >
       <header className="room-header">
         <div className="room-header__brand">
           <span className="wordmark">
@@ -233,7 +260,12 @@ export function RoomView({
             <UsersIcon />
             {participants.length}
           </span>
-          <ConnectionDiagnosticsPanel onCollect={onCollectConnectionDiagnostics} />
+
+          <ConnectionDiagnosticsPanel
+            onCollect={onCollectConnectionDiagnostics}
+            qualityVisible={qualityVisible}
+            onSetQualityVisible={onSetQualityVisible}
+          />
         </div>
       </header>
 
@@ -255,6 +287,17 @@ export function RoomView({
         </div>
       ) : null}
 
+      {onStudyCommand && onSyncStudy ? (
+        <RoomStudyPanel
+          state={study}
+          canControl={canModerateMedia}
+          active={status === 'active'}
+          pending={studyPending}
+          notice={studyNotice}
+          onCommand={onStudyCommand}
+          onSync={onSyncStudy}
+        />
+      ) : null}
       <main className="room-workspace">
         <p className="sr-only" aria-live="polite" aria-atomic="true">
           {raisedHandNames.length > 0
@@ -268,6 +311,8 @@ export function RoomView({
         >
           {participants.map((participant) => (
             <VideoTile
+              qualityVisible={qualityVisible}
+              onRetryPeer={status === 'active' ? onRetryPeer : undefined}
               key={participant.peerId}
               participant={participant}
               audioOutput={audioOutput}
@@ -379,6 +424,7 @@ export function RoomView({
         </section>
 
         <RoomChatPanel
+          onRetryMessage={onRetryMessage}
           open={chatOpen}
           messages={messages}
           onSendMessage={onSendMessage}

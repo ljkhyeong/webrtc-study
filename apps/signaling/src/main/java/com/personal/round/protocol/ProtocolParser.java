@@ -47,12 +47,58 @@ public class ProtocolParser {
 		return switch (type) {
 			case "room.join" -> parseJoin(message);
 			case "room.leave" -> parseLeave(message);
+			case "peer.reconnect" -> parseReconnect(message);
+			case "room.study.sync", "room.study.update" -> parseStudy(message, type);
 			case "rtc.offer" -> parseDescriptionRelay(message, "offer");
 			case "rtc.answer" -> parseDescriptionRelay(message, "answer");
 			case "rtc.ice" -> parseIceRelay(message);
 			case "moderation.media.disable" -> parseModeration(message);
 			default -> throw fail("$.type", "must be a supported client message type");
 		};
+	}
+
+	private ClientMessage.Study parseStudy(ObjectNode message, String type) {
+		boolean sync = type.equals("room.study.sync");
+		exactKeys(message, sync ? Set.of("v", "type", "roomId", "requestId")
+				: Set.of("v", "type", "roomId", "requestId", "payload"), "$");
+		String roomId = roomId(message.get("roomId"), "$.roomId");
+		String requestId = optionalNonBlankString(message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId");
+		if (sync) return new ClientMessage.Study(roomId, requestId, null);
+		ObjectNode payload = object(message.get("payload"), "$.payload");
+		String action = requiredText(payload.get("action"), "$.payload.action");
+		long revision = boundedInteger(payload.get("expectedRevision"), 0, 9_007_199_254_740_991L, "$.payload.expectedRevision");
+		String topic = null;
+		String mode = null;
+		int duration = 0;
+		switch (action) {
+			case "start" -> {
+				exactKeys(payload, Set.of("action", "expectedRevision", "mode", "durationSeconds"), "$.payload");
+				mode = requiredText(payload.get("mode"), "$.payload.mode");
+				if (!mode.equals("focus") && !mode.equals("break")) throw fail("$.payload.mode", "must be focus or break");
+				duration = (int) boundedInteger(payload.get("durationSeconds"), 60, 7200, "$.payload.durationSeconds");
+			}
+			case "topic" -> {
+				exactKeys(payload, Set.of("action", "expectedRevision", "topic"), "$.payload");
+				topic = boundedString(payload.get("topic"), 120, "$.payload.topic");
+			}
+			case "pause", "resume", "reset" -> exactKeys(payload, Set.of("action", "expectedRevision"), "$.payload");
+			default -> throw fail("$.payload.action", "must be a supported study action");
+		}
+		return new ClientMessage.Study(roomId, requestId, new ClientMessage.StudyCommand(action, revision, topic, mode, duration));
+	}
+
+	private static long boundedInteger(JsonNode value, long minimum, long maximum, String path) {
+		if (value == null || !value.isNumber() || !value.canConvertToLong() || value.doubleValue() != value.longValue()
+				|| value.longValue() < minimum || value.longValue() > maximum) {
+			throw fail(path, "must be an integer within the allowed range");
+		}
+		return value.longValue();
+	}
+
+	private ClientMessage.Reconnect parseReconnect(ObjectNode message) {
+		exactKeys(message, Set.of("v", "type", "roomId", "requestId", "to"), "$");
+		RelayEnvelope envelope = relayEnvelope(message);
+		return new ClientMessage.Reconnect(envelope.roomId(), envelope.requestId(), envelope.to());
 	}
 
 	private ClientMessage.Join parseJoin(ObjectNode message) {

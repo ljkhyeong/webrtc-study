@@ -3,7 +3,7 @@ package com.personal.round.protocol;
 import tools.jackson.databind.node.ObjectNode;
 
 public sealed interface ClientMessage
-		permits ClientMessage.Join, ClientMessage.Leave, ClientMessage.Relay, ClientMessage.Moderation {
+		permits ClientMessage.Join, ClientMessage.Leave, ClientMessage.Relay, ClientMessage.Moderation, ClientMessage.Reconnect, ClientMessage.Study {
 
 	String type();
 
@@ -35,6 +35,20 @@ public sealed interface ClientMessage
 		@Override
 		public String type() {
 			return "room.leave";
+		}
+	}
+
+	record Study(String roomId, String requestId, StudyCommand command) implements ClientMessage {
+		@Override
+		public String type() { return command == null ? "room.study.sync" : "room.study.update"; }
+	}
+
+	record StudyCommand(String action, long expectedRevision, String topic, String mode, int durationSeconds) { }
+
+	record Reconnect(String roomId, String requestId, String to) implements ClientMessage {
+		@Override
+		public String type() {
+			return "peer.reconnect";
 		}
 	}
 

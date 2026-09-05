@@ -1,3 +1,4 @@
+import { validateStudyState, validateStudyUpdate } from './study.js';
 import {
   PROTOCOL_VERSION,
   SIGNALING_ERROR_CODES,
@@ -63,6 +64,17 @@ export function parseClientMessage(input: unknown): ClientMessage {
       relayEnvelope(message);
       validateModerationMediaDisablePayload(message.payload, '$.payload');
       return message as unknown as ClientMessage;
+    case 'room.study.update':
+      exactKeys(message, ['v', 'type', 'roomId', 'requestId', 'payload'], '$');
+      roomId(message.roomId, '$.roomId');
+      optionalIdentifier(message.requestId, '$.requestId');
+      validateStudyUpdate(message.payload);
+      return message as unknown as ClientMessage;
+    case 'peer.reconnect':
+      exactKeys(message, ['v', 'type', 'roomId', 'requestId', 'to'], '$');
+      relayEnvelope(message);
+      return message as unknown as ClientMessage;
+    case 'room.study.sync':
     case 'room.leave':
       exactKeys(message, ['v', 'type', 'roomId', 'requestId'], '$');
       roomId(message.roomId, '$.roomId');
@@ -98,6 +110,12 @@ function validateServerMessage(message: UnknownRecord): ServerMessage {
   literal(message.v, PROTOCOL_VERSION, '$.v');
 
   switch (message.type) {
+    case 'room.study.state':
+      exactKeys(message, ['v', 'type', 'roomId', 'requestId', 'payload'], '$');
+      roomId(message.roomId, '$.roomId');
+      optionalIdentifier(message.requestId, '$.requestId');
+      validateStudyState(message.payload);
+      return message as unknown as ServerMessage;
     case 'room.joined':
       exactKeys(message, ['v', 'type', 'roomId', 'requestId', 'payload'], '$');
       roomId(message.roomId, '$.roomId');
@@ -131,6 +149,16 @@ function validateServerMessage(message: UnknownRecord): ServerMessage {
       optionalIdentifier(message.requestId, '$.requestId');
       validateModerationMediaDisabledPayload(message.payload, '$.payload');
       return message as unknown as ServerMessage;
+    case 'peer.reconnect': {
+      exactKeys(message, ['v', 'type', 'roomId', 'payload'], '$');
+      roomId(message.roomId, '$.roomId');
+      const payload = record(message.payload, '$.payload');
+      exactKeys(payload, ['peerId', 'connectionId', 'initiator'], '$.payload');
+      boundedNonBlankString(payload.peerId, MAX_PEER_ID_LENGTH, '$.payload.peerId');
+      boundedNonBlankString(payload.connectionId, 64, '$.payload.connectionId');
+      if (typeof payload.initiator !== 'boolean') fail('$.payload.initiator', 'must be boolean');
+      return message as unknown as ServerMessage;
+    }
     case 'peer.left':
       exactKeys(message, ['v', 'type', 'roomId', 'payload'], '$');
       roomId(message.roomId, '$.roomId');

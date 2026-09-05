@@ -1,3 +1,4 @@
+import type { StudyCommand, StudyState } from './study.js';
 export const PROTOCOL_VERSION = 3 as const;
 
 export const SIGNALING_ERROR_CODES = [
@@ -99,7 +100,23 @@ interface RoomLeaveClientMessage extends ClientMessageBase {
   type: 'room.leave';
 }
 
+interface PeerReconnectClientMessage extends ClientMessageBase {
+  type: 'peer.reconnect';
+  to: string;
+}
+
+interface StudySyncClientMessage extends ClientMessageBase {
+  type: 'room.study.sync';
+}
+interface StudyUpdateClientMessage extends ClientMessageBase {
+  type: 'room.study.update';
+  payload: StudyCommand & { expectedRevision: number };
+}
+
 export type ClientMessage =
+  | StudySyncClientMessage
+  | StudyUpdateClientMessage
+  | PeerReconnectClientMessage
   | RoomJoinClientMessage
   | RtcOfferClientMessage
   | RtcAnswerClientMessage
@@ -187,7 +204,20 @@ interface ErrorServerMessage {
   };
 }
 
+interface PeerReconnectServerMessage extends ServerMessageBase {
+  type: 'peer.reconnect';
+  payload: { peerId: string; connectionId: string; initiator: boolean };
+}
+
+interface StudyStateServerMessage extends ServerMessageBase {
+  type: 'room.study.state';
+  requestId?: string;
+  payload: StudyState & { conflict: boolean };
+}
+
 export type ServerMessage =
+  | StudyStateServerMessage
+  | PeerReconnectServerMessage
   | RoomJoinedServerMessage
   | PeerJoinedServerMessage
   | RtcOfferServerMessage

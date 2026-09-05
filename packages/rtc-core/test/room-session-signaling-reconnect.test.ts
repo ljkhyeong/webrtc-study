@@ -79,7 +79,13 @@ describe('RoomSession', () => {
       status: 'reconnecting',
       selfId: null,
       participants: [],
-      messages: [{ ...chat, deliveryState: 'failed' }],
+      messages: [
+        {
+          ...chat,
+          deliveryState: 'failed',
+          recipients: [{ peerId: 'peer-a', displayName: 'Ara', state: 'failed', canRetry: false }],
+        },
+      ],
       error: null,
     });
 
@@ -108,7 +114,13 @@ describe('RoomSession', () => {
     expect(harness.session.getSnapshot()).toMatchObject({
       status: 'active',
       selfId: 'self-after-reconnect',
-      messages: [{ ...chat, deliveryState: 'failed' }],
+      messages: [
+        {
+          ...chat,
+          deliveryState: 'failed',
+          recipients: [{ peerId: 'peer-a', displayName: 'Ara', state: 'failed', canRetry: false }],
+        },
+      ],
       error: null,
     });
     expect(participantIds).toEqual(['self-after-reconnect', 'peer-a']);

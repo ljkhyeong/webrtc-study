@@ -171,8 +171,8 @@ describe('App pre-join boundary', () => {
     expect(status).toBe('일부 참가자 연결 실패');
     for (const warning of [timeoutWarning, negotiationWarning]) {
       expect(warning).toContain('일부 참가자');
-      expect(warning).toContain('현재 연결은 유지');
-      expect(warning).toContain('방에 다시 입장');
+      expect(warning).toContain('다른 참가자와의 통화는 유지');
+      expect(warning).toContain('해당 참가자의 다시 연결 버튼');
     }
     expect(timeoutWarning).not.toContain('raw peer timeout');
     expect(negotiationWarning).not.toContain('internal-peer-id');

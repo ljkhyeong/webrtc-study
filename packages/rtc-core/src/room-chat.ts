@@ -8,6 +8,14 @@ export interface ChatMessage {
   readonly sentAt: number;
   readonly isLocal: boolean;
   readonly deliveryState: ChatDeliveryState;
+  readonly recipients?: readonly ChatRecipient[];
+}
+
+export interface ChatRecipient {
+  readonly peerId: string;
+  readonly displayName: string;
+  readonly state: ChatRecipientDeliveryState;
+  readonly canRetry?: boolean;
 }
 
 export type ChatSendErrorCode =
@@ -35,9 +43,13 @@ export class RoomChatLedger {
   readonly #localRecipientStates = new Map<string, Map<string, ChatRecipientDeliveryState>>();
   readonly #messages: ChatMessage[] = [];
   readonly #maxMessages: number;
+  readonly #retryDeadlines = new Map<string, number>();
+  readonly #receivedIds = new Set<string>();
+  readonly #now: () => number;
 
-  constructor(maxMessages: number) {
+  constructor(maxMessages: number, now: () => number = () => performance.now()) {
     this.#maxMessages = maxMessages;
+    this.#now = now;
   }
 
   assertLocalMessageIdAvailable(messageId: string): void {
@@ -57,16 +69,44 @@ export class RoomChatLedger {
     recipientStates: Map<string, ChatRecipientDeliveryState>,
   ): ChatMessage {
     const deliveryState = this.#aggregateDeliveryState(recipientStates);
-    if (deliveryState === 'pending') {
-      this.#localRecipientStates.set(message.id, recipientStates);
-    }
+    this.#localRecipientStates.set(message.id, recipientStates);
+    this.#retryDeadlines.set(message.id, this.#now() + 120_000);
     const storedMessage = { ...message, deliveryState };
     this.#rememberMessage(storedMessage);
     return storedMessage;
   }
 
   recordReceived(message: ChatMessage): void {
+    const key = JSON.stringify([message.senderId, message.id]);
+    if (this.#receivedIds.has(key)) return;
+    this.#receivedIds.add(key);
+    // 방의 정상 수신 제한에서 2분 재전송 창을 충분히 덮고, 기록 크기도 제한한다.
+    while (this.#receivedIds.size > 16_384)
+      this.#receivedIds.delete(this.#receivedIds.values().next().value!);
     this.#rememberMessage(message);
+  }
+
+  retryCandidate(messageId: string): ChatMessage | undefined {
+    if ((this.#retryDeadlines.get(messageId) ?? 0) <= this.#now()) return undefined;
+    return this.#messages.find((message) => message.isLocal && message.id === messageId);
+  }
+
+  prepareRetry(messageId: string, peerIds: readonly string[]): void {
+    const states = this.#localRecipientStates.get(messageId)!;
+    for (const peerId of peerIds) states.set(peerId, 'pending');
+    const index = this.#messages.findIndex(
+      (message) => message.isLocal && message.id === messageId,
+    );
+    this.#messages[index] = {
+      ...this.#messages[index]!,
+      deliveryState: this.#aggregateDeliveryState(states),
+    };
+  }
+
+  failedRecipients(messageId: string): readonly string[] {
+    return [...(this.#localRecipientStates.get(messageId) ?? [])]
+      .filter(([, state]) => state === 'failed')
+      .map(([peerId]) => peerId);
   }
 
   markLocalRecipient(
@@ -84,23 +124,33 @@ export class RoomChatLedger {
       (message) => message.id === messageId && message.isLocal,
     );
     const deliveryState = this.#aggregateDeliveryState(recipientStates);
-    if (deliveryState !== 'pending') {
-      this.#localRecipientStates.delete(messageId);
-      this.#retireLocalMessageIdIfUnused(messageId);
-    }
+    if (deliveryState !== 'pending') this.#retireLocalMessageIdIfUnused(messageId);
     if (index < 0) {
       return false;
     }
     const message = this.#messages[index]!;
-    if (message.deliveryState === deliveryState) {
-      return false;
-    }
     this.#messages[index] = { ...message, deliveryState };
     return true;
   }
 
   snapshot(): readonly ChatMessage[] {
-    return this.#messages.map((message) => ({ ...message }));
+    return this.#messages.map((message) => {
+      const states = this.#localRecipientStates.get(message.id);
+      return {
+        ...message,
+        ...(message.isLocal && states
+          ? {
+              recipients: [...states].map(([peerId, state]) => ({
+                peerId,
+                displayName:
+                  message.recipients?.find((recipient) => recipient.peerId === peerId)
+                    ?.displayName ?? peerId,
+                state,
+              })),
+            }
+          : {}),
+      };
+    });
   }
 
   #aggregateDeliveryState(
@@ -142,12 +192,16 @@ export class RoomChatLedger {
   #retireLocalMessageIdIfUnused(messageId: string): void {
     if (
       !this.#activeLocalMessageIds.has(messageId) ||
-      this.#localRecipientStates.has(messageId) ||
+      [...(this.#localRecipientStates.get(messageId)?.values() ?? [])].some(
+        (state) => state === 'pending',
+      ) ||
       this.#messages.some((message) => message.isLocal && message.id === messageId)
     ) {
       return;
     }
 
+    this.#localRecipientStates.delete(messageId);
+    this.#retryDeadlines.delete(messageId);
     this.#activeLocalMessageIds.delete(messageId);
     this.#recentlyRetiredLocalMessageIds.add(messageId);
     while (this.#recentlyRetiredLocalMessageIds.size > MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS) {

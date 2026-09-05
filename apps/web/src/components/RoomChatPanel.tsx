@@ -16,6 +16,7 @@ export interface ChatNotificationSummary {
 interface RoomChatPanelProps {
   readonly open: boolean;
   readonly messages: readonly ChatMessage[];
+  readonly onRetryMessage?: ((messageId: string, peerId: string) => void) | undefined;
   readonly onSendMessage: (text: string) => boolean;
   readonly onClose: () => void;
   readonly onNotificationChange: (summary: ChatNotificationSummary) => void;
@@ -118,6 +119,7 @@ export function RoomChatPanel({
   open,
   messages,
   onSendMessage,
+  onRetryMessage,
   onClose,
   onNotificationChange,
 }: RoomChatPanelProps) {
@@ -246,6 +248,29 @@ export function RoomChatPanel({
                   />
                 </header>
                 <ChatMessageContent text={chatMessage.text} />
+                {chatMessage.recipients?.some((recipient) => recipient.state !== 'acknowledged') ? (
+                  <div className="chat-message__recipients">
+                    {chatMessage.recipients.map((recipient) => (
+                      <span key={recipient.peerId}>
+                        {recipient.displayName} ·{' '}
+                        {recipient.state === 'acknowledged'
+                          ? '수신 확인'
+                          : recipient.state === 'pending'
+                            ? '확인 대기'
+                            : '수신 미확인'}
+                        {recipient.canRetry && onRetryMessage ? (
+                          <button
+                            type="button"
+                            onClick={() => onRetryMessage(chatMessage.id, recipient.peerId)}
+                          >
+                            {recipient.displayName}에게 재전송
+                          </button>
+                        ) : null}
+                      </span>
+                    ))}
+                    <small>재전송은 보낸 뒤 2분 동안 연결된 상대에게 가능합니다.</small>
+                  </div>
+                ) : null}
               </article>
             ))
           )}

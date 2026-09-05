@@ -70,6 +70,25 @@ public final class ServerMessageEncoder {
 		return textMessage(message);
 	}
 
+	public TextMessage studyState(String roomId, String requestId, StudyState state, boolean conflict) {
+		ObjectNode message = base("room.study.state", roomId);
+		if (requestId != null) message.put("requestId", requestId);
+		message.putObject("payload")
+				.put("revision", state.revision()).put("topic", state.topic()).put("mode", state.mode())
+				.put("durationSeconds", state.durationSeconds()).put("remainingMs", state.remainingMs())
+				.put("running", state.running()).put("conflict", conflict);
+		return textMessage(message);
+	}
+
+	public TextMessage peerReconnect(String roomId, String peerId, String connectionId, boolean initiator) {
+		ObjectNode message = base("peer.reconnect", roomId);
+		message.putObject("payload")
+				.put("peerId", peerId)
+				.put("connectionId", connectionId)
+				.put("initiator", initiator);
+		return textMessage(message);
+	}
+
 	public TextMessage peerLeft(String roomId, String peerId) {
 		ObjectNode message = base("peer.left", roomId);
 		message.putObject("payload").put("peerId", peerId);

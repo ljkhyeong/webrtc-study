@@ -10,7 +10,7 @@ import type { RoomSystemNoticeView } from '../components/RoomView';
 import type { ParticipantView } from '../components/VideoTile';
 
 export const PEER_CONNECTION_FAILURE_MESSAGE =
-  '일부 참가자와 직접 연결하지 못했습니다. 현재 연결은 유지됩니다. 모두 다시 연결하려면 방에 다시 입장해 주세요.';
+  '일부 참가자와 직접 연결하지 못했습니다. 해당 참가자의 다시 연결 버튼을 눌러 주세요. 다른 참가자와의 통화는 유지됩니다.';
 type RoomIssueMessages = Readonly<Record<'error' | 'warning', string>>;
 
 export type RoomStartupErrorCode =
@@ -57,7 +57,7 @@ const SIGNALING_ISSUE_MESSAGES = {
   },
   FORBIDDEN: {
     error: '방장 키가 올바르지 않거나 이 작업을 수행할 권한이 없습니다.',
-    warning: '이 미디어 관리 작업을 수행할 방장 권한이 없습니다.',
+    warning: '이 작업을 수행할 방장 권한이 없습니다.',
   },
   INTERNAL_ERROR: {
     error: '스터디 서버가 요청을 처리하지 못했습니다. 잠시 후 다시 연결해 주세요.',

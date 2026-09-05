@@ -10,6 +10,8 @@ type ConnectionDiagnosticsState =
   | { readonly status: 'ready'; readonly value: RoomConnectionDiagnostics };
 
 interface ConnectionDiagnosticsPanelProps {
+  readonly qualityVisible?: boolean;
+  readonly onSetQualityVisible?: ((visible: boolean) => void) | undefined;
   readonly onCollect: () => Promise<RoomConnectionDiagnostics>;
 }
 
@@ -92,7 +94,11 @@ function ConnectionDiagnosticItem({
   );
 }
 
-export function ConnectionDiagnosticsPanel({ onCollect }: ConnectionDiagnosticsPanelProps) {
+export function ConnectionDiagnosticsPanel({
+  onCollect,
+  qualityVisible = false,
+  onSetQualityVisible,
+}: ConnectionDiagnosticsPanelProps) {
   const [diagnostics, setDiagnostics] = useState<ConnectionDiagnosticsState>({ status: 'idle' });
   const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle');
 
@@ -149,6 +155,16 @@ export function ConnectionDiagnosticsPanel({ onCollect }: ConnectionDiagnosticsP
             새로고침
           </button>
         </header>
+        {onSetQualityVisible ? (
+          <button
+            className="quality-toggle"
+            type="button"
+            aria-pressed={qualityVisible}
+            onClick={() => onSetQualityVisible(!qualityVisible)}
+          >
+            참가자별 수신 품질 {qualityVisible ? '표시 끄기' : '표시 켜기'}
+          </button>
+        ) : null}
         <p className="connection-diagnostics__privacy">
           요청 후 약 3초 동안 수신 손실을 측정합니다. 지연·jitter는 마지막 측정값이며, IP 주소, 방
           코드, 참가자 식별자를 포함하거나 서버로 보내지 않습니다.

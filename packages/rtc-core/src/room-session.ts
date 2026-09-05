@@ -1,8 +1,11 @@
+import { ParticipantMonitor, type ParticipantActivity } from './participant-monitor.js';
 import {
   PROTOCOL_VERSION,
   serializeClientMessage,
   serializePeerDataMessage,
   type ChatDataMessage,
+  type StudyCommand,
+  type StudyState,
   type ModeratedMediaKind,
   type Participant,
   type ParticipantHandDataMessage,
@@ -28,7 +31,11 @@ import {
   type ChatMessage,
   type ChatRecipientDeliveryState,
 } from './room-chat.js';
-import { ScreenShareLifecycle, type ScreenShareStartResult } from './screen-share-lifecycle.js';
+import {
+  ScreenShareLifecycle,
+  type ScreenShareStartResult,
+  type ScreenShareQuality,
+} from './screen-share-lifecycle.js';
 import { SignalingRecoveryLifecycle } from './signaling-recovery-lifecycle.js';
 import { SignalingTransport, SignalingTransportError } from './signaling-transport.js';
 export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
@@ -105,6 +112,7 @@ export interface ParticipantSnapshot {
   readonly videoEnabled: boolean;
   readonly videoSource: VideoSource;
   readonly handRaised: boolean;
+  readonly activity?: ParticipantActivity;
 }
 
 export interface RoomConnectionDiagnostics {
@@ -119,7 +127,14 @@ export interface ModerationNotice {
   readonly kind: ModeratedMediaKind;
 }
 
+export interface RoomStudySnapshot extends StudyState {
+  readonly sampledAt: number;
+}
+
 export interface RoomSessionSnapshot {
+  readonly study?: RoomStudySnapshot | null;
+  readonly studyPending?: boolean;
+  readonly studyNotice?: string | null;
   readonly roomId: string;
   readonly status: RoomSessionStatus;
   readonly selfId: string | null;
@@ -127,6 +142,7 @@ export interface RoomSessionSnapshot {
   readonly canModerateMedia: boolean;
   readonly screenShareAvailable: boolean;
   readonly screenSharing: boolean;
+  readonly screenShareQuality?: ScreenShareQuality;
   readonly videoQualityMode: VideoQualityMode;
   readonly participants: readonly ParticipantSnapshot[];
   readonly localMedia: LocalMediaSnapshot;
@@ -375,6 +391,17 @@ export class RoomSession {
   readonly #remoteMediaStates = new Map<string, ParticipantMediaDataMessage>();
   readonly #staleSelfIds = new Set<string>();
   readonly #exhaustedPeerIds = new Set<string>();
+  readonly #participantMonitors = new Map<string, ParticipantMonitor>();
+  readonly #participantActivity = new Map<string, ParticipantActivity>();
+  #study: RoomStudySnapshot | null = null;
+  #studyNotice: string | null = null;
+  #studyCommandId: string | null = null;
+  #studyCommandTimer: ReturnType<typeof setTimeout> | null = null;
+  #studySyncRequest: { id: string; sentAt: number } | null = null;
+  #monitorGeneration = 0;
+  #monitorPending = false;
+  readonly #peerConnectionEpochs = new Map<string, string>();
+  readonly #peerRetryRequests = new Map<string, ReturnType<typeof setTimeout>>();
   readonly #signalingTransport: SignalingTransport;
   readonly #peerNegotiation: PeerNegotiationLifecycle;
   readonly #signalingRecovery: SignalingRecoveryLifecycle;
@@ -416,7 +443,7 @@ export class RoomSession {
 
     this.#options = { ...options, roomId, displayName };
     this.#recoveryOptions = resolveRecoveryOptions(options.recovery);
-    this.#chat = new RoomChatLedger(options.maxChatMessages ?? 200);
+    this.#chat = new RoomChatLedger(options.maxChatMessages ?? 200, () => this.#monotonicNow());
     const onLocalMediaChanged = () => {
       this.#syncLocalParticipantMedia();
       this.#broadcastMediaState();
@@ -492,7 +519,10 @@ export class RoomSession {
       roomId,
       transport: this.#signalingTransport,
       maxPendingRemoteCandidates: MAX_PENDING_REMOTE_ICE_CANDIDATES,
-      createNegotiationId: defaultCreateId,
+      createNegotiationId: (peerId) => {
+        const epoch = this.#peerConnectionEpochs.get(peerId);
+        return epoch === undefined ? defaultCreateId() : `${epoch}.${defaultCreateId()}`;
+      },
       getPeer: (peerId) => this.#peers.get(peerId),
       ensurePeer: (peerId) => this.#ensurePeer(peerId),
       replacePeer: (peerId, preservePendingCandidates, connectionAttempt) =>
@@ -634,6 +664,76 @@ export class RoomSession {
     this.#warning = null;
     this.#warningPeerId = null;
     return true;
+  }
+
+  resetParticipantActivity(): void {
+    this.#monitorGeneration += 1;
+    this.#participantMonitors.clear();
+    this.#participantActivity.clear();
+    this.#emit();
+  }
+
+  async sampleParticipantActivity(qualityEnabled: boolean): Promise<void> {
+    if (this.#status !== 'active' || this.#monitorPending) return;
+    this.#monitorPending = true;
+    const generation = this.#monitorGeneration;
+    let localSpeaking = false;
+    try {
+      await Promise.all(
+        [...this.#peers.values()].map(async (peer) => {
+          if (peer.connection.connectionState !== 'connected') return;
+          const participant = this.#participants.get(peer.peerId);
+          if (!participant) return;
+          const localAudio = this.#getLocalMediaSnapshot().audioEnabled;
+          if (!qualityEnabled && !participant.audioEnabled && !localAudio) {
+            this.#participantActivity.delete(peer.peerId);
+            this.#participantMonitors.delete(peer.peerId);
+            return;
+          }
+          try {
+            const report = await peer.connection.getStats();
+            if (
+              generation !== this.#monitorGeneration ||
+              !this.#isCurrentPeer(peer) ||
+              peer.connection.connectionState !== 'connected'
+            )
+              return;
+            let monitor = this.#participantMonitors.get(peer.peerId);
+            if (!monitor) {
+              monitor = new ParticipantMonitor();
+              this.#participantMonitors.set(peer.peerId, monitor);
+            }
+            const activity = monitor.sample(
+              report,
+              this.#monotonicNow(),
+              participant.audioEnabled,
+              this.#getLocalMediaSnapshot().audioEnabled,
+              qualityEnabled,
+            );
+            this.#participantActivity.set(peer.peerId, {
+              speaking: activity.speaking,
+              receptionQuality: activity.receptionQuality,
+            });
+            localSpeaking ||= activity.localSpeaking;
+          } catch {
+            if (generation === this.#monitorGeneration && this.#isCurrentPeer(peer)) {
+              this.#participantActivity.delete(peer.peerId);
+              this.#participantMonitors.delete(peer.peerId);
+            }
+          }
+        }),
+      );
+      if (generation === this.#monitorGeneration && this.#status === 'active') {
+        if (this.#selfId)
+          this.#participantActivity.set(this.#selfId, {
+            speaking: localSpeaking,
+            receptionQuality: 'unavailable',
+          });
+        this.#emit();
+      }
+    } finally {
+      this.#monitorPending = false;
+    }
   }
 
   /**
@@ -796,6 +896,10 @@ export class RoomSession {
     return true;
   }
 
+  setScreenShareQuality(quality: ScreenShareQuality): boolean {
+    return this.#screenShare.setQuality(quality);
+  }
+
   startScreenShare(): Promise<ScreenShareStartResult> {
     if (this.#disposed || this.#status !== 'active' || this.#localInput.isChanging()) {
       return Promise.resolve('cancelled');
@@ -930,6 +1034,103 @@ export class RoomSession {
     }
   }
 
+  syncStudy(): boolean {
+    if (this.#status !== 'active') return false;
+    const sentAt = this.#monotonicNow();
+    if (this.#studySyncRequest && sentAt - this.#studySyncRequest.sentAt < 10_000) return false;
+    const id = `study-sync-${defaultCreateId()}`;
+    try {
+      this.#signalingTransport.send({
+        v: PROTOCOL_VERSION,
+        type: 'room.study.sync',
+        roomId: this.#options.roomId,
+        requestId: id,
+      });
+      this.#studySyncRequest = { id, sentAt };
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  updateStudy(command: StudyCommand): boolean {
+    if (
+      this.#status !== 'active' ||
+      this.#selfRole !== 'host' ||
+      !this.#study ||
+      this.#studyCommandId
+    )
+      return false;
+    const id = `study-update-${defaultCreateId()}`;
+    try {
+      this.#signalingTransport.send({
+        v: PROTOCOL_VERSION,
+        type: 'room.study.update',
+        roomId: this.#options.roomId,
+        requestId: id,
+        payload: { ...command, expectedRevision: this.#study.revision },
+      });
+      this.#studyCommandId = id;
+      this.#studyNotice = null;
+      this.#studyCommandTimer = globalThis.setTimeout(() => {
+        this.#clearStudyCommand();
+        this.#studyNotice = '변경 결과를 확인하지 못했습니다. 최신 상태를 불러옵니다.';
+        this.syncStudy();
+        this.#emit();
+      }, 10_000);
+      this.#emit();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  #clearStudyCommand(): void {
+    if (this.#studyCommandTimer !== null) globalThis.clearTimeout(this.#studyCommandTimer);
+    this.#studyCommandTimer = null;
+    this.#studyCommandId = null;
+  }
+
+  retryPeer(peerId: string): boolean {
+    if (
+      this.#status !== 'active' ||
+      !this.#exhaustedPeerIds.has(peerId) ||
+      this.#peerRetryRequests.has(peerId)
+    ) {
+      return false;
+    }
+    try {
+      this.#signalingTransport.sendRelay({
+        v: PROTOCOL_VERSION,
+        type: 'peer.reconnect',
+        roomId: this.#options.roomId,
+        to: peerId,
+      });
+      this.#peerRetryRequests.set(
+        peerId,
+        globalThis.setTimeout(() => {
+          this.#peerRetryRequests.delete(peerId);
+          this.#setPeerConnectionStatus(peerId, 'failed');
+        }, 10_000),
+      );
+      this.#setPeerConnectionStatus(peerId, 'connecting');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  #clearPeerRetry(peerId: string): void {
+    const timer = this.#peerRetryRequests.get(peerId);
+    if (timer !== undefined) globalThis.clearTimeout(timer);
+    this.#peerRetryRequests.delete(peerId);
+  }
+
+  #acceptPeerEpoch(peerId: string, negotiationId: string | undefined): boolean {
+    const epoch = this.#peerConnectionEpochs.get(peerId);
+    return epoch === undefined || negotiationId?.startsWith(`${epoch}.`) === true;
+  }
+
   sendChat(text: string): ChatMessage {
     if (this.#status !== 'active' || this.#selfId === null) {
       throw new ChatSendError('room-not-active', 'Chat is only available after joining the room');
@@ -956,12 +1157,53 @@ export class RoomSession {
     };
 
     const targets = this.#enqueueOutboundChat(wireMessage, serializedMessage);
-    const storedMessage = this.#chat.recordOutgoing(message, targets.recipientStates);
+    const storedMessage = this.#chat.recordOutgoing(
+      {
+        ...message,
+        recipients: [...targets.recipientStates].map(([peerId, state]) => ({
+          peerId,
+          state,
+          displayName: this.#participants.get(peerId)?.displayName ?? peerId,
+        })),
+      },
+      targets.recipientStates,
+    );
     for (const peer of targets.peers) {
       peer.data.flush();
     }
     this.#emit();
     return storedMessage;
+  }
+
+  retryChat(messageId: string, recipientId?: string): boolean {
+    const message = this.#chat.retryCandidate(messageId);
+    if (this.#status !== 'active' || !message || message.senderId !== this.#selfId) return false;
+    const peers = this.#chat.failedRecipients(messageId).flatMap((peerId) => {
+      const peer = this.#peers.get(peerId);
+      return (recipientId === undefined || recipientId === peerId) &&
+        peer?.data.isOpen() &&
+        !peer.recovering &&
+        peer.data.hasQueueCapacity()
+        ? [peer]
+        : [];
+    });
+    if (peers.length === 0) return false;
+    const wire: ChatDataMessage = {
+      type: 'chat.message',
+      id: message.id,
+      senderId: message.senderId,
+      sentAt: message.sentAt,
+      text: message.text,
+    };
+    const serialized = serializePeerDataMessage(wire);
+    this.#chat.prepareRetry(
+      messageId,
+      peers.map((peer) => peer.peerId),
+    );
+    for (const peer of peers) peer.data.enqueueChat(wire, serialized);
+    for (const peer of peers) peer.data.flush();
+    this.#emit();
+    return true;
   }
 
   async #performJoin(): Promise<void> {
@@ -1161,8 +1403,61 @@ export class RoomSession {
           }
           this.#emit();
           return;
+        case 'room.study.state': {
+          if (this.#status !== 'active') return;
+          if (message.requestId === this.#studyCommandId) this.#clearStudyCommand();
+          const { conflict, ...state } = message.payload;
+          if (conflict)
+            this.#studyNotice =
+              '다른 방장이 먼저 변경했습니다. 최신 상태를 확인한 뒤 다시 조작해 주세요.';
+          if (!this.#study || state.revision >= this.#study.revision) {
+            const now = this.#monotonicNow();
+            const request = this.#studySyncRequest;
+            const transitMs =
+              request !== null && request.id === message.requestId
+                ? Math.max(0, now - request.sentAt) / 2
+                : 0;
+            this.#study = {
+              ...state,
+              remainingMs: Math.max(0, state.remainingMs - (state.running ? transitMs : 0)),
+              sampledAt: now,
+            };
+          }
+          if (message.requestId === this.#studySyncRequest?.id) this.#studySyncRequest = null;
+          this.#emit();
+          return;
+        }
+        case 'peer.reconnect': {
+          const { peerId, connectionId, initiator } = message.payload;
+          if (
+            this.#status !== 'active' ||
+            peerId === this.#selfId ||
+            !this.#participants.has(peerId)
+          )
+            return;
+          this.#cleanupPeer(peerId, false);
+          this.#clearPeerRetry(peerId);
+          this.#exhaustedPeerIds.delete(peerId);
+          this.#peerConnectionEpochs.set(peerId, connectionId);
+          this.#clearPeerWarning(peerId);
+          try {
+            const peer = this.#ensurePeer(peerId);
+            this.#setPeerConnectionStatus(peerId, 'connecting');
+            if (initiator) {
+              await this.#peerNegotiation.createOffer(peerId);
+            }
+            if (!this.#isCurrentPeer(peer)) return;
+          } catch (error) {
+            this.#failPeer(peerId, error);
+          }
+          return;
+        }
         case 'rtc.offer':
-          if (this.#staleSelfIds.has(message.from) || this.#exhaustedPeerIds.has(message.from)) {
+          if (
+            this.#staleSelfIds.has(message.from) ||
+            this.#exhaustedPeerIds.has(message.from) ||
+            !this.#acceptPeerEpoch(message.from, message.payload.negotiationId)
+          ) {
             return;
           }
           await this.#peerNegotiation.handleOffer(
@@ -1172,7 +1467,11 @@ export class RoomSession {
           );
           return;
         case 'rtc.answer':
-          if (this.#staleSelfIds.has(message.from) || this.#exhaustedPeerIds.has(message.from)) {
+          if (
+            this.#staleSelfIds.has(message.from) ||
+            this.#exhaustedPeerIds.has(message.from) ||
+            !this.#acceptPeerEpoch(message.from, message.payload.negotiationId)
+          ) {
             return;
           }
           await this.#peerNegotiation.handleAnswer(
@@ -1182,7 +1481,11 @@ export class RoomSession {
           );
           return;
         case 'rtc.ice':
-          if (this.#staleSelfIds.has(message.from) || this.#exhaustedPeerIds.has(message.from)) {
+          if (
+            this.#staleSelfIds.has(message.from) ||
+            this.#exhaustedPeerIds.has(message.from) ||
+            !this.#acceptPeerEpoch(message.from, message.payload.negotiationId)
+          ) {
             return;
           }
           await this.#peerNegotiation.handleIce(
@@ -1922,6 +2225,10 @@ export class RoomSession {
   }
 
   #setPeerConnectionStatus(peerId: string, status: PeerConnectionStatus): void {
+    if (status !== 'connected') {
+      this.#participantActivity.delete(peerId);
+      this.#participantMonitors.delete(peerId);
+    }
     const participant = this.#participants.get(peerId);
     if (participant !== undefined) {
       participant.connectionState = status;
@@ -1957,6 +2264,8 @@ export class RoomSession {
   }
 
   #removePeer(peerId: string): void {
+    this.#clearPeerRetry(peerId);
+    this.#peerConnectionEpochs.delete(peerId);
     this.#exhaustedPeerIds.delete(peerId);
     this.#cleanupPeer(peerId, true);
     this.#clearPeerWarning(peerId);
@@ -1981,6 +2290,8 @@ export class RoomSession {
   }
 
   #disposePeerContext(peer: PeerContext): void {
+    this.#participantMonitors.delete(peer.peerId);
+    this.#participantActivity.delete(peer.peerId);
     peer.disposeConnection();
   }
 
@@ -1993,6 +2304,15 @@ export class RoomSession {
   }
 
   #cleanupPeerResources(): void {
+    this.#clearStudyCommand();
+    this.#study = null;
+    this.#studyNotice = null;
+    this.#studySyncRequest = null;
+    this.#monitorGeneration += 1;
+    this.#participantMonitors.clear();
+    this.#participantActivity.clear();
+    for (const peerId of this.#peerRetryRequests.keys()) this.#clearPeerRetry(peerId);
+    this.#peerConnectionEpochs.clear();
     for (const peerId of [...this.#peers.keys()]) {
       this.#cleanupPeer(peerId, false);
       this.#clearPeerWarning(peerId);
@@ -2015,6 +2335,11 @@ export class RoomSession {
   }
 
   #handleServerError(code: SignalingErrorCode, requestId: string | undefined): void {
+    if (requestId === this.#studyCommandId) {
+      this.#clearStudyCommand();
+      this.#studyNotice = '타이머와 주제 변경 요청을 처리하지 못했습니다.';
+      this.#emit();
+    }
     const error = new RoomSessionFailure(code, safeSignalingErrorMessage(code));
     if (this.#signalingRecovery.rejectJoin(error)) {
       return;
@@ -2138,18 +2463,41 @@ export class RoomSession {
   #buildSnapshot(): RoomSessionSnapshot {
     return {
       roomId: this.#options.roomId,
+      study: this.#study === null ? null : { ...this.#study },
+      studyPending: this.#studyCommandId !== null,
+      studyNotice: this.#studyNotice,
       status: this.#status,
       selfId: this.#selfId,
       selfRole: this.#selfRole,
       canModerateMedia: this.#canModerateMedia,
       screenShareAvailable: this.#screenShare.isAvailable(),
       screenSharing: this.#screenShare.isSharing(),
+      screenShareQuality: this.#screenShare.getQuality(),
       videoQualityMode: this.#videoQualityMode,
       participants: [...this.#participants.values()].map((participant) => ({
         ...participant,
+        ...(this.#participantActivity.has(participant.peerId)
+          ? { activity: { ...this.#participantActivity.get(participant.peerId)! } }
+          : {}),
       })),
       localMedia: this.#getLocalMediaSnapshot(),
-      messages: this.#chat.snapshot(),
+      messages: this.#chat.snapshot().map((message) => ({
+        ...message,
+        ...(message.recipients
+          ? {
+              recipients: message.recipients.map((recipient) => ({
+                ...recipient,
+                canRetry:
+                  this.#status === 'active' &&
+                  message.senderId === this.#selfId &&
+                  recipient.state === 'failed' &&
+                  this.#chat.retryCandidate(message.id) !== undefined &&
+                  this.#peers.get(recipient.peerId)?.data.isOpen() === true &&
+                  this.#peers.get(recipient.peerId)?.recovering === false,
+              })),
+            }
+          : {}),
+      })),
       lastModerationNotice:
         this.#lastModerationNotice === null ? null : { ...this.#lastModerationNotice },
       warning:

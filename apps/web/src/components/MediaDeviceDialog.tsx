@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { VideoQualityMode } from '@round/rtc-core';
+import type { VideoQualityMode, ScreenShareQuality } from '@round/rtc-core';
 import { AudioOutputControls } from './AudioOutputControls';
 import { MicrophoneLevel } from './MicrophoneLevel';
 
@@ -12,6 +12,8 @@ interface MediaDeviceDialogProps {
   onSelectOutput: (deviceId: string) => void;
   screenSharing: boolean;
   active: boolean;
+  screenShareQuality?: ScreenShareQuality | undefined;
+  onSelectScreenShareQuality?: ((mode: ScreenShareQuality) => boolean) | undefined;
   videoQualityMode: VideoQualityMode;
   onSelectVideoQuality: (mode: VideoQualityMode) => Promise<boolean>;
   onSelect: (kind: 'audio' | 'video', deviceId: string) => Promise<boolean>;
@@ -28,6 +30,8 @@ export function MediaDeviceDialog({
   screenSharing,
   active,
   videoQualityMode,
+  screenShareQuality = 'standard',
+  onSelectScreenShareQuality,
   onSelectVideoQuality,
   onSelect,
   onClose,
@@ -196,7 +200,7 @@ export function MediaDeviceDialog({
       </div>
       <p>
         데이터 절약은 내가 보내는 카메라 영상만 줄입니다. 상대 영상 수신량은 줄이지 않으며, 화면
-        공유는 글자를 읽기 쉽도록 일반 설정을 사용합니다.
+        공유는 아래에서 선택한 화면 공유 품질을 사용합니다.
       </p>
       {deviceListError ? (
         <p>
@@ -211,6 +215,26 @@ export function MediaDeviceDialog({
             : notice}
       </p>
       {error ? <p role="alert">{error}</p> : null}
+      {onSelectScreenShareQuality ? (
+        <label className="screen-quality-setting">
+          화면 공유 품질
+          <select
+            value={screenShareQuality}
+            disabled={!active || screenSharing || pending !== null}
+            onChange={(event) => {
+              if (!onSelectScreenShareQuality(event.target.value as ScreenShareQuality))
+                setError('공유를 중지한 뒤 품질을 선택해 주세요.');
+            }}
+          >
+            <option value="standard">일반 · 최대 720p / 15fps</option>
+            <option value="text">문서·코드 · 최대 1080p / 10fps</option>
+          </select>
+          <small>
+            공유 시작 전에 선택하세요. 문서·코드 모드는 글자를 선명하게 보냅니다. 실제 품질은
+            브라우저와 연결 상태에 따라 달라집니다.
+          </small>
+        </label>
+      ) : null}
       <AudioOutputControls
         deviceId={outputDeviceId}
         devices={devices}

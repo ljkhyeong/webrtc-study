@@ -110,6 +110,9 @@ describe('BATON room entry boundary', () => {
       const snapshot = activeRoomSnapshot();
       return {
         disableParticipantMedia: vi.fn(),
+        syncStudy: vi.fn(() => true),
+        sampleParticipantActivity: vi.fn(async () => {}),
+        resetParticipantActivity: vi.fn(),
         getLocalStream: () => null,
         getRemoteStream: () => null,
         getSnapshot: () => snapshot,

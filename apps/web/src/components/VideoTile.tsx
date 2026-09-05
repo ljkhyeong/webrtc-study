@@ -15,11 +15,13 @@ const DEFAULT_AUDIO_OUTPUT: AudioOutputSelection = { deviceId: '' };
 
 interface VideoTileProps {
   participant: ParticipantView;
+  qualityVisible?: boolean;
   audioOutput?: AudioOutputSelection | undefined;
   onSelectDevices?: () => void;
   pinned?: boolean;
   onTogglePin?: () => void;
   canModerateMedia?: boolean;
+  onRetryPeer?: ((peerId: string) => void) | undefined;
   onDisableAudio?: ((peerId: string) => void) | undefined;
   onDisableVideo?: ((peerId: string) => void) | undefined;
 }
@@ -43,6 +45,7 @@ function connectionLabel(connectionState: PeerConnectionStatus) {
 
 export function VideoTile({
   participant,
+  qualityVisible = false,
   audioOutput = DEFAULT_AUDIO_OUTPUT,
   onSelectDevices,
   pinned = false,
@@ -50,6 +53,7 @@ export function VideoTile({
   canModerateMedia = false,
   onDisableAudio,
   onDisableVideo,
+  onRetryPeer,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playbackAttemptRef = useRef(0);
@@ -186,7 +190,7 @@ export function VideoTile({
 
   return (
     <article
-      className={`video-tile${isConnected ? ' video-tile--connected' : ''}${pinned ? ' video-tile--pinned' : ''}`}
+      className={`video-tile${isConnected ? ' video-tile--connected' : ''}${pinned ? ' video-tile--pinned' : ''}${participant.audioEnabled && participant.activity?.speaking ? ' video-tile--speaking' : ''}`}
       data-peer-id={participant.peerId}
       aria-label={`${participant.displayName}${participant.isLocal ? ' (나)' : ''} 참가자`}
     >
@@ -225,6 +229,21 @@ export function VideoTile({
       ) : null}
 
       <div className="video-tile__badges">
+        {participant.audioEnabled && participant.activity?.speaking ? (
+          <span className="video-tile__speaking">발언 중</span>
+        ) : null}
+        {qualityVisible && !participant.isLocal && isConnected ? (
+          <span
+            className={`video-tile__quality video-tile__quality--${participant.activity?.receptionQuality ?? 'unavailable'}`}
+            title="내 브라우저에서 받은 음성과 영상의 통계입니다. 자세한 수치는 연결 진단에서 확인하세요."
+          >
+            {participant.activity?.receptionQuality === 'unstable'
+              ? '수신 불안정 · 연결 진단 확인'
+              : participant.activity?.receptionQuality === 'stable'
+                ? '수신 양호'
+                : '수신 품질 측정 불가·대기'}
+          </span>
+        ) : null}
         {participant.handRaised ? (
           <span
             className="video-tile__hand-raised"
@@ -315,6 +334,17 @@ export function VideoTile({
         </div>
       ) : null}
 
+      {!participant.isLocal && participant.connectionState === 'failed' && onRetryPeer ? (
+        <div className="video-tile__playback-recovery">
+          <button
+            type="button"
+            onClick={() => onRetryPeer(participant.peerId)}
+            aria-label={`${participant.displayName} 다시 연결`}
+          >
+            이 참가자 다시 연결
+          </button>
+        </div>
+      ) : null}
       <div className="video-tile__shade" />
       <div className="video-tile__meta">
         <span className="video-tile__name">
@@ -337,7 +367,10 @@ export function VideoTile({
             <MicOffIcon />
           </span>
         ) : (
-          <span className="video-tile__signal" aria-label="마이크 켜짐">
+          <span
+            className={`video-tile__signal${participant.activity?.speaking ? ' video-tile__signal--speaking' : ''}`}
+            aria-label="마이크 켜짐"
+          >
             <i />
             <i />
             <i />

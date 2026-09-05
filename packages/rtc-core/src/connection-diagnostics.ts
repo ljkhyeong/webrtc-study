@@ -44,7 +44,7 @@ function waitForSample(signal: AbortSignal, durationMs: number): Promise<void> {
   });
 }
 
-function summarizeConnection(
+export function summarizeConnection(
   connectionNumber: number,
   connectionState: RTCPeerConnectionState,
   before: RTCStatsReport,

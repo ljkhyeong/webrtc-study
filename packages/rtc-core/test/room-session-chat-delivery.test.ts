@@ -31,6 +31,7 @@ describe('RoomSession', () => {
       sentAt: 1_234,
       isLocal: true,
       deliveryState: 'pending',
+      recipients: [{ peerId: 'peer-a', displayName: 'Ara', state: 'pending' }],
     });
     expect(JSON.parse(channel?.sent.at(-1) ?? '')).toEqual({
       type: 'chat.message',
@@ -43,6 +44,9 @@ describe('RoomSession', () => {
     expect(harness.session.getSnapshot().messages).toContainEqual({
       ...local,
       deliveryState: 'sent',
+      recipients: [
+        { peerId: 'peer-a', displayName: 'Ara', state: 'acknowledged', canRetry: false },
+      ],
     });
 
     channel?.receive({
@@ -71,6 +75,9 @@ describe('RoomSession', () => {
       {
         ...local,
         deliveryState: 'sent',
+        recipients: [
+          { peerId: 'peer-a', displayName: 'Ara', state: 'acknowledged', canRetry: false },
+        ],
       },
       {
         id: 'message-local',

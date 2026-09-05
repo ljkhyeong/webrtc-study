@@ -3,6 +3,8 @@ import type {
   PeerMediaSenderUpdate,
 } from './peer-connection-lifecycle.js';
 
+export type ScreenShareQuality = 'standard' | 'text';
+
 export type ScreenShareStartResult = 'started' | 'recovering' | 'cancelled' | 'failed';
 
 interface ScreenShareLifecycleOptions {
@@ -30,19 +32,30 @@ interface ScreenShareLifecycleOptions {
   readonly onStateChanged: () => void;
 }
 
-const SCREEN_SHARE_CONSTRAINTS: DisplayMediaStreamOptions = {
-  video: {
-    width: { ideal: 1280, max: 1280 },
-    height: { ideal: 720, max: 720 },
-    frameRate: { ideal: 15, max: 15 },
+const SCREEN_SHARE_CONSTRAINTS: Record<ScreenShareQuality, DisplayMediaStreamOptions> = {
+  standard: {
+    video: {
+      width: { ideal: 1280, max: 1280 },
+      height: { ideal: 720, max: 720 },
+      frameRate: { ideal: 15, max: 15 },
+    },
+    audio: false,
   },
-  audio: false,
+  text: {
+    video: {
+      width: { ideal: 1920, max: 1920 },
+      height: { ideal: 1080, max: 1080 },
+      frameRate: { ideal: 10, max: 10 },
+    },
+    audio: false,
+  },
 };
 
 /** 화면 공유 트랙과 비동기 시작·중지 작업의 수명주기를 소유한다. */
 export class ScreenShareLifecycle {
   readonly #options: ScreenShareLifecycleOptions;
 
+  #quality: ScreenShareQuality = 'standard';
   #cameraTracks: MediaStreamTrack[] = [];
   #pendingTrack: MediaStreamTrack | null = null;
   #activeTrack: MediaStreamTrack | null = null;
@@ -57,6 +70,19 @@ export class ScreenShareLifecycle {
 
   constructor(options: ScreenShareLifecycleOptions) {
     this.#options = options;
+  }
+
+  getQuality(): ScreenShareQuality {
+    return this.#quality;
+  }
+
+  setQuality(quality: ScreenShareQuality): boolean {
+    if (this.isSharingOrStopping() || this.isTransitioning() || !this.#options.isRoomActive())
+      return false;
+    if (quality !== 'standard' && quality !== 'text') return false;
+    this.#quality = quality;
+    this.#options.onStateChanged();
+    return true;
   }
 
   isAvailable(): boolean {
@@ -216,7 +242,7 @@ export class ScreenShareLifecycle {
 
     let displayStream: MediaStream;
     try {
-      displayStream = await mediaDevices.getDisplayMedia(SCREEN_SHARE_CONSTRAINTS);
+      displayStream = await mediaDevices.getDisplayMedia(SCREEN_SHARE_CONSTRAINTS[this.#quality]);
     } catch (error) {
       return isDisplayMediaCancellation(error) ? 'cancelled' : 'failed';
     }
@@ -228,7 +254,7 @@ export class ScreenShareLifecycle {
       }
     }
     if (screenTrack !== undefined) {
-      preferDetailedScreenContent(screenTrack);
+      preferDetailedScreenContent(screenTrack, this.#quality);
       this.#pendingTrack = screenTrack;
     }
     if (screenTrack === undefined) {
@@ -429,12 +455,12 @@ function isDisplayMediaCancellation(error: unknown): boolean {
   return error.name === 'NotAllowedError' || error.name === 'AbortError';
 }
 
-function preferDetailedScreenContent(track: MediaStreamTrack): void {
+function preferDetailedScreenContent(track: MediaStreamTrack, quality: ScreenShareQuality): void {
   if (!('contentHint' in track)) {
     return;
   }
   try {
-    track.contentHint = 'detail';
+    track.contentHint = quality === 'text' ? 'text' : 'detail';
   } catch {
     // 일부 엔진은 contentHint를 노출하지만 표준화된 모든 값을 허용하지는 않는다.
   }
