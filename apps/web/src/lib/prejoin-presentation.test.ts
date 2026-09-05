@@ -7,7 +7,9 @@ describe('prejoinMediaIssueMessage', () => {
     expect(prejoinMediaIssueMessage('video', 'device-not-found')).toContain(
       '카메라를 찾지 못했습니다',
     );
-    expect(prejoinMediaIssueMessage('audio', 'device-busy')).toContain('다른 앱이 사용 중');
+    expect(prejoinMediaIssueMessage('audio', 'device-busy')).toContain(
+      '다른 앱에서 사용 중인지 확인',
+    );
     expect(prejoinMediaIssueMessage('video', 'track-ended')).toContain('카메라 연결이 종료');
   });
 });

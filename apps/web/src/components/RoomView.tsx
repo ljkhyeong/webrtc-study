@@ -413,7 +413,7 @@ export function RoomView({
 
           {participants.length === 1 && isActive ? (
             <div className="waiting-note">
-              <span>링크를 공유하면 이 자리에 스터디원이 나타납니다.</span>
+              <span>스터디원에게 초대 링크를 공유하세요.</span>
               <button type="button" onClick={handleCopy}>
                 {inviteCopyState.status === 'success' ? '링크 복사됨' : '초대 링크 복사'}
               </button>

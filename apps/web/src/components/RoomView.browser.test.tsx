@@ -330,7 +330,7 @@ describe('RoomView 브라우저 동작', () => {
       stage.scrollTop = 300;
       act(() =>
         container
-          .querySelector<HTMLButtonElement>('[aria-label="발표자의 화면 공유 크게 고정"]')!
+          .querySelector<HTMLButtonElement>('[aria-label="발표자의 공유 화면 고정"]')!
           .click(),
       );
       expect(stage.classList.contains('video-stage--pinned')).toBe(true);
@@ -341,13 +341,13 @@ describe('RoomView 브라우저 동작', () => {
       expect(container.querySelector('.chat-panel')?.getAttribute('aria-hidden')).toBe('false');
       act(() =>
         container
-          .querySelector<HTMLButtonElement>('[aria-label="발표자의 화면 공유 고정 해제"]')!
+          .querySelector<HTMLButtonElement>('[aria-label="발표자의 공유 화면 고정 해제"]')!
           .click(),
       );
       expect(stage.classList.contains('video-stage--pinned')).toBe(false);
       act(() =>
         container
-          .querySelector<HTMLButtonElement>('[aria-label="발표자의 화면 공유 크게 고정"]')!
+          .querySelector<HTMLButtonElement>('[aria-label="발표자의 공유 화면 고정"]')!
           .click(),
       );
       await act(async () =>
@@ -361,9 +361,7 @@ describe('RoomView 브라우저 동작', () => {
       expect(stage.classList.contains('video-stage--pinned')).toBe(false);
       await act(async () => root.render(<RoomView {...props} participants={[participant]} />));
       expect(
-        container.querySelector(
-          '[aria-pressed="false"][aria-label="발표자의 화면 공유 크게 고정"]',
-        ),
+        container.querySelector('[aria-pressed="false"][aria-label="발표자의 공유 화면 고정"]'),
       ).not.toBeNull();
     },
   );

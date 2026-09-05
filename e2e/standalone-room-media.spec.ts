@@ -22,7 +22,7 @@ test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) 
 
     const remoteScreenVideo = firstTileOnSecondPage.locator('video');
     const originalVideo = await remoteScreenVideo.elementHandle();
-    await firstTileOnSecondPage.getByRole('button', { name: '가온의 화면 공유 크게 고정' }).click();
+    await firstTileOnSecondPage.getByRole('button', { name: '가온의 공유 화면 고정' }).click();
     await expect(firstTileOnSecondPage).toHaveClass(/video-tile--pinned/);
     await second.getByRole('button', { name: '채팅 열기' }).click();
     await expect(second.getByRole('textbox', { name: '메시지', exact: true })).toBeVisible();

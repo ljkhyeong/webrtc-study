@@ -199,7 +199,7 @@ export function MediaDeviceDialog({
                   requesting: '화면 유지 요청 중',
                   active: '적용 중 · 화면을 켜 둡니다.',
                   waiting: '대기 중 · 방에 연결하고 화면으로 돌아오면 다시 적용합니다.',
-                  released: '브라우저가 해제했습니다. 필요하면 설정을 껐다 다시 켜 주세요.',
+                  released: '화면 꺼짐 방지가 해제되었습니다. 설정을 껐다 다시 켜 주세요.',
                   error:
                     '적용하지 못했습니다. 배터리 절약·브라우저 설정을 확인하고 껐다 다시 켜 주세요.',
                 }[screenWakeLock.status]}
@@ -232,8 +232,8 @@ export function MediaDeviceDialog({
         </button>
       </div>
       <p>
-        데이터 절약은 내가 보내는 카메라 영상만 줄입니다. 상대 영상 수신량은 줄이지 않으며, 화면
-        공유는 아래에서 선택한 화면 공유 품질을 사용합니다.
+        데이터 절약은 내 카메라 영상의 전송량만 줄입니다. 상대 영상과 화면 공유에는 적용되지
+        않습니다.
       </p>
       {deviceListError ? (
         <p>

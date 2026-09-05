@@ -137,9 +137,9 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
   if (state.status === 'not-found') {
     return (
       <BatonEntryPanel
-        eyebrow="종료된 스터디룸"
-        title="이 스터디룸을 더 이상 찾을 수 없습니다."
-        description="방이 종료되었거나 BATON에서 새 스터디룸으로 교체되었습니다."
+        eyebrow="방을 찾을 수 없음"
+        title="이 스터디룸을 찾을 수 없습니다."
+        description="BATON에서 스터디룸을 다시 확인해 주세요."
         primaryAction={{ href: '/', label: 'BATON으로 돌아가기' }}
       />
     );

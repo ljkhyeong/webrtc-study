@@ -535,7 +535,7 @@ describe('BATON room entry boundary', () => {
     });
 
     await waitForState(() =>
-      expect(container.textContent).toContain('이 스터디룸을 더 이상 찾을 수 없습니다.'),
+      expect(container.textContent).toContain('이 스터디룸을 찾을 수 없습니다.'),
     );
     expect(container.textContent).not.toContain('room mapping detail');
     expect(buttonWithText(container, '장치 확인')).toBeNull();

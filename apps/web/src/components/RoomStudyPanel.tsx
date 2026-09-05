@@ -306,7 +306,7 @@ export function RoomStudyPanel({
             <p>타이머와 주제는 방장이 변경할 수 있습니다.</p>
           )}
           <button type="button" disabled={!active} onClick={onSync}>
-            진행 상태 새로고침
+            타이머·주제 다시 불러오기
           </button>
           <small>
             방장이 나가도 계속 진행됩니다. 모두 퇴장하거나 서버가 재시작되면 초기화됩니다.

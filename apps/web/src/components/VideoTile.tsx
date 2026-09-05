@@ -309,7 +309,7 @@ export function VideoTile({
               ? '수신 불안정 · 연결 진단 확인'
               : participant.activity?.receptionQuality === 'stable'
                 ? '수신 양호'
-                : '수신 품질 측정 불가·대기'}
+                : '수신 품질 정보 없음'}
           </span>
         ) : null}
         {participant.handRaised ? (
@@ -357,11 +357,11 @@ export function VideoTile({
           {onTogglePin ? (
             <button
               type="button"
-              aria-label={`${participant.displayName}의 화면 공유 ${pinned ? '고정 해제' : '크게 고정'}`}
+              aria-label={`${participant.displayName}의 공유 화면 ${pinned ? '고정 해제' : '고정'}`}
               aria-pressed={pinned}
               onClick={onTogglePin}
             >
-              {pinned ? '고정 해제' : '크게 보기'}
+              {pinned ? '고정 해제' : '화면 고정'}
             </button>
           ) : null}
           <button
