@@ -449,7 +449,7 @@ loop 없이 BATON으로 돌아갑니다. 참여권 refresh manager는 single-fli
 사용해 BATON의 상대적인 `refreshAfterSeconds`에서 다음 갱신을 예약합니다. prejoin이 열린 채
 그 deadline이 지나면 장치 접근, 미디어를 사용하는 입장, 카메라·마이크 없는 입장 모두 진행 전에
 같은 guard를 호출합니다. 활성 방의 갱신 `401`, `403`, `404`는 terminal 상태이며 다음 갱신을
-예약하지 않고 각각 login, 권한 안내, 종료된 방 화면으로 돌아갑니다. 지원하지 않는 auth-mode
+예약하지 않고 각각 로그인, 권한 안내, 방을 찾을 수 없다는 안내를 표시합니다. 지원하지 않는 auth-mode
 설정은 landing이나 prejoin을 mount하기 전에 app root에서 실패합니다. BATON alias는 account
 구분이 없는 로컬 저장소가 아니라 페이지 메모리에만 남습니다. TURN 발급은 별도로
 서버가 계산한 `refreshAfterSeconds`를 반환합니다. 브라우저는 TURN `expiresAt` epoch를
