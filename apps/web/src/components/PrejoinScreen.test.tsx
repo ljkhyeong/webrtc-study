@@ -119,7 +119,9 @@ describe('PrejoinScreen', () => {
       expect(markup).toContain('방장 키 (선택)');
       expect(markup).toContain('type="password"');
       expect(markup).toContain('minLength="32"');
-      expect(markup).toContain('32자 이상의 무작위 키만 사용');
+      expect(markup).toContain(
+        '방장은 운영자에게 받은 키를 입력하세요. 일반 참가자는 비워 두세요.',
+      );
       expect(markup).toContain('카메라와 마이크는 ‘장치 확인’을 눌러야 켜집니다.');
       expect(markup).not.toContain('서버에 연결 중');
       expect(getUserMedia).not.toHaveBeenCalled();

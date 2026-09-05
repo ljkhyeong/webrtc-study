@@ -271,7 +271,9 @@ export function VideoTile({
           aria-label={
             participant.isLocal && previewHidden
               ? '내 영상 숨김'
-              : `${participant.displayName}의 카메라 꺼짐`
+              : participant.videoEnabled
+                ? `${participant.displayName}의 영상 없음`
+                : `${participant.displayName}의 카메라 꺼짐`
           }
         >
           {participant.isLocal && previewHidden ? (

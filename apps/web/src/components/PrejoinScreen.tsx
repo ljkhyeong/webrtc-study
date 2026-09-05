@@ -319,7 +319,7 @@ export function PrejoinScreen({
               <small id="prejoin-host-capability-help">
                 {hostCapabilityInvalid
                   ? `방장 키는 ${MIN_HOST_CAPABILITY_LENGTH}자 이상이어야 합니다.`
-                  : `일반 참가자는 비워 두세요. ${MIN_HOST_CAPABILITY_LENGTH}자 이상의 무작위 키만 사용하며 화면에 표시되지 않습니다.`}
+                  : '방장은 운영자에게 받은 키를 입력하세요. 일반 참가자는 비워 두세요.'}
               </small>
             </label>
           ) : null}

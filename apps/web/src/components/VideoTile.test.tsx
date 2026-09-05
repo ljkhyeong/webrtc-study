@@ -33,13 +33,14 @@ describe('VideoTile', () => {
     expect(markup).toContain('카메라 꺼짐');
   });
 
-  it('does not create a media element before a stream exists', () => {
+  it('스트림이 없으면 영상 요소 없이 영상 없음으로 안내한다', () => {
     const markup = renderToStaticMarkup(
       <VideoTile participant={participant({ stream: undefined })} />,
     );
 
     expect(markup).not.toContain('<video');
-    expect(markup).toContain('카메라 꺼짐');
+    expect(markup).toContain('aria-label="스터디원의 영상 없음"');
+    expect(markup).not.toContain('카메라 꺼짐');
   });
 
   it('shows an actionable peer connection state before media connects', () => {
