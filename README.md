@@ -73,7 +73,14 @@ Gradle은 저장소의 Wrapper를 사용하므로 별도로 설치하지 않아�
 독립 실행에서도 소개 화면 없이 입장 준비로 연결됩니다. BATON 운영 화면은 이 방 생성
 화면을 사용하지 않습니다.
 
-전체 검증:
+작은 웹 수정은 타입 검사와 지정한 테스트로 확인합니다. 테스트 경로는 `apps/web` 기준입니다.
+
+```bash
+npm run check:web -- src/components/VideoTile.test.tsx
+```
+
+검사 선택·실패 재시도·작업 인계는 [검증 절차](docs/agent-validation.md)를 따릅니다.
+전체 검증은 기존 타입·테스트·빌드 범위를 유지하며 중복 실행을 합쳤습니다.
 
 ```bash
 npm run check
