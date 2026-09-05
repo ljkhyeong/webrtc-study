@@ -35,6 +35,12 @@ test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) 
       name: '가온의 화면 공유 전체 화면으로 보기',
     });
     await remoteScreenVideo.evaluate((element) => {
+      Object.defineProperty(element.closest('article'), 'requestFullscreen', {
+        configurable: true,
+        value: async () => {
+          throw new DOMException('전체 화면 거부', 'NotAllowedError');
+        },
+      });
       Object.defineProperties(element, {
         requestFullscreen: {
           configurable: true,

@@ -27,6 +27,7 @@ describe('타이머 종료 안내', () => {
           state={{ ...state, ...changes }}
           active
           canControl={false}
+          hostPresent
           pending={false}
           notice={null}
           onCommand={() => true}

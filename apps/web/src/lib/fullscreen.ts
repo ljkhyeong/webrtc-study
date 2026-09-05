@@ -11,8 +11,20 @@ interface WebkitFullscreenDocument extends Document {
   webkitExitFullscreen?: () => void | Promise<void>;
 }
 
-export async function enterVideoFullscreen(video: HTMLVideoElement): Promise<boolean> {
+export async function enterVideoFullscreen(
+  video: HTMLVideoElement,
+  container?: HTMLElement,
+): Promise<boolean> {
   const webkitVideo = video as WebkitFullscreenVideoElement;
+
+  if (container && typeof container.requestFullscreen === 'function') {
+    try {
+      await container.requestFullscreen();
+      return true;
+    } catch {
+      // 보기 도구를 함께 열 수 없으면 기존 영상 전체 화면으로 전환한다.
+    }
+  }
 
   if (typeof video.requestFullscreen === 'function') {
     try {
@@ -50,12 +62,17 @@ export async function enterVideoFullscreen(video: HTMLVideoElement): Promise<boo
 export async function exitVideoFullscreen(
   video: HTMLVideoElement,
   documentRef?: Document,
+  container?: HTMLElement,
 ): Promise<boolean> {
   const activeDocument = documentRef ?? (typeof document === 'undefined' ? undefined : document);
   const webkitVideo = video as WebkitFullscreenVideoElement;
   const webkitDocument = activeDocument as WebkitFullscreenDocument | undefined;
 
-  if (activeDocument?.fullscreenElement === video && activeDocument.exitFullscreen) {
+  if (
+    (activeDocument?.fullscreenElement === video ||
+      (container && activeDocument?.fullscreenElement === container)) &&
+    activeDocument?.exitFullscreen
+  ) {
     try {
       await activeDocument.exitFullscreen();
       return true;

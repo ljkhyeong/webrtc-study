@@ -79,13 +79,23 @@ describe('VideoTile browser behavior', () => {
     document.body.replaceChildren();
   });
 
-  it('개인 음소거를 스트림·스피커 교체 뒤에도 유지하고 상대 마이크를 바꾸지 않는다', async () => {
+  it('개인 음량과 음소거를 스트림·스피커 교체 뒤에도 유지하고 상대 마이크를 바꾸지 않는다', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
     const root = createRoot(document.body);
     const participant = remoteParticipant({} as MediaStream);
     try {
       await act(async () => root.render(<VideoTile participant={participant} />));
       const video = document.querySelector('video')!;
+      const slider = document.querySelector<HTMLInputElement>('input[type="range"]')!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+          slider,
+          '35',
+        );
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+        slider.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      expect(video.volume).toBe(0.35);
       const button = document.querySelector<HTMLButtonElement>('.video-tile__local-mute')!;
       await act(async () => button.click());
       expect(video.muted).toBe(true);
@@ -101,8 +111,128 @@ describe('VideoTile browser behavior', () => {
       expect(document.querySelector('video')).toBe(video);
       expect(video.muted).toBe(true);
       expect(participant.audioEnabled).toBe(true);
+      expect(video.volume).toBe(0.35);
       await act(async () => button.click());
       expect(video.muted).toBe(false);
+      expect(video.volume).toBe(0.35);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it('음량 변경을 무시하는 브라우저에서는 조절 막대 대신 기기 음량을 안내한다', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, 'volume', 'get').mockReturnValue(1);
+    vi.spyOn(HTMLMediaElement.prototype, 'volume', 'set').mockImplementation(() => {});
+    const root = createRoot(document.body);
+    try {
+      await act(async () =>
+        root.render(<VideoTile participant={remoteParticipant({} as MediaStream)} />),
+      );
+      expect(document.querySelector<HTMLInputElement>('input[type="range"]')!.disabled).toBe(true);
+      expect(document.body.textContent).toContain('기기 음량이나 소리 끄기');
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('.video-tile__local-mute')!.click(),
+      );
+      expect(document.querySelector('video')!.muted).toBe(true);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it('내 영상을 숨겨도 영상 요소와 송신 상태를 유지하고 장치 교체 뒤 다시 보여 준다', async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const participant = { ...remoteParticipant({} as MediaStream), isLocal: true };
+    const root = createRoot(document.body);
+    try {
+      await act(async () => root.render(<VideoTile participant={participant} />));
+      const video = document.querySelector('video')!;
+      const button = document.querySelector<HTMLButtonElement>('.video-tile__local-mute')!;
+      await act(async () => button.click());
+      expect(document.querySelector('video')).toBe(video);
+      expect(video.getAttribute('aria-hidden')).toBe('true');
+      expect(video.srcObject).toBe(participant.stream);
+      expect(participant.videoEnabled).toBe(true);
+      expect(play).toHaveBeenCalledOnce();
+      const stream = {} as MediaStream;
+      await act(async () => root.render(<VideoTile participant={{ ...participant, stream }} />));
+      expect(video.srcObject).toBe(stream);
+      expect(video.getAttribute('aria-hidden')).toBe('true');
+      await act(async () => button.click());
+      expect(video.getAttribute('aria-hidden')).toBe('false');
+      expect(video.muted).toBe(true);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it('공유 화면의 확대·이동 범위를 제한하고 공유 종료와 스트림 교체 때 초기화한다', async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const participant = remoteParticipant({} as MediaStream, 'screen');
+    const root = createRoot(document.body);
+    try {
+      await act(async () => root.render(<VideoTile participant={participant} />));
+      const video = document.querySelector('video')!;
+      const viewport = document.querySelector<HTMLElement>('.video-tile__viewport')!;
+      const key = (key: string) =>
+        act(() => viewport.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })));
+      for (let index = 0; index < 10; index += 1) key('+');
+      expect(video.style.width).toBe('400%');
+      for (let index = 0; index < 15; index += 1) key('ArrowRight');
+      expect(video.style.left).toBe('-300%');
+      expect(video.muted).toBe(false);
+      expect(play).toHaveBeenCalledOnce();
+      key('0');
+      expect(video.style.width).toBe('100%');
+      Object.defineProperties(viewport, {
+        clientWidth: { configurable: true, value: 200 },
+        clientHeight: { configurable: true, value: 400 },
+      });
+      Object.defineProperties(video, {
+        videoWidth: { configurable: true, value: 1600 },
+        videoHeight: { configurable: true, value: 900 },
+      });
+      act(() => video.dispatchEvent(new Event('loadedmetadata')));
+      key('+');
+      for (let index = 0; index < 15; index += 1) key('ArrowDown');
+      // 세로 타일보다 낮은 영상은 세로로 끌어 검은 여백 뒤로 숨길 수 없다.
+      expect(video.style.top).toBe('-25%');
+      await act(async () =>
+        root.render(<VideoTile participant={{ ...participant, stream: {} as MediaStream }} />),
+      );
+      expect(video.style.width).toBe('100%');
+      key('+');
+      await act(async () =>
+        root.render(<VideoTile participant={{ ...participant, videoSource: 'camera' }} />),
+      );
+      expect(document.querySelector('video')).toBe(video);
+      expect(video.style.width).toBe('');
+      expect(document.querySelector('[aria-label="공유 화면 확대"]')).toBeNull();
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it('전체 화면에 확대 도구를 함께 열고 공유가 끝나면 닫는다', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const fullscreen = installFullscreenDocument();
+    const root = createRoot(document.body);
+    const participant = remoteParticipant({} as MediaStream, 'screen');
+    try {
+      await act(async () => root.render(<VideoTile participant={participant} />));
+      const tile = document.querySelector('article')!;
+      const request = vi.fn(async () => fullscreen.enter(tile));
+      Object.defineProperty(tile, 'requestFullscreen', { configurable: true, value: request });
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('[aria-label$="전체 화면으로 보기"]')!.click(),
+      );
+      expect(request).toHaveBeenCalledOnce();
+      expect(document.fullscreenElement).toBe(tile);
+      expect(tile.querySelector('[aria-label="공유 화면 확대"]')).not.toBeNull();
+      await act(async () =>
+        root.render(<VideoTile participant={{ ...participant, videoSource: 'camera' }} />),
+      );
+      expect(fullscreen.exitFullscreen).toHaveBeenCalledOnce();
     } finally {
       act(() => root.unmount());
     }

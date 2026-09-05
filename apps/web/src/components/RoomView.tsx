@@ -300,6 +300,9 @@ export function RoomView({
         <RoomStudyPanel
           state={study}
           canControl={canModerateMedia}
+          hostPresent={
+            canModerateMedia || participants.some((participant) => participant.role === 'host')
+          }
           active={status === 'active'}
           pending={studyPending}
           notice={studyNotice}

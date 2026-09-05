@@ -67,6 +67,32 @@ function renderRoom(overrides: Partial<Parameters<typeof RoomView>[0]> = {}) {
 }
 
 describe('RoomView connection state', () => {
+  it('방장 부재를 표시하되 방장의 미디어 연결 실패나 서버 재연결을 퇴장으로 취급하지 않는다', () => {
+    const props = { status: 'active' as const, onStudyCommand: () => true, onSyncStudy: () => {} };
+    expect(renderRoom(props)).toContain('방장 없음');
+    expect(renderRoom(props)).toContain('진행 중인 타이머는 계속됩니다.');
+    expect(renderRoom({ ...props, canModerateMedia: true })).not.toContain('방장 없음');
+    expect(renderRoom({ ...props, status: 'connecting-signal' })).not.toContain('방장 없음');
+    expect(
+      renderRoom({
+        ...props,
+        participants: [
+          {
+            peerId: 'host',
+            displayName: '방장',
+            role: 'host',
+            isLocal: false,
+            audioEnabled: true,
+            videoEnabled: true,
+            videoSource: 'camera',
+            handRaised: false,
+            connectionState: 'failed',
+          },
+        ],
+      }),
+    ).not.toContain('방장 없음');
+  });
+
   it('shows progress without terminal actions while connecting', () => {
     const markup = renderRoom();
 

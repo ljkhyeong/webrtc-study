@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ParticipantSnapshot, PeerConnectionStatus } from '@round/rtc-core';
 import { enterVideoFullscreen, exitVideoFullscreen } from '../lib/fullscreen';
 import { CameraOffIcon, FullscreenIcon, HandIcon, MicOffIcon } from './Icons';
+import { ParticipantAudioControls } from './ParticipantAudioControls';
+import { useScreenShareView } from './useScreenShareView';
 
 export type ParticipantView = ParticipantSnapshot & {
   readonly stream?: MediaStream | undefined;
@@ -56,6 +58,8 @@ export function VideoTile({
   onRetryPeer,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const tileRef = useRef<HTMLElement>(null);
+  const zoomHelpId = useId();
   const playbackAttemptRef = useRef(0);
   const fullscreenAttemptRef = useRef(0);
   const fullscreenShareGenerationRef = useRef(0);
@@ -63,6 +67,7 @@ export function VideoTile({
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [outputError, setOutputError] = useState(false);
   const [mutedLocally, setMutedLocally] = useState(false);
+  const [previewHidden, setPreviewHidden] = useState(false);
   const outputChange = useRef(Promise.resolve());
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
 
@@ -112,8 +117,10 @@ export function VideoTile({
 
   const hasStream = Boolean(participant.stream);
   const hasVisibleVideo = participant.videoEnabled && hasStream;
+  const showPreview = hasVisibleVideo && !(participant.isLocal && previewHidden);
   const isRemoteScreenShare =
     !participant.isLocal && participant.videoSource === 'screen' && hasVisibleVideo;
+  const shareView = useScreenShareView(isRemoteScreenShare, participant.stream, videoRef);
   const isConnected = participant.isLocal || participant.connectionState === 'connected';
 
   async function playVideo(video: HTMLVideoElement, attempt: number): Promise<void> {
@@ -154,7 +161,7 @@ export function VideoTile({
     setFullscreenError(null);
     const video = videoRef.current;
     if (video !== null) {
-      void exitVideoFullscreen(video);
+      void exitVideoFullscreen(video, undefined, tileRef.current ?? undefined);
     }
     return undefined;
   }, [isRemoteScreenShare]);
@@ -170,14 +177,15 @@ export function VideoTile({
     const shareGeneration = fullscreenShareGenerationRef.current;
     latestFullscreenRequestGenerationRef.current = shareGeneration;
     setFullscreenError(null);
-    const entered = await enterVideoFullscreen(video);
+    const container = tileRef.current ?? undefined;
+    const entered = await enterVideoFullscreen(video, container);
     if (fullscreenAttemptRef.current !== attempt) {
       if (
         entered &&
         fullscreenShareGenerationRef.current !== shareGeneration &&
         latestFullscreenRequestGenerationRef.current === shareGeneration
       ) {
-        await exitVideoFullscreen(video);
+        await exitVideoFullscreen(video, undefined, container);
       }
       return;
     }
@@ -190,34 +198,62 @@ export function VideoTile({
 
   return (
     <article
+      ref={tileRef}
       className={`video-tile${isConnected ? ' video-tile--connected' : ''}${pinned ? ' video-tile--pinned' : ''}${participant.audioEnabled && participant.activity?.speaking ? ' video-tile--speaking' : ''}`}
       data-peer-id={participant.peerId}
       aria-label={`${participant.displayName}${participant.isLocal ? ' (나)' : ''} 참가자`}
     >
-      {hasStream ? (
-        <video
-          ref={videoRef}
-          className={
-            [
-              hasVisibleVideo ? '' : 'video-tile__media--hidden',
-              participant.videoSource === 'screen' ? 'video-tile__media--screen' : '',
-            ]
-              .filter(Boolean)
-              .join(' ') || undefined
-          }
-          autoPlay
-          muted
-          playsInline
-          aria-label={`${participant.displayName}의 영상`}
-          aria-hidden={!hasVisibleVideo}
-        />
-      ) : null}
-      {!hasVisibleVideo ? (
+      <div
+        ref={shareView.viewportRef}
+        className={`video-tile__viewport${shareView.scale > 1 ? ' video-tile__viewport--zoomed' : ''}`}
+        {...shareView.viewportProps}
+        role={isRemoteScreenShare ? 'group' : undefined}
+        aria-label={
+          isRemoteScreenShare ? `${participant.displayName}의 공유 화면 확대·이동` : undefined
+        }
+        aria-describedby={isRemoteScreenShare ? zoomHelpId : undefined}
+      >
+        {hasStream ? (
+          <video
+            ref={videoRef}
+            style={shareView.videoStyle}
+            className={
+              [
+                showPreview ? '' : 'video-tile__media--hidden',
+                participant.videoSource === 'screen' ? 'video-tile__media--screen' : '',
+              ]
+                .filter(Boolean)
+                .join(' ') || undefined
+            }
+            autoPlay
+            muted
+            playsInline
+            aria-label={`${participant.displayName}의 영상`}
+            aria-hidden={!showPreview}
+          />
+        ) : null}
+      </div>
+      {!showPreview ? (
         <div
           className="video-tile__fallback"
-          aria-label={`${participant.displayName}의 카메라 꺼짐`}
+          aria-label={
+            participant.isLocal && previewHidden
+              ? '내 영상 숨김'
+              : `${participant.displayName}의 카메라 꺼짐`
+          }
         >
-          <span>{initials(participant.displayName)}</span>
+          {participant.isLocal && previewHidden ? (
+            <p className="video-tile__preview-notice">
+              내 영상만 숨겼습니다.
+              <small>
+                {participant.videoEnabled
+                  ? '상대방에게 보내는 영상은 유지됩니다.'
+                  : '카메라는 꺼져 있습니다.'}
+              </small>
+            </p>
+          ) : (
+            <span>{initials(participant.displayName)}</span>
+          )}
         </div>
       ) : null}
       {!isConnected ? (
@@ -261,6 +297,31 @@ export function VideoTile({
 
       {isRemoteScreenShare ? (
         <div className="video-tile__view-controls">
+          <div className="video-tile__zoom-controls" role="group" aria-label="공유 화면 배율">
+            <button
+              type="button"
+              aria-label="공유 화면 축소"
+              disabled={shareView.scale === 1}
+              onClick={() => shareView.zoom(-0.5)}
+            >
+              −
+            </button>
+            <button
+              type="button"
+              aria-label="공유 화면 배율과 위치 초기화"
+              onClick={shareView.reset}
+            >
+              {Math.round(shareView.scale * 100)}%
+            </button>
+            <button
+              type="button"
+              aria-label="공유 화면 확대"
+              disabled={shareView.scale === 4}
+              onClick={() => shareView.zoom(0.5)}
+            >
+              +
+            </button>
+          </div>
           {onTogglePin ? (
             <button
               type="button"
@@ -280,6 +341,12 @@ export function VideoTile({
             <span>전체 화면</span>
           </button>
         </div>
+      ) : null}
+      {isRemoteScreenShare ? (
+        <p id={zoomHelpId} className="sr-only">
+          확대한 화면은 끌어서 이동할 수 있습니다. 화면에 초점을 두고 방향키로 이동, +와 -로
+          확대·축소, 0으로 초기화합니다.
+        </p>
       ) : null}
 
       {isRemoteScreenShare && fullscreenError ? (
@@ -352,14 +419,21 @@ export function VideoTile({
           {participant.isLocal ? ' (나)' : ''}
         </span>
         {!participant.isLocal ? (
+          <ParticipantAudioControls
+            name={participant.displayName}
+            videoRef={videoRef}
+            stream={participant.stream}
+            muted={mutedLocally}
+            onToggleMuted={() => setMutedLocally((muted) => !muted)}
+          />
+        ) : hasStream || previewHidden ? (
           <button
             type="button"
             className="video-tile__local-mute"
-            aria-label={`${participant.displayName}의 소리 내 쪽에서만 끄기`}
-            aria-pressed={mutedLocally}
-            onClick={() => setMutedLocally((muted) => !muted)}
+            aria-pressed={previewHidden}
+            onClick={() => setPreviewHidden((hidden) => !hidden)}
           >
-            {mutedLocally ? '소리 켜기' : '소리 끄기'}
+            {previewHidden ? '내 영상 다시 보기' : '내 영상 숨기기'}
           </button>
         ) : null}
         {!participant.audioEnabled ? (

@@ -5,6 +5,7 @@ import { createTimerChime } from '../lib/timer-chime';
 interface RoomStudyPanelProps {
   state: RoomStudySnapshot | null;
   canControl: boolean;
+  hostPresent: boolean;
   active: boolean;
   pending: boolean;
   notice: string | null;
@@ -15,6 +16,7 @@ interface RoomStudyPanelProps {
 export function RoomStudyPanel({
   state,
   canControl,
+  hostPresent,
   active,
   pending,
   notice,
@@ -159,9 +161,17 @@ export function RoomStudyPanel({
             {String(seconds % 60).padStart(2, '0')}
           </time>
           <span>{label}</span>
+          {active && !hostPresent ? (
+            <span className="room-study__host-absent">방장 없음</span>
+          ) : null}
           <strong>{state?.topic || '현재 주제를 설정해 보세요'}</strong>
         </summary>
         <div className="room-study__body">
+          {active && !hostPresent ? (
+            <p className="room-study__host-notice" role="status">
+              현재 방장이 없어 타이머와 주제를 변경할 수 없습니다. 진행 중인 타이머는 계속됩니다.
+            </p>
+          ) : null}
           <p className="room-study__topic">
             현재 주제: {state?.topic || '설정된 주제가 없습니다.'}
           </p>
