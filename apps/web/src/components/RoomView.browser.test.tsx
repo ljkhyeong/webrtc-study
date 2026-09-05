@@ -22,6 +22,7 @@ function roomViewProps(): Parameters<typeof RoomView>[0] {
     onToggleAudio: vi.fn(),
     onToggleVideo: vi.fn(),
     onToggleScreenShare: vi.fn(),
+    onSetHandRaised: vi.fn(),
     onDisableParticipantAudio: vi.fn(),
     onDisableParticipantVideo: vi.fn(),
     onSendMessage: vi.fn(() => true),
@@ -57,6 +58,42 @@ describe('RoomView 브라우저 동작', () => {
     vi.restoreAllMocks();
   });
 
+  it('손들기 버튼과 참가자 배지를 갱신하고 재연결 중에는 조작을 막는다', () => {
+    const props = roomViewProps();
+    const participant = {
+      peerId: 'self',
+      displayName: '가온',
+      role: 'participant' as const,
+      isLocal: true,
+      connectionState: 'connected' as const,
+      audioEnabled: false,
+      videoEnabled: false,
+      videoSource: 'camera' as const,
+      handRaised: false,
+    };
+    act(() => root.render(<RoomView {...props} participants={[participant]} />));
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="손들기"]')!.click());
+    expect(props.onSetHandRaised).toHaveBeenLastCalledWith(true);
+    act(() =>
+      root.render(<RoomView {...props} participants={[{ ...participant, handRaised: true }]} />),
+    );
+    expect(container.querySelector('[aria-label="가온 손들기"]')).not.toBeNull();
+    expect(
+      container.querySelector('button[aria-label="손 내리기"]')?.getAttribute('aria-pressed'),
+    ).toBe('true');
+    act(() =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="손 내리기"]')!.click(),
+    );
+    expect(props.onSetHandRaised).toHaveBeenLastCalledWith(false);
+    act(() =>
+      root.render(<RoomView {...props} participants={[participant]} status="reconnecting" />),
+    );
+    expect(container.querySelector('[aria-label="가온 손들기"]')).toBeNull();
+    expect(
+      container.querySelector<HTMLButtonElement>('button[aria-label="손들기"]')!.disabled,
+    ).toBe(true);
+  });
+
   it.each(['공유 종료', '퇴장'] as const)(
     '%s 시 고정을 해제하고 영상 요소는 고정 중에도 유지한다',
     async (change) => {
@@ -67,6 +104,7 @@ describe('RoomView 브라우저 동작', () => {
         displayName: '발표자',
         role: 'participant' as const,
         isLocal: false,
+        handRaised: false,
         connectionState: 'connected' as const,
         audioEnabled: true,
         videoEnabled: true,

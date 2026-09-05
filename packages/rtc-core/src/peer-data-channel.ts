@@ -4,6 +4,7 @@ import {
   utf8ByteLength,
   type ChatAckDataMessage,
   type ChatDataMessage,
+  type ParticipantHandDataMessage,
   type ParticipantMediaDataMessage,
   type PeerDataMessage,
 } from '@round/protocol';
@@ -46,10 +47,12 @@ interface PeerDataChannelOptions {
   readonly isRecovering: () => boolean;
   readonly monotonicNow: () => number;
   readonly currentMediaState: () => ParticipantMediaDataMessage;
+  readonly currentHandState: () => ParticipantHandDataMessage;
   readonly onOpen: () => void;
   readonly canReceiveChat: () => boolean;
   readonly onChatMessage: (message: ChatDataMessage) => void;
   readonly onMediaState: (message: ParticipantMediaDataMessage) => void;
+  readonly onHandState: (message: ParticipantHandDataMessage) => void;
   readonly onChatAcknowledged: (messageId: string) => boolean;
   readonly onChatFailed: (messageId: string) => boolean;
   readonly onRateLimited: () => void;
@@ -68,6 +71,7 @@ export class PeerDataChannel {
 
   #channel: RTCDataChannel | null = null;
   #pendingMediaState: ParticipantMediaDataMessage | null = null;
+  #pendingHandState: ParticipantHandDataMessage | null = null;
   #inboundWindowStartedAt: number | null = null;
   #inboundMessagesInWindow = 0;
   #inboundRateLimitExceeded = false;
@@ -152,6 +156,7 @@ export class PeerDataChannel {
     this.#receivedChatIdOrder.length = 0;
     this.#pendingAckIds.clear();
     this.#pendingMediaState = null;
+    this.#pendingHandState = null;
     this.#inboundWindowStartedAt = null;
     this.#inboundMessagesInWindow = 0;
     this.#inboundRateLimitExceeded = false;
@@ -178,7 +183,12 @@ export class PeerDataChannel {
     this.flush();
   }
 
-  flush(sendCurrentMediaState = false): void {
+  publishHandState(message: ParticipantHandDataMessage): void {
+    this.#pendingHandState = message;
+    this.flush();
+  }
+
+  flush(sendCurrentState = false): void {
     const channel = this.#channel;
     if (
       !this.#options.isCurrent() ||
@@ -189,8 +199,9 @@ export class PeerDataChannel {
       return;
     }
 
-    if (sendCurrentMediaState) {
+    if (sendCurrentState) {
       this.#pendingMediaState = this.#options.currentMediaState();
+      this.#pendingHandState = this.#options.currentHandState();
     }
 
     while (this.#pendingAckIds.size > 0) {
@@ -224,6 +235,17 @@ export class PeerDataChannel {
         return;
       }
       this.#pendingMediaState = null;
+    }
+
+    if (this.#pendingHandState !== null) {
+      const serializedHandState = serializePeerDataMessage(this.#pendingHandState);
+      if (
+        this.#isBackpressured(channel, utf8ByteLength(serializedHandState)) ||
+        !this.#send(channel, serializedHandState)
+      ) {
+        return;
+      }
+      this.#pendingHandState = null;
     }
 
     while (true) {
@@ -286,6 +308,11 @@ export class PeerDataChannel {
 
     if (data.type === 'participant.media') {
       this.#options.onMediaState(data);
+      return;
+    }
+
+    if (data.type === 'participant.hand') {
+      this.#options.onHandState(data);
       return;
     }
 

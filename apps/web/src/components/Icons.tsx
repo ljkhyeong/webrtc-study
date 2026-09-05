@@ -85,6 +85,14 @@ export function MessageIcon(props: IconProps) {
   );
 }
 
+export function HandIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 11V3.5a1.5 1.5 0 0 1 3 0V11M14 11V5.5a1.5 1.5 0 0 1 3 0V13M17 13v-2.5a1.5 1.5 0 0 1 3 0V16a6 6 0 0 1-6 6h-1a7 7 0 0 1-5.8-3.1L3.6 13a1.8 1.8 0 0 1 2.8-2.2L8 13Z" />
+    </IconFrame>
+  );
+}
+
 export function MicIcon(props: IconProps) {
   return (
     <IconFrame {...props}>

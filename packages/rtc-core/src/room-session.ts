@@ -5,6 +5,7 @@ import {
   type ChatDataMessage,
   type ModeratedMediaKind,
   type Participant,
+  type ParticipantHandDataMessage,
   type ParticipantMediaDataMessage,
   type ParticipantRole,
   type ServerMessage,
@@ -103,6 +104,7 @@ export interface ParticipantSnapshot {
   readonly audioEnabled: boolean;
   readonly videoEnabled: boolean;
   readonly videoSource: VideoSource;
+  readonly handRaised: boolean;
 }
 
 export interface RoomConnectionDiagnostics {
@@ -195,6 +197,7 @@ interface MutableParticipant {
   audioEnabled: boolean;
   videoEnabled: boolean;
   videoSource: VideoSource;
+  handRaised: boolean;
 }
 
 type PeerContext = PeerConnectionLifecycle;
@@ -382,6 +385,7 @@ export class RoomSession {
   #rtcConfiguration: RTCConfiguration | undefined;
   #localStream: MediaStream | null = null;
   #videoQualityMode: VideoQualityMode = 'standard';
+  #handRaised = false;
   #status: RoomSessionStatus = 'idle';
   #selfId: string | null = null;
   #selfRole: ParticipantRole | null = null;
@@ -776,6 +780,20 @@ export class RoomSession {
 
   toggleVideo(): boolean {
     return this.#localInput.toggle('video');
+  }
+
+  setHandRaised(raised: boolean): boolean {
+    if (this.#disposed || this.#status !== 'active' || this.#selfId === null) return false;
+    if (this.#handRaised === raised) return true;
+    this.#handRaised = raised;
+    const participant = this.#participants.get(this.#selfId);
+    if (participant !== undefined) participant.handRaised = raised;
+    this.#emit();
+    const message = this.#currentHandDataMessage();
+    for (const peer of this.#peers.values()) {
+      peer.data.publishHandState(message);
+    }
+    return true;
   }
 
   startScreenShare(): Promise<ScreenShareStartResult> {
@@ -1300,6 +1318,7 @@ export class RoomSession {
       isRecovering: () => this.#peers.get(peerId)?.recovering ?? true,
       monotonicNow: () => this.#monotonicNow(),
       currentMediaState: () => this.#currentMediaDataMessage(),
+      currentHandState: () => this.#currentHandDataMessage(),
       onOpen: () => {
         const peer = this.#peers.get(peerId);
         if (peer?.data === dataChannel) {
@@ -1332,6 +1351,12 @@ export class RoomSession {
         participant.audioEnabled = message.audioEnabled;
         participant.videoEnabled = message.videoEnabled;
         participant.videoSource = message.videoSource;
+        this.#emit();
+      },
+      onHandState: (message) => {
+        const participant = this.#participants.get(peerId);
+        if (participant === undefined || participant.handRaised === message.raised) return;
+        participant.handRaised = message.raised;
         this.#emit();
       },
       onChatAcknowledged: (messageId) =>
@@ -1792,6 +1817,10 @@ export class RoomSession {
     };
   }
 
+  #currentHandDataMessage(): ParticipantHandDataMessage {
+    return { type: 'participant.hand', raised: this.#handRaised };
+  }
+
   #broadcastMediaState(): void {
     const message = this.#currentMediaDataMessage();
     for (const peer of this.#peers.values()) {
@@ -1858,6 +1887,7 @@ export class RoomSession {
       audioEnabled: false,
       videoEnabled: false,
       videoSource: 'camera',
+      handRaised: isLocal && this.#handRaised,
     });
   }
 

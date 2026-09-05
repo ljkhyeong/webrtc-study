@@ -50,6 +50,7 @@ function renderRoom(overrides: Partial<Parameters<typeof RoomView>[0]> = {}) {
       onToggleAudio={vi.fn()}
       onToggleVideo={vi.fn()}
       onToggleScreenShare={vi.fn()}
+      onSetHandRaised={vi.fn()}
       onDisableParticipantAudio={vi.fn()}
       onDisableParticipantVideo={vi.fn()}
       onSendMessage={vi.fn(() => true)}

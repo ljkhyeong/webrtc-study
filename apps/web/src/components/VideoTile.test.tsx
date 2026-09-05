@@ -8,6 +8,7 @@ function participant(overrides: Partial<ParticipantView> = {}): ParticipantView 
     displayName: '스터디원',
     role: 'participant',
     isLocal: false,
+    handRaised: false,
     audioEnabled: true,
     videoEnabled: true,
     videoSource: 'camera',

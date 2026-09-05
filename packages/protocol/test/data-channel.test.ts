@@ -9,6 +9,19 @@ import {
 } from '../src/index.js';
 
 describe('DataChannel message validation', () => {
+  it.each([true, false])('손들기 상태 %s를 왕복 변환한다', (raised) => {
+    const message = { type: 'participant.hand' as const, raised };
+    expect(parsePeerDataMessage(serializePeerDataMessage(message))).toEqual(message);
+  });
+
+  it.each([
+    { type: 'participant.hand' },
+    { type: 'participant.hand', raised: 'true' },
+    { type: 'participant.hand', raised: true, peerId: '다른 참가자' },
+  ])('잘못된 손들기 상태와 대상 지정을 거부한다', (message) => {
+    expect(() => parsePeerDataMessage(JSON.stringify(message))).toThrow(ProtocolValidationError);
+  });
+
   it.each<PeerDataMessage>([
     {
       type: 'chat.message',

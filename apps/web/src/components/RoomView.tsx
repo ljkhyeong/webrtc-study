@@ -6,6 +6,7 @@ import {
   CheckIcon,
   CloseIcon,
   CopyIcon,
+  HandIcon,
   MessageIcon,
   MicIcon,
   MicOffIcon,
@@ -59,6 +60,7 @@ interface RoomViewProps {
   onToggleAudio: () => void;
   onToggleVideo: () => void;
   onToggleScreenShare: () => void;
+  onSetHandRaised: (raised: boolean) => void;
   onDisableParticipantAudio: (peerId: string) => void;
   onDisableParticipantVideo: (peerId: string) => void;
   onSendMessage: (text: string) => boolean;
@@ -91,6 +93,7 @@ export function RoomView({
   onToggleAudio,
   onToggleVideo,
   onToggleScreenShare,
+  onSetHandRaised,
   onDisableParticipantAudio,
   onDisableParticipantVideo,
   onSendMessage,
@@ -176,6 +179,12 @@ export function RoomView({
   };
 
   const isActive = status === 'active';
+  const handRaised = participants.some(
+    (participant) => participant.isLocal && participant.handRaised,
+  );
+  const raisedHandNames = participants
+    .filter((participant) => participant.handRaised)
+    .map((participant) => `${participant.displayName}${participant.isLocal ? ' (나)' : ''}`);
   const terminalConnectionError = !isActive && Boolean(errorMessage);
   const partialPeerFailure = isActive && Boolean(peerRecoveryMessage);
   const gridSize = Math.min(Math.max(participants.length, 1), 6);
@@ -247,6 +256,11 @@ export function RoomView({
       ) : null}
 
       <main className="room-workspace">
+        <p className="sr-only" aria-live="polite" aria-atomic="true">
+          {raisedHandNames.length > 0
+            ? `손 든 참가자: ${raisedHandNames.join(', ')}`
+            : '손 든 참가자가 없습니다.'}
+        </p>
         <section
           ref={stageRef}
           className={`video-stage video-stage--${gridSize}${activePinnedPeerId ? ' video-stage--pinned' : ''}`}
@@ -428,6 +442,17 @@ export function RoomView({
         >
           <ScreenShareIcon />
           <span>{screenSharing ? '공유 중지' : '화면 공유'}</span>
+        </button>
+        <button
+          className={`control-button${handRaised ? ' control-button--active' : ''}`}
+          type="button"
+          disabled={!isActive}
+          aria-label={handRaised ? '손 내리기' : '손들기'}
+          aria-pressed={handRaised}
+          onClick={() => onSetHandRaised(!handRaised)}
+        >
+          <HandIcon />
+          <span>{handRaised ? '손 내리기' : '손들기'}</span>
         </button>
         <button
           ref={chatButtonRef}

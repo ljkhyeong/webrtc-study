@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ParticipantSnapshot, PeerConnectionStatus } from '@round/rtc-core';
 import { enterVideoFullscreen, exitVideoFullscreen } from '../lib/fullscreen';
-import { CameraOffIcon, FullscreenIcon, MicOffIcon } from './Icons';
+import { CameraOffIcon, FullscreenIcon, HandIcon, MicOffIcon } from './Icons';
 
 export type ParticipantView = ParticipantSnapshot & {
   readonly stream?: MediaStream | undefined;
@@ -225,6 +225,15 @@ export function VideoTile({
       ) : null}
 
       <div className="video-tile__badges">
+        {participant.handRaised ? (
+          <span
+            className="video-tile__hand-raised"
+            aria-label={`${participant.displayName} 손들기`}
+          >
+            <HandIcon />
+            손들기
+          </span>
+        ) : null}
         {participant.role === 'host' ? <span>방장</span> : null}
         {participant.videoSource === 'screen' && participant.videoEnabled ? (
           <span>화면 공유 중</span>

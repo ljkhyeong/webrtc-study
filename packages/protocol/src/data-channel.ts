@@ -27,7 +27,13 @@ export interface ParticipantMediaDataMessage {
   readonly videoSource: 'camera' | 'screen';
 }
 
-export type PeerDataMessage = ChatDataMessage | ChatAckDataMessage | ParticipantMediaDataMessage;
+export interface ParticipantHandDataMessage {
+  readonly type: 'participant.hand';
+  readonly raised: boolean;
+}
+
+export type PeerDataMessage =
+  ChatDataMessage | ChatAckDataMessage | ParticipantMediaDataMessage | ParticipantHandDataMessage;
 
 export function parsePeerDataMessage(raw: string): PeerDataMessage {
   assertFrameWithinBudget(raw);
@@ -67,6 +73,10 @@ function validatePeerDataMessage(input: unknown): PeerDataMessage {
       booleanValue(message.videoEnabled, '$.videoEnabled');
       videoSource(message.videoSource, '$.videoSource');
       return message as unknown as ParticipantMediaDataMessage;
+    case 'participant.hand':
+      exactKeys(message, ['type', 'raised'], '$');
+      booleanValue(message.raised, '$.raised');
+      return message as unknown as ParticipantHandDataMessage;
     default:
       fail('$.type', 'must be a supported DataChannel message type');
   }

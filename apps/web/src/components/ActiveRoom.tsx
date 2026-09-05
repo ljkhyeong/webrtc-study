@@ -409,6 +409,9 @@ export function ActiveRoom({
         onToggleVideo={() => {
           sessionRef.current?.toggleVideo();
         }}
+        onSetHandRaised={(raised) => {
+          sessionRef.current?.setHandRaised(raised);
+        }}
         onToggleScreenShare={() => {
           const session = sessionRef.current;
           if (session === null) {

@@ -43,7 +43,7 @@ describe('RoomSession', () => {
     });
   });
 
-  it('re-enters on a fresh socket while retaining local media and chat history', async () => {
+  it('시그널링 재연결 후 로컬 미디어와 채팅 기록, 손들기 상태를 유지한다', async () => {
     const reconnectGate = createPromiseGate();
     let hookCallCount = 0;
     const harness = createHarness({
@@ -64,6 +64,7 @@ describe('RoomSession', () => {
       track: remoteAudio as unknown as MediaStreamTrack,
     } as unknown as RTCTrackEvent);
     const chat = harness.session.sendChat('keep this');
+    harness.session.setHandRaised(true);
 
     oldSocket.serverClose(4001, 'Participation grant expired');
     await flushMicrotasks();
@@ -112,6 +113,12 @@ describe('RoomSession', () => {
     });
     expect(participantIds).toEqual(['self-after-reconnect', 'peer-a']);
     expect(new Set(participantIds).size).toBe(participantIds.length);
+    expect(
+      harness.session.getSnapshot().participants.find((participant) => participant.isLocal),
+    ).toMatchObject({ handRaised: true });
+    expect(
+      harness.peerConnections[1]?.channels[0]?.sent.map((raw) => JSON.parse(raw)),
+    ).toContainEqual({ type: 'participant.hand', raised: true });
     expect(harness.peerConnections).toHaveLength(2);
     expect(harness.session.getRemoteStream('peer-a')).toBeNull();
   });
