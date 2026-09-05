@@ -2,6 +2,7 @@ package com.personal.round.signaling;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.Meter.MeterProvider;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -52,22 +53,13 @@ public final class SignalingMetrics {
 						AtomicLong::get)
 				.description("Current signaling bytes queued or in flight across all peers")
 				.register(registry);
-		roomFullRejections = Counter.builder("round.signaling.joins.rejected")
-				.tag("reason", "room_full")
+		MeterProvider<Counter> joinRejections = Counter.builder("round.signaling.joins.rejected")
 				.description("Room join requests rejected by the signaling service")
-				.register(registry);
-		alreadyJoinedRejections = Counter.builder("round.signaling.joins.rejected")
-				.tag("reason", "already_joined")
-				.description("Room join requests rejected by the signaling service")
-				.register(registry);
-		unauthorizedRoomRejections = Counter.builder("round.signaling.joins.rejected")
-				.tag("reason", "unauthorized_room")
-				.description("Room join requests rejected by the verified room grant")
-				.register(registry);
-		invalidHostCapabilityRejections = Counter.builder("round.signaling.joins.rejected")
-				.tag("reason", "invalid_host_capability")
-				.description("Room join requests rejected by standalone host capability verification")
-				.register(registry);
+				.withRegistry(registry);
+		roomFullRejections = joinRejections.withTag("reason", "room_full");
+		alreadyJoinedRejections = joinRejections.withTag("reason", "already_joined");
+		unauthorizedRoomRejections = joinRejections.withTag("reason", "unauthorized_room");
+		invalidHostCapabilityRejections = joinRejections.withTag("reason", "invalid_host_capability");
 		invalidFrames = Counter.builder("round.signaling.frames.invalid")
 				.description("Malformed, unsupported, or oversized inbound WebSocket frames")
 				.register(registry);
@@ -84,32 +76,17 @@ public final class SignalingMetrics {
 		sessionByteLimitedFrames = byteLimitCounter(registry, "session");
 		clientByteLimitedFrames = byteLimitCounter(registry, "client");
 		globalByteLimitedFrames = byteLimitCounter(registry, "global");
-		serverCapacityRejections = Counter.builder("round.signaling.connections.rejected")
-				.tag("reason", "server_capacity")
+		MeterProvider<Counter> connectionRejections = Counter.builder("round.signaling.connections.rejected")
 				.description("WebSocket handshakes rejected by connection admission")
-				.register(registry);
-		clientCapacityRejections = Counter.builder("round.signaling.connections.rejected")
-				.tag("reason", "client_capacity")
-				.description("WebSocket handshakes rejected by connection admission")
-				.register(registry);
+				.withRegistry(registry);
+		serverCapacityRejections = connectionRejections.withTag("reason", "server_capacity");
+		clientCapacityRejections = connectionRejections.withTag("reason", "client_capacity");
 		participationTokenCapacityRejections =
-				Counter.builder("round.signaling.connections.rejected")
-						.tag("reason", "participation_token_capacity")
-						.description("WebSocket handshakes rejected by connection admission")
-						.register(registry);
+				connectionRejections.withTag("reason", "participation_token_capacity");
 		participantRoomCapacityRejections =
-				Counter.builder("round.signaling.connections.rejected")
-						.tag("reason", "participant_room_capacity")
-						.description("WebSocket handshakes rejected by connection admission")
-						.register(registry);
-		missingReservationRejections = Counter.builder("round.signaling.connections.rejected")
-				.tag("reason", "missing_reservation")
-				.description("WebSocket sessions rejected because admission metadata was missing")
-				.register(registry);
-		missingRoomAccessRejections = Counter.builder("round.signaling.connections.rejected")
-				.tag("reason", "missing_room_access")
-				.description("WebSocket sessions rejected because verified room access was missing")
-				.register(registry);
+				connectionRejections.withTag("reason", "participant_room_capacity");
+		missingReservationRejections = connectionRejections.withTag("reason", "missing_reservation");
+		missingRoomAccessRejections = connectionRejections.withTag("reason", "missing_room_access");
 		queueOverflows = Counter.builder("round.signaling.outbound.queue.overflows")
 				.description("Peers closed by per-peer or server-wide outbound queue limits")
 				.register(registry);
