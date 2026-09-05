@@ -55,8 +55,8 @@ BATON 모드는 같은 참여권 `jti`마다 진행 중이거나 활성 상태�
 socket을 열면 HTTP 429를 반환하며 handshake admission은 기존 socket을 내보내지 않습니다.
 여러 연결의 `room.join` 요청이 겹치면 연결 순번이 더 큰 WebSocket을 유지합니다. ROUND는
 이전 참가자를 방에서 제거하고 이전 연결을 종료 코드 `4002`와 종료 사유
-`Participation session superseded`로 닫습니다. 해당 admission reservation은 이 terminal close
-시도가 완료될 때까지 유지한 뒤, close에서 I/O 실패를 보고하더라도 정확히 한 번 해제합니다.
+`Participation session superseded`로 닫습니다. 연결 종료 시도가 끝나면 연결 슬롯의 예약을 해제합니다.
+종료 중 I/O 오류가 발생해도 해제는 한 번만 수행합니다.
 지연된 join이 나중에 도착한 이전 socket은 대신 닫습니다. 브라우저는 `4002`를 terminal 상태로
 처리하므로 두 socket이 재연결 takeover loop에 빠지지 않습니다. 그 밖의 경우에는 socket이 닫힐
 때까지 reservation을 계속 소유하며, 입장하지 않은 연결 상태나 `room.leave` 이후도 포함합니다.
