@@ -19,6 +19,16 @@ class StudyProtocolTest {
 		assertThat(parser.parse("{\"v\":3,\"type\":\"peer.reconnect\",\"roomId\":\"abcd-efgh-jkmp\",\"to\":\"peer\"}")).isInstanceOf(ClientMessage.Reconnect.class);
 	}
 
+	@Test
+	void revision의_허용_상한과_초과_값을_구분한다() {
+		ClientMessage.Study message = (ClientMessage.Study) parser.parse(frame(
+				"{\"action\":\"pause\",\"expectedRevision\":9007199254740991}"));
+		assertThat(message.command().expectedRevision()).isEqualTo(9_007_199_254_740_991L);
+		assertThatThrownBy(() -> parser.parse(frame(
+				"{\"action\":\"pause\",\"expectedRevision\":9007199254740992}")))
+				.isInstanceOf(ProtocolValidationException.class);
+	}
+
 	private String frame(String payload) {
 		return "{\"v\":3,\"type\":\"room.study.update\",\"roomId\":\"abcd-efgh-jkmp\",\"payload\":" + payload + "}";
 	}

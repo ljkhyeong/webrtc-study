@@ -106,6 +106,33 @@ class ServerMessageEncoderTest {
 	}
 
 	@Test
+	void 스터디_상태의_전체_필드를_보내고_없는_요청번호는_생략한다() throws Exception {
+		assertEncodedJson(encoder.studyState(
+				ROOM_ID, null, new StudyState(3, "코드 리뷰", "focus", 1500, 0, false), false),
+				"""
+				{"v":3,"type":"room.study.state","roomId":"abcd-efgh-jkmp",
+				 "payload":{"revision":3,"topic":"코드 리뷰","mode":"focus",
+				 "durationSeconds":1500,"remainingMs":0,"running":false,"conflict":false}}
+				""");
+	}
+
+	@Test
+	void 손들기_상태의_목록_순서와_빈_목록을_유지한다() throws Exception {
+		assertEncodedJson(encoder.handState(ROOM_ID, "hand-42",
+				new HandQueueState(2, List.of("peer-b", "peer-a"), List.of("peer-a", "peer-b", "peer-c"))),
+				"""
+				{"v":3,"type":"room.hand.state","roomId":"abcd-efgh-jkmp","requestId":"hand-42",
+				 "payload":{"revision":2,"peerIds":["peer-b","peer-a"],
+				 "supportedPeerIds":["peer-a","peer-b","peer-c"]}}
+				""");
+		assertEncodedJson(encoder.handState(ROOM_ID, null, new HandQueueState(0, List.of(), List.of())),
+				"""
+				{"v":3,"type":"room.hand.state","roomId":"abcd-efgh-jkmp",
+				 "payload":{"revision":0,"peerIds":[],"supportedPeerIds":[]}}
+				""");
+	}
+
+	@Test
 	void errorCodesMatchTheSharedProtocolContract() {
 		assertThat(Arrays.stream(SignalingErrorCode.values()).map(Enum::name))
 				.containsExactlyInAnyOrder(

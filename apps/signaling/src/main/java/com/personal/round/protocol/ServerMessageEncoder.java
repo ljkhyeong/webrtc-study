@@ -73,21 +73,16 @@ public final class ServerMessageEncoder {
 	public TextMessage studyState(String roomId, String requestId, StudyState state, boolean conflict) {
 		ObjectNode message = base("room.study.state", roomId);
 		if (requestId != null) message.put("requestId", requestId);
-		message.putObject("payload")
-				.put("revision", state.revision()).put("topic", state.topic()).put("mode", state.mode())
-				.put("durationSeconds", state.durationSeconds()).put("remainingMs", state.remainingMs())
-				.put("running", state.running()).put("conflict", conflict);
+		ObjectNode payload = objectMapper.valueToTree(state);
+		payload.put("conflict", conflict);
+		message.set("payload", payload);
 		return textMessage(message);
 	}
 
 	public TextMessage handState(String roomId, String requestId, HandQueueState state) {
 		ObjectNode message = base("room.hand.state", roomId);
 		if (requestId != null) message.put("requestId", requestId);
-		ObjectNode payload = message.putObject("payload").put("revision", state.revision());
-		ArrayNode queue = payload.putArray("peerIds");
-		state.peerIds().forEach(queue::add);
-		ArrayNode supported = payload.putArray("supportedPeerIds");
-		state.supportedPeerIds().forEach(supported::add);
+		message.set("payload", objectMapper.valueToTree(state));
 		return textMessage(message);
 	}
 

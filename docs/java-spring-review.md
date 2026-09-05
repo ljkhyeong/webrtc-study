@@ -5,46 +5,44 @@
 - 범위: `apps/signaling`의 운영 Java 코드와 관련 테스트
 - 기준 환경: Java 21, Spring Boot 4.1.0. 기존 서버 JAR에서 Jackson 3.1.4와 Spring Security 7.1.0을 확인했다.
 
-정리할 만한 항목은 3건이다. 현재 동작의 오류로 확정한 항목은 없으며, 중복 검사와 수동 변환 코드를 줄이는 제안이다. 이번에는 애플리케이션 코드를 수정하지 않았다.
+검토한 3건을 모두 반영했다. 숫자 중복 검사와 수동 JSON 변환을 줄이고, 서비스의 방·대상 검사를 공유했다. 오류 응답과 검증 순서는 유지했다. 아래 위치는 수정 후 코드를 가리킨다.
 
 ## 1. 숫자 검사는 Jackson API가 보장하는 부분을 제거한다
 
 위치: [ProtocolParser.boundedInteger](../apps/signaling/src/main/java/com/personal/round/protocol/ProtocolParser.java#L105)
 
-`canConvertToLong()` 앞뒤에서 `isNumber()`와 `doubleValue() != longValue()`를 추가로 검사한다. Jackson 3의 `canConvertToLong()`은 숫자 여부, 정수 여부, `long` 범위를 함께 확인하므로 두 조건은 중복이다. 공식 API와 현재 사용하는 3.1.4 JAR의 구현을 확인했다. [Jackson 숫자 변환 API](<https://javadoc.io/static/tools.jackson.core/jackson-databind/3.0.0/tools.jackson.databind/tools/jackson/databind/JsonNode.html#canConvertToLong()>)
+기존에는 `canConvertToLong()` 앞뒤에서 `isNumber()`와 `doubleValue() != longValue()`를 추가로 검사했다. Jackson 3의 `canConvertToLong()`은 숫자 여부, 정수 여부, `long` 범위를 함께 확인하므로 두 조건을 제거했다. 공식 API와 현재 사용하는 3.1.4 JAR의 구현을 확인했다. [Jackson 숫자 변환 API](<https://javadoc.io/static/tools.jackson.core/jackson-databind/3.0.0/tools.jackson.databind/tools/jackson/databind/JsonNode.html#canConvertToLong()>)
 
 - 변경: 누락 여부와 `canConvertToLong()`을 확인한 뒤 `longValue()`를 한 번 읽어 업무 범위를 검사한다.
 - 유지: 타이머의 60~7200초 범위와 JavaScript에서 정확하게 표현할 수 있는 revision 상한.
 - 효과: 정수 판정을 직접 구현할 필요가 없어지고, 같은 클래스의 `numericLiteral()`·`nullableOptionalInteger()`와 검사 방식이 맞아진다.
-- 적용 후 확인: 기존 `ProtocolParserTest`, `StudyProtocolTest`의 정수·소수·범위 검사. revision 상한 검사가 빠져 있으면 상한과 초과 값만 추가한다.
-
-우선 적용하기 좋은 작은 수정이다. 소수를 잘못 허용하는 버그가 있다는 뜻은 아니다.
+- 확인: 기존 `ProtocolParserTest`, `StudyProtocolTest`의 정수·소수·범위 검사. 빠져 있던 revision 상한과 초과 값 검사를 추가했다.
 
 ## 2. 이미 정의된 상태 record는 Jackson으로 JSON에 넣는다
 
 위치: [ServerMessageEncoder.studyState·handState](../apps/signaling/src/main/java/com/personal/round/protocol/ServerMessageEncoder.java#L73)
 
-`StudyState`와 `HandQueueState`에 정의된 필드를 `ObjectNode.put()`으로 다시 나열하고, 참가자 목록도 `ArrayNode`에 하나씩 복사한다. 기존 record를 `ObjectMapper.valueToTree(state)`로 변환하면 이 반복을 줄일 수 있다. [Jackson 객체·JSON 트리 변환 API](https://javadoc.io/static/tools.jackson.core/jackson-databind/3.1.4/tools.jackson.databind/tools/jackson/databind/package-summary.html)
+기존에는 `StudyState`와 `HandQueueState`의 필드와 참가자 목록을 JSON 노드에 수동 복사했다. 기존 record를 `ObjectMapper.valueToTree(state)`로 변환하도록 바꿨다. [Jackson 객체·JSON 트리 변환 API](https://javadoc.io/static/tools.jackson.core/jackson-databind/3.1.4/tools.jackson.databind/tools/jackson/databind/package-summary.html)
 
 - 변경: `handState`는 변환한 노드를 `payload`에 넣는다. `studyState`는 변환한 객체 노드에 응답 전용 필드인 `conflict`만 추가한다.
 - 유지: JSON 필드명, 배열 순서, `requestId`가 없을 때 필드 자체를 생략하는 동작.
 - 효과: 상태 필드를 바꿀 때 record와 인코더를 각각 수정하는 부담이 줄어든다.
-- 적용 후 확인: 기존 손들기·스터디 응답 검사에서 실제 JSON 구조를 확인한다.
+- 확인: 기존 손들기·스터디 테스트와 응답 전체 필드·배열 순서·빈 배열·요청번호 생략 검사를 통과했다.
 
-기존 두 record에 한정한다. 이 수정을 위해 모든 메시지에 새 DTO나 공통 메시지 프레임워크를 만들 필요는 없다. 이후 record에 내부용 필드를 추가한다면 전송 제외 여부를 함께 정해야 한다.
+기존 두 record에만 적용했다. 이후 record에 내부용 필드를 추가한다면 전송 제외 여부를 함께 정해야 한다.
 
 ## 3. 메시지마다 복사된 방·대상 참가자 검사를 합친다
 
-위치: [SignalingService.leave](../apps/signaling/src/main/java/com/personal/round/signaling/SignalingService.java#L574), [relay](../apps/signaling/src/main/java/com/personal/round/signaling/SignalingService.java#L598), [reconnect](../apps/signaling/src/main/java/com/personal/round/signaling/SignalingService.java#L653), [hand](../apps/signaling/src/main/java/com/personal/round/signaling/SignalingService.java#L713), [study](../apps/signaling/src/main/java/com/personal/round/signaling/SignalingService.java#L741), [moderate](../apps/signaling/src/main/java/com/personal/round/signaling/SignalingService.java#L766)
+위치: [SignalingService.requireJoinedRoom](../apps/signaling/src/main/java/com/personal/round/signaling/SignalingService.java#L724), [findTargetInRoom](../apps/signaling/src/main/java/com/personal/round/signaling/SignalingService.java#L743)
 
-방 입장 여부와 요청한 방의 일치 여부가 6개 처리 메서드에 반복된다. 특히 `relay`와 `reconnect`는 자기 자신에게 보내는지, 대상이 같은 방에 있는지 확인하고 오류를 만드는 부분도 같다. 정책을 바꿀 때 여러 곳을 빠뜨리지 않고 수정해야 한다.
+방 입장 여부와 요청한 방의 일치 여부가 6개 처리 메서드에 반복되어 `requireJoinedRoom()`으로 합쳤다. `relay`·`reconnect`·`moderate`의 자기 자신을 대상으로 하는지 검사하는 부분과 같은 방의 대상 조회는 `findTargetInRoom()`으로 합쳤다.
 
-- 변경: 서비스 내부의 작은 메서드로 방 검사와 대상 조회를 공유한다. 우선 동일한 오류 응답을 사용하는 `relay`·`reconnect`부터 합친다.
+- 변경: `leave`·`relay`·`reconnect`·`hand`·`study`·`moderate`에서 방 검사 구현을 공유한다. 대상 검사는 기존과 같은 위치에서 호출한다.
 - 유지: 현재 잠금 안에서 검사하는 위치, 오류 코드와 `requestId`, 메시지별 안내 문구, 방장 권한 검사의 순서.
 - 효과: 복사된 조건문과 오류 응답 생성을 줄이고, 방 접근 규칙을 한곳에서 수정할 수 있다.
-- 적용 후 확인: 관련 시그널링 테스트의 미입장·다른 방·자기 자신·없는 대상·권한 부족 사례를 실행한다.
+- 확인: 관련 시그널링 테스트의 미입장·다른 방·자기 자신·없는 대상·권한 부족 사례를 통과했다.
 
-각 메시지에서 검사를 수행하는 것 자체는 필요하다. 공통 메서드로 구현을 공유하자는 제안이며, 요청별 검사를 생략하자는 뜻은 아니다. 현재 방 상태를 확인해야 하므로 Bean Validation이나 AOP로 옮길 필요도 없다.
+각 메시지에서 검사를 수행하는 것 자체는 필요하다. 공통 메서드로 구현을 공유하며 요청별 검사는 유지한다. 현재 방 상태를 확인해야 하므로 Bean Validation이나 AOP로 옮기지 않았다.
 
 ## 유지할 코드
 
@@ -59,6 +57,6 @@
 
 설정값은 이미 Bean Validation, 외부 HTTP 요청은 `RestClient`, JWT 서명·JWK 캐시는 Spring Security와 Nimbus, 실행기는 Java 가상 스레드 API를 사용한다. 이 영역에서 표준 API를 대체한 대규모 직접 구현은 확인하지 못했다.
 
-## 이번 검토의 확인 범위
+## 확인 결과
 
-호출 흐름, 기존 테스트 내용, 사용 중인 의존성과 공식 API를 대조했다. 문서만 추가했으므로 문서 형식과 Git 차이를 확인한다. Java 테스트와 전체 검사는 다시 실행하지 않았으며, 위의 적용 후 검사는 실제 코드 수정 시 실행할 항목이다.
+프로토콜 테스트와 서비스의 방 권한·재연결·스터디·손들기 테스트 38개를 Gradle 1회 호출로 실행해 모두 통과했다. 문서 형식과 Git 차이도 확인했다. 설정·메시지 형식·브라우저 동작은 바뀌지 않아 전체 빌드와 브라우저 검사는 실행하지 않았다.

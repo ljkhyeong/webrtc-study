@@ -103,11 +103,14 @@ public class ProtocolParser {
 	}
 
 	private static long boundedInteger(JsonNode value, long minimum, long maximum, String path) {
-		if (value == null || !value.isNumber() || !value.canConvertToLong() || value.doubleValue() != value.longValue()
-				|| value.longValue() < minimum || value.longValue() > maximum) {
+		if (value == null || !value.canConvertToLong()) {
 			throw fail(path, "must be an integer within the allowed range");
 		}
-		return value.longValue();
+		long number = value.longValue();
+		if (number < minimum || number > maximum) {
+			throw fail(path, "must be an integer within the allowed range");
+		}
+		return number;
 	}
 
 	private ClientMessage.Reconnect parseReconnect(ObjectNode message) {

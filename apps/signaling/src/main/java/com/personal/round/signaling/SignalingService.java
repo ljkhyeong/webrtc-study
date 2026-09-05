@@ -572,71 +572,23 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	private void leave(Peer peer, ClientMessage.Leave message, WorkPlan workPlan) {
-		if (peer.roomId == null) {
-			sendError(
-					peer,
-					SignalingErrorCode.NOT_IN_ROOM,
-					"Join a room before leaving it.",
-					message.roomId(),
-					message.requestId(),
-					workPlan);
-			return;
-		}
-		if (!peer.roomId.equals(message.roomId())) {
-			sendError(
-					peer,
-					SignalingErrorCode.ROOM_MISMATCH,
-					"The message room does not match the joined room.",
-					peer.roomId,
-					message.requestId(),
-					workPlan);
+		if (!requireJoinedRoom(peer, message,
+				"Join a room before leaving it.",
+				"The message room does not match the joined room.", workPlan)) {
 			return;
 		}
 		removePeerFromRoom(peer, workPlan, null);
 	}
 
 	private void relay(Peer peer, ClientMessage.Relay message, WorkPlan workPlan) {
-		if (peer.roomId == null) {
-			sendError(
-					peer,
-					SignalingErrorCode.NOT_IN_ROOM,
-					"Join a room before sending negotiation messages.",
-					message.roomId(),
-					message.requestId(),
-					workPlan);
+		if (!requireJoinedRoom(peer, message,
+				"Join a room before sending negotiation messages.",
+				"The message room does not match the joined room.", workPlan)) {
 			return;
 		}
-		if (!peer.roomId.equals(message.roomId())) {
-			sendError(
-					peer,
-					SignalingErrorCode.ROOM_MISMATCH,
-					"The message room does not match the joined room.",
-					peer.roomId,
-					message.requestId(),
-					workPlan);
-			return;
-		}
-		if (peer.peerId.equals(message.to())) {
-			sendError(
-					peer,
-					SignalingErrorCode.TARGET_SELF,
-					"A peer cannot relay a negotiation message to itself.",
-					peer.roomId,
-					message.requestId(),
-					workPlan);
-			return;
-		}
-
-		Map<String, Peer> room = rooms.get(peer.roomId);
-		Peer target = room == null ? null : room.get(message.to());
+		Peer target = findTargetInRoom(peer, message, message.to(),
+				"A peer cannot relay a negotiation message to itself.", workPlan);
 		if (target == null) {
-			sendError(
-					peer,
-					SignalingErrorCode.TARGET_NOT_FOUND,
-					"The target peer is not in this room.",
-					peer.roomId,
-					message.requestId(),
-					workPlan);
 			return;
 		}
 
@@ -651,47 +603,14 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	private void reconnect(Peer peer, ClientMessage.Reconnect message, WorkPlan workPlan) {
-		if (peer.roomId == null) {
-			sendError(
-					peer,
-					SignalingErrorCode.NOT_IN_ROOM,
-					"Join a room before sending negotiation messages.",
-					message.roomId(),
-					message.requestId(),
-					workPlan);
+		if (!requireJoinedRoom(peer, message,
+				"Join a room before sending negotiation messages.",
+				"The message room does not match the joined room.", workPlan)) {
 			return;
 		}
-		if (!peer.roomId.equals(message.roomId())) {
-			sendError(
-					peer,
-					SignalingErrorCode.ROOM_MISMATCH,
-					"The message room does not match the joined room.",
-					peer.roomId,
-					message.requestId(),
-					workPlan);
-			return;
-		}
-		if (peer.peerId.equals(message.to())) {
-			sendError(
-					peer,
-					SignalingErrorCode.TARGET_SELF,
-					"A peer cannot relay a negotiation message to itself.",
-					peer.roomId,
-					message.requestId(),
-					workPlan);
-			return;
-		}
-
-		Map<String, Peer> room = rooms.get(peer.roomId);
-		Peer target = room == null ? null : room.get(message.to());
+		Peer target = findTargetInRoom(peer, message, message.to(),
+				"A peer cannot relay a negotiation message to itself.", workPlan);
 		if (target == null) {
-			sendError(
-					peer,
-					SignalingErrorCode.TARGET_NOT_FOUND,
-					"The target peer is not in this room.",
-					peer.roomId,
-					message.requestId(),
-					workPlan);
 			return;
 		}
 
@@ -711,12 +630,9 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	private void hand(Peer peer, ClientMessage.Hand message, WorkPlan workPlan) {
-		if (peer.roomId == null) {
-			sendError(peer, SignalingErrorCode.NOT_IN_ROOM, "방에 먼저 입장해 주세요.", message.roomId(), message.requestId(), workPlan);
-			return;
-		}
-		if (!peer.roomId.equals(message.roomId())) {
-			sendError(peer, SignalingErrorCode.ROOM_MISMATCH, "입장한 방과 요청한 방이 다릅니다.", peer.roomId, message.requestId(), workPlan);
+		if (!requireJoinedRoom(peer, message,
+				"방에 먼저 입장해 주세요.",
+				"입장한 방과 요청한 방이 다릅니다.", workPlan)) {
 			return;
 		}
 		RoomHandQueue queue = handQueues.computeIfAbsent(peer.roomId, ignored -> new RoomHandQueue());
@@ -739,12 +655,9 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	private void study(Peer peer, ClientMessage.Study message, WorkPlan workPlan) {
-		if (peer.roomId == null) {
-			sendError(peer, SignalingErrorCode.NOT_IN_ROOM, "방에 먼저 입장해 주세요.", message.roomId(), message.requestId(), workPlan);
-			return;
-		}
-		if (!peer.roomId.equals(message.roomId())) {
-			sendError(peer, SignalingErrorCode.ROOM_MISMATCH, "입장한 방과 요청한 방이 다릅니다.", peer.roomId, message.requestId(), workPlan);
+		if (!requireJoinedRoom(peer, message,
+				"방에 먼저 입장해 주세요.",
+				"입장한 방과 요청한 방이 다릅니다.", workPlan)) {
 			return;
 		}
 		if (message.command() != null && peer.role != ParticipationGrant.Role.HOST) {
@@ -767,24 +680,9 @@ public class SignalingService implements SmartLifecycle {
 			Peer peer,
 			ClientMessage.Moderation message,
 			WorkPlan workPlan) {
-		if (peer.roomId == null) {
-			sendError(
-					peer,
-					SignalingErrorCode.NOT_IN_ROOM,
-					"Join a room before moderating participant media.",
-					message.roomId(),
-					message.requestId(),
-					workPlan);
-			return;
-		}
-		if (!peer.roomId.equals(message.roomId())) {
-			sendError(
-					peer,
-					SignalingErrorCode.ROOM_MISMATCH,
-					"The message room does not match the joined room.",
-					peer.roomId,
-					message.requestId(),
-					workPlan);
+		if (!requireJoinedRoom(peer, message,
+				"Join a room before moderating participant media.",
+				"The message room does not match the joined room.", workPlan)) {
 			return;
 		}
 		if (peer.role != ParticipationGrant.Role.HOST) {
@@ -797,29 +695,12 @@ public class SignalingService implements SmartLifecycle {
 					workPlan);
 			return;
 		}
-		if (peer.peerId.equals(message.to())) {
-			sendError(
-					peer,
-					SignalingErrorCode.TARGET_SELF,
-					"A host cannot moderate its own media through a remote command.",
-					peer.roomId,
-					message.requestId(),
-					workPlan);
+		Peer target = findTargetInRoom(peer, message, message.to(),
+				"A host cannot moderate its own media through a remote command.", workPlan);
+		if (target == null) {
 			return;
 		}
 
-		Map<String, Peer> room = rooms.get(peer.roomId);
-		Peer target = room == null ? null : room.get(message.to());
-		if (target == null) {
-			sendError(
-					peer,
-					SignalingErrorCode.TARGET_NOT_FOUND,
-					"The target peer is not in this room.",
-					peer.roomId,
-					message.requestId(),
-					workPlan);
-			return;
-		}
 		if (target.role != ParticipationGrant.Role.PARTICIPANT) {
 			sendError(
 					peer,
@@ -838,6 +719,46 @@ public class SignalingService implements SmartLifecycle {
 				target.peerId,
 				message.kind());
 		enqueue(target, disabled, workPlan);
+	}
+
+	private boolean requireJoinedRoom(
+			Peer peer,
+			ClientMessage message,
+			String notInRoomMessage,
+			String roomMismatchMessage,
+			WorkPlan workPlan) {
+		if (peer.roomId == null) {
+			sendError(peer, SignalingErrorCode.NOT_IN_ROOM, notInRoomMessage,
+					message.roomId(), message.requestId(), workPlan);
+			return false;
+		}
+		if (!peer.roomId.equals(message.roomId())) {
+			sendError(peer, SignalingErrorCode.ROOM_MISMATCH, roomMismatchMessage,
+					peer.roomId, message.requestId(), workPlan);
+			return false;
+		}
+		return true;
+	}
+
+	private Peer findTargetInRoom(
+			Peer peer,
+			ClientMessage message,
+			String targetPeerId,
+			String selfTargetMessage,
+			WorkPlan workPlan) {
+		if (peer.peerId.equals(targetPeerId)) {
+			sendError(peer, SignalingErrorCode.TARGET_SELF, selfTargetMessage,
+					peer.roomId, message.requestId(), workPlan);
+			return null;
+		}
+		Map<String, Peer> room = rooms.get(peer.roomId);
+		Peer target = room == null ? null : room.get(targetPeerId);
+		if (target == null) {
+			sendError(peer, SignalingErrorCode.TARGET_NOT_FOUND,
+					"The target peer is not in this room.",
+					peer.roomId, message.requestId(), workPlan);
+		}
+		return target;
 	}
 
 	private boolean closeForExpiredAuthorizationLocked(Peer peer, WorkPlan workPlan) {
