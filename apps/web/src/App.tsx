@@ -70,9 +70,8 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
   const [displayName, setDisplayName] = useState(() =>
     authMode === 'standalone' ? readStoredDisplayName() : '',
   );
-  const [approvedRoomKey, setApprovedRoomKey] = useState<string | null>(null);
-  const release = useClientRelease(authMode === 'standalone' || approvedRoomKey !== null);
   const [activeRoomKey, setActiveRoomKey] = useState<string | null>(null);
+  const release = useClientRelease(authMode === 'standalone' || activeRoomKey !== null);
   const [activeHostCapability, setActiveHostCapability] = useState<string | undefined>();
   const [initialInputEnabled, setInitialInputEnabled] =
     useState<RoomSessionOptions['initialInputEnabled']>();
@@ -92,27 +91,25 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
   }, []);
 
   useEffect(() => {
-    if (approvedRoomKey === null) {
+    if (activeRoomKey === null) {
       return;
     }
 
     const currentRoomKey =
       roomId === null || displayName.length === 0 ? null : `${roomId}:${displayName}`;
-    if (currentRoomKey === approvedRoomKey) {
+    if (currentRoomKey === activeRoomKey) {
       return;
     }
 
     stopUnclaimedPreparedMedia();
     setActiveRoomKey(null);
     setActiveHostCapability(undefined);
-    setApprovedRoomKey(null);
-  }, [approvedRoomKey, displayName, roomId, stopUnclaimedPreparedMedia]);
+  }, [activeRoomKey, displayName, roomId, stopUnclaimedPreparedMedia]);
 
   const goHome = () => {
     stopUnclaimedPreparedMedia();
     setActiveRoomKey(null);
     setActiveHostCapability(undefined);
-    setApprovedRoomKey(null);
     navigateToOwningHome(authMode, navigate);
   };
 
@@ -132,7 +129,6 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
     setDisplayName(nextDisplayName);
     stopUnclaimedPreparedMedia();
     setActiveRoomKey(null);
-    setApprovedRoomKey(`${nextRoomId}:${nextDisplayName}`);
     const nextPath = pathForRoom(nextRoomId);
     if (nextPath !== pathname) {
       navigate(nextPath);
@@ -150,24 +146,14 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
       );
     }
 
-    if (!displayName || approvedRoomKey !== `${roomId}:${displayName}`) {
-      return (
-        <LandingScreen
-          initialDisplayName={displayName}
-          invitedRoomId={roomId}
-          onEnter={enterRoom}
-          onGoHome={goHome}
-        />
-      );
-    }
-
     const roomKey = `${roomId}:${displayName}`;
     if (activeRoomKey !== roomKey) {
       return (
         <PrejoinScreen
-          key={roomKey}
-          displayName={displayName}
+          key={roomId}
+          initialDisplayName={displayName}
           roomId={roomId}
+          backLabel={authMode === 'baton' ? 'BATON으로 돌아가기' : '다른 방 선택'}
           showHostCapabilityInput={authMode !== 'baton'}
           authorizeBeforeEntryAction={authorizeBeforeEntryAction}
           beforeJoin={async () => {
@@ -183,12 +169,14 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
             return true;
           }}
           onBack={goHome}
-          onJoin={(preparedMediaStream, hostCapability, inputEnabled) => {
+          onJoin={(nextDisplayName, preparedMediaStream, hostCapability, inputEnabled) => {
+            setDisplayName(nextDisplayName);
+            if (authMode === 'standalone') storeDisplayName(nextDisplayName);
             stopUnclaimedPreparedMedia();
             preparedMediaStreamRef.current = preparedMediaStream;
             setActiveHostCapability(hostCapability);
             setInitialInputEnabled(inputEnabled);
-            setActiveRoomKey(roomKey);
+            setActiveRoomKey(`${roomId}:${nextDisplayName}`);
           }}
         />
       );

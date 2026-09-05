@@ -52,7 +52,7 @@ function buttonWithText(container: HTMLElement, text: string): HTMLButtonElement
   );
 }
 
-async function enterPrejoin(container: HTMLElement, displayName = '림'): Promise<void> {
+async function fillPrejoinName(container: HTMLElement, displayName = '림'): Promise<void> {
   let input: HTMLInputElement | null = null;
   await waitForState(() => {
     input = container.querySelector<HTMLInputElement>('#display-name');
@@ -63,12 +63,7 @@ async function enterPrejoin(container: HTMLElement, displayName = '림'): Promis
     valueSetter?.call(input, displayName);
     input?.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await act(async () => {
-    buttonWithText(container, '입장 준비')?.click();
-  });
-  await waitForState(() =>
-    expect(container.textContent).toContain('입장 전에 장치를 확인해 주세요.'),
-  );
+  await waitForState(() => expect(container.textContent).toContain('입장 준비'));
 }
 
 function activeRoomSnapshot(): RoomSessionSnapshot {
@@ -209,7 +204,7 @@ describe('BATON room entry boundary', () => {
         root = createRoot(container);
         root.render(<App />);
       });
-      await enterPrejoin(container);
+      await fillPrejoinName(container);
       if (checked) {
         await act(async () => buttonWithText(container, '장치 확인')?.click());
         await waitForState(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
@@ -220,9 +215,14 @@ describe('BATON room entry boundary', () => {
         expect(container.textContent).toContain('마이크를 선택해 주세요');
         expect(container.textContent).toContain('카메라를 선택해 주세요');
       }
+      const preview = container.querySelector('video');
+      await fillPrejoinName(container, '  새 이름  ');
+      expect(container.querySelector('video')).toBe(preview);
+      expect(getUserMedia).toHaveBeenCalledTimes(checked ? 2 : 0);
       await act(async () => buttonWithText(container, '미디어 없이 입장')?.click());
       await waitForState(() => expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce());
       const options = rtcCoreMock.RoomSession.mock.calls[0]![0] as RoomSessionOptions;
+      expect(options.displayName).toBe('새 이름');
       expect(options.initialInputEnabled).toEqual(
         checked ? { audio: false, video: true } : undefined,
       );
@@ -265,7 +265,7 @@ describe('BATON room entry boundary', () => {
     await waitForState(() =>
       expect(container.textContent).toContain('스터디 참여 권한을 확인하고 있습니다.'),
     );
-    expect(container.textContent).not.toContain('입장 전에 장치를 확인해 주세요.');
+    expect(container.textContent).not.toContain('입장 준비');
     expect(buttonWithText(container, '장치 확인')).toBeNull();
     expect(getUserMedia).not.toHaveBeenCalled();
 
@@ -281,10 +281,19 @@ describe('BATON room entry boundary', () => {
     await waitForState(() =>
       expect(container.querySelector<HTMLInputElement>('#display-name')?.value).toBe(''),
     );
-    await enterPrejoin(container);
+    expect(container.textContent).toContain('입장 준비');
+    expect(container.textContent).not.toContain('같이 공부할');
+    expect(buttonWithText(container, '다른 방 만들기')).toBeNull();
+    expect(buttonWithText(container, 'BATON으로 돌아가기')).not.toBeNull();
+    await act(async () => buttonWithText(container, '미디어 없이 입장')?.click());
+    expect(container.textContent).toContain('스터디에서 사용할 이름을 입력해 주세요.');
+    expect(document.activeElement).toBe(container.querySelector('#display-name'));
+    expect(rtcCoreMock.RoomSession).not.toHaveBeenCalled();
+    expect(getUserMedia).not.toHaveBeenCalled();
+    await fillPrejoinName(container);
     expect(localStorage.setItem).not.toHaveBeenCalled();
 
-    expect(container.textContent).toContain('입장 전에 장치를 확인해 주세요.');
+    expect(container.textContent).toContain('입장 준비');
     expect(getUserMedia).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -342,8 +351,8 @@ describe('BATON room entry boundary', () => {
         </StrictMode>,
       );
     });
-    await enterPrejoin(container);
-    expect(container.textContent).toContain('입장 전에 장치를 확인해 주세요.');
+    await fillPrejoinName(container);
+    expect(container.textContent).toContain('입장 준비');
     await act(async () => {
       const joinButton = buttonWithText(container, '미디어 없이 입장');
       expect(joinButton).not.toBeNull();
@@ -380,7 +389,7 @@ describe('BATON room entry boundary', () => {
       root = createRoot(container);
       root.render(<App />);
     });
-    await enterPrejoin(container);
+    await fillPrejoinName(container);
 
     nowMs = 1_001;
     await act(async () => {
@@ -429,7 +438,7 @@ describe('BATON room entry boundary', () => {
         root = createRoot(container);
         root.render(<App />);
       });
-      await enterPrejoin(container);
+      await fillPrejoinName(container);
       await act(async () => {
         buttonWithText(container, '미디어 없이 입장')?.click();
       });

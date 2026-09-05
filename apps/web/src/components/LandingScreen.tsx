@@ -10,17 +10,11 @@ import {
 
 interface LandingScreenProps {
   initialDisplayName: string;
-  invitedRoomId?: string;
   onEnter: (displayName: string, roomId: string) => void;
   onGoHome?: () => void;
 }
 
-export function LandingScreen({
-  initialDisplayName,
-  invitedRoomId,
-  onEnter,
-  onGoHome,
-}: LandingScreenProps) {
+export function LandingScreen({ initialDisplayName, onEnter, onGoHome }: LandingScreenProps) {
   const [displayName, setDisplayName] = useState(initialDisplayName);
   const [roomId, setRoomId] = useState('');
   const [error, setError] = useState('');
@@ -47,7 +41,7 @@ export function LandingScreen({
 
   const handleJoin = (event: FormEvent) => {
     event.preventDefault();
-    enterRoom(invitedRoomId ?? roomId);
+    enterRoom(roomId);
   };
 
   return (
@@ -65,7 +59,7 @@ export function LandingScreen({
 
       <main className="landing-main">
         <section className="landing-copy" aria-labelledby="landing-title">
-          <p className="eyebrow">{invitedRoomId ? '초대받은 스터디룸' : 'Private study room'}</p>
+          <p className="eyebrow">Private study room</p>
           <h1 id="landing-title">
             <span>
               같이 공부할
@@ -91,43 +85,27 @@ export function LandingScreen({
               onChange={(event) => setDisplayName(event.target.value)}
             />
 
-            {invitedRoomId ? (
-              <div className="invited-room">
-                <span>ROOM</span>
-                <strong>{invitedRoomId}</strong>
-              </div>
-            ) : (
-              <>
-                <button className="primary-action" type="button" onClick={handleCreate}>
-                  새 스터디룸 만들기
-                  <ArrowIcon />
-                </button>
+            <button className="primary-action" type="button" onClick={handleCreate}>
+              새 스터디룸 만들기
+              <ArrowIcon />
+            </button>
 
-                <div className="join-divider">
-                  <span>또는 초대 코드로 참가</span>
-                </div>
+            <div className="join-divider">
+              <span>또는 초대 코드로 참가</span>
+            </div>
 
-                <div className="join-row">
-                  <input
-                    aria-label="초대 코드"
-                    inputMode="text"
-                    placeholder="abcd-efgh-jkmp"
-                    value={roomId}
-                    onChange={(event) => setRoomId(normalizeRoomId(event.target.value))}
-                  />
-                  <button type="submit" disabled={!isValidRoomId(roomId)}>
-                    준비
-                  </button>
-                </div>
-              </>
-            )}
-
-            {invitedRoomId ? (
-              <button className="primary-action" type="submit">
-                입장 준비
-                <ArrowIcon />
+            <div className="join-row">
+              <input
+                aria-label="초대 코드"
+                inputMode="text"
+                placeholder="abcd-efgh-jkmp"
+                value={roomId}
+                onChange={(event) => setRoomId(normalizeRoomId(event.target.value))}
+              />
+              <button type="submit" disabled={!isValidRoomId(roomId)}>
+                준비
               </button>
-            ) : null}
+            </div>
 
             <p className="form-error" role="alert" aria-live="polite">
               {error}
@@ -168,13 +146,7 @@ export function LandingScreen({
 
       <footer className="landing-footer">
         <p>카메라와 마이크 권한은 ‘장치 확인’을 누를 때만 요청합니다.</p>
-        {invitedRoomId && onGoHome ? (
-          <button type="button" onClick={onGoHome}>
-            다른 방 만들기
-          </button>
-        ) : (
-          <p>01 — create · 02 — share · 03 — study</p>
-        )}
+        <p>01 — create · 02 — share · 03 — study</p>
       </footer>
     </div>
   );

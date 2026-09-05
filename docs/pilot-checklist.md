@@ -284,6 +284,9 @@ BATON이 소유한 edge와 별도로 배포한 ROUND instance를 대상으로 �
 - [ ] preflight `401`은 canonical `/room/{roomId}`만 `returnTo`로 사용해 BATON login을 제안하고,
       `403`은 login loop 없이 BATON으로 돌아갑니다. 어떤 응답 body, CSRF token, 참여 cookie, JWT도
       rendering하거나 URL에 넣지 않습니다.
+- [ ] BATON의 통화 참여와 공유 링크가 권한 확인 후 같은 입장 준비 화면으로 연결됩니다.
+      이름 입력과 장치 설정 사이에 소개 화면이 없으며, 이름 수정 중 미리보기를 유지합니다.
+      준비 화면 취소·통화 종료는 BATON으로 돌아가고 링크 재방문만으로 장치를 켜지 않습니다.
 - [ ] preflight와 활성 방 시작은 하나의 single-flight 참여권 manager를 재사용합니다.
       `refreshAfterSeconds` 전에 활성 방을 mount해도 두 번째 refresh, 서명 작업, quota 차감이
       발생하지 않습니다.

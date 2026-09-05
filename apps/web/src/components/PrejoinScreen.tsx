@@ -5,15 +5,18 @@ import { DEFAULT_AUDIO_CONSTRAINTS, DEFAULT_VIDEO_CONSTRAINTS } from '../lib/med
 import { prejoinMediaIssueMessage } from '../lib/prejoin-presentation';
 import { ArrowIcon, CameraIcon, CameraOffIcon, MicIcon, MicOffIcon } from './Icons';
 import { MicrophoneLevel } from './MicrophoneLevel';
+import { DISPLAY_NAME_MAX_LENGTH, sanitizeDisplayName } from '../lib/room';
 
 interface PrejoinScreenProps {
-  displayName: string;
+  initialDisplayName: string;
   roomId: string;
+  backLabel: string;
   showHostCapabilityInput: boolean;
   authorizeBeforeEntryAction?: (() => Promise<boolean>) | undefined;
   beforeJoin?: (() => Promise<boolean>) | undefined;
   onBack: () => void;
   onJoin: (
+    displayName: string,
     preparedMediaStream: MediaStream | null,
     hostCapability?: string,
     initialInputEnabled?: RoomSessionOptions['initialInputEnabled'],
@@ -41,14 +44,18 @@ function errorMessage(error: unknown): string {
 }
 
 export function PrejoinScreen({
-  displayName,
+  initialDisplayName,
   roomId,
+  backLabel,
   showHostCapabilityInput,
   authorizeBeforeEntryAction,
   beforeJoin,
   onBack,
   onJoin,
 }: PrejoinScreenProps) {
+  const [displayName, setDisplayName] = useState(initialDisplayName);
+  const [nameError, setNameError] = useState('');
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const controllerRef = useRef<PrejoinMedia | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const previewRef = useRef<HTMLVideoElement>(null);
@@ -141,6 +148,12 @@ export function PrejoinScreen({
     if (snapshot.status === 'checking') {
       return;
     }
+    const safeName = sanitizeDisplayName(displayName);
+    if (!safeName) {
+      setNameError('스터디에서 사용할 이름을 입력해 주세요.');
+      nameInputRef.current?.focus();
+      return;
+    }
 
     runAuthorized(async () => {
       if (beforeJoin && !(await beforeJoin())) return;
@@ -148,18 +161,24 @@ export function PrejoinScreen({
       const controller = controllerRef.current;
       const initialInputEnabled = controller?.getInputEnabled();
       const stream = controller?.takeStream() ?? null;
-      onJoin(stream, normalizedHostCapability, initialInputEnabled);
+      onJoin(safeName, stream, normalizedHostCapability, initialInputEnabled);
       actionLifetimeRef.current = false;
     });
   };
 
   const handleJoinWithoutMedia = () => {
+    const safeName = sanitizeDisplayName(displayName);
+    if (!safeName) {
+      setNameError('스터디에서 사용할 이름을 입력해 주세요.');
+      nameInputRef.current?.focus();
+      return;
+    }
     runAuthorized(async () => {
       if (beforeJoin && !(await beforeJoin())) return;
       if (!actionLifetimeRef.current) return;
       controllerRef.current?.dispose();
       controllerRef.current = null;
-      onJoin(null, normalizedHostCapability);
+      onJoin(safeName, null, normalizedHostCapability);
       actionLifetimeRef.current = false;
     });
   };
@@ -178,7 +197,12 @@ export function PrejoinScreen({
   return (
     <div className="prejoin-shell">
       <header className="prejoin-header">
-        <button className="wordmark wordmark--button" type="button" onClick={handleBack}>
+        <button
+          className="wordmark wordmark--button"
+          type="button"
+          aria-label={backLabel}
+          onClick={handleBack}
+        >
           ROUND
           <span>study room</span>
         </button>
@@ -249,12 +273,32 @@ export function PrejoinScreen({
         </section>
 
         <section className="prejoin-settings" aria-labelledby="prejoin-title">
-          <p className="eyebrow">Before you join</p>
-          <h1 id="prejoin-title">입장 전에 장치를 확인해 주세요.</h1>
+          <h1 id="prejoin-title">입장 준비</h1>
           <p className="prejoin-description">
-            이 버튼을 누르기 전에는 카메라와 마이크 권한을 요청하지 않습니다. 확인이 끝나도 실제 방
-            연결은 입장 버튼을 눌러야 시작됩니다.
+            이름과 장치를 확인한 뒤 입장하세요. 카메라와 마이크는 ‘장치 확인’을 눌러야 켜집니다.
           </p>
+
+          <div className="prejoin-name">
+            <label htmlFor="display-name">내 이름</label>
+            <input
+              ref={nameInputRef}
+              id="display-name"
+              autoComplete="nickname"
+              maxLength={DISPLAY_NAME_MAX_LENGTH}
+              placeholder="스터디에서 사용할 이름"
+              value={displayName}
+              disabled={authorizationPending}
+              aria-invalid={Boolean(nameError)}
+              aria-describedby="prejoin-name-help"
+              onChange={(event) => {
+                setDisplayName(event.target.value);
+                setNameError('');
+              }}
+            />
+            <small id="prejoin-name-help" {...(nameError ? { role: 'alert' } : {})}>
+              {nameError || '이 방에서 다른 참가자에게 표시됩니다.'}
+            </small>
+          </div>
 
           {actionError ? <p role="alert">{actionError}</p> : null}
 
@@ -431,7 +475,7 @@ export function PrejoinScreen({
           )}
 
           <button className="prejoin-back-action" type="button" onClick={handleBack}>
-            이름 또는 방 다시 선택
+            {backLabel}
           </button>
         </section>
       </main>

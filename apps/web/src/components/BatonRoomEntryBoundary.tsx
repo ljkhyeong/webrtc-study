@@ -161,7 +161,7 @@ export function BatonRuntimeRoot() {
     <BatonEntryPanel
       eyebrow="BATON · ROUND"
       title="BATON에서 스터디룸을 열어 주세요."
-      description="이 ROUND 번들은 독립 방 생성이나 초대 코드 입장을 제공하지 않습니다."
+      description="BATON에서 통화 참여를 누르거나 공유받은 스터디룸 링크를 열어 주세요."
       primaryAction={{ href: '/', label: 'BATON으로 돌아가기' }}
     />
   );

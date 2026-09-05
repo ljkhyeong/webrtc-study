@@ -70,7 +70,9 @@ describe('App pre-join boundary', () => {
     try {
       const markup = renderToStaticMarkup(<App />);
 
-      expect(markup).toContain('초대받은 스터디룸');
+      expect(markup).toContain('내 이름');
+      expect(markup).not.toContain('같이 공부할');
+      expect(markup).not.toContain('ROUND 기능 미리보기');
       expect(markup).toContain('입장 준비');
       expect(markup).not.toContain('직접 연결됨');
       expect(getUserMedia).not.toHaveBeenCalled();

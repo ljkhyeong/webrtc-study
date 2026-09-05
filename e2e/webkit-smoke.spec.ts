@@ -5,7 +5,6 @@ const ROOM_PATH = '/room/abcd-efgh-jkmp';
 async function enterWithoutMedia(page: Page, displayName: string): Promise<void> {
   await page.goto(ROOM_PATH);
   await page.getByLabel('내 이름').fill(displayName);
-  await page.getByRole('button', { name: '입장 준비' }).click();
   await page.getByRole('button', { name: '미디어 없이 입장' }).click();
   await expect(page.getByRole('contentinfo', { name: '통화 제어' })).toBeVisible();
 }
@@ -23,11 +22,8 @@ test('WebKit keeps a direct invite behind explicit pre-join media consent', asyn
 
   await page.goto(ROOM_PATH);
   await page.getByLabel('내 이름').fill('사파리 스터디원');
-  await page.getByRole('button', { name: '입장 준비' }).click();
 
-  await expect(
-    page.getByRole('heading', { name: '입장 전에 장치를 확인해 주세요.' }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: '입장 준비' })).toBeVisible();
   await expect(page.getByRole('button', { name: '장치 확인', exact: true })).toBeVisible();
   await expect(
     page.getByText('장치를 확인하면 여기에 내 모습이 보입니다.', { exact: true }),

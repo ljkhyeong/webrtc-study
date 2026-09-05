@@ -21,7 +21,8 @@ describe('PrejoinScreen', () => {
       await act(async () =>
         root.render(
           <PrejoinScreen
-            displayName="림"
+            initialDisplayName="림"
+            backLabel="BATON으로 돌아가기"
             roomId="abcd-efgh-jkmp"
             showHostCapabilityInput={false}
             beforeJoin={beforeJoin}
@@ -62,7 +63,8 @@ describe('PrejoinScreen', () => {
       await act(async () =>
         root.render(
           <PrejoinScreen
-            displayName="림"
+            initialDisplayName="림"
+            backLabel="BATON으로 돌아가기"
             roomId="abcd-efgh-jkmp"
             showHostCapabilityInput={false}
             beforeJoin={beforeJoin}
@@ -78,7 +80,7 @@ describe('PrejoinScreen', () => {
       );
       act(() =>
         [...container.querySelectorAll('button')]
-          .find((button) => button.textContent?.includes('이름 또는 방 다시 선택'))!
+          .find((button) => button.textContent?.includes('BATON으로 돌아가기'))!
           .click(),
       );
       await act(async () => resolve(true));
@@ -103,7 +105,8 @@ describe('PrejoinScreen', () => {
     try {
       const markup = renderToStaticMarkup(
         <PrejoinScreen
-          displayName="림"
+          initialDisplayName="림"
+          backLabel="BATON으로 돌아가기"
           roomId="abcd-efgh-jkmp"
           showHostCapabilityInput
           onBack={vi.fn()}
@@ -117,7 +120,7 @@ describe('PrejoinScreen', () => {
       expect(markup).toContain('type="password"');
       expect(markup).toContain('minLength="32"');
       expect(markup).toContain('32자 이상의 무작위 키만 사용');
-      expect(markup).toContain('이 버튼을 누르기 전에는 카메라와 마이크 권한을 요청하지 않습니다.');
+      expect(markup).toContain('카메라와 마이크는 ‘장치 확인’을 눌러야 켜집니다.');
       expect(markup).not.toContain('서버에 연결 중');
       expect(getUserMedia).not.toHaveBeenCalled();
       expect(webSocket).not.toHaveBeenCalled();
@@ -129,7 +132,8 @@ describe('PrejoinScreen', () => {
   it('does not render the standalone host key field for BATON entry', () => {
     const markup = renderToStaticMarkup(
       <PrejoinScreen
-        displayName="림"
+        initialDisplayName="림"
+        backLabel="BATON으로 돌아가기"
         roomId="abcd-efgh-jkmp"
         showHostCapabilityInput={false}
         onBack={vi.fn()}
@@ -168,7 +172,8 @@ describe('PrejoinScreen', () => {
         await act(async () => {
           root.render(
             <PrejoinScreen
-              displayName="림"
+              initialDisplayName="림"
+              backLabel="BATON으로 돌아가기"
               roomId="abcd-efgh-jkmp"
               showHostCapabilityInput={false}
               authorizeBeforeEntryAction={authorize}

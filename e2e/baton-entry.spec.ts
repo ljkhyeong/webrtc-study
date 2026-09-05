@@ -62,13 +62,12 @@ test('BATON authorizes the room before prejoin can request media', async ({ page
   expect(await mediaRequestCount(page)).toBe(0);
 
   releaseGrant();
-  await expect(page.getByText('초대받은 스터디룸')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '입장 준비', exact: true })).toBeVisible();
+  await expect(page.getByText('같이 공부할 사람만,')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '다른 방 만들기' })).toHaveCount(0);
   await page.getByLabel('내 이름').fill('BATON 스터디원');
-  await page.getByRole('button', { name: '입장 준비' }).click();
 
-  await expect(
-    page.getByRole('heading', { name: '입장 전에 장치를 확인해 주세요.' }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: '입장 준비' })).toBeVisible();
   expect(await mediaRequestCount(page)).toBe(0);
 
   await page.getByRole('button', { name: '장치 확인', exact: true }).click();

@@ -13,7 +13,6 @@ test('모바일에서 방 입장과 채팅 제어가 화면 안에 유지된다'
 
   await page.goto(ROOM_PATH);
   await page.getByLabel('내 이름').fill('모바일 스터디원');
-  await page.getByRole('button', { name: '입장 준비' }).click();
   await page.getByRole('button', { name: '미디어 없이 입장' }).click();
 
   const controlDock = page.getByRole('contentinfo', { name: '통화 제어' });
