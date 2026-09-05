@@ -50,6 +50,13 @@
 		file_server
 	}
 
+	handle /round-ui/release.json {
+		uri strip_prefix /round-ui
+		root * /srv
+		header Cache-Control "no-store"
+		file_server
+	}
+
 	handle /round-ui/* {
 		header Cache-Control "no-store"
 		respond "권한이 있는 BATON 스터디룸에서 ROUND를 여세요." 404

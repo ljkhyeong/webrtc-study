@@ -27,6 +27,22 @@ class HealthIntegrationTest {
 	private SignalingService signalingService;
 
 	@Test
+	void checksClientCompatibilityWithoutOpeningAPeer() throws Exception {
+		int connected = signalingService.connectedPeerCount();
+		HttpResponse<String> response = get("/signal?compatibility=1");
+		assertThat(response.statusCode()).isEqualTo(200);
+		assertThat(response.headers().firstValue("cache-control"))
+				.hasValueSatisfying(value -> assertThat(value).contains("no-store"));
+		assertThat(response.body()).contains("\"protocolVersion\":3", "peer.reconnect", "room.study");
+		assertThat(signalingService.connectedPeerCount()).isEqualTo(connected);
+		HttpRequest allowed = HttpRequest.newBuilder()
+				.uri(URI.create("http://127.0.0.1:" + port + "/signal?compatibility=1"))
+				.header("Origin", "http://localhost:5173").GET().build();
+		HttpResponse<String> cors = HttpClient.newHttpClient().send(allowed, HttpResponse.BodyHandlers.ofString());
+		assertThat(cors.headers().firstValue("access-control-allow-origin")).hasValue("http://localhost:5173");
+	}
+
+	@Test
 	void exposesNoStoreHealthEndpoint() throws Exception {
 		HttpResponse<String> response = get("/healthz");
 

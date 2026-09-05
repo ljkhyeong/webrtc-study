@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly ROUND_WEB_BUILD_ID: string;
   readonly VITE_ROUND_AUTH_MODE?: 'standalone' | 'baton';
   readonly VITE_SIGNALING_URL?: string;
   readonly VITE_STUN_URLS?: string;

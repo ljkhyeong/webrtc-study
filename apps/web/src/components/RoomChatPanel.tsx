@@ -124,6 +124,28 @@ export function RoomChatPanel({
   onNotificationChange,
 }: RoomChatPanelProps) {
   const [message, setMessage] = useState('');
+  const [search, setSearch] = useState('');
+  const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
+  const query = search.trim().normalize('NFC').toLocaleLowerCase('ko-KR');
+  const messageKey = (item: ChatMessage) => JSON.stringify([item.senderId, item.id]);
+  const matches = query
+    ? messages.filter((item) =>
+        item.text.normalize('NFC').toLocaleLowerCase('ko-KR').includes(query),
+      )
+    : [];
+  const matchKeys = new Set(matches.map(messageKey));
+  const matchIndex = Math.max(
+    0,
+    matches.findIndex((item) => messageKey(item) === selectedMatch),
+  );
+  const currentMatch = matches[matchIndex];
+  const currentMatchKey = currentMatch ? messageKey(currentMatch) : null;
+  const messageElements = useRef(new Map<string, HTMLElement>());
+  const moveMatch = (direction: number) => {
+    if (!matches.length) return;
+    const item = matches[(matchIndex + direction + matches.length) % matches.length];
+    if (item) setSelectedMatch(messageKey(item));
+  };
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [unseenDeliveryIssueCount, setUnseenDeliveryIssueCount] = useState(0);
   const [followingChat, setFollowingChat] = useState(true);
@@ -135,6 +157,20 @@ export function RoomChatPanel({
   const messagesRef = useRef<HTMLDivElement>(null);
   const followingChatRef = useRef(true);
   const chatCompositionActive = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!open || !query || !currentMatchKey) return;
+    const list = messagesRef.current;
+    const target = messageElements.current.get(currentMatchKey);
+    if (list && target) {
+      followingChatRef.current = false;
+      setFollowingChat(false);
+      list.scrollTop +=
+        target.getBoundingClientRect().top -
+        list.getBoundingClientRect().top -
+        (list.clientHeight - target.clientHeight) / 2;
+    }
+  }, [open, query, currentMatchKey]);
 
   useEffect(() => {
     onNotificationChange({ unreadMessageCount, unseenDeliveryIssueCount });
@@ -149,7 +185,7 @@ export function RoomChatPanel({
       previousLocalDeliveryStates.current = currentLocalDeliveryStates;
       return;
     }
-    if (!open || !followingChatRef.current) {
+    if (!open || query || !followingChatRef.current) {
       setUnreadMessageCount(
         (count) => count + countNewRemoteMessages(messages, previousLastMessage.current),
       );
@@ -166,19 +202,21 @@ export function RoomChatPanel({
     }
     previousLastMessage.current = chatMessageIdentity(messages.at(-1));
     previousLocalDeliveryStates.current = currentLocalDeliveryStates;
-  }, [open, messages]);
+  }, [open, messages, query]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || query) return;
     followingChatRef.current = true;
     setFollowingChat(true);
     setUnreadMessageCount(0);
     setUnseenDeliveryIssueCount(0);
     const list = messagesRef.current;
     if (list !== null) list.scrollTop = list.scrollHeight;
-  }, [open]);
+  }, [open, query]);
 
   const showLatestMessages = () => {
+    setSearch('');
+    setSelectedMatch(null);
     followingChatRef.current = true;
     setFollowingChat(true);
     setUnreadMessageCount(0);
@@ -189,7 +227,7 @@ export function RoomChatPanel({
 
   const handleChatScroll = () => {
     const list = messagesRef.current;
-    if (list === null || !open) return;
+    if (list === null || !open || query) return;
     const following = list.scrollHeight - list.scrollTop - list.clientHeight <= 32;
     followingChatRef.current = following;
     setFollowingChat(following);
@@ -221,11 +259,60 @@ export function RoomChatPanel({
           </button>
         </header>
 
+        <section className="chat-search" aria-label="채팅 검색">
+          <label className="sr-only" htmlFor="chat-search">
+            대화 검색
+          </label>
+          <input
+            id="chat-search"
+            type="search"
+            placeholder="이 방의 대화 검색"
+            value={search}
+            maxLength={1000}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setSelectedMatch(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+              event.preventDefault();
+              if (!event.nativeEvent.isComposing && event.keyCode !== 229)
+                moveMatch(event.shiftKey ? -1 : 1);
+            }}
+          />
+          {query ? (
+            <div className="chat-search__navigation">
+              <span role="status">
+                {matches.length ? `${matchIndex + 1} / ${matches.length}개` : '검색 결과 없음'}
+              </span>
+              <button
+                type="button"
+                disabled={!matches.length}
+                onClick={() => moveMatch(-1)}
+                aria-label="이전 검색 결과"
+              >
+                이전
+              </button>
+              <button
+                type="button"
+                disabled={!matches.length}
+                onClick={() => moveMatch(1)}
+                aria-label="다음 검색 결과"
+              >
+                다음
+              </button>
+              <button type="button" onClick={showLatestMessages}>
+                검색 닫기
+              </button>
+            </div>
+          ) : null}
+        </section>
+
         <div
           className="chat-messages"
           ref={messagesRef}
           onScroll={handleChatScroll}
-          aria-live="polite"
+          aria-live={query ? 'off' : 'polite'}
         >
           {messages.length === 0 ? (
             <div className="chat-empty">
@@ -239,6 +326,13 @@ export function RoomChatPanel({
                 key={`${chatMessage.senderId}:${chatMessage.id}`}
                 className={`chat-message${chatMessage.isLocal ? ' chat-message--mine' : ''}`}
                 data-delivery-state={chatMessage.deliveryState}
+                data-search-match={matchKeys.has(messageKey(chatMessage)) || undefined}
+                data-search-current={currentMatchKey === messageKey(chatMessage) || undefined}
+                ref={(element) => {
+                  const key = messageKey(chatMessage);
+                  if (element) messageElements.current.set(key, element);
+                  else messageElements.current.delete(key);
+                }}
               >
                 <header>
                   <strong>{chatMessage.isLocal ? '나' : chatMessage.senderName}</strong>

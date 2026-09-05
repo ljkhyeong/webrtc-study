@@ -20,6 +20,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistra
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
+import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 @EnableWebSocket
@@ -27,6 +28,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
 	private final SignalingWebSocketHandler handler;
 	private final OriginHandshakeInterceptor originInterceptor;
+	private final ClientCompatibilityHandshakeInterceptor compatibilityInterceptor;
 	private final ParticipationGrantHandshakeInterceptor grantInterceptor;
 	private final ConnectionAdmissionHandshakeHandler admissionHandler;
 	private final boolean batonMode;
@@ -38,14 +40,15 @@ public class WebSocketConfig implements WebSocketConfigurer {
 			SignalingProperties properties,
 			RoundAuthProperties authProperties,
 			ParticipationGrantResolver grantResolver,
-			Environment environment) {
+			Environment environment,
+			ObjectMapper objectMapper) {
 		this.handler = handler;
 		boolean production = environment.acceptsProfiles(Profiles.of("production"));
 		boolean batonMode = authProperties.batonMode();
-		this.originInterceptor = new OriginHandshakeInterceptor(
-				new OriginPolicy(
-						properties.allowedOrigins(),
-						OriginPolicy.SecurityMode.from(production, batonMode)));
+		OriginPolicy originPolicy = new OriginPolicy(properties.allowedOrigins(),
+				OriginPolicy.SecurityMode.from(production, batonMode));
+		this.originInterceptor = new OriginHandshakeInterceptor(originPolicy);
+		this.compatibilityInterceptor = new ClientCompatibilityHandshakeInterceptor(originPolicy, objectMapper);
 		this.grantInterceptor = new ParticipationGrantHandshakeInterceptor(grantResolver);
 		this.admissionHandler =
 				new ConnectionAdmissionHandshakeHandler(
@@ -59,9 +62,9 @@ public class WebSocketConfig implements WebSocketConfigurer {
 	public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
 		WebSocketHandlerRegistration registration = batonMode
 				? registry.addHandler(handler, BATON_SIGNAL_TEMPLATE)
-						.addInterceptors(originInterceptor, grantInterceptor)
+						.addInterceptors(grantInterceptor, compatibilityInterceptor, originInterceptor)
 				: registry.addHandler(handler, STANDALONE_SIGNAL)
-						.addInterceptors(originInterceptor);
+						.addInterceptors(compatibilityInterceptor, originInterceptor);
 		registration.setHandshakeHandler(admissionHandler)
 				.setAllowedOriginPatterns("*");
 	}

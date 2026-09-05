@@ -14,7 +14,13 @@ import {
   ParticipationGrantLeaseManager,
 } from './lib/participation-grant';
 import { pathForRoom, roomIdFromPath, sanitizeDisplayName } from './lib/room';
-import { resolveRoundAuthMode, type RoundAuthMode } from './lib/room-endpoints';
+import {
+  resolveNormalizedRoomEndpoints,
+  resolveRoundAuthMode,
+  type RoundAuthMode,
+} from './lib/room-endpoints';
+import { useClientRelease, checkSignalingCompatibility } from './lib/client-release';
+import { ClientReleaseNotice } from './components/ClientReleaseNotice';
 
 const DISPLAY_NAME_STORAGE_KEY = 'round:display-name';
 
@@ -85,6 +91,7 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
     authMode === 'standalone' ? readStoredDisplayName() : '',
   );
   const [approvedRoomKey, setApprovedRoomKey] = useState<string | null>(null);
+  const release = useClientRelease(authMode === 'standalone' || approvedRoomKey !== null);
   const [activeRoomKey, setActiveRoomKey] = useState<string | null>(null);
   const [activeHostCapability, setActiveHostCapability] = useState<string | undefined>();
   const [initialInputEnabled, setInitialInputEnabled] =
@@ -183,6 +190,18 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
           roomId={roomId}
           showHostCapabilityInput={authMode !== 'baton'}
           authorizeBeforeEntryAction={authorizeBeforeEntryAction}
+          beforeJoin={async () => {
+            if ((await release.check()) !== 'current') return false;
+            const endpoints = resolveNormalizedRoomEndpoints({
+              roomId,
+              authMode,
+              location: window.location,
+              signalingUrl: import.meta.env.VITE_SIGNALING_URL,
+              turnCredentialsUrl: import.meta.env.VITE_TURN_CREDENTIALS_URL,
+            });
+            await checkSignalingCompatibility(endpoints.signalingUrl);
+            return true;
+          }}
           onBack={goHome}
           onJoin={(preparedMediaStream, hostCapability, inputEnabled) => {
             stopUnclaimedPreparedMedia();
@@ -214,14 +233,30 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
   };
 
   if (authMode !== 'baton') {
-    return renderRoomEntry();
+    return (
+      <>
+        <ClientReleaseNotice
+          status={release.status}
+          inRoom={activeRoomKey !== null}
+          onRetry={() => void release.check()}
+        />
+        {renderRoomEntry()}
+      </>
+    );
   }
   if (roomId === null) {
     return <BatonRuntimeRoot />;
   }
   return (
-    <BatonRoomEntryBoundary key={`${roomId}:${batonEntryGeneration}`} roomId={roomId}>
-      {renderRoomEntry}
-    </BatonRoomEntryBoundary>
+    <>
+      <ClientReleaseNotice
+        status={release.status}
+        inRoom={activeRoomKey !== null}
+        onRetry={() => void release.check()}
+      />
+      <BatonRoomEntryBoundary key={`${roomId}:${batonEntryGeneration}`} roomId={roomId}>
+        {renderRoomEntry}
+      </BatonRoomEntryBoundary>
+    </>
   );
 }

@@ -551,3 +551,7 @@ describe('BATON room entry boundary', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
+vi.mock('./lib/client-release', () => ({
+  useClientRelease: () => ({ status: 'current', check: async () => 'current' }),
+  checkSignalingCompatibility: vi.fn(async () => {}),
+}));

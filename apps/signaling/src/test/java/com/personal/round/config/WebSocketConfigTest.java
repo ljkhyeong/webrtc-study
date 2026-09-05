@@ -24,6 +24,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistra
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 import org.springframework.web.socket.server.HandshakeHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
+import tools.jackson.databind.ObjectMapper;
 
 class WebSocketConfigTest {
 
@@ -52,7 +53,7 @@ class WebSocketConfigTest {
 				TestProperties.signaling(),
 				standaloneAuth(),
 				grantResolver,
-				environment))
+				environment, new ObjectMapper()))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("HTTPS");
 	}
@@ -76,7 +77,7 @@ class WebSocketConfigTest {
 				TestProperties.signaling(),
 				standaloneAuth(),
 				grantResolver,
-				new MockEnvironment());
+				new MockEnvironment(), new ObjectMapper());
 
 		config.registerWebSocketHandlers(registry);
 
@@ -84,8 +85,8 @@ class WebSocketConfigTest {
 				ArgumentCaptor.forClass(HandshakeInterceptor[].class);
 		verify(registration).addInterceptors(interceptors.capture());
 		assertThat(interceptors.getValue())
-				.singleElement()
-				.isInstanceOf(OriginHandshakeInterceptor.class);
+				.extracting(Object::getClass)
+				.containsExactly(ClientCompatibilityHandshakeInterceptor.class, OriginHandshakeInterceptor.class);
 		verify(registry).addHandler(same(webSocketHandler), eq(new String[] {"/signal"}));
 		verify(registration).setHandshakeHandler(
 				any(ConnectionAdmissionHandshakeHandler.class));
@@ -110,7 +111,7 @@ class WebSocketConfigTest {
 				TestProperties.signaling(),
 				batonAuth(),
 				grantResolver,
-				new MockEnvironment());
+				new MockEnvironment(), new ObjectMapper());
 
 		config.registerWebSocketHandlers(registry);
 
@@ -120,8 +121,9 @@ class WebSocketConfigTest {
 		assertThat(interceptors.getValue())
 				.extracting(Object::getClass)
 				.containsExactly(
-						OriginHandshakeInterceptor.class,
-						ParticipationGrantHandshakeInterceptor.class);
+						ParticipationGrantHandshakeInterceptor.class,
+						ClientCompatibilityHandshakeInterceptor.class,
+						OriginHandshakeInterceptor.class);
 		verify(registry).addHandler(
 				same(webSocketHandler),
 				eq(new String[] {"/rooms/{roomId}/signal"}));

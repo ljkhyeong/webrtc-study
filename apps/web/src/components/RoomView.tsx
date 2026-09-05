@@ -25,6 +25,7 @@ import { type AudioOutputSelection, type ParticipantView, VideoTile } from './Vi
 import { canonicalRoomUrl } from '../lib/room';
 import { RoomChatPanel, type ChatNotificationSummary } from './RoomChatPanel';
 import { ConnectionDiagnosticsPanel } from './ConnectionDiagnosticsPanel';
+import { useRoomShortcuts } from '../lib/use-room-shortcuts';
 
 type RoomSystemNoticeId =
   | 'session-error'
@@ -207,6 +208,14 @@ export function RoomView({
   const handRaised = participants.some(
     (participant) => participant.isLocal && participant.handRaised,
   );
+  useRoomShortcuts({
+    active: isActive,
+    audioAvailable,
+    videoAvailable,
+    onAudio: onToggleAudio,
+    onVideo: onToggleVideo,
+    onHand: () => onSetHandRaised(!handRaised),
+  });
   const raisedHandNames = participants
     .filter((participant) => participant.handRaised)
     .map((participant) => `${participant.displayName}${participant.isLocal ? ' (나)' : ''}`);
@@ -448,6 +457,8 @@ export function RoomView({
                 : '마이크 켜기'
           }
           onClick={audioAvailable ? onToggleAudio : onSelectDevices}
+          aria-keyshortcuts="Alt+Shift+M"
+          title="마이크 전환: Alt+Shift+M"
         >
           {audioEnabled ? <MicIcon /> : <MicOffIcon />}
           <span>{!audioAvailable ? '마이크 연결' : audioEnabled ? '마이크' : '음소거'}</span>
@@ -468,6 +479,8 @@ export function RoomView({
                   : '카메라 켜기'
           }
           onClick={videoAvailable ? onToggleVideo : onSelectDevices}
+          aria-keyshortcuts="Alt+Shift+C"
+          title="카메라 전환: Alt+Shift+C"
         >
           {videoEnabled ? <CameraIcon /> : <CameraOffIcon />}
           <span>{!videoAvailable ? '카메라 연결' : videoEnabled ? '카메라' : '카메라 꺼짐'}</span>
@@ -496,6 +509,8 @@ export function RoomView({
           aria-label={handRaised ? '손 내리기' : '손들기'}
           aria-pressed={handRaised}
           onClick={() => onSetHandRaised(!handRaised)}
+          aria-keyshortcuts="Alt+Shift+H"
+          title="손들기 전환: Alt+Shift+H"
         >
           <HandIcon />
           <span>{handRaised ? '손 내리기' : '손들기'}</span>

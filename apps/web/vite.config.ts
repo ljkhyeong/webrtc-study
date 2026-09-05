@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv, type ConfigEnv, type UserConfig } from 'vite';
@@ -19,10 +20,32 @@ export function createViteConfig({ mode }: ConfigEnv): UserConfig {
   const environment = loadEnv(mode, repositoryRoot, '');
   const signalingPort = environment.PORT?.trim() || '8787';
   const isE2e = process.env.ROUND_E2E_MODE === 'true';
+  const buildId = randomUUID();
+  const release = JSON.stringify({ buildId });
+  const base = viteBaseForAuthMode(environment.VITE_ROUND_AUTH_MODE);
 
   return {
-    base: viteBaseForAuthMode(environment.VITE_ROUND_AUTH_MODE),
-    plugins: [react()],
+    base,
+    define: { 'import.meta.env.ROUND_WEB_BUILD_ID': JSON.stringify(buildId) },
+    plugins: [
+      react(),
+      {
+        name: 'round-release',
+        configureServer(server) {
+          server.middlewares.use((request, response, next) => {
+            const requestPath = request.url?.split('?')[0];
+            if (requestPath !== '/release.json' && requestPath !== `${base}release.json`)
+              return next();
+            response.setHeader('Content-Type', 'application/json');
+            response.setHeader('Cache-Control', 'no-store');
+            response.end(release);
+          });
+        },
+        generateBundle() {
+          this.emitFile({ type: 'asset', fileName: 'release.json', source: release });
+        },
+      },
+    ],
     envDir: repositoryRoot,
     resolve: {
       alias: {
@@ -50,7 +73,7 @@ export function createViteConfig({ mode }: ConfigEnv): UserConfig {
           rewrite: rewriteBatonRoomEndpoint,
         },
         '/signal': {
-          target: `ws://127.0.0.1:${signalingPort}`,
+          target: `http://127.0.0.1:${signalingPort}`,
           ws: true,
         },
       },

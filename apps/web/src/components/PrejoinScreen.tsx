@@ -11,6 +11,7 @@ interface PrejoinScreenProps {
   roomId: string;
   showHostCapabilityInput: boolean;
   authorizeBeforeEntryAction?: (() => Promise<boolean>) | undefined;
+  beforeJoin?: (() => Promise<boolean>) | undefined;
   onBack: () => void;
   onJoin: (
     preparedMediaStream: MediaStream | null,
@@ -44,6 +45,7 @@ export function PrejoinScreen({
   roomId,
   showHostCapabilityInput,
   authorizeBeforeEntryAction,
+  beforeJoin,
   onBack,
   onJoin,
 }: PrejoinScreenProps) {
@@ -141,6 +143,8 @@ export function PrejoinScreen({
     }
 
     runAuthorized(async () => {
+      if (beforeJoin && !(await beforeJoin())) return;
+      if (!actionLifetimeRef.current) return;
       const controller = controllerRef.current;
       const initialInputEnabled = controller?.getInputEnabled();
       const stream = controller?.takeStream() ?? null;
@@ -151,6 +155,8 @@ export function PrejoinScreen({
 
   const handleJoinWithoutMedia = () => {
     runAuthorized(async () => {
+      if (beforeJoin && !(await beforeJoin())) return;
+      if (!actionLifetimeRef.current) return;
       controllerRef.current?.dispose();
       controllerRef.current = null;
       onJoin(null, normalizedHostCapability);
@@ -249,6 +255,8 @@ export function PrejoinScreen({
             이 버튼을 누르기 전에는 카메라와 마이크 권한을 요청하지 않습니다. 확인이 끝나도 실제 방
             연결은 입장 버튼을 눌러야 시작됩니다.
           </p>
+
+          {actionError ? <p role="alert">{actionError}</p> : null}
 
           {showHostCapabilityInput ? (
             <label className="prejoin-host-capability">
@@ -382,7 +390,6 @@ export function PrejoinScreen({
                     <span>{prejoinMediaIssueMessage('video', snapshot.videoIssue.code)}</span>
                   </p>
                 ) : null}
-                {actionError ? <p role="alert">{actionError}</p> : null}
               </div>
 
               <button

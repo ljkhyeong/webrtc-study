@@ -7,6 +7,88 @@ import { describe, expect, it, vi } from 'vitest';
 import { PrejoinScreen } from './PrejoinScreen';
 
 describe('PrejoinScreen', () => {
+  it('호환성을 확인한 뒤에만 입장하고 실패 안내와 재시도를 제공한다', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const beforeJoin = vi
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockRejectedValueOnce(new Error('서버 버전을 확인하지 못했습니다.'))
+      .mockResolvedValueOnce(true);
+    const onJoin = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    try {
+      await act(async () =>
+        root.render(
+          <PrejoinScreen
+            displayName="림"
+            roomId="abcd-efgh-jkmp"
+            showHostCapabilityInput={false}
+            beforeJoin={beforeJoin}
+            onBack={() => {}}
+            onJoin={onJoin}
+          />,
+        ),
+      );
+      const join = [...container.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('미디어 없이 입장'),
+      )!;
+      await act(async () => join.click());
+      expect(onJoin).not.toHaveBeenCalled();
+      await act(async () => join.click());
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        '서버 버전을 확인하지 못했습니다',
+      );
+      expect(onJoin).not.toHaveBeenCalled();
+      await act(async () => join.click());
+      expect(onJoin).toHaveBeenCalledOnce();
+    } finally {
+      act(() => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('호환성 조회 중 뒤로 가면 늦은 응답으로 방에 입장하지 않는다', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    let resolve!: (allowed: boolean) => void;
+    const beforeJoin = () =>
+      new Promise<boolean>((done) => {
+        resolve = done;
+      });
+    const onJoin = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    try {
+      await act(async () =>
+        root.render(
+          <PrejoinScreen
+            displayName="림"
+            roomId="abcd-efgh-jkmp"
+            showHostCapabilityInput={false}
+            beforeJoin={beforeJoin}
+            onBack={() => {}}
+            onJoin={onJoin}
+          />,
+        ),
+      );
+      await act(async () =>
+        [...container.querySelectorAll('button')]
+          .find((button) => button.textContent?.includes('미디어 없이 입장'))!
+          .click(),
+      );
+      act(() =>
+        [...container.querySelectorAll('button')]
+          .find((button) => button.textContent?.includes('이름 또는 방 다시 선택'))!
+          .click(),
+      );
+      await act(async () => resolve(true));
+      expect(onJoin).not.toHaveBeenCalled();
+    } finally {
+      act(() => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('requires a separate device-check action and offers a media-less join', () => {
     const getUserMedia = vi.fn();
     const webSocket = vi.fn();

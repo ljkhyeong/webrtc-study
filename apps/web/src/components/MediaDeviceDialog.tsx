@@ -241,6 +241,10 @@ export function MediaDeviceDialog({
         onSelect={onSelectOutput}
         onRefresh={() => setRefresh((value) => value + 1)}
       />
+      <p>
+        통화 단축키: Alt+Shift+M 마이크 · Alt+Shift+C 카메라 · Alt+Shift+H 손들기. Mac에서는 Alt
+        대신 Option을 사용합니다. 글을 입력하거나 설정 창이 열려 있으면 작동하지 않습니다.
+      </p>
     </dialog>
   );
 }

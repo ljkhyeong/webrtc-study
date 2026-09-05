@@ -87,6 +87,14 @@ request non_hashed_asset /round-ui/assets/index.js 404 no-store
 request favicon /round-ui/favicon.svg 200 no-cache
 [[ -s "$fixture_dir/favicon.body" ]] || fail '/round-ui/favicon.svg returned an empty body'
 
+request release /round-ui/release.json 200 no-store
+node -e '
+  const fs = require("node:fs");
+  const release = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  if (typeof release.buildId !== "string" || !release.buildId ||
+      !fs.readFileSync(process.argv[2], "utf8").includes(release.buildId)) process.exit(1);
+' "$fixture_dir/release.body" "$fixture_dir/hashed_asset.body" || fail '웹 배포 정보와 번들의 식별자가 다릅니다.'
+
 request asset_root /round-ui/ 404 no-store
 
 printf 'BATON web runtime HTTP contract passed.\n'

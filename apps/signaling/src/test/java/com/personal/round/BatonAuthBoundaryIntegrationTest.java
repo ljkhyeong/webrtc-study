@@ -147,6 +147,16 @@ class BatonAuthBoundaryIntegrationTest {
 	}
 
 	@Test
+	void checksCompatibilityOnlyWithAMatchingRoomGrant() throws Exception {
+		String path = "/rooms/" + ROOM_ID + "/signal?compatibility=1";
+		assertThat(get(path, null).statusCode()).isEqualTo(401);
+		assertThat(get(path, OTHER_ROOM_TOKEN).statusCode()).isEqualTo(403);
+		HttpResponse<String> response = get(path, MATCHING_TOKEN);
+		assertThat(response.statusCode()).isEqualTo(200);
+		assertThat(response.body()).contains("\"protocolVersion\":3", "room.study", "peer.reconnect");
+	}
+
+	@Test
 	void keepsHealthPublicEvenWhenTheParticipationCookieIsMissingOrInvalid() throws Exception {
 		HttpResponse<String> withoutCookie = get("/healthz", null);
 		HttpResponse<String> withInvalidCookie = get("/healthz", INVALID_TOKEN);
