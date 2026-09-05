@@ -21,6 +21,7 @@ import {
 } from './lib/room-endpoints';
 import { useClientRelease, checkSignalingCompatibility } from './lib/client-release';
 import { ClientReleaseNotice } from './components/ClientReleaseNotice';
+import { useRoomNavigation } from './lib/use-room-navigation';
 
 const DISPLAY_NAME_STORAGE_KEY = 'round:display-name';
 
@@ -38,27 +39,6 @@ function storeDisplayName(displayName: string) {
   } catch {
     // 강한 개인정보 보호 설정에서 저장소를 사용할 수 없어도 방은 계속 동작한다.
   }
-}
-
-function usePathname() {
-  const [pathname, setPathname] = useState(window.location.pathname);
-
-  useEffect(() => {
-    const handlePopState = () => setPathname(window.location.pathname);
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  const navigate = (path: string, replace = false) => {
-    if (replace) {
-      window.history.replaceState(null, '', path);
-    } else {
-      window.history.pushState(null, '', path);
-    }
-    setPathname(path);
-  };
-
-  return { pathname, navigate };
 }
 
 export function navigateToOwningHome(
@@ -85,7 +65,7 @@ export function App() {
 }
 
 function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
-  const { pathname, navigate } = usePathname();
+  const { pathname, navigate, registerLeaveGuard } = useRoomNavigation();
   const roomId = roomIdFromPath(pathname);
   const [displayName, setDisplayName] = useState(() =>
     authMode === 'standalone' ? readStoredDisplayName() : '',
@@ -228,6 +208,7 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
         takePreparedMediaStream={takePreparedMediaStream}
         onReconnect={retryCurrentRoom}
         onLeave={goHome}
+        registerLeaveGuard={registerLeaveGuard}
       />
     );
   };

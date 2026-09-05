@@ -3010,6 +3010,26 @@ textarea:focus-visible {
 .leave-room-dialog__actions button:last-child {
   color: #913424;
 }
+.screen-wake-setting {
+  margin-block: 16px;
+  padding: 12px;
+  border: 1px solid #d5dfe1;
+  border-radius: 12px;
+}
+.screen-wake-setting label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.screen-wake-setting input {
+  width: auto;
+}
+.screen-wake-setting p {
+  margin-block: 8px;
+}
+.screen-wake-setting small {
+  line-height: 1.5;
+}
 
 @media (max-width: 760px) {
   .room-tools {

@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoomView } from './RoomView';
+import type { LeaveGuard } from '../lib/use-room-navigation';
+import { useRoomNavigation } from '../lib/use-room-navigation';
 
 function roomViewProps(): Parameters<typeof RoomView>[0] {
   return {
@@ -94,6 +96,81 @@ describe('RoomView 브라우저 동작', () => {
     expect(cleanUnload.defaultPrevented).toBe(false);
     act(() => container.querySelector<HTMLButtonElement>('.control-button--leave')!.click());
     expect(props.onLeave).toHaveBeenCalledOnce();
+  });
+
+  it('뒤로가기 확인 결과를 이동 처리에 넘기고 확인 중 방이 닫히면 이동도 취소한다', async () => {
+    const props = roomViewProps();
+    let guard: LeaveGuard | null = null;
+    const registerLeaveGuard = (next: LeaveGuard | null) => {
+      guard = next;
+    };
+    act(() =>
+      root.render(<RoomView {...props} screenSharing registerLeaveGuard={registerLeaveGuard} />),
+    );
+    let decision: boolean | Promise<boolean> = false;
+    act(() => {
+      decision = guard!();
+    });
+    expect(container.querySelector('dialog')).not.toBeNull();
+    act(() => container.querySelector<HTMLButtonElement>('dialog button')!.click());
+    await expect(decision).resolves.toBe(false);
+    act(() => {
+      decision = guard!();
+    });
+    act(() => container.querySelector<HTMLButtonElement>('dialog button:last-child')!.click());
+    await expect(decision).resolves.toBe(true);
+    expect(props.onLeave).not.toHaveBeenCalled();
+    act(() =>
+      root.render(
+        <RoomView key="다른 방" {...props} screenSharing registerLeaveGuard={registerLeaveGuard} />,
+      ),
+    );
+    act(() => {
+      decision = guard!();
+    });
+    act(() => root.render(null));
+    await expect(decision).resolves.toBe(false);
+    expect(guard).toBeNull();
+  });
+
+  it('실제 경로 처리와 연결해 뒤로가기를 취소하면 같은 채팅 입력과 방 화면을 유지한다', async () => {
+    const props = roomViewProps();
+    window.history.replaceState({}, '', '/');
+    function RoutedRoom() {
+      const navigation = useRoomNavigation();
+      return navigation.pathname === '/' ? (
+        <button onClick={() => navigation.navigate('/room/abcd-efgh-jkmp')}>입장</button>
+      ) : (
+        <RoomView {...props} registerLeaveGuard={navigation.registerLeaveGuard} />
+      );
+    }
+    act(() =>
+      root.render(
+        <StrictMode>
+          <RoutedRoom />
+        </StrictMode>,
+      ),
+    );
+    act(() => container.querySelector('button')!.click());
+    const textarea = container.querySelector('textarea')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+        textarea,
+        '뒤로가기 보호',
+      );
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      window.history.back();
+    });
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(container.querySelector('dialog')).not.toBeNull();
+        expect(window.location.pathname).toBe('/room/abcd-efgh-jkmp');
+      });
+    });
+    act(() => container.querySelector<HTMLButtonElement>('dialog button')!.click());
+    expect(container.querySelector('textarea')).toBe(textarea);
+    expect(textarea.value).toBe('뒤로가기 보호');
+    expect(props.onLeave).not.toHaveBeenCalled();
   });
 
   it('화면 공유 중 확인한 뒤에만 나가며 서버의 손들기 순서를 목록과 배지에 표시한다', () => {

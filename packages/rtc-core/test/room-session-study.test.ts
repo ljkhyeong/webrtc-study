@@ -55,6 +55,8 @@ describe('공용 타이머 상태', () => {
     receive(state);
     await flushMicrotasks();
     expect(harness.session.getSnapshot().study?.topic).toBe('다른 방장의 주제');
+    expect(harness.session.updateStudy({ action: 'reset' }, 1)).toBe(false);
+    expect(harness.socket.messagesOfType('room.study.update')).toHaveLength(1);
     await harness.session.leave();
     expect(harness.session.getSnapshot().study).toBeNull();
   });

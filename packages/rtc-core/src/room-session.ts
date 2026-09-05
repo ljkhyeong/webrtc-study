@@ -1076,12 +1076,13 @@ export class RoomSession {
     }
   }
 
-  updateStudy(command: StudyCommand): boolean {
+  updateStudy(command: StudyCommand, expectedRevision = this.#study?.revision): boolean {
     if (
       this.#status !== 'active' ||
       this.#selfRole !== 'host' ||
       !this.#study ||
-      this.#studyCommandId
+      this.#studyCommandId ||
+      expectedRevision !== this.#study.revision
     )
       return false;
     const id = `study-update-${defaultCreateId()}`;
@@ -1091,7 +1092,7 @@ export class RoomSession {
         type: 'room.study.update',
         roomId: this.#options.roomId,
         requestId: id,
-        payload: { ...command, expectedRevision: this.#study.revision },
+        payload: { ...command, expectedRevision },
       });
       this.#studyCommandId = id;
       this.#studyNotice = null;

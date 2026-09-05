@@ -127,7 +127,7 @@ export function RoomChatPanel({
 }: RoomChatPanelProps) {
   const [message, setMessage] = useState('');
   const hasDraft = Boolean(message.trim());
-  useEffect(() => {
+  useLayoutEffect(() => {
     onDraftChange?.(hasDraft);
   }, [hasDraft, onDraftChange]);
   const [search, setSearch] = useState('');

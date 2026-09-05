@@ -6,6 +6,8 @@ import {
 } from '@round/rtc-core';
 import { RoomView } from './RoomView';
 import { MediaDeviceDialog } from './MediaDeviceDialog';
+import type { RegisterLeaveGuard } from '../lib/use-room-navigation';
+import { useScreenWakeLock } from '../lib/use-screen-wake-lock';
 import type { ParticipantView } from './VideoTile';
 import { DEFAULT_MEDIA_CONSTRAINTS } from '../lib/media-constraints';
 import { createWithPreparedMedia, withPreparedMediaFailureCleanup } from '../lib/prepared-media';
@@ -53,6 +55,7 @@ interface ActiveRoomProps {
   takePreparedMediaStream: () => MediaStream | null;
   onReconnect: () => void;
   onLeave: () => void;
+  registerLeaveGuard?: RegisterLeaveGuard | undefined;
 }
 
 export function ActiveRoom({
@@ -67,6 +70,7 @@ export function ActiveRoom({
   takePreparedMediaStream,
   onReconnect,
   onLeave,
+  registerLeaveGuard,
 }: ActiveRoomProps) {
   const sessionRef = useRef<RoomSession | null>(null);
   const lifecycleRef = useRef(0);
@@ -393,6 +397,7 @@ export function ActiveRoom({
     sessionError,
     startupError,
   });
+  const screenWakeLock = useScreenWakeLock(status === 'active');
   const localMedia = snapshot?.localMedia ?? {
     audioAvailable: false,
     audioEnabled: false,
@@ -422,7 +427,9 @@ export function ActiveRoom({
         study={snapshot?.study}
         studyPending={snapshot?.studyPending}
         studyNotice={snapshot?.studyNotice}
-        onStudyCommand={(command) => sessionRef.current?.updateStudy(command) ?? false}
+        onStudyCommand={(command, expectedRevision) =>
+          sessionRef.current?.updateStudy(command, expectedRevision) ?? false
+        }
         onSyncStudy={() => {
           sessionRef.current?.syncStudy();
         }}
@@ -538,6 +545,7 @@ export function ActiveRoom({
         onSelectDevices={() => setDeviceSettingsOpen(true)}
         onReconnect={onReconnect}
         onLeave={handleLeave}
+        registerLeaveGuard={registerLeaveGuard}
       />
       {deviceSettingsOpen ? (
         <MediaDeviceDialog
@@ -561,6 +569,7 @@ export function ActiveRoom({
             subscribedSession?.getLocalStream()?.getVideoTracks()[0]?.getSettings().deviceId ?? ''
           }
           screenSharing={snapshot?.screenSharing ?? false}
+          screenWakeLock={screenWakeLock}
           active={status === 'active'}
           onSelect={async (kind, deviceId) => {
             const session = sessionRef.current;

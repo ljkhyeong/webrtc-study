@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { VideoQualityMode, ScreenShareQuality } from '@round/rtc-core';
 import { AudioOutputControls } from './AudioOutputControls';
 import { MicrophoneLevel } from './MicrophoneLevel';
+import type { ScreenWakeLockControl } from '../lib/use-screen-wake-lock';
 
 interface MediaDeviceDialogProps {
   audioDeviceId: string;
@@ -11,6 +12,7 @@ interface MediaDeviceDialogProps {
   outputDeviceId: string;
   onSelectOutput: (deviceId: string) => void;
   screenSharing: boolean;
+  screenWakeLock?: ScreenWakeLockControl | undefined;
   active: boolean;
   screenShareQuality?: ScreenShareQuality | undefined;
   onSelectScreenShareQuality?: ((mode: ScreenShareQuality) => boolean) | undefined;
@@ -28,6 +30,7 @@ export function MediaDeviceDialog({
   outputDeviceId,
   onSelectOutput,
   screenSharing,
+  screenWakeLock,
   active,
   videoQualityMode,
   screenShareQuality = 'standard',
@@ -177,6 +180,36 @@ export function MediaDeviceDialog({
         );
       })}
       {screenSharing ? <p>카메라는 화면 공유를 중지한 뒤 변경할 수 있습니다.</p> : null}
+      {screenWakeLock ? (
+        <section className="screen-wake-setting" aria-label="화면 유지 설정">
+          <label>
+            <input
+              type="checkbox"
+              checked={screenWakeLock.enabled}
+              disabled={!screenWakeLock.supported || (!active && !screenWakeLock.enabled)}
+              onChange={(event) => screenWakeLock.setEnabled(event.target.checked)}
+            />
+            통화 화면 꺼짐 방지
+          </label>
+          <p role="status">
+            {!screenWakeLock.supported
+              ? '이 브라우저는 화면 꺼짐 방지를 지원하지 않습니다.'
+              : {
+                  off: '꺼짐',
+                  requesting: '화면 유지 요청 중',
+                  active: '적용 중 · 화면을 켜 둡니다.',
+                  waiting: '대기 중 · 방에 연결하고 화면으로 돌아오면 다시 적용합니다.',
+                  released: '브라우저가 해제했습니다. 필요하면 설정을 껐다 다시 켜 주세요.',
+                  error:
+                    '적용하지 못했습니다. 배터리 절약·브라우저 설정을 확인하고 껐다 다시 켜 주세요.',
+                }[screenWakeLock.status]}
+          </p>
+          <small>
+            화면을 켜 두면 배터리를 더 사용합니다. 다른 앱으로 이동했을 때 통화를 유지하는 기능은
+            아닙니다.
+          </small>
+        </section>
+      ) : null}
       <div className="media-device-dialog__input">
         <label>
           <span>카메라 송신 설정</span>

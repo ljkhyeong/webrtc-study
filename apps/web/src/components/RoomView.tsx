@@ -29,6 +29,7 @@ import { canonicalRoomUrl } from '../lib/room';
 import { RoomChatPanel, type ChatNotificationSummary } from './RoomChatPanel';
 import { ConnectionDiagnosticsPanel } from './ConnectionDiagnosticsPanel';
 import { useRoomShortcuts } from '../lib/use-room-shortcuts';
+import type { RegisterLeaveGuard } from '../lib/use-room-navigation';
 
 type RoomSystemNoticeId =
   | 'session-error'
@@ -53,7 +54,7 @@ interface RoomViewProps {
   study?: RoomStudySnapshot | null | undefined;
   studyPending?: boolean | undefined;
   studyNotice?: string | null | undefined;
-  onStudyCommand?: ((command: StudyCommand) => boolean) | undefined;
+  onStudyCommand?: ((command: StudyCommand, expectedRevision?: number) => boolean) | undefined;
   onSyncStudy?: (() => void) | undefined;
   qualityVisible?: boolean;
   onSetQualityVisible?: ((visible: boolean) => void) | undefined;
@@ -89,6 +90,7 @@ interface RoomViewProps {
   onReconnect: () => void;
   onRetryPeer?: ((peerId: string) => void) | undefined;
   onLeave: () => void;
+  registerLeaveGuard?: RegisterLeaveGuard | undefined;
 }
 
 export function RoomView({
@@ -132,12 +134,31 @@ export function RoomView({
   onReconnect,
   onRetryPeer,
   onLeave,
+  registerLeaveGuard,
 }: RoomViewProps) {
   const [chatOpen, setChatOpen] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const leaveConfirmed = useRef(false);
+  const navigationDecision = useRef<((accepted: boolean) => void) | null>(null);
   const needsLeaveConfirmation = hasDraft || screenSharing;
+  useLayoutEffect(() => {
+    registerLeaveGuard?.(() => {
+      if (!needsLeaveConfirmation || leaveConfirmed.current) return true;
+      if (navigationDecision.current || confirmLeave) return false;
+      return new Promise<boolean>((resolve) => {
+        navigationDecision.current = resolve;
+        setConfirmLeave(true);
+      });
+    });
+    return () => registerLeaveGuard?.(null);
+  }, [registerLeaveGuard, needsLeaveConfirmation, confirmLeave]);
+  useEffect(() => () => navigationDecision.current?.(false), []);
+  const cancelLeave = () => {
+    setConfirmLeave(false);
+    navigationDecision.current?.(false);
+    navigationDecision.current = null;
+  };
   useEffect(() => {
     if (!needsLeaveConfirmation) return;
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -154,7 +175,12 @@ export function RoomView({
   };
   const leaveAfterConfirmation = () => {
     leaveConfirmed.current = true;
-    onLeave();
+    const navigate = navigationDecision.current;
+    navigationDecision.current = null;
+    if (navigate) {
+      setConfirmLeave(false);
+      navigate(true);
+    } else onLeave();
   };
   const [pinnedPeerId, setPinnedPeerId] = useState<string | null>(null);
   const stageRef = useRef<HTMLElement>(null);
@@ -486,7 +512,7 @@ export function RoomView({
         <LeaveRoomDialog
           hasDraft={hasDraft}
           screenSharing={screenSharing}
-          onCancel={() => setConfirmLeave(false)}
+          onCancel={cancelLeave}
           onConfirm={leaveAfterConfirmation}
         />
       ) : null}

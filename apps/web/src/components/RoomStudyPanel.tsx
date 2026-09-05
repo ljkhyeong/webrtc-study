@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RoomStudySnapshot, StudyCommand, StudyMode } from '@round/rtc-core';
 import { createTimerChime } from '../lib/timer-chime';
+import { TimerChangeDialog } from './TimerChangeDialog';
 
 interface RoomStudyPanelProps {
   state: RoomStudySnapshot | null;
@@ -9,7 +10,7 @@ interface RoomStudyPanelProps {
   active: boolean;
   pending: boolean;
   notice: string | null;
-  onCommand: (command: StudyCommand) => boolean;
+  onCommand: (command: StudyCommand, expectedRevision?: number) => boolean;
   onSync: () => void;
 }
 
@@ -31,6 +32,19 @@ export function RoomStudyPanel({
   const [completion, setCompletion] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [soundNotice, setSoundNotice] = useState('');
+  const [pendingChange, setPendingChange] = useState<{
+    command: StudyCommand;
+    revision: number;
+    description: string;
+  } | null>(null);
+  const changeConfirmed = useRef(false);
+  useEffect(() => {
+    if (!pendingChange) return;
+    if (!active || !canControl || pending || state?.revision !== pendingChange.revision) {
+      setPendingChange(null);
+      setError('타이머 상태가 변경되었습니다. 최신 시간을 확인한 뒤 다시 선택해 주세요.');
+    }
+  }, [active, canControl, pending, state?.revision, pendingChange]);
   const chime = useRef<ReturnType<typeof createTimerChime> | null>(null);
   const armed = useRef(false);
   const completedRevision = useRef<number | null>(null);
@@ -148,8 +162,41 @@ export function RoomStudyPanel({
         ? '진행 중'
         : '대기·일시정지';
   const disabled = !active || pending || !state;
-  const command = (value: StudyCommand) => {
-    setError(onCommand(value) ? '' : '요청을 보내지 못했습니다. 방 연결 상태를 확인해 주세요.');
+  const command = (value: StudyCommand, expectedRevision?: number) => {
+    setError(
+      onCommand(value, expectedRevision)
+        ? ''
+        : '요청을 보내지 못했습니다. 최신 진행 상태와 방 연결을 확인해 주세요.',
+    );
+  };
+  const requestTimerChange = (value: StudyCommand) => {
+    if (disabled || !canControl || !state) return;
+    setError('');
+    const hasProgress =
+      state.running || (remaining > 0 && remaining < state.durationSeconds * 1000);
+    if (!hasProgress) {
+      command(value);
+      return;
+    }
+    changeConfirmed.current = false;
+    setPendingChange({
+      command: value,
+      revision: state.revision,
+      description:
+        value.action === 'start'
+          ? `${value.mode === 'focus' ? '집중' : '휴식'} ${value.durationSeconds / 60}분 타이머를 새로 시작합니다.`
+          : `현재 타이머를 ${state.durationSeconds / 60}분으로 되돌리고 정지합니다.`,
+    });
+  };
+  const confirmTimerChange = () => {
+    if (!pendingChange || changeConfirmed.current) return;
+    changeConfirmed.current = true;
+    setPendingChange(null);
+    if (disabled || !canControl || state?.revision !== pendingChange.revision) {
+      setError('타이머 상태가 변경되었습니다. 최신 시간을 확인한 뒤 다시 선택해 주세요.');
+      return;
+    }
+    command(pendingChange.command, pendingChange.revision);
   };
   return (
     <div className="room-study-region">
@@ -210,7 +257,7 @@ export function RoomStudyPanel({
                   event.preventDefault();
                   const duration = Number(minutes);
                   if (Number.isInteger(duration) && duration >= 1 && duration <= 120)
-                    command({ action: 'start', mode, durationSeconds: duration * 60 });
+                    requestTimerChange({ action: 'start', mode, durationSeconds: duration * 60 });
                 }}
               >
                 <label>
@@ -250,7 +297,7 @@ export function RoomStudyPanel({
                 >
                   {state?.running ? '일시정지' : '이어서 시작'}
                 </button>
-                <button disabled={disabled} onClick={() => command({ action: 'reset' })}>
+                <button disabled={disabled} onClick={() => requestTimerChange({ action: 'reset' })}>
                   초기화
                 </button>
               </div>
@@ -267,6 +314,14 @@ export function RoomStudyPanel({
           {notice || error ? <p role="alert">{notice || error}</p> : null}
         </div>
       </details>
+      {pendingChange ? (
+        <TimerChangeDialog
+          remainingSeconds={seconds}
+          description={pendingChange.description}
+          onCancel={() => setPendingChange(null)}
+          onConfirm={confirmTimerChange}
+        />
+      ) : null}
       {completion ? (
         <aside className="room-study-completion" aria-label="타이머 종료 알림">
           <p role="status">{completion}.</p>
