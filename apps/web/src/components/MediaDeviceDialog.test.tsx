@@ -71,14 +71,14 @@ describe('통화 장치 설정', () => {
     const input = props();
     input.onSelectVideoQuality.mockResolvedValue(false);
     await act(async () => root.render(<MediaDeviceDialog {...input} />));
-    const select = container.querySelector<HTMLSelectElement>('[aria-label="카메라 송신 설정"]')!;
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="카메라 전송 품질"]')!;
     act(() => {
       select.value = 'data-saver';
       select.dispatchEvent(new Event('change', { bubbles: true }));
     });
     expect(input.onSelectVideoQuality).not.toHaveBeenCalled();
     const apply = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === '송신 설정 적용',
+      (button) => button.textContent === '품질 적용',
     )!;
     await act(async () => apply.click());
     expect(input.onSelectVideoQuality).toHaveBeenCalledWith('data-saver');

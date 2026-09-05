@@ -230,7 +230,7 @@ export function PrejoinScreen({
           ) : null}
 
           {!isIdle ? (
-            <div className="prejoin-preview__controls" aria-label="입장 전 미디어 제어">
+            <div className="prejoin-preview__controls" aria-label="입장 전 마이크·카메라 설정">
               <button
                 className={snapshot.localMedia.audioEnabled ? '' : 'is-off'}
                 type="button"
@@ -341,7 +341,7 @@ export function PrejoinScreen({
                 disabled={hostCapabilityInvalid || authorizationPending}
                 onClick={handleJoinWithoutMedia}
               >
-                미디어 없이 입장
+                카메라·마이크 없이 입장
               </button>
             </div>
           ) : (
@@ -457,7 +457,7 @@ export function PrejoinScreen({
                   disabled={isChecking || hostCapabilityInvalid || authorizationPending}
                   onClick={handleJoinWithMedia}
                 >
-                  {hasAnyMedia ? '이 설정으로 입장' : '미디어 없이 입장'}
+                  {hasAnyMedia ? '이 설정으로 입장' : '카메라·마이크 없이 입장'}
                   <ArrowIcon />
                 </button>
                 {hasAnyMedia ? (
@@ -467,7 +467,7 @@ export function PrejoinScreen({
                     disabled={isChecking || hostCapabilityInvalid || authorizationPending}
                     onClick={handleJoinWithoutMedia}
                   >
-                    미디어 없이 입장
+                    카메라·마이크 없이 입장
                   </button>
                 ) : null}
               </div>

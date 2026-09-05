@@ -27,7 +27,7 @@ export async function loadRtcConfiguration(
       ...(signal === undefined ? {} : { signal }),
     });
   } catch (error) {
-    throw new Error('TURN 서버 정보를 받지 못했습니다. 잠시 후 다시 시도해 주세요.', {
+    throw new Error('통화 연결 정보를 받지 못했습니다. 잠시 후 다시 시도해 주세요.', {
       cause: error,
     });
   }
@@ -37,7 +37,7 @@ export async function loadRtcConfiguration(
 
   const localDevelopment = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
   if (credentials === null && (!localDevelopment || configuredPolicy === 'relay')) {
-    throw new Error('TURN 서버 정보를 받지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    throw new Error('통화 연결 정보를 받지 못했습니다. 잠시 후 다시 시도해 주세요.');
   }
 
   return {

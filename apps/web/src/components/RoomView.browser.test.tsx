@@ -474,7 +474,7 @@ describe('RoomView 브라우저 동작', () => {
   });
 
   it.each(['성공', '실패'] as const)(
-    '진단 수집 중에는 중복 요청을 막고 %s 후 새로고침을 다시 허용한다',
+    '진단 수집 중에는 중복 요청을 막고 %s 후 다시 측정할 수 있다',
     async (outcome) => {
       const diagnostic = { status: 'active' as const, connections: [] };
       let finish!: () => void;

@@ -10,7 +10,7 @@ const REFRESH_RETRY_DELAY_MS = 30_000;
 const PARTICIPATION_GRANT_WARNING =
   '스터디 참여 권한을 갱신하지 못했습니다. 현재 통화는 유지하며 곧 다시 시도합니다.';
 const TURN_WARNING =
-  'TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지하며 곧 다시 시도합니다.';
+  '통화 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지하며 곧 다시 시도합니다.';
 
 interface RoomRefreshCoordinatorOptions {
   readonly participationGrantLeaseManager?: ParticipationGrantLeaseManager | undefined;

@@ -115,10 +115,10 @@ export function MediaDeviceDialog({
       const applied = await onSelectVideoQuality(quality);
       if (!mounted.current) return;
       if (applied)
-        setNotice('카메라 송신 설정을 적용했습니다. 새 연결에도 같은 설정을 사용합니다.');
+        setNotice('카메라 전송 품질을 적용했습니다. 새 연결에도 같은 설정을 사용합니다.');
       else setError('일부 연결에 적용하지 못했습니다. 다시 적용하거나 카메라를 꺼 주세요.');
     } catch {
-      if (mounted.current) setError('카메라 송신 설정을 적용하지 못했습니다. 다시 시도해 주세요.');
+      if (mounted.current) setError('카메라 전송 품질을 적용하지 못했습니다. 다시 시도해 주세요.');
     } finally {
       if (mounted.current) setPending(null);
     }
@@ -212,9 +212,9 @@ export function MediaDeviceDialog({
       ) : null}
       <div className="media-device-dialog__input">
         <label>
-          <span>카메라 송신 설정</span>
+          <span>카메라 전송 품질</span>
           <select
-            aria-label="카메라 송신 설정"
+            aria-label="카메라 전송 품질"
             value={quality}
             disabled={pending !== null || !active}
             onChange={(event) => setQuality(event.target.value as VideoQualityMode)}
@@ -228,7 +228,7 @@ export function MediaDeviceDialog({
           disabled={pending !== null || !active}
           onClick={() => void applyQuality()}
         >
-          송신 설정 적용
+          품질 적용
         </button>
       </div>
       <p>
@@ -242,7 +242,7 @@ export function MediaDeviceDialog({
       ) : null}
       <p role="status">
         {pending === 'quality'
-          ? '카메라 송신 설정을 적용하고 있습니다.'
+          ? '카메라 전송 품질을 적용하고 있습니다.'
           : pending !== null
             ? '장치를 변경하고 있습니다. 권한 요청이 뜨면 확인해 주세요.'
             : notice}

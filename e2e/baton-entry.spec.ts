@@ -88,7 +88,7 @@ test('BATON 401 keeps media closed and offers only the canonical room login retu
   await openBatonRoom(page);
 
   await expect(page.getByRole('heading', { name: 'BATON 로그인이 필요합니다.' })).toBeVisible();
-  await expect(page.getByRole('link', { name: '로그인하고 돌아오기' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'BATON 로그인' })).toHaveAttribute(
     'href',
     `/login?returnTo=${encodeURIComponent(ROOM_PATH)}`,
   );

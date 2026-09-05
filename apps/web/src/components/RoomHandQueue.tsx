@@ -33,8 +33,8 @@ export function RoomHandQueue({
         {active && state && !queue.length ? <p>대기 중인 참가자가 없습니다.</p> : null}
         {unsupported.length ? (
           <p>
-            순서 미지원: {unsupported.map((peer) => peer.displayName).join(', ')}. 최신 웹으로 다시
-            입장하면 대기 목록에 참여할 수 있습니다.
+            {unsupported.map((peer) => peer.displayName).join(', ')}님의 손들기 순서를 표시할 수
+            없습니다. 해당 참가자는 새로고침 후 다시 입장해 주세요.
           </p>
         ) : null}
         <small>서버에 도착한 순서입니다. 손을 내렸다 다시 들면 맨 뒤로 이동합니다.</small>

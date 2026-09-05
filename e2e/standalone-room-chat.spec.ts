@@ -45,7 +45,7 @@ test('한글 조합 입력과 양방향 채팅 전송 상태를 처리한다', a
       hasText: '오늘 목표는 3장까지',
     });
     await expect(firstOutgoingMessage).toHaveAttribute('data-delivery-state', 'sent');
-    await expect(firstOutgoingMessage).not.toContainText('수신 확인 실패');
+    await expect(firstOutgoingMessage).not.toContainText('수신 미확인');
 
     await second.getByRole('textbox', { name: '메시지', exact: true }).fill('좋아요, 시작해요');
     await second.getByRole('button', { name: '메시지 보내기' }).click();
@@ -54,7 +54,7 @@ test('한글 조합 입력과 양방향 채팅 전송 상태를 처리한다', a
       hasText: '좋아요, 시작해요',
     });
     await expect(secondOutgoingMessage).toHaveAttribute('data-delivery-state', 'sent');
-    await expect(secondOutgoingMessage).not.toContainText('수신 확인 실패');
+    await expect(secondOutgoingMessage).not.toContainText('수신 미확인');
 
     const secondComposer = second.getByRole('textbox', { name: '메시지', exact: true });
     for (let index = 0; index < 8; index += 1) {

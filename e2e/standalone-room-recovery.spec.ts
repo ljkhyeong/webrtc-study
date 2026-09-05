@@ -32,7 +32,7 @@ test('방장 제어와 참가자 퇴장 및 장치 종료를 복구한다', asyn
     await expect(first).toHaveURL(new URL('/', baseURL!).toString());
     await expect(participantTile(second, '가온')).toHaveCount(0);
     await expect(second.getByLabel('참가자 1명')).toBeVisible();
-    await expect(second.getByText('입장 완료 · 대기 중', { exact: true })).toBeVisible();
+    await expect(second.getByText('다른 참가자 기다리는 중', { exact: true })).toBeVisible();
 
     const secondLocalVideo = second
       .getByRole('article', { name: '나래 (나) 참가자', exact: true })

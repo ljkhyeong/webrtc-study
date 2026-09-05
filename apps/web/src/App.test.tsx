@@ -104,7 +104,7 @@ describe('App pre-join boundary', () => {
     try {
       const markup = renderToStaticMarkup(<App />);
 
-      expect(markup).toContain('브라우저 인증 모드 설정을 확인');
+      expect(markup).toContain('서비스 설정 오류로 입장할 수 없습니다.');
       expect(markup).not.toContain('입장 준비');
       expect(markup).not.toContain('장치 확인');
       expect(getUserMedia).not.toHaveBeenCalled();
@@ -186,7 +186,7 @@ describe('App pre-join boundary', () => {
       message: 'later warning',
     });
 
-    expect(warning).toContain('TURN');
+    expect(warning).toContain('통화 연결 정보');
     expect(warning).not.toContain('later warning');
   });
 
@@ -268,7 +268,7 @@ describe('App pre-join boundary', () => {
     });
 
     expect(terminal.status).toBe('error');
-    expect(terminal.terminalErrorMessage).toContain('TURN');
+    expect(terminal.terminalErrorMessage).toContain('통화 연결 정보');
     expect(terminal.terminalErrorMessage).not.toContain('credential request failed');
   });
 
@@ -311,7 +311,7 @@ describe('App pre-join boundary', () => {
       '연결 가능한 참가자',
     );
     expect(chatErrorMessage(new ChatSendError('queue-full', 'arbitrary detail'))).toContain(
-      '전송 대기열',
+      '전송 대기 중인 메시지',
     );
   });
 

@@ -41,7 +41,7 @@ export function connectionDiagnosticAdvice(diagnostic: PeerConnectionDiagnostics
     return '연결 복구 중에는 품질을 판단하기 어렵습니다. 연결된 뒤 다시 측정해 주세요.';
   }
   if (diagnostic.packetLossPercent === null) {
-    return '수신 표본이 부족합니다. 상대방이 소리나 영상을 보내는 동안 다시 측정해 주세요.';
+    return '측정 데이터가 부족합니다. 상대의 음성·영상이 들어올 때 다시 측정해 주세요.';
   }
   if (diagnostic.packetLossPercent >= 3 || (diagnostic.jitterMs ?? 0) >= 30) {
     return '최근 수신이 불안정합니다. Wi-Fi 상태를 확인하고 상대방에게 데이터 절약 모드나 카메라 끄기를 요청해 보세요.';
@@ -152,7 +152,7 @@ export function ConnectionDiagnosticsPanel({
             disabled={diagnostics.status === 'loading'}
             onClick={() => void collect()}
           >
-            새로고침
+            다시 측정
           </button>
         </header>
         {onSetQualityVisible ? (
@@ -178,7 +178,7 @@ export function ConnectionDiagnosticsPanel({
         ) : (
           <>
             {ready.connections.length === 0 ? (
-              <p>진단할 원격 연결이 없습니다.</p>
+              <p>진단할 참가자 연결이 없습니다.</p>
             ) : (
               <div className="connection-diagnostics__list">
                 {ready.connections.map((diagnostic) => (

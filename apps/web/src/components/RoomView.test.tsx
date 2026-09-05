@@ -14,7 +14,7 @@ import {
 
 describe('진단 안내', () => {
   it.each([
-    { packetLossPercent: null, roundTripTimeMs: 34, jitterMs: 10, message: '표본이 부족' },
+    { packetLossPercent: null, roundTripTimeMs: 34, jitterMs: 10, message: '측정 데이터가 부족' },
     { packetLossPercent: 3, roundTripTimeMs: 34, jitterMs: 10, message: '상대방에게 데이터 절약' },
     { packetLossPercent: 0, roundTripTimeMs: 34, jitterMs: 30, message: '수신이 불안정' },
     { packetLossPercent: 0, roundTripTimeMs: 300, jitterMs: 10, message: '왕복 지연이 큽니다' },
@@ -105,12 +105,12 @@ describe('RoomView connection state', () => {
     const markup = renderRoom({
       status: 'error',
       statusLabel: '연결 오류',
-      errorMessage: 'TURN 서버 정보를 받지 못했습니다.',
+      errorMessage: '통화 연결 정보를 받지 못했습니다.',
     });
 
     expect(markup).not.toContain('connecting-ring');
     expect(markup).toContain('연결하지 못했습니다');
-    expect(markup).toContain('TURN 서버 정보를 받지 못했습니다.');
+    expect(markup).toContain('통화 연결 정보를 받지 못했습니다.');
     expect(markup).toContain('다시 연결');
     expect(markup).toContain('나가기');
   });
@@ -134,13 +134,13 @@ describe('RoomView connection state', () => {
       status: 'active',
       statusLabel: '일부 참가자 연결 실패',
       peerRecoveryMessage: '일부 참가자 연결 실패 안내',
-      mediaWarning: 'TURN 연결 정보 갱신 실패',
+      mediaWarning: '통화 연결 정보 갱신 실패',
       errorMessage: '메시지 전송 실패',
     });
 
     expect(markup).toContain('room-notice-stack');
     expect(markup).toContain('일부 참가자 연결 실패 안내');
-    expect(markup).toContain('TURN 연결 정보 갱신 실패');
+    expect(markup).toContain('통화 연결 정보 갱신 실패');
     expect(markup).toContain('메시지 전송 실패');
     expect(markup.match(/role="alert"/g)).toHaveLength(2);
     expect(markup).toContain('role="status"');
@@ -203,9 +203,9 @@ describe('RoomView connection state', () => {
       ],
     });
 
-    expect(markup.match(/ · 전송 확인 중<\/time>/g)).toHaveLength(1);
-    expect(markup.match(/ · 일부 참가자 수신 확인 실패<\/time>/g)).toHaveLength(1);
-    expect(markup.match(/ · 수신 확인 실패<\/time>/g)).toHaveLength(1);
+    expect(markup.match(/ · 수신 확인 중<\/time>/g)).toHaveLength(1);
+    expect(markup.match(/ · 일부 수신 미확인<\/time>/g)).toHaveLength(1);
+    expect(markup.match(/ · 수신 미확인<\/time>/g)).toHaveLength(1);
     expect(markup.match(/data-delivery-state="pending"/g)).toHaveLength(1);
     expect(markup.match(/data-delivery-state="partial"/g)).toHaveLength(1);
     expect(markup.match(/data-delivery-state="failed"/g)).toHaveLength(1);
@@ -223,7 +223,7 @@ describe('RoomView connection state', () => {
   it('offers device selection for unavailable local media after joining', () => {
     const markup = renderRoom({
       status: 'active',
-      statusLabel: '입장 완료 · 대기 중',
+      statusLabel: '다른 참가자 기다리는 중',
       audioAvailable: false,
       audioEnabled: false,
       videoAvailable: false,
@@ -255,7 +255,7 @@ describe('RoomView connection state', () => {
     });
     const generic = renderRoom({
       status: 'active',
-      mediaWarning: 'TURN 연결 정보를 갱신하지 못했습니다.',
+      mediaWarning: '통화 연결 정보를 갱신하지 못했습니다.',
     });
 
     expect(recoverable).toContain('room-notice--recoverable');

@@ -103,7 +103,7 @@ export function LandingScreen({ initialDisplayName, onEnter, onGoHome }: Landing
                 onChange={(event) => setRoomId(normalizeRoomId(event.target.value))}
               />
               <button type="submit" disabled={!isValidRoomId(roomId)}>
-                준비
+                입장 준비
               </button>
             </div>
 

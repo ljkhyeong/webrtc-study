@@ -219,7 +219,7 @@ describe('BATON room entry boundary', () => {
       await fillPrejoinName(container, '  새 이름  ');
       expect(container.querySelector('video')).toBe(preview);
       expect(getUserMedia).toHaveBeenCalledTimes(checked ? 2 : 0);
-      await act(async () => buttonWithText(container, '미디어 없이 입장')?.click());
+      await act(async () => buttonWithText(container, '카메라·마이크 없이 입장')?.click());
       await waitForState(() => expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce());
       const options = rtcCoreMock.RoomSession.mock.calls[0]![0] as RoomSessionOptions;
       expect(options.displayName).toBe('새 이름');
@@ -285,7 +285,7 @@ describe('BATON room entry boundary', () => {
     expect(container.textContent).not.toContain('같이 공부할');
     expect(buttonWithText(container, '다른 방 만들기')).toBeNull();
     expect(buttonWithText(container, 'BATON으로 돌아가기')).not.toBeNull();
-    await act(async () => buttonWithText(container, '미디어 없이 입장')?.click());
+    await act(async () => buttonWithText(container, '카메라·마이크 없이 입장')?.click());
     expect(container.textContent).toContain('스터디에서 사용할 이름을 입력해 주세요.');
     expect(document.activeElement).toBe(container.querySelector('#display-name'));
     expect(rtcCoreMock.RoomSession).not.toHaveBeenCalled();
@@ -306,12 +306,12 @@ describe('BATON room entry boundary', () => {
     );
 
     await act(async () => {
-      buttonWithText(container, '미디어 없이 입장')?.click();
+      buttonWithText(container, '카메라·마이크 없이 입장')?.click();
     });
 
     await waitForState(() => expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce());
     expect(fetcher.mock.calls.filter(([input]) => input === TURN_ENDPOINT)).toHaveLength(1);
-    expect(container.textContent).not.toContain('TURN 서버 정보를 받지 못했습니다.');
+    expect(container.textContent).not.toContain('통화 연결 정보를 받지 못했습니다.');
     expect(container.textContent).not.toContain('스터디 참여 권한을 확인하지 못했습니다.');
     expect(fetcher.mock.calls.filter(([input]) => input === GRANT_ENDPOINT)).toHaveLength(1);
     expect(fetcher.mock.calls.filter(([input]) => input === '/api/v1/auth/session')).toHaveLength(
@@ -354,7 +354,7 @@ describe('BATON room entry boundary', () => {
     await fillPrejoinName(container);
     expect(container.textContent).toContain('입장 준비');
     await act(async () => {
-      const joinButton = buttonWithText(container, '미디어 없이 입장');
+      const joinButton = buttonWithText(container, '카메라·마이크 없이 입장');
       expect(joinButton).not.toBeNull();
       joinButton?.click();
     });
@@ -440,7 +440,7 @@ describe('BATON room entry boundary', () => {
       });
       await fillPrejoinName(container);
       await act(async () => {
-        buttonWithText(container, '미디어 없이 입장')?.click();
+        buttonWithText(container, '카메라·마이크 없이 입장')?.click();
       });
 
       await waitForState(() => {

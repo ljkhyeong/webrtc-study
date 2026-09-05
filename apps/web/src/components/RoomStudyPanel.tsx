@@ -211,7 +211,7 @@ export function RoomStudyPanel({
           {active && !hostPresent ? (
             <span className="room-study__host-absent">방장 없음</span>
           ) : null}
-          <strong>{state?.topic || '현재 주제를 설정해 보세요'}</strong>
+          <strong>{state?.topic || '주제 없음'}</strong>
         </summary>
         <div className="room-study__body">
           {active && !hostPresent ? (

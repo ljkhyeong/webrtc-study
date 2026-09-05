@@ -32,7 +32,7 @@ describe('PrejoinScreen', () => {
         ),
       );
       const join = [...container.querySelectorAll('button')].find((button) =>
-        button.textContent?.includes('미디어 없이 입장'),
+        button.textContent?.includes('카메라·마이크 없이 입장'),
       )!;
       await act(async () => join.click());
       expect(onJoin).not.toHaveBeenCalled();
@@ -75,7 +75,7 @@ describe('PrejoinScreen', () => {
       );
       await act(async () =>
         [...container.querySelectorAll('button')]
-          .find((button) => button.textContent?.includes('미디어 없이 입장'))!
+          .find((button) => button.textContent?.includes('카메라·마이크 없이 입장'))!
           .click(),
       );
       act(() =>
@@ -115,7 +115,7 @@ describe('PrejoinScreen', () => {
       );
 
       expect(markup).toContain('장치 확인');
-      expect(markup).toContain('미디어 없이 입장');
+      expect(markup).toContain('카메라·마이크 없이 입장');
       expect(markup).toContain('방장 키 (선택)');
       expect(markup).toContain('type="password"');
       expect(markup).toContain('minLength="32"');

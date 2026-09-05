@@ -55,12 +55,12 @@ export function ParticipantAudioControls({
         event.currentTarget.querySelector('summary')?.focus();
       }}
     >
-      <summary aria-label={`${name}의 내 쪽 소리 설정`}>
+      <summary aria-label={`내가 듣는 ${name}의 소리 설정`}>
         {muted ? '음소거' : supported ? `음량 ${volume}%` : '음량'}
       </summary>
       <div className="participant-audio__panel" style={{ maxHeight: panelHeight }}>
         <label>
-          내 쪽 음량 {supported ? `${volume}%` : ''}
+          내가 듣는 음량 {supported ? `${volume}%` : ''}
           <input
             type="range"
             min="0"
@@ -68,14 +68,14 @@ export function ParticipantAudioControls({
             step="5"
             value={supported === false ? 100 : volume}
             disabled={!supported}
-            aria-label={`${name}의 내 쪽 음량`}
+            aria-label={`내가 듣는 ${name}의 음량`}
             onChange={(event) => setVolume(Number(event.target.value))}
           />
         </label>
         <button
           type="button"
           className="video-tile__local-mute"
-          aria-label={`${name}의 소리 내 쪽에서만 끄기`}
+          aria-label={`내가 듣는 ${name}의 소리 ${muted ? '켜기' : '끄기'}`}
           aria-pressed={muted}
           onClick={onToggleMuted}
         >

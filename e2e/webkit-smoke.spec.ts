@@ -5,7 +5,7 @@ const ROOM_PATH = '/room/abcd-efgh-jkmp';
 async function enterWithoutMedia(page: Page, displayName: string): Promise<void> {
   await page.goto(ROOM_PATH);
   await page.getByLabel('내 이름').fill(displayName);
-  await page.getByRole('button', { name: '미디어 없이 입장' }).click();
+  await page.getByRole('button', { name: '카메라·마이크 없이 입장' }).click();
   await expect(page.getByRole('contentinfo', { name: '통화 제어' })).toBeVisible();
 }
 
@@ -37,7 +37,7 @@ test('WebKit keeps a direct invite behind explicit pre-join media consent', asyn
   expect(failures).toEqual([]);
 });
 
-test('WebKit에서 미디어 없이 입장해 채팅하고 퇴장한다', async ({ baseURL, browser }) => {
+test('WebKit에서 카메라·마이크 없이 입장해 채팅하고 퇴장한다', async ({ baseURL, browser }) => {
   if (baseURL === undefined) {
     throw new Error('Playwright baseURL이 필요합니다.');
   }

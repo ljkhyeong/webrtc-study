@@ -50,10 +50,10 @@ const messageTime = new Intl.DateTimeFormat('ko-KR', {
 });
 
 const chatDeliveryLabels: Record<ChatDeliveryState, string> = {
-  pending: ' · 전송 확인 중',
+  pending: ' · 수신 확인 중',
   sent: '',
-  partial: ' · 일부 참가자 수신 확인 실패',
-  failed: ' · 수신 확인 실패',
+  partial: ' · 일부 수신 미확인',
+  failed: ' · 수신 미확인',
   received: '',
 };
 
@@ -411,7 +411,9 @@ export function RoomChatPanel({
           {!followingChat ? (
             <button className="chat-latest" type="button" onClick={showLatestMessages}>
               {unreadMessageCount > 0 ? `새 메시지 ${unreadMessageCount}개 · ` : ''}
-              {unseenDeliveryIssueCount > 0 ? `전송 문제 ${unseenDeliveryIssueCount}건 · ` : ''}
+              {unseenDeliveryIssueCount > 0
+                ? `수신 미확인 메시지 ${unseenDeliveryIssueCount}개 · `
+                : ''}
               최신 대화로 이동
             </button>
           ) : null}
@@ -485,7 +487,7 @@ export function RoomChatPanel({
 
       {!open && unseenDeliveryIssueCount > 0 ? (
         <p className="sr-only" role="status" aria-live="polite">
-          보낸 메시지 전송 문제 {unseenDeliveryIssueCount}건. 채팅을 확인하세요.
+          수신 미확인 메시지 {unseenDeliveryIssueCount}개. 채팅을 확인하세요.
         </p>
       ) : null}
     </>

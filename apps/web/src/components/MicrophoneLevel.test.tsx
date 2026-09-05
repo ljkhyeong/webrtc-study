@@ -58,7 +58,7 @@ describe('마이크 입력 표시', () => {
     vi.clearAllMocks();
   });
 
-  it('기존 트랙으로 입력 크기를 표시하고 교체·음소거 시 분석 자원만 해제한다', () => {
+  it('기존 트랙으로 입력 음량을 표시하고 교체·음소거 시 분석 자원만 해제한다', () => {
     act(() => root.render(<MicrophoneLevel track={track} enabled />));
     const first = TestAudioContext.instances[0]!;
     act(() => nextFrame(100));
@@ -89,7 +89,7 @@ describe('마이크 입력 표시', () => {
   it('Web Audio 미지원 시 장치 사용을 막지 않고 안내만 표시한다', () => {
     vi.stubGlobal('AudioContext', undefined);
     act(() => root.render(<MicrophoneLevel track={track} enabled />));
-    expect(container.textContent).toContain('이 브라우저에서는 입력 크기를 표시할 수 없습니다.');
+    expect(container.textContent).toContain('이 브라우저에서는 입력 음량을 표시할 수 없습니다.');
     expect(track.stop).not.toHaveBeenCalled();
   });
 

@@ -116,8 +116,8 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
       <BatonEntryPanel
         eyebrow="로그인 필요"
         title="BATON 로그인이 필요합니다."
-        description="로그인한 뒤 이 스터디룸으로 안전하게 돌아옵니다."
-        primaryAction={{ href: loginPath, label: '로그인하고 돌아오기' }}
+        description="로그인하면 이 방으로 돌아옵니다."
+        primaryAction={{ href: loginPath, label: 'BATON 로그인' }}
         secondaryAction={{ href: '/', label: 'BATON으로 돌아가기' }}
       />
     );
@@ -128,8 +128,8 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
       <BatonEntryPanel
         eyebrow="참여 권한 없음"
         title="이 스터디룸에 참여할 수 없습니다."
-        description="로그인은 확인됐지만 현재 스터디 멤버십 또는 방 참여 권한이 없습니다."
-        primaryAction={{ href: '/', label: 'BATON에서 권한 확인하기' }}
+        description="로그인했지만 이 스터디룸의 참여 권한이 없습니다."
+        primaryAction={{ href: '/', label: 'BATON으로 돌아가기' }}
       />
     );
   }
@@ -171,8 +171,8 @@ export function RoundRuntimeConfigurationError() {
   return (
     <BatonEntryPanel
       eyebrow="ROUND 설정 오류"
-      title="스터디룸을 안전하게 시작할 수 없습니다."
-      description="브라우저 인증 모드 설정을 확인한 뒤 ROUND를 다시 배포해 주세요."
+      title="서비스 설정 오류로 입장할 수 없습니다."
+      description="운영자에게 문의해 주세요."
       status
     />
   );

@@ -73,18 +73,18 @@ export function MicrophoneLevel({ track, enabled }: MicrophoneLevelProps) {
 
   return (
     <div className="microphone-level">
-      <span>마이크 입력 크기</span>
-      <meter ref={meterRef} min={0} max={1} defaultValue={0} aria-label="마이크 입력 크기" />
+      <span>마이크 입력 음량</span>
+      <meter ref={meterRef} min={0} max={1} defaultValue={0} aria-label="마이크 입력 음량" />
       <small>
         {track === null
-          ? '마이크를 연결하면 입력 크기를 확인할 수 있습니다.'
+          ? '마이크를 연결하면 입력 음량을 확인할 수 있습니다.'
           : !enabled
             ? '마이크가 꺼져 있습니다.'
             : state === 'unavailable'
-              ? '이 브라우저에서는 입력 크기를 표시할 수 없습니다.'
+              ? '이 브라우저에서는 입력 음량을 표시할 수 없습니다.'
               : state === 'suspended'
-                ? '입력 표시를 시작해 주세요.'
-                : '말하면서 막대가 움직이는지 확인하세요. 입력 크기는 이 화면에서만 계산하며 저장하지 않습니다.'}
+                ? '마이크 음량 확인을 눌러 주세요.'
+                : '말하면서 막대가 움직이는지 확인하세요. 입력 음량은 이 화면에서만 계산하며 저장하지 않습니다.'}
       </small>
       {state === 'suspended' && enabled ? (
         <button
@@ -94,7 +94,7 @@ export function MicrophoneLevel({ track, enabled }: MicrophoneLevelProps) {
             void contextRef.current?.resume().catch(() => setState('unavailable'));
           }}
         >
-          입력 표시 시작
+          마이크 음량 확인
         </button>
       ) : null}
     </div>

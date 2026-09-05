@@ -287,7 +287,7 @@ export function RoomView({
   const chatButtonLabel = chatOpen
     ? '채팅 닫기'
     : `채팅 열기${unreadMessageCount > 0 ? `, 새 메시지 ${unreadMessageCount}개` : ''}${
-        unseenDeliveryIssueCount > 0 ? `, 보낸 메시지 전송 문제 ${unseenDeliveryIssueCount}건` : ''
+        unseenDeliveryIssueCount > 0 ? `, 수신 미확인 메시지 ${unseenDeliveryIssueCount}개` : ''
       }`;
   return (
     <div
@@ -430,11 +430,7 @@ export function RoomView({
             >
               {terminalConnectionError ? <CloseIcon /> : <span className="connecting-ring" />}
               <strong>{terminalConnectionError ? '연결하지 못했습니다' : statusLabel}</strong>
-              <p>
-                {terminalConnectionError
-                  ? errorMessage
-                  : '브라우저 사이에 안전한 연결을 준비하고 있습니다.'}
-              </p>
+              <p>{terminalConnectionError ? errorMessage : '통화에 연결하고 있습니다.'}</p>
               {terminalConnectionError ? (
                 <div className="connecting-layer__actions">
                   <button type="button" onClick={() => requestExit('reconnect')}>

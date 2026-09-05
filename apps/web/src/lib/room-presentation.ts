@@ -22,7 +22,7 @@ const ROOM_STARTUP_ERROR_MESSAGES = {
   'participation-grant':
     '스터디 참여 권한을 확인하지 못했습니다. 잠시 후 다시 시도하거나 BATON에서 다시 입장해 주세요.',
   'turn-configuration':
-    'TURN 서버 정보를 받지 못했습니다. 네트워크를 확인한 뒤 잠시 후 다시 시도해 주세요.',
+    '통화 연결 정보를 받지 못했습니다. 네트워크를 확인한 뒤 잠시 후 다시 시도해 주세요.',
   'session-start': '스터디룸 연결을 시작하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
 } satisfies Record<RoomStartupErrorCode, string>;
 
@@ -69,21 +69,20 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   'media-unavailable': {
     error:
       '이 브라우저에서는 카메라와 마이크를 사용할 수 없습니다. 브라우저 설정을 확인한 뒤 다시 입장해 주세요.',
-    warning: '이 브라우저에서는 카메라와 마이크를 사용할 수 없어 미디어 없이 입장했습니다.',
+    warning: '이 브라우저는 카메라·마이크를 사용할 수 없어 두 장치 없이 입장했습니다.',
   },
   'media-permission-denied': {
     error: '카메라 또는 마이크를 열지 못했습니다. 브라우저 권한을 확인한 뒤 다시 입장해 주세요.',
-    warning:
-      '카메라 또는 마이크를 열지 못해 미디어 없이 입장했습니다. 장치를 다시 선택할 수 있습니다.',
+    warning: '장치를 켜지 못해 카메라·마이크 없이 입장했습니다. 장치를 다시 선택할 수 있습니다.',
   },
   'video-quality-update-failed': {
-    error: '카메라 송신 설정을 적용하지 못했습니다.',
+    error: '카메라 전송 품질을 적용하지 못했습니다.',
     warning:
-      '일부 연결에 카메라 송신 설정을 적용하지 못했습니다. 통화 장치 설정에서 다시 적용하거나 카메라를 꺼 주세요.',
+      '일부 연결에 카메라 전송 품질을 적용하지 못했습니다. 통화 장치 설정에서 다시 적용하거나 카메라를 꺼 주세요.',
   },
   'rtc-configuration-update-failed': {
-    error: 'TURN 연결 정보를 적용하지 못했습니다. 네트워크를 확인한 뒤 다시 입장해 주세요.',
-    warning: '일부 참가자의 TURN 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.',
+    error: '통화 연결 정보를 적용하지 못했습니다. 네트워크를 확인한 뒤 다시 입장해 주세요.',
+    warning: '일부 참가자의 통화 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.',
   },
   'join-failed': {
     error: '스터디룸 입장을 완료하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
@@ -132,17 +131,15 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   },
   'peer-restart-deferred': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
-    warning: '일부 참가자의 연결 복구를 안전한 시점까지 기다리고 있습니다. 현재 통화는 유지됩니다.',
+    warning: '일부 참가자의 재연결을 기다리고 있습니다. 현재 통화는 유지됩니다.',
   },
   'ice-candidate-queue-overflow': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
-    warning:
-      '일부 참가자의 네트워크 연결 후보가 많아 오래된 정보를 정리했습니다. 현재 연결은 계속 시도합니다.',
+    warning: '일부 참가자와 연결을 계속 시도하고 있습니다.',
   },
   'ice-candidate-rejected': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
-    warning:
-      '일부 참가자의 네트워크 연결 후보를 적용하지 못했습니다. 다른 경로로 연결을 계속 시도합니다.',
+    warning: '일부 참가자와 다른 경로로 연결을 계속 시도하고 있습니다.',
   },
   'peer-negotiation-retrying': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
@@ -237,7 +234,7 @@ export function chatErrorMessage(error: unknown): string {
       case 'peer-unavailable':
         return '연결 가능한 참가자가 없어 메시지를 보내지 못했습니다. 입력한 내용은 그대로 두었습니다.';
       case 'queue-full':
-        return '메시지 전송 대기열이 가득 찼습니다. 잠시 후 다시 시도해 주세요.';
+        return '전송 대기 중인 메시지가 많습니다. 잠시 후 다시 보내세요.';
       case 'room-not-active':
       case 'message-id-conflict':
         break;
@@ -349,7 +346,7 @@ export function roomStatusLabel(
 
   const remoteParticipants = participants.filter((participant) => !participant.isLocal);
   if (remoteParticipants.length === 0) {
-    return '입장 완료 · 대기 중';
+    return '다른 참가자 기다리는 중';
   }
   if (remoteParticipants.some((participant) => participant.connectionState === 'failed')) {
     return '일부 참가자 연결 실패';

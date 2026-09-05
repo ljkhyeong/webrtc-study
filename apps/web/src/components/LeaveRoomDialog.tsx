@@ -35,9 +35,7 @@ export function LeaveRoomDialog({
       {action === 'reconnect' ? (
         <p>현재 방 연결을 종료하고 입장 준비 화면으로 돌아갑니다.</p>
       ) : null}
-      {hasDraft ? (
-        <p>아직 보내지 않은 메시지가 있습니다. 나가면 작성 중인 내용이 사라집니다.</p>
-      ) : null}
+      {hasDraft ? <p>나가면 작성 중인 메시지가 사라집니다.</p> : null}
       {screenSharing ? (
         <p>내 화면을 공유하고 있습니다. 나가면 화면 공유와 통화가 종료됩니다.</p>
       ) : null}
