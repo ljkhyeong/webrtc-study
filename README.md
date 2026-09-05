@@ -98,9 +98,10 @@ sudo systemctl start avahi-daemon
 
 `chromium-full-media` 프로젝트는 fake 카메라·마이크·화면 스트림을 사용해 직접 초대 입장,
 원격 미디어 연결, 화면 공유 전환, 방장의 원격 미디어 끄기, DataChannel 채팅과 수신 ACK,
-퇴장을 확인합니다. `webkit-smoke` 프로젝트는 실제 Playwright WebKit 엔진에서 직접 초대와
-명시적 장치 동의 경계, 카메라·마이크 없이 입장한 두 참가자의 DataChannel 채팅과 퇴장을 확인하며
-카메라·마이크를 자동 허용하지 않습니다. Chromium과 WebKit의 mobile layout 프로젝트는
+퇴장을 확인합니다. `webkit-smoke` 프로젝트는 실제 Playwright WebKit 엔진에서 직접 초대 입장을
+확인합니다. ‘장치 확인’을 누르기 전에는 카메라·마이크 권한을 요청하지 않는지, 두 참가자가
+카메라·마이크 없이 입장해 DataChannel로 채팅하고 퇴장할 수 있는지 검사합니다.
+카메라·마이크 권한은 자동 허용하지 않습니다. Chromium과 WebKit의 mobile layout 프로젝트는
 대표 모바일 viewport에서 채팅 작성 영역과 통화 제어가 겹치거나 가로로 넘치지 않는지
 검사합니다. BATON 참여권, 실제 TURN relay와 실장치의 화면 선택 UI는 이 테스트 범위에 포함되지
 않으며 파일럿 체크리스트를 별도로 통과해야 합니다. 실패 진단 자료는 `output/playwright/`에

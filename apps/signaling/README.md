@@ -52,9 +52,9 @@ lease를 확인합니다. 만료 판정에는 참여권의 wall-clock `exp`와 �
 BATON 모드는 같은 참여권 `jti`마다 진행 중이거나 활성 상태인 WebSocket을 최대 하나, 같은
 `(room_id, sub)`마다 최대 두 개 예약합니다. 두 번째 참가자-방 슬롯은 BATON이 새 `jti`를 발급한
 경우에만 재연결 한 번이 겹치도록 허용합니다. 같은 참여권을 재사용하거나 세 번째 참가자-방
-socket을 열면 HTTP 429를 반환하며 handshake admission은 기존 socket을 내보내지 않습니다. 겹친
-socket들이 `room.join`을 시도하면 더 최신 connection sequence가 원자적으로 이깁니다. ROUND는
-입장해 있던 이전 peer를 제거하고 private 상태 `4002`와 정확한 reason
+socket을 열면 HTTP 429를 반환하며 handshake admission은 기존 socket을 내보내지 않습니다.
+여러 연결의 `room.join` 요청이 겹치면 연결 순번이 더 큰 WebSocket을 유지합니다. ROUND는
+이전 참가자를 방에서 제거하고 이전 연결을 종료 코드 `4002`와 종료 사유
 `Participation session superseded`로 닫습니다. 해당 admission reservation은 이 terminal close
 시도가 완료될 때까지 유지한 뒤, close에서 I/O 실패를 보고하더라도 정확히 한 번 해제합니다.
 지연된 join이 나중에 도착한 이전 socket은 대신 닫습니다. 브라우저는 `4002`를 terminal 상태로

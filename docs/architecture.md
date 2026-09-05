@@ -409,9 +409,9 @@ Authorization header를 제거하며, 가용성 검사에는 `/healthz`만 공�
 same-origin edge가 위의 방 범위 공개 경로를 ROUND에 연결하고, Spring Security가 signaling과
 TURN 작업 전에 참여 cookie를 검증합니다. 참여권 갱신 경로는 BATON에 남아 현재 identity와
 membership을 다시 확인합니다.
-BATON이 소유한 Vite build는 `VITE_ROUND_AUTH_MODE=baton`을 사용합니다. 브라우저는 동일한
-정규 room ID에서 세 경로를 모두 파생하고 endpoint override를 거부하므로 실수로 standalone
-transport 경계로 돌아갈 수 없습니다.
+BATON용 웹 빌드는 `VITE_ROUND_AUTH_MODE=baton`을 사용합니다. 브라우저는 같은 방 ID로
+세 경로를 구성하고 개별 경로를 덮어쓰는 설정을 거부합니다. BATON 모드에서는 독립 실행용
+연결 설정을 사용할 수 없습니다.
 
 방 상태, 참여 connection reservation, TURN 발급 window는 메모리에 있습니다. 따라서 공유
 방·admission·quota registry, room routing, cross-node relay를 도입하기 전에 signaling replica를
@@ -435,8 +435,8 @@ Standalone 발급은 client와 global 차원만 유지합니다. Quota metric은
 
 ## 연결 복구와 자원 정리
 
-사용자가 명시적으로 입장할 때까지 prejoin이 camera와 microphone track을 소유합니다. 이후
-소유권은 `RoomSession`으로 이동합니다. `RoomSession`은 제한된 signaling reconnect 동안
+입장 전에는 준비 화면이 카메라·마이크 트랙을 관리합니다. 입장하면 `RoomSession`이 관리를
+맡습니다. `RoomSession`은 제한된 signaling reconnect 동안
 local track을 유지하면서 오래된 remote peer connection과 서버가 소유했던 이전 peer ID를
 버립니다. 로컬에서 나가거나 복구 시도를 모두 소진하면 소유한 모든 track과 timer를
 중지합니다.
