@@ -52,9 +52,12 @@ describe('RoomView 브라우저 동작', () => {
       this.open = true;
     };
     HTMLDialogElement.prototype.close = function () {
+      if (!this.open) return;
       this.open = false;
+      queueMicrotask(() => this.dispatchEvent(new Event('close')));
     };
     window.history.replaceState({}, '', '/room/abcd-efgh-jkmp?source=invite#chat');
+    Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -64,6 +67,7 @@ describe('RoomView 브라우저 동작', () => {
     act(() => root.unmount());
     document.body.replaceChildren();
     vi.restoreAllMocks();
+    Reflect.deleteProperty(navigator, 'share');
     Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
     Reflect.deleteProperty(HTMLDialogElement.prototype, 'close');
   });
@@ -384,6 +388,91 @@ describe('RoomView 브라우저 동작', () => {
     expect(recovery?.getAttribute('role')).toBe('alert');
     expect(manualCopy?.value).toBe(`${window.location.origin}/room/abcd-efgh-jkmp`);
   });
+
+  async function openInviteDialog() {
+    act(() =>
+      root.render(
+        <StrictMode>
+          <RoomView {...roomViewProps()} />
+        </StrictMode>,
+      ),
+    );
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.room-invite-button')!.click();
+      await import('qrcode');
+    });
+    return container.querySelector<HTMLDialogElement>('.invite-dialog')!;
+  }
+
+  it('공유 메뉴가 없는 브라우저에서도 QR과 링크 복사로 초대한다', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const dialog = await openInviteDialog();
+    expect(dialog.open).toBe(true);
+    expect(dialog.textContent).not.toContain('공유하기');
+    expect(dialog.querySelector('img')?.src).toMatch(/^data:image\/svg\+xml/);
+    expect(dialog.querySelector('input')?.value).toBe(
+      `${window.location.origin}/room/abcd-efgh-jkmp`,
+    );
+    const copy = dialog.querySelector<HTMLButtonElement>('.invite-dialog__actions button')!;
+    await act(async () => copy.click());
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/room/abcd-efgh-jkmp`);
+    expect(dialog.querySelector('[role="status"]')?.textContent).toBe('초대 링크를 복사했습니다.');
+
+    writeText.mockRejectedValueOnce(new DOMException('거부됨', 'NotAllowedError'));
+    await act(async () => copy.click());
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('직접 선택해 복사');
+    dialog.querySelector('input')!.focus();
+    expect(dialog.querySelector('input')!.selectionEnd).toBe(
+      dialog.querySelector('input')!.value.length,
+    );
+  });
+
+  it('기기 공유 메뉴에 인증 정보와 검색 조건을 제외한 초대 주소만 전달한다', async () => {
+    window.history.replaceState({}, '', '/room/abcd-efgh-jkmp?token=private#private');
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'share', { configurable: true, value: share });
+    const dialog = await openInviteDialog();
+    await act(async () => {
+      dialog.querySelector<HTMLButtonElement>('.invite-dialog__actions button:last-child')!.click();
+    });
+    expect(share).toHaveBeenCalledExactlyOnceWith({
+      title: 'ROUND 스터디룸',
+      url: `${window.location.origin}/room/abcd-efgh-jkmp`,
+    });
+    expect(dialog.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it.each(['AbortError', 'NotAllowedError'])(
+    '공유 결과 %s에서 취소는 조용히 처리하고 실패는 링크 복사를 안내한다',
+    async (errorName) => {
+      Object.defineProperty(navigator, 'share', {
+        configurable: true,
+        value: vi.fn().mockRejectedValue(new DOMException('공유 종료', errorName)),
+      });
+      const dialog = await openInviteDialog();
+      await act(async () => {
+        dialog
+          .querySelector<HTMLButtonElement>('.invite-dialog__actions button:last-child')!
+          .click();
+      });
+      if (errorName === 'AbortError') {
+        expect(dialog.querySelector('[role="alert"]')).toBeNull();
+      } else {
+        expect(dialog.querySelector('[role="alert"]')?.textContent).toContain(
+          '링크를 복사해 주세요',
+        );
+      }
+      expect(dialog.open).toBe(true);
+      await act(async () =>
+        dialog.querySelector<HTMLButtonElement>('[aria-label="초대 닫기"]')!.click(),
+      );
+      expect(container.querySelector('.invite-dialog')).toBeNull();
+    },
+  );
 
   it('채팅 패널을 닫으면 하단 채팅 버튼으로 포커스를 복원한다', async () => {
     act(() => root.render(<RoomView {...roomViewProps()} />));

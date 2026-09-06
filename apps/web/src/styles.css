@@ -1021,6 +1021,7 @@ textarea:focus-visible {
 .room-header {
   z-index: 20;
   display: flex;
+  min-width: 0;
   padding: 0 28px;
   border-bottom: 1px solid rgb(255 255 255 / 9%);
   align-items: center;
@@ -1105,6 +1106,7 @@ textarea:focus-visible {
   position: relative;
 }
 
+.room-invite-button,
 .room-devices-button,
 .connection-diagnostics > summary {
   display: flex;
@@ -1120,6 +1122,7 @@ textarea:focus-visible {
   list-style: none;
 }
 
+.room-invite-button,
 .room-devices-button {
   background: transparent;
 }
@@ -1216,6 +1219,48 @@ textarea:focus-visible {
 
 .media-device-dialog :disabled {
   opacity: 0.5;
+}
+
+.invite-dialog header svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.invite-dialog__qr {
+  display: grid;
+  min-height: 256px;
+  margin-top: 16px;
+  place-items: center;
+  background: white;
+}
+
+.invite-dialog__qr img {
+  display: block;
+  width: min(256px, 100%);
+  height: auto;
+}
+
+.invite-dialog input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: white;
+  font-size: 0.8rem;
+}
+
+.invite-dialog__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.invite-dialog__actions button {
+  flex: 1;
 }
 
 .connection-diagnostics > summary::-webkit-details-marker {
@@ -2710,6 +2755,7 @@ textarea:focus-visible {
     min-height: 30px;
   }
 
+  .room-invite-button,
   .room-devices-button,
   .connection-diagnostics > summary {
     min-height: 30px;

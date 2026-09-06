@@ -1,6 +1,7 @@
 import { RoomStudyPanel } from './RoomStudyPanel';
 import { RoomHandQueue } from './RoomHandQueue';
 import { LeaveRoomDialog } from './LeaveRoomDialog';
+import { InviteDialog } from './InviteDialog';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   ChatMessage,
@@ -214,6 +215,7 @@ export function RoomView({
   }, [activePinnedPeerId]);
 
   const [inviteCopyState, setInviteCopyState] = useState<InviteCopyState>({ status: 'idle' });
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [chatNotifications, setChatNotifications] = useState<ChatNotificationSummary>({
     unreadMessageCount: 0,
     unseenDeliveryIssueCount: 0,
@@ -254,6 +256,8 @@ export function RoomView({
       setInviteCopyState({ status: 'error', inviteUrl });
     }
   };
+
+  const openInvite = () => setInviteUrl(canonicalRoomUrl(roomId, window.location.href));
 
   const toggleChat = () => {
     setChatOpen((open) => !open);
@@ -300,7 +304,12 @@ export function RoomView({
             <span>study room</span>
           </span>
           <span className="room-header__rule" />
-          <button className="room-code" type="button" onClick={handleCopy}>
+          <button
+            className="room-code"
+            type="button"
+            aria-label="초대 링크 복사"
+            onClick={handleCopy}
+          >
             <span>ROOM</span>
             <strong>{roomId}</strong>
             {inviteCopyState.status === 'success' ? <CheckIcon /> : <CopyIcon />}
@@ -308,6 +317,9 @@ export function RoomView({
         </div>
 
         <div className="room-header__status">
+          <button className="room-invite-button" type="button" onClick={openInvite}>
+            초대
+          </button>
           <button
             className="room-devices-button"
             type="button"
@@ -338,12 +350,20 @@ export function RoomView({
         </div>
       </header>
 
-      {inviteCopyState.status === 'success' ? (
+      {inviteUrl !== null ? (
+        <InviteDialog
+          inviteUrl={inviteUrl}
+          copyStatus={inviteCopyState.status}
+          onCopy={handleCopy}
+          onClose={() => setInviteUrl(null)}
+        />
+      ) : null}
+      {inviteUrl === null && inviteCopyState.status === 'success' ? (
         <p className="sr-only" role="status" aria-live="polite">
           초대 링크를 복사했습니다.
         </p>
       ) : null}
-      {inviteCopyState.status === 'error' ? (
+      {inviteUrl === null && inviteCopyState.status === 'error' ? (
         <div className="room-copy-recovery" role="alert">
           <strong>초대 링크를 복사하지 못했습니다.</strong>
           <span>아래 주소를 직접 선택해 복사해 주세요.</span>
@@ -414,8 +434,8 @@ export function RoomView({
           {participants.length === 1 && isActive ? (
             <div className="waiting-note">
               <span>스터디원에게 초대 링크를 공유하세요.</span>
-              <button type="button" onClick={handleCopy}>
-                {inviteCopyState.status === 'success' ? '링크 복사됨' : '초대 링크 복사'}
+              <button type="button" onClick={openInvite}>
+                초대하기
               </button>
             </div>
           ) : null}
