@@ -9,8 +9,9 @@ ROUND 소스·배포 설정과 제공사의 공식 문서를 대조했다. 실�
 - LiveKit 자체 호스팅도 보류한다. 소프트웨어 사용료와 별개로 서버·대역폭이 필요하므로 현재 서버의 여유 자원을 확인하지 않고 추가비용이 없다고 볼 수 없다. [LiveKit 자체 호스팅 요구사항](https://docs.livekit.io/transport/self-hosting/deployment/).
 - 브라우저 오류 수집은 Faro SDK 연동을 준비했다. 기본값은 비활성이며 **Grafana Cloud Free 플랜 확인 후에만** 수집 URL을 설정한다. Free 플랜은 월 5만 세션으로 제한되며, Pro 플랜의 무료 포함량과 구분해야 한다. [Frontend Observability 플랜](https://grafana.com/products/cloud/frontend-observability/).
 - 기존 TURN과 서버 지표 설정은 유지한다. 기존 서버·Cloudflare TURN 사용료가 없어지는 것은 아니다.
+- 초대에는 브라우저의 Web Share API와 MIT 라이선스의 `qrcode`를 적용했다. 통화 화면의 **초대**에서 기기 공유 메뉴·링크 복사·QR을 사용할 수 있다. 공유 메뉴는 지원 브라우저에서 표시하며, QR은 방 주소를 외부 서비스에 보내지 않고 브라우저에서 생성한다. 별도 계정이나 사용료는 없다. [Web Share API](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/share), [qrcode](https://github.com/soldair/node-qrcode).
 
-아래 회의 SDK 비교는 코드 감소 효과를 설명하기 위한 자료다. 현재 적용 대상은 무료 플랜의 선택적 오류 수집뿐이다.
+아래 회의 SDK 비교는 코드 감소 효과를 설명하기 위한 자료다. 현재 적용 대상은 초대 편의 기능과 무료 플랜의 선택적 오류 수집이다.
 
 ## 후보와 효과
 
