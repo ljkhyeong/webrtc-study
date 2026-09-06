@@ -7,6 +7,7 @@ interface ImportMetaEnv {
   readonly VITE_STUN_URLS?: string;
   readonly VITE_TURN_CREDENTIALS_URL?: string;
   readonly VITE_ICE_TRANSPORT_POLICY?: 'all' | 'relay';
+  readonly VITE_FARO_COLLECTOR_URL?: string;
 }
 
 interface ImportMeta {

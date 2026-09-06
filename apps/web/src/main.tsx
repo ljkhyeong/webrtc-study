@@ -1,7 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { startBrowserMonitoring } from './lib/browser-monitoring';
 import './styles.css';
+
+void startBrowserMonitoring();
 
 const rootElement = document.getElementById('root');
 
