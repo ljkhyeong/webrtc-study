@@ -6,7 +6,7 @@
 
 이 체크리스트는 저장소에서 관리하는 standalone Compose를 검증합니다. `compose.yml`은 의도적으로
 `ROUND_AUTH_MODE=standalone`으로 고정되어 있으므로 이 검사 결과를 BATON 배포의 증거로 표시하지
-마세요. BATON을 사용하는 스터디는 이 문서 마지막의 별도 연동 gate도 통과해야 합니다.
+마세요. BATON을 사용하는 스터디는 이 문서 마지막의 연동 필수 검사도 통과해야 합니다.
 
 검사할 standalone edge 정책을 기록하세요. Linux 프로덕션 `compose.yml`은 정적 앱, `/signal`,
 `/api/turn-credentials`를 하나의 공유 Basic Auth 경계 뒤에 둡니다. 임시 macOS Docker Desktop
@@ -25,7 +25,7 @@ standalone** 또는 **macOS pilot**이라고 명시한 항목은 해당 토폴�
       `repository_dispatch` 조정자가 통과하고 일반 edge, relay-only edge, signaling, BATON web
       manifest digest를 기록합니다.
 - [ ] 깨끗한 checkout에서 `npm run check`가 통과합니다.
-- [ ] 프로덕션 Compose 구성이 누락된 변수 없이 rendering됩니다.
+- [ ] 환경 변수가 빠짐없이 적용된 운영 Compose 구성을 출력할 수 있습니다.
 - [ ] 임시 dummy fixture로 `ops/ci/validate-deployment.sh`가 통과합니다.
 - [ ] 이전 immutable 이미지 세트를 rollback에 사용할 수 있습니다. 첫 파일럿에서는 알려진 정상
       배포 이미지 세트가 생길 때까지 서비스 종료와 DNS 제거를 명시적인 rollback으로 기록합니다.
@@ -57,7 +57,7 @@ standalone** 또는 **macOS pilot**이라고 명시한 항목은 해당 토폴�
       video, chat 연결이 유지되어야 하고, 두 health 요청과 두 번째 네트워크의 요청은 5초 안에
       완료되어야 하며, container가 restart되거나 OOM-kill되어서는 안 됩니다. 잘못된 요청이 끝난
       뒤 3분 안에 모든 측정값이 테스트 전 범위로 돌아와야 합니다. 공격 네트워크가 남은 5분
-      window 동안 의도적으로 계속 제한된다는 점을 기록합니다. 노출 전에 이 standalone 파일럿의
+      집계 구간 동안 계속 제한된다는 점을 기록합니다. 노출 전에 이 standalone 파일럿의
       잔여 위험을 명시적으로 수용합니다.
 - [ ] **Linux standalone 전용:** Basic Auth로 인증한 `wss://<domain>/signal`이 정확한 프로덕션
       Origin을 허용하고 Basic Auth로 인증한 TURN credential POST가 성공합니다.
@@ -192,8 +192,8 @@ GitHub Actions의 **실제 iOS Safari 검사**를 수동 실행해 BrowserStack 
 - [ ] Healthchecks 성공 시각이 R2 전송 완료 뒤이며 실패·예약 누락이 각각 운영 연락처에 전달됩니다.
       03:15~03:45 유지보수 제외는 외부 HTTPS 중단 경보에만 적용했습니다.
 
-- [ ] `docker compose up -d --wait --wait-timeout 120`이 signaling과 edge 시작 gate를
-      통과합니다.
+- [ ] `docker compose up -d --wait --wait-timeout 120`으로 시그널링 서버와 외부 프록시가
+      정상 기동하는지 확인합니다.
 - [ ] 운영 secret store에 Cloudflare TURN key ID와 최소 권한 API token이 있고 저장소·이미지·로그에
       포함되지 않습니다.
 - [ ] 별도 네트워크 두 곳에서 relay 전용 릴리스로 실제 양방향 미디어가 연결됩니다. credential
@@ -226,14 +226,13 @@ GitHub Actions의 **실제 iOS Safari 검사**를 수동 실행해 BrowserStack 
 4. 수동 페이지 새로고침이나 원인을 설명할 수 없는 미디어 손실 없이 전체 session이 끝난 경우에만
    promotion합니다.
 
-녹화, 영속 chat, account, 악의적인 client의 미디어 제어, 6명보다 큰 방은 명시적으로 이 파일럿
-gate의 범위 밖입니다. BATON 연동은 위의 standalone gate 범위 밖이며 아래의 필수 검사를 별도로
-적용합니다.
+녹화, 채팅 영구 저장, 계정, 악의적인 클라이언트의 미디어 제어, 6명 초과 방은 이 파일럿의
+검사 범위에 포함하지 않습니다. BATON 연동은 아래 필수 검사로 별도 확인합니다.
 
-## BATON 연동 gate
+## BATON 연동 필수 검사
 
-BATON이 소유한 edge와 별도로 배포한 ROUND instance를 대상으로 다음 검사를 실행합니다. 이를
-실행하려고 bundle된 standalone Compose를 변경하지 마세요.
+BATON의 외부 프록시와 별도로 배포한 ROUND 서버를 대상으로 다음 검사를 실행합니다.
+이 검사를 위해 저장소의 standalone Compose를 변경하지 마세요.
 
 ### 2026-07-31 로컬 리허설 증거(프로덕션 승인 아님)
 
@@ -277,23 +276,21 @@ BATON이 소유한 edge와 별도로 배포한 ROUND instance를 대상으로 �
       `/round/rooms/{roomId}/turn-credentials`를 `/api/rooms/{roomId}/turn-credentials`로
       mapping합니다. `/round/rooms/{roomId}/participation-grant/refresh`는 BATON에 남겨 두며 그
       경로를 ROUND로 proxy하지 않습니다.
-- [ ] BATON 소유 web bundle을 `VITE_ROUND_AUTH_MODE=baton`으로 빌드하고 signaling 또는 TURN
-      endpoint override를 두지 않습니다. 직접 초대는 입장 전 화면을 rendering하거나 미디어 요청을
-      허용하기 전에 Account session과 방 참여 preflight를 완료합니다. 명시적인 입장에는 방 범위
-      공개 경로 세 개만 사용하고 standalone endpoint는 사용하지 않습니다.
-- [ ] preflight `401`은 canonical `/room/{roomId}`만 `returnTo`로 사용해 BATON login을 제안하고,
-      `403`은 login loop 없이 BATON으로 돌아갑니다. 어떤 응답 body, CSRF token, 참여 cookie, JWT도
-      rendering하거나 URL에 넣지 않습니다.
+- [ ] BATON 웹을 `VITE_ROUND_AUTH_MODE=baton`으로 빌드하고 시그널링·TURN 경로를 덮어쓰는
+      설정을 두지 않습니다. 공유 링크에서도 로그인 세션과 방 참여 권한을 확인한 뒤 입장 준비
+      화면을 표시하고 장치 접근을 허용합니다. 사용자가 입장하면 방별 공개 경로 세 개만
+      사용하고 standalone 경로는 사용하지 않습니다.
+- [ ] 입장 권한 확인 시 `401`이면 정규 `/room/{roomId}`만 `returnTo`로 사용해 BATON 로그인을
+      안내합니다. `403`이면 로그인을 반복하지 않고 BATON으로 돌아갑니다. 응답 본문, CSRF 토큰,
+      참여권 쿠키, JWT를 화면에 표시하거나 URL에 넣지 않습니다.
 - [ ] BATON의 통화 참여와 공유 링크가 권한 확인 후 같은 입장 준비 화면으로 연결됩니다.
       이름 입력과 장치 설정 사이에 소개 화면이 없으며, 이름 수정 중 미리보기를 유지합니다.
       준비 화면 취소·통화 종료는 BATON으로 돌아가고 링크 재방문만으로 장치를 켜지 않습니다.
-- [ ] preflight와 활성 방 시작은 하나의 single-flight 참여권 manager를 재사용합니다.
-      `refreshAfterSeconds` 전에 활성 방을 mount해도 두 번째 refresh, 서명 작업, quota 차감이
-      발생하지 않습니다.
-- [ ] `refreshAfterSeconds`가 지난 뒤에도 입장 전 화면에서 기다리면 camera, microphone, 미디어 없는
-      입장 전에 authorization을 다시 수행합니다. 이후의 `401`, `403`, `404`는 30초 refresh loop
-      없이 활성 방에서 나가게 하며 지원하지 않는 auth mode는 landing이나 입장 전 화면을 rendering할
-      수 없습니다.
+- [ ] 입장 권한 확인과 통화에서 같은 참여권 갱신 관리자를 재사용하고 동시 갱신 요청을 하나로
+      합칩니다. `refreshAfterSeconds` 전에 입장해도 추가 갱신·서명·발급 한도 차감이 발생하지 않습니다.
+- [ ] 준비 화면에서 `refreshAfterSeconds`가 지나면 카메라·마이크 접근과 미디어 없는 입장 전에
+      참여권을 다시 확인합니다. 이후 `401`, `403`, `404` 응답을 받으면 30초마다 갱신을 반복하지
+      않고 통화를 종료합니다. 지원하지 않는 인증 모드에서는 첫 화면과 입장 준비 화면을 표시하지 않습니다.
 - [ ] 한 account가 입력한 BATON alias를 account 구분이 없는 브라우저 storage에서 다음 account에
       미리 채우지 않습니다.
 - [ ] hash가 붙은 `/round-ui/assets/*`만 immutable cache합니다. `/room/*` HTML은 `no-store`이고,

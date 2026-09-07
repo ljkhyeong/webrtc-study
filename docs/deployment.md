@@ -48,14 +48,14 @@ docker run --rm -it caddy:2.11.4-alpine \
   caddy hash-password --algorithm bcrypt --bcrypt-cost 12
 ```
 
-Cloudflare API token과 Caddy hash 때문에 환경 파일은 일반 파일, 소유자 전용 mode 0600으로
-유지해야 합니다. symlink는 배포 도구가 거부합니다.
+Cloudflare API 토큰과 Caddy 비밀번호 해시를 담은 환경 파일은 일반 파일로 만들고,
+소유자만 읽고 쓸 수 있도록 권한을 0600으로 설정합니다. 심볼릭 링크는 배포 도구가 거부합니다.
 
 ## Cloudflare TURN 계약
 
-signaling은 인증, Origin, Fetch Metadata와 발급 quota를 통과한 요청에 대해서만 Cloudflare의
-`generate-ice-servers` API를 호출합니다. 응답 중 TURN/TURNS route만 브라우저에 전달하고 STUN
-항목과 브라우저에서 불안정한 53번 포트 route는 제외합니다.
+시그널링 서버는 인증·Origin·Fetch Metadata 검사와 발급 한도 검사를 통과한 요청에만
+Cloudflare의 `generate-ice-servers` API를 호출합니다. 응답 중 TURN/TURNS 주소만 브라우저에
+전달하고 STUN 항목과 브라우저에서 불안정한 53번 포트 주소는 제외합니다.
 
 기본 credential TTL은 600초입니다. BATON 모드에서는 참여권 만료 시각보다 길게 발급하지
 않습니다. 브라우저는 서버가 반환한 `refreshAfterSeconds`에 따라 갱신하며 Cloudflare API
@@ -214,7 +214,7 @@ credential endpoint의 HTTP 200만으로 TURN relay 성공을 판정하지 않�
 pair가 relay인지 확인합니다. UDP가 제한된 네트워크에서는 Cloudflare가 제공한 TCP/TLS route도
 확인합니다.
 
-## Cloudflare key 회전
+## Cloudflare 키 교체
 
 1. Cloudflare에서 새 TURN key와 API token을 만듭니다.
 2. `/etc/round/production.env`의 key ID와 token을 교체합니다.
@@ -231,7 +231,7 @@ Caddy의 ACME 상태는 named volume에 저장됩니다. 기존 도구가 age로
 checksum을 만들고, restic이 이를 Cloudflare R2의 암호화 repository에 다시 보관합니다.
 R2는 S3 호환 endpoint인 `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`을 사용합니다.
 
-백업 암호화용 age identity는 운영 host 밖의 관리 단말에서 만들고 복호화 왕복을 확인합니다.
+age 복호화 키는 운영 서버가 아닌 관리용 기기에서 만들고, 암호화한 파일을 다시 복호화할 수 있는지 확인합니다.
 
 ```bash
 umask 077

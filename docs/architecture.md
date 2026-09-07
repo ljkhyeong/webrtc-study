@@ -1,16 +1,16 @@
 # ROUND 아키텍처
 
-ROUND는 의도적으로 네 컴포넌트로 분리되어 있으며 BATON과 독립적으로 배포할 수 있습니다.
+ROUND는 아래 네 구성요소로 나뉘며 BATON과 독립적으로 배포할 수 있습니다.
 ROUND 시그널링 서버는 별도로 실행하며, BATON과 인증된 요청으로 연동합니다.
 
 ```text
-apps/web          React room UI
-apps/signaling    Java 21 + Spring Boot raw WebSocket signaling server
-packages/protocol Shared, versioned signaling and peer DataChannel wire contracts
-packages/rtc-core Framework-free WebRTC room engine
+apps/web          React 스터디룸 화면
+apps/signaling    Java 21 + Spring Boot WebSocket 시그널링 서버
+packages/protocol 버전으로 관리하는 시그널링·DataChannel 메시지 계약
+packages/rtc-core 프레임워크에 의존하지 않는 WebRTC 엔진
 ```
 
-## MVP 토폴로지
+## 연결 구조
 
 각 참가자는 원격 참가자마다 하나의 `RTCPeerConnection`을 엽니다. 오디오, 영상, 채팅
 데이터는 브라우저 사이를 직접 이동합니다. signaling 서버는 피어가 서로를 찾도록 돕고
@@ -46,9 +46,9 @@ BATON의 준비 화면 취소·통화 종료는 BATON 홈으로 돌아갑니다.
 
 - `@round/rtc-core`는 React, router, CSS framework를 import하지 않습니다.
 - `@round/protocol`은 브라우저에서 주고받는 메시지의 타입과 실행 시 검증을 담당합니다.
-- `apps/signaling`은 WebSocket 경계에서 protocol v3 validation을 동일하게 수행하고
+- `apps/signaling`은 WebSocket으로 받은 메시지를 프로토콜 v3 규칙으로 검증하고
   `com.personal.round.signaling` 아래의 메모리에 방 상태를 보관합니다.
-- `apps/web`은 방 snapshot을 React에 맞게 변환하고 모든 화면 표시를 소유합니다.
+- `apps/web`은 방 상태를 React에 맞게 변환하고 화면을 표시합니다.
 - ROUND는 방 ID의 내부 의미를 해석하지 않습니다. BATON은 피어 엔진을 변경하지 않고 참여권을 발급하기
   전에 해당 방을 승인합니다.
 
@@ -133,11 +133,11 @@ Mac에서는 Alt 대신 Option을 사용합니다. 통화 중에만 동작하며
 현재 결과와 스크롤을 유지하며, 검색을 닫으면 최신 대화로 이동합니다. 보관 한도를 넘긴
 메시지는 검색 결과에서도 제거합니다. 검색어와 결과를 서버로 보내거나 저장하지 않습니다.
 
-## DataChannel 전달 경계
+## DataChannel 메시지와 수신 확인
 
-`@round/protocol`은 브라우저 사이의 `chat.message`, `chat.ack`, `participant.media` frame도
-소유합니다. 채팅은 휘발성 peer-to-peer 데이터로 유지됩니다. Java signaling 서비스는 이
-frame을 검사, 중계, 확인 응답 또는 저장하지 않습니다.
+`@round/protocol`은 브라우저 사이의 `chat.message`, `chat.ack`, `participant.media` 메시지 형식도
+정의합니다. 채팅은 브라우저 간에 전달하며 메모리에만 보관합니다. Java 시그널링 서버는 이
+메시지를 검사·중계·저장하거나 수신 확인에 응답하지 않습니다.
 
 손들기 대기 순서는 시그널링 v3의 `room.hand.sync`, `room.hand.update`, `room.hand.state`로
 관리합니다. 입장 뒤 `sync`로 구독하고, `update`에는 boolean `raised`만 보냅니다.
@@ -166,9 +166,9 @@ channel을 즉시 닫고 현재의 정상 channel을 유지합니다.
 `chat.ack`를 반환할 때까지 `pending`으로 남습니다. 이 확인 응답은 애플리케이션이
 수락했다는 뜻이지, 사람이 메시지를 읽었다는 뜻은 아닙니다. 모든 대상의 확인 응답을 받으면
 `sent`, 확인된 응답과 복구 불가능한 피어 실패가 함께 있으면 `partial`, 확인된 수신자가
-없으면 `failed`가 됩니다. 중복 재전송은 `(peerId, messageId)`로 중복 제거하지만 다시 확인
-응답하므로, channel 복구 중 유실된 ACK가 채팅을 두 번 표시하지 않고도 최종 상태에
-수렴할 수 있습니다.
+없으면 `failed`가 됩니다. 재전송된 메시지는 `(peerId, messageId)`로 중복 표시를 막고
+확인 응답은 다시 보냅니다. 연결 복구 중 확인 응답이 유실되어도 메시지를 한 번만 표시하면서
+수신 상태를 갱신할 수 있습니다.
 
 각 피어는 확인되지 않은 채팅 frame을 최대 50개까지 보유하며, 각 frame에는 프로토콜의
 32 KiB 상한과 전송 시도별 45초의 전달 기한이 적용됩니다. 브라우저는 DataChannel 송신 buffer가
@@ -205,14 +205,14 @@ TURN 사용 여부와 품질 정보는 복사할 수 있지만 참가자의 네�
 
 사용자가 진단 패널에서 참가자별 수신 품질을 켜면 3초 간격의 RTP 증가량을 비교합니다.
 손실 5% 이상, 왕복 지연 500ms 이상, jitter 50ms 이상 중 하나가 두 구간 이어질 때
-`수신 불안정`을 표시합니다. 정상 두 구간이면 해제하고 수신 표본이 없으면 측정 불가로 표시합니다.
+`수신 불안정`을 표시합니다. 정상 두 구간이면 해제하고 수신 표본이 없으면 `수신 품질 정보 없음`으로 표시합니다.
 이 임계값은 화면의 잦은 깜박임을 줄이기 위한 초기값이며 상세 진단 안내 기준과 별도입니다.
 정적인 공유 화면의 프레임 증가량만으로 장애를 판단하지 않습니다. 참가자 대응은 현재 화면에서만
 사용하고 복사용 진단에는 추가하지 않습니다. 자동 화질 변경은 하지 않습니다.
 
-`chat.ack`는 기존에 추가된 peer protocol frame이며 Java signaling protocol version을
-변경하지 않습니다. ROUND는 현재 이 기능을 협상하지 않고 web client를 원자적으로
-배포합니다. 파일럿 참가자는 웹 배포 후 모두 새로고침해야 합니다. ACK를 구현하지 않은
+`chat.ack`는 피어 간 메시지이므로 Java 시그널링 프로토콜 버전을 변경하지 않습니다.
+연결 시 수신 확인 기능의 지원 여부를 교환하지 않으므로, 웹 배포 후 참가자 전원이
+새로고침해야 합니다. ACK를 구현하지 않은
 구버전 ROUND도 채팅을 표시할 수 있지만, 발신자 화면에서는 45초 안에 수신 확인 응답이 없으면
 **수신 미확인**으로 표시합니다.
 
@@ -264,7 +264,7 @@ ROUND가 만든 같은 문서의 이동 기록에서 뒤로가기·앞으로가�
 사용자의 수동 잠금 방지나 배터리 절약 설정 무시를 보장하지 않습니다.
 [MDN의 Screen Wake Lock 설명](https://developer.mozilla.org/en-US/docs/Web/API/Screen_Wake_Lock_API)을 따릅니다.
 
-## 미디어 소스와 관리 경계
+## 미디어 입력과 자원 관리
 
 입장 전 화면과 통화 장치 설정은 같은 마이크 입력 표시를 사용합니다. 이미 허용받은 현재
 트랙을 Web Audio `AnalyserNode`로 분석하며, 출력 장치에 연결하거나 녹음·추가 전송·추가 권한
@@ -365,110 +365,110 @@ microphone track에 그대로 남습니다. display capture가 활성화된 동�
 무시할 수 있습니다. 강제 퇴장이나 지속적인 서버 측 미디어 잠금을 구현하려면 kick/ban 정책
 또는 미디어 전달을 소유하는 SFU가 필요합니다.
 
-## 식별과 권한 부여 경계
+## 사용자 식별과 입장 권한
 
-BATON은 사용자, 스터디, 일정과 입장 허용 결정을 소유합니다. ROUND는 휘발성 방·피어 상태,
-raw WebSocket signaling과 TURN 자격 증명 발급만 소유하며 BATON의 데이터베이스나 엔티티를
-참조하지 않습니다. 승인 결과는 방 범위의 짧은 RS256 참여권으로 전달하고 ROUND가 공개
+BATON은 사용자, 스터디, 일정과 입장 권한을 관리합니다. ROUND는 메모리에 보관하는 방·참가자 상태,
+WebSocket 시그널링과 TURN 자격 증명 발급을 담당하며 BATON의 데이터베이스나 엔티티를
+참조하지 않습니다. 승인 결과는 해당 방에서만 쓸 수 있는 단기 RS256 참여권으로 전달하고 ROUND가 공개
 JWK로 로컬 검증합니다.
 
-| 목적               | 공개 same-origin 경로                               | 처리 경계                              |
+| 목적               | 동일 출처 공개 경로                                 | 처리 서비스·내부 경로                  |
 | ------------------ | --------------------------------------------------- | -------------------------------------- |
-| 참여권 갱신        | `/round/rooms/{roomId}/participation-grant/refresh` | BATON 소유                             |
+| 참여권 갱신        | `/round/rooms/{roomId}/participation-grant/refresh` | BATON이 직접 처리                      |
 | WebSocket 시그널링 | `/round/rooms/{roomId}/signal`                      | `/rooms/{roomId}/signal`               |
 | TURN 자격 증명     | `/round/rooms/{roomId}/turn-credentials`            | `/api/rooms/{roomId}/turn-credentials` |
 
 참여권은 URL, JavaScript 또는 브라우저 저장소에 노출하지 않고 방별 host-only 쿠키로
 전달합니다. 공개 경로, 내부 경로, `room.join`과 참여권의 방 식별자가 모두 일치해야 하며,
-사용자 식별자는 로그인 공급자 값이 아닌 canonical BATON `Account.id`를 사용합니다. 키
-회전, claim, 수명, clock 처리, 오류 상태와 갱신 응답의 상세 계약은
+사용자 식별자는 로그인 공급자 값이 아닌 BATON 내부 `Account.id`를 사용합니다. 키
+교체, 클레임, 수명, 시계 처리, 오류 상태와 갱신 응답의 상세 계약은
 [ADR 0001](adr/0001-round-independent-service.md)을 단일 원본으로 사용합니다.
 
-연결된 socket은 handshake에서 검증한 참여권을 불변 lease로 보유합니다. 만료된 연결은
-정해진 disconnect 경로로 한 번만 정리하고, 새 참여권 연결과 기존 연결이 잠시 겹치는
-범위만 admission에서 허용합니다. 같은 사용자의 새 연결이 방에 입장하면 더 최근 연결을
-남기고 이전 연결을 터미널 상태로 닫습니다. standalone 모드에는 이 BATON lease와 사용자별
-admission 정책을 적용하지 않습니다.
+WebSocket의 만료 시점은 연결 당시 검증한 참여권으로 고정됩니다. 만료된 연결은 기존 종료
+절차로 한 번만 정리합니다. 새 참여권으로 재연결할 때만 기존 연결과 잠시 겹치도록 허용합니다.
+같은 사용자의 새 연결이 방에 입장하면 더 최근 연결을 남기고 이전 연결을 닫습니다.
+이전 연결은 자동 재연결하지 않습니다. standalone 모드에는 참여권 만료와 사용자별 연결 제한을 적용하지 않습니다.
 
-BATON 웹은 Account session과 현재 방 참여권을 확인하기 전 입장 준비 화면과 장치 권한
+BATON 웹은 로그인 세션과 현재 방 참여권을 확인하기 전 입장 준비 화면과 장치 권한
 요청을 열지 않습니다. 갱신 관리자는 중복 요청을 하나로 합치고, TURN 갱신과 WebSocket
 연결·재연결 전에 최신 참여권을 확인합니다. 인증·권한·방 종료 응답은 각각 로그인 안내,
 BATON 복귀, 종료 화면으로 전환하며 내부 응답이나 자격 증명을 사용자 화면에 노출하지
 않습니다.
 
-## 프로덕션 경계
+## 운영 배포 조건
 
 `localhost`에서는 TLS 없이 camera, microphone, screen capture를 사용할 수 있습니다. 배포된
 환경에서는 HTTPS/WSS를 사용하고 `Permissions-Policy`에서 camera, microphone과 함께
 `display-capture`를 허용해야 합니다. 제한적인 NAT 또는 회사 네트워크 뒤의 사용자를 위해
 프로덕션 배포에는 TURN 서비스도 필요합니다. STUN만으로 연결을 보장할 수 없습니다.
 
-Caddy는 유일한 공개 HTTP 진입점입니다. standalone 모드에서는 정적 브라우저 build,
-`/signal`, `/api/turn-credentials`에 공유 접근 credential을 요구하고, proxy하기 전에
-Authorization header를 제거하며, 가용성 검사에는 `/healthz`만 공개합니다. BATON 모드에서는
-same-origin edge가 위의 방 범위 공개 경로를 ROUND에 연결하고, Spring Security가 signaling과
-TURN 작업 전에 참여 cookie를 검증합니다. 참여권 갱신 경로는 BATON에 남아 현재 identity와
-membership을 다시 확인합니다.
+Caddy는 유일한 공개 HTTP 진입점입니다. standalone 모드에서는 웹 화면,
+`/signal`, `/api/turn-credentials`에 공유 접근 인증을 요구합니다. 요청을 프록시하기 전에
+Authorization 헤더를 제거하며, 상태 확인용으로는 `/healthz`만 공개합니다. BATON 모드에서는
+공통 외부 프록시가 같은 출처의 방별 공개 경로를 ROUND에 연결하고, Spring Security가 시그널링과
+TURN 처리 전에 참여권 쿠키를 검증합니다. 참여권 갱신은 BATON이 직접 처리하며 사용자 신원과
+현재 스터디 참여 권한을 다시 확인합니다.
 BATON용 웹 빌드는 `VITE_ROUND_AUTH_MODE=baton`을 사용합니다. 브라우저는 같은 방 ID로
 세 경로를 구성하고 개별 경로를 덮어쓰는 설정을 거부합니다. BATON 모드에서는 독립 실행용
 연결 설정을 사용할 수 없습니다.
 
-방 상태, 참여 connection reservation, TURN 발급 window는 메모리에 있습니다. 따라서 공유
-방·admission·quota registry, room routing, cross-node relay를 도입하기 전에 signaling replica를
-여러 개 실행하면 하나의 논리적 방이 나뉘고 각 process가 참가자 제한을 독립적으로 적용합니다.
-참여권은 WebSocket upgrade와 방 입장에서 검사한 뒤 자체 `exp`까지 해당 socket의 범위를
-제한합니다. 따라서 BATON membership 취소는 다음 갱신에서 반영되지만, 이미 연결된 socket은
-현재의 짧은 참여권이 만료될 때까지 승인 상태를 유지할 수 있습니다.
+방 상태, 연결 슬롯 예약과 TURN 발급 횟수는 각 서버의 메모리에 저장합니다. 여러 시그널링
+서버를 실행하려면 이 상태의 공유 저장소, 방별 요청 라우팅과 서버 간 메시지 중계가 필요합니다.
+이 준비 없이 서버를 늘리면 같은 방이 여러 서버로 나뉘고 참가자 제한도 각각 적용됩니다.
+참여권은 WebSocket 연결과 방 입장 때 검사하며, 연결은 참여권의 `exp`까지만 유효합니다.
+BATON에서 참여 권한을 취소하면 다음 갱신에서 반영됩니다. 이미 연결된 WebSocket은 현재의
+단기 참여권이 만료될 때까지 승인 상태를 유지할 수 있습니다.
 
-Cloudflare TURN API token은 signaling runtime에만 존재합니다. 브라우저는 standalone
-모드에서는 `/api/turn-credentials`, BATON 모드에서는 방 범위 endpoint에서 시간이 제한된
-credential을 요청합니다. API token이나 장기 자격 증명은 Vite bundle에 compile하지 않습니다.
-signaling은 기존 인증·Origin·quota 경계를 통과한 요청만 Cloudflare credential API로 전달하고,
-공급자 장애는 503과 제한된 counter로 드러냅니다.
-BATON 발급은 유효 client 주소, `(room_id, sub)`, 서버 전체에 fixed-window quota를 원자적으로
-적용합니다. 새 `jti`를 발급하거나 client 주소를 변경해도 참가자 window가 초기화되지 않습니다.
-Standalone 발급은 client와 global 차원만 유지합니다. Quota metric은 참가자, 방, token,
-주소 값 대신 제한된 scope label을 노출합니다.
+Cloudflare TURN API 토큰은 시그널링 서버에서만 사용합니다. 브라우저는 standalone
+모드에서는 `/api/turn-credentials`, BATON 모드에서는 방별 API에서 단기 자격 증명을
+요청합니다. API 토큰이나 장기 자격 증명은 Vite 번들에 넣지 않습니다. 시그널링 서버는
+인증·Origin 검사와 발급 한도 검사를 통과한 요청만 Cloudflare 자격 증명 API로 전달합니다.
+공급자 장애 시 503을 반환하고 오류 횟수를 집계합니다.
+BATON 모드는 고정 집계 구간의 유효 클라이언트 IP·`(room_id, sub)`·서버 전체 한도를 모두
+통과할 때만 함께 차감합니다. 새 `jti` 발급이나 IP 변경으로 참가자 발급 횟수가 초기화되지 않습니다.
+standalone 모드에는 IP와 서버 전체 한도만 적용합니다. 발급 제한 지표에는 참가자·방·토큰·IP를
+남기지 않고 정해진 `scope` 값만 사용합니다.
 
-승인된 서비스 경계 결정과 전체 claim 계약은
+서비스별 역할과 전체 클레임 계약은
 [ADR 0001](adr/0001-round-independent-service.md)에 기록되어 있습니다.
 
 ## 연결 복구와 자원 정리
 
 입장 전에는 준비 화면이 카메라·마이크 트랙을 관리합니다. 입장하면 `RoomSession`이 관리를
-맡습니다. `RoomSession`은 제한된 signaling reconnect 동안
-local track을 유지하면서 오래된 remote peer connection과 서버가 소유했던 이전 peer ID를
-버립니다. 로컬에서 나가거나 복구 시도를 모두 소진하면 소유한 모든 track과 timer를
-중지합니다.
+맡습니다. `RoomSession`은 정해진 횟수만큼 시그널링 재연결을 시도하는 동안 내 미디어 트랙을
+유지하고, 이전 원격 참가자 연결과 서버가 발급했던 피어 ID를 버립니다. 퇴장하거나
+재연결 시도를 모두 소진하면 관리 중인 모든 트랙과 타이머를 중지합니다.
 
-BATON 모드는 prejoin을 mount하기 전에 Account session 조회와 참여권 갱신으로 방 route를
-차단하고, 명시적인 미디어 동의 뒤 TURN 발급과 WebSocket 생성을 수행합니다. 인증되지 않은
-응답은 정규 same-origin `/room/{roomId}` login 복귀 경로를 사용하고, membership 거부는 login
-loop 없이 BATON으로 돌아갑니다. 참여권 refresh manager는 single-flight이며 즉시 두 번째
-참여권을 발급하지 않고 입장 gate에서 활성 방으로 전달됩니다. 또한 monotonic 브라우저 clock을
-사용해 BATON의 상대적인 `refreshAfterSeconds`에서 다음 갱신을 예약합니다. prejoin이 열린 채
-그 deadline이 지나면 장치 접근, 미디어를 사용하는 입장, 카메라·마이크 없는 입장 모두 진행 전에
-같은 guard를 호출합니다. 활성 방의 갱신 `401`, `403`, `404`는 terminal 상태이며 다음 갱신을
-예약하지 않고 각각 로그인, 권한 안내, 방을 찾을 수 없다는 안내를 표시합니다. 지원하지 않는 auth-mode
-설정은 landing이나 prejoin을 mount하기 전에 app root에서 실패합니다. BATON alias는 account
-구분이 없는 로컬 저장소가 아니라 페이지 메모리에만 남습니다. TURN 발급은 별도로
-서버가 계산한 `refreshAfterSeconds`를 반환합니다. 브라우저는 TURN `expiresAt` epoch를
-`Date.now()`와 비교하는 대신 이를 받은 시점의 monotonic deadline을 기록합니다. TURN
-갱신과 최초 또는 reconnect WebSocket 생성은 모두 같은 참여권 `ensureFresh()` guard를 먼저
-호출합니다. 참여권 갱신에 성공하면 `HttpOnly` cookie만 회전하며 현재 socket을 선제적으로
-끊지 않습니다. 이전 socket의 원래 참여권이 만료되면 ROUND가 이를 닫고, 기존의 제한된
-reconnect 경로가 local media와 chat history를 유지한 채 새 cookie로 새 socket을 만듭니다.
+BATON 모드는 로그인 세션과 참여권을 확인한 뒤 입장 준비 화면을 표시합니다. 사용자가
+미디어 사용 여부를 정하고 입장을 실행하면 TURN 자격 증명을 발급하고 WebSocket을 만듭니다.
+로그인이 필요하면 로그인 후 동일 출처의 정규 `/room/{roomId}`로 복귀합니다. 참여 권한이
+없으면 로그인을 반복시키지 않고 BATON으로 안내합니다.
 
-BATON web runtime은 hash가 붙은 `/round-ui/assets/*`에만 1년 immutable 정책을 적용해
-제공합니다. Room HTML은 `no-store`이며, `/round-ui/`는 내장 artifact root에서 standalone
-방 생성이나 초대 code 입력을 노출하는 대신 no-store 404를 반환합니다.
+입장 권한을 확인할 때 만든 갱신 관리자를 통화 중에도 재사용해, 입장 직후 참여권을 다시
+발급하지 않습니다. 동시에 발생한 갱신 요청은 하나로 합칩니다. 다음 갱신은 BATON이 반환한
+대기 시간 `refreshAfterSeconds`와 브라우저의 단조 증가 시계로 예약합니다. 준비 화면에서
+갱신 시점이 지나면 장치 접근과 두 입장 방식 모두 실행 전에 참여권을 다시 확인합니다.
+통화 중 갱신 응답이 `401`, `403`, `404`이면 갱신을 중단하고 각각 로그인, 권한 없음,
+방을 찾을 수 없다는 안내를 표시합니다. 지원하지 않는 인증 모드 설정은 첫 화면을 표시하기
+전에 오류로 처리합니다. BATON 모드의 통화용 이름은 페이지 메모리에만 보관합니다.
 
-ICE 복구는 glare를 피하도록 피어 쌍마다 결정적인 offer initiator 하나를 사용합니다. 연결이
-끊긴 피어에는 짧은 grace period를 준 뒤 ICE restart를 수행하고, restart로 복구되지 않으면
-peer connection을 다시 생성합니다. 모든 ROUND offer는 제한된 `negotiationId` generation을
-시작하며 answer와 ICE candidate가 이를 그대로 반환합니다. 다시 생성한 피어는 폐기된
-generation의 메시지를 거부하므로 지연된 SDP나 ICE가 단 한 번의 교체 시도를 손상시키지
-않습니다. `negotiationId`는 protocol v2에서 도입됐으며, 현재 wire 계약은 관리 메시지를 포함한
-protocol v3입니다. web client와 signaling 서버는 함께 배포해야 하며 현재 ROUND client는 항상
-이 optional field를 보냅니다. 방 제한을 늘리거나 여러 영상 소스를 추가할 때는 이 mesh 복구
-모델을 무기한 확장하지 말고 미디어 토폴로지를 SFU로 전환해야 합니다.
+TURN API도 서버가 계산한 `refreshAfterSeconds`를 반환합니다. 브라우저는 응답 수신 시점의
+단조 증가 시계에 이 값을 더해 갱신 시점을 정하며, `expiresAt`과 `Date.now()`의 차이로
+계산하지 않습니다. TURN 갱신과 WebSocket 최초 연결·재연결은 모두 먼저 참여권의
+`ensureFresh()`를 호출합니다. 참여권 갱신에 성공하면 `HttpOnly` 쿠키만 교체하고 현재
+WebSocket은 유지합니다. 기존 참여권이 만료되면 ROUND가 연결을 닫고, 브라우저는 정해진
+재연결 절차에 따라 내 미디어와 채팅 기록을 유지한 채 새 쿠키로 다시 연결합니다.
+
+BATON 웹 서버는 파일명에 해시가 붙은 `/round-ui/assets/*`에만 1년 `immutable` 캐시 정책을
+적용합니다. 방 HTML은 `no-store`로 제공합니다. `/round-ui/`는 본문을 캐시하지 않는 404를
+반환하며, 개발·검증용 방 생성·초대 코드 입력 화면을 표시하지 않습니다.
+
+ICE 복구 시 양쪽이 동시에 offer를 보내 충돌하지 않도록 참가자 쌍마다 offer를 보낼 쪽을
+정합니다. 연결이 끊기면 잠시 기다린 뒤 ICE restart를 수행하고, 복구되지 않으면 피어 연결을
+다시 만듭니다. ROUND는 offer마다 형식이 제한된 `negotiationId`를 붙이고, answer와 ICE 후보는
+같은 값을 돌려줍니다. 다시 만든 연결은 이전 `negotiationId`의 메시지를 거부해 늦게 도착한
+SDP·ICE가 새 연결을 방해하지 않도록 합니다.
+`negotiationId`는 프로토콜 v2에서 도입됐고 현재 계약은 관리 메시지를 포함한 v3입니다.
+이 필드는 선택 항목이지만 현재 ROUND 클라이언트는 항상 보냅니다. 웹과 시그널링 서버는 함께
+배포해야 합니다. 참가자 한도를 늘리거나 여러 영상 소스를 추가할 때는 mesh를 계속 확장하지
+말고 SFU 방식으로 전환해야 합니다.

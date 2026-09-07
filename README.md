@@ -147,27 +147,27 @@ GITHUB_RUN_ID=local GITHUB_RUN_ATTEMPT=1 npm run test:e2e:ios-safari
 | `MAX_SIGNALING_CONNECTIONS`                           | `1000`                  | 서버 전체 signaling 연결 제한   |
 | `MAX_SIGNALING_CONNECTIONS_PER_CLIENT`                | `12`                    | IP별 동시 signaling 연결 제한   |
 | `HEARTBEAT_INTERVAL_MS`                               | `30000`                 | 연결 상태 확인 주기(ms)         |
-| `UNJOINED_SOCKET_TIMEOUT_MS`                          | `15000`                 | 미입장 socket 종료 기한(ms)     |
-| `UNJOINED_SOCKET_SWEEP_MS`                            | `1000`                  | 미입장 socket 검사 주기(ms)     |
-| `SIGNALING_SHUTDOWN_CLOSE_TIMEOUT_MS`                 | `5000`                  | 종료 시 전체 close 제한(ms)     |
-| `SIGNALING_ABUSE_WINDOW_MS`                           | `10000`                 | 수신 프레임 고정 윈도우(ms)     |
-| `SIGNALING_MAX_FRAMES_PER_SESSION`                    | `600`                   | 윈도우당 세션 프레임 제한       |
-| `SIGNALING_MAX_FRAMES_PER_CLIENT`                     | `1200`                  | 윈도우당 IP 합산 프레임 제한    |
-| `SIGNALING_MAX_FRAMES_GLOBAL`                         | `3600`                  | 윈도우당 서버 프레임 제한       |
-| `SIGNALING_MAX_BYTES_PER_SESSION`                     | `4194304`               | 윈도우당 세션 수신 바이트 제한  |
-| `SIGNALING_MAX_BYTES_PER_CLIENT`                      | `8388608`               | 윈도우당 IP 합산 바이트 제한    |
-| `SIGNALING_MAX_BYTES_GLOBAL`                          | `25165824`              | 윈도우당 서버 수신 바이트 제한  |
-| `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES`                  | `2097152`               | peer별 송신 대기 바이트 제한    |
+| `UNJOINED_SOCKET_TIMEOUT_MS`                          | `15000`                 | 미입장 연결 종료 기한(ms)       |
+| `UNJOINED_SOCKET_SWEEP_MS`                            | `1000`                  | 미입장 연결 검사 주기(ms)       |
+| `SIGNALING_SHUTDOWN_CLOSE_TIMEOUT_MS`                 | `5000`                  | 서버 종료 시 연결 정리 제한(ms) |
+| `SIGNALING_ABUSE_WINDOW_MS`                           | `10000`                 | 수신량 고정 집계 구간(ms)       |
+| `SIGNALING_MAX_FRAMES_PER_SESSION`                    | `600`                   | 구간당 세션 프레임 제한         |
+| `SIGNALING_MAX_FRAMES_PER_CLIENT`                     | `1200`                  | 구간당 IP 합산 프레임 제한      |
+| `SIGNALING_MAX_FRAMES_GLOBAL`                         | `3600`                  | 구간당 서버 프레임 제한         |
+| `SIGNALING_MAX_BYTES_PER_SESSION`                     | `4194304`               | 구간당 세션 수신 바이트 제한    |
+| `SIGNALING_MAX_BYTES_PER_CLIENT`                      | `8388608`               | 구간당 IP 합산 바이트 제한      |
+| `SIGNALING_MAX_BYTES_GLOBAL`                          | `25165824`              | 구간당 서버 수신 바이트 제한    |
+| `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES`                  | `2097152`               | 참가자별 송신 대기 바이트 제한  |
 | `SIGNALING_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL`           | `67108864`              | 서버 전체 송신 대기 바이트 제한 |
-| `VITE_ROUND_AUTH_MODE`                                | `standalone`            | 브라우저 endpoint 인증 모드     |
-| `VITE_SIGNALING_URL`                                  | 현재 호스트의 `/signal` | standalone WSS/WS 주소 override |
+| `VITE_ROUND_AUTH_MODE`                                | `standalone`            | 브라우저 인증 모드              |
+| `VITE_SIGNALING_URL`                                  | 현재 호스트의 `/signal` | 독립 실행 시 WSS/WS 주소        |
 | `VITE_STUN_URLS`                                      | Cloudflare 공개 STUN    | 쉼표로 구분한 STUN 주소         |
-| `VITE_TURN_CREDENTIALS_URL`                           | `/api/turn-credentials` | standalone TURN API override    |
+| `VITE_TURN_CREDENTIALS_URL`                           | `/api/turn-credentials` | 독립 실행 시 TURN API 주소      |
 | `VITE_ICE_TRANSPORT_POLICY`                           | `all`                   | `relay`이면 TURN만 강제         |
 | `TURN_PROVIDER`                                       | `disabled`              | `disabled` 또는 `cloudflare`    |
 | `TURN_CLOUDFLARE_KEY_ID`                              | 없음                    | Cloudflare TURN key ID          |
 | `TURN_CLOUDFLARE_API_TOKEN`                           | 없음                    | Cloudflare TURN API token       |
-| `TURN_CREDENTIAL_TTL_SECONDS`                         | `600`                   | TURN credential 수명(초)        |
+| `TURN_CREDENTIAL_TTL_SECONDS`                         | `600`                   | TURN 자격 증명 수명(초)         |
 | `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`           | `600`                   | IP별 발급 제한 구간(초)         |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`             | `12`                    | 구간당 IP별 최대 발급 시도 수   |
 | `TURN_CREDENTIAL_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS` | `6`                     | BATON 참가자·방별 발급 시도 수  |
@@ -183,33 +183,33 @@ GITHUB_RUN_ID=local GITHUB_RUN_ATTEMPT=1 npm run test:e2e:ios-safari
 프레임 수와 수신 바이트 제한은 세션, IP 합산, 서버 전체 순서로 함께 적용됩니다. 세션
 초과 연결은 닫고 IP 또는 서버 전체 제한을 넘은 프레임은 다른 클라이언트에 영향을 주지
 않도록 버립니다. IP 합산 제한은 세션 제한 이상이어야 하고, 서버 전체 제한은 고정
-윈도우 경계 차이를 고려해 IP 합산 제한의 두 배 이상이어야 합니다. 미입장 socket 검사
-주기는 100~1,000ms 범위이며 미입장 종료 기한을 넘을 수 없습니다. 송신 큐는 peer별
+집계 구간의 시작 시점 차이를 고려해 IP 합산 제한의 두 배 이상이어야 합니다. 미입장 연결 검사
+주기는 100~1,000ms 범위이며 미입장 종료 기한을 넘을 수 없습니다. 송신 큐는 참가자별
 프레임·바이트 제한과 서버 전체 64MiB 바이트 제한을 함께 적용합니다. TURN 발급 제한도
-같은 전역 여유 규칙을 사용합니다.
-마지막 연결이 끊겨도 IP별 프레임 상태는 현재 abuse window가 끝날 때까지 유지되므로 같은
-IP의 재연결로 quota를 초기화할 수 없습니다. 만료된 비활성 상태는 연결 시점과 주기적
-sweep에서 정리되며, 상태 맵이 가득 차면 활성 상태를 보존하고 비활성 상태만 제거합니다.
+서버 전체 한도에 같은 규칙을 적용합니다.
+마지막 연결이 끊겨도 IP별 수신량은 현재 집계 구간이 끝날 때까지 유지되므로 같은
+IP에서 재연결해도 한도가 초기화되지 않습니다. 만료된 비활성 상태는 새 연결을 받거나
+주기 검사를 할 때 정리합니다. 상태 맵이 가득 차면 활성 상태를 보존하고 비활성 상태만 제거합니다.
 
 standalone 방장 기능을 켤 때는 Basic Auth 비밀번호와 다른 최소 32자의 무작위 키를 만들고
-서버에는 그 SHA-256만 저장합니다. 하나의 digest는 해당 standalone 서버의 모든 방에
-적용되므로 원문 키는 방장에게만 전달하고 유출 시 즉시 회전해야 합니다. 참가자 화면에는
+서버에는 그 SHA-256 해시만 저장합니다. 하나의 키가 해당 standalone 서버의 모든 방에
+적용되므로 원문 키는 방장에게만 전달하고 유출 시 즉시 교체해야 합니다. 참가자 화면에는
 원문이 저장되거나 다시 표시되지 않으며, 빈 값은 일반 참가자 입장입니다.
 
-BATON 모드에서는 진행 중인 handshake와 활성 WebSocket을 합쳐 동일 참여권 `jti`당 1개,
-동일 `(room_id, sub)`당 2개까지만 허용합니다. 두 번째 사용자 슬롯은 BATON이 새 `jti`로
-발급한 정상 재연결 중첩을 위한 것이며, 세 번째 연결은 기존 연결을 끊지 않고 HTTP 429로
+BATON 모드에서는 연결을 맺는 중이거나 연결된 WebSocket을 합쳐 동일 참여권 `jti`당 1개,
+동일 `(room_id, sub)`당 2개까지만 허용합니다. 두 번째 연결은 BATON이 새 `jti`로
+발급한 참여권으로 재연결할 때 기존 연결과 잠시 겹치는 경우를 위한 것입니다. 세 번째 연결은 기존 연결을 끊지 않고 HTTP 429로
 거절합니다. 이 제한은 standalone 모드에는 적용되지 않습니다.
 
-TURN 기본 발급 구간은 credential TTL과 같은 600초입니다. IP당 12회는 같은 NAT 뒤의
+TURN 발급 횟수의 기본 집계 구간은 자격 증명 수명(TTL)과 같은 600초입니다. IP당 12회는 같은 NAT 뒤의
 6명 참가자가 최초 발급 후 8분경 한 번씩 자동 갱신할 수 있게 하고 서버 전체는 24회로
 제한합니다. TTL이나 브라우저 갱신 시점을 변경하면 발급 구간과 한도도 함께 검토해야
-합니다. BATON 모드는 같은 구간에 `(room_id, sub)`당 6회의 참가자 quota도 함께 적용하며,
+합니다. BATON 모드는 같은 구간에 `(room_id, sub)`당 6회의 발급 한도도 함께 적용하며,
 새 `jti` 발급이나 접속 IP 변경으로 초기화되지 않습니다. 참가자·IP·전역 제한은 모두
-통과할 때만 한 번에 차감됩니다. standalone 모드는 참가자 quota를 적용하지 않습니다.
+통과할 때만 한 번에 차감됩니다. standalone 모드는 참가자별 발급 한도를 적용하지 않습니다.
 운영 Compose의 Caddy는 공유 접근 자격을 요구해 익명 요청을 차단하지만, 이를 알고 있는
 사용자를 서로 구분하거나 스터디 멤버십까지 확인하지는 않습니다. BATON에서도 IP·전역
-발급 quota와 Cloudflare 사용량 경보는 계정 탈취와 relay 자원 남용을 제한하기 위해 계속
+발급 한도와 Cloudflare 사용량 경보는 계정 탈취와 TURN 중계 자원 남용을 제한하기 위해 계속
 유지합니다.
 
 ## 저장소 구조
@@ -232,7 +232,7 @@ packages/
 
 기본 STUN 설정만으로는 회사·학교망이나 제한적인 NAT 환경에서 연결을 보장할 수 없습니다.
 실사용 배포에는 TURN 서비스가 필요합니다. ROUND의 Java 서버는 Cloudflare API에서 짧은
-수명의 credential을 받아 브라우저에 전달하며 API token을 브라우저 번들에 넣지 않습니다.
+수명의 자격 증명을 받아 브라우저에 전달하며 API 토큰을 브라우저 번들에 넣지 않습니다.
 mesh 방식은 참가자마다
 업로드 스트림 수가 늘어나므로 영상은 기본 640×360, 최대 15fps이며 첫 버전은 6명으로
 제한합니다.
@@ -245,11 +245,11 @@ HTTPS Caddy의 공유 접근
 따르세요. 스터디 그룹에 공개하기 전에는 [파일럿 체크리스트](docs/pilot-checklist.md)를
 모두 통과해야 합니다.
 
-## BATON 연동 경계
+## BATON 연동과 역할
 
-ROUND는 BATON과 별도 저장소·배포·런타임을 유지합니다. BATON은 사용자 신원, 스터디와
-참여 권한을 소유하고, ROUND는 휘발성 room·peer 상태, WebSocket signaling과 TURN 자격
-증명 발급을 소유합니다. 두 서비스는 데이터베이스를 공유하지 않으며 signaling 프레임마다
+ROUND는 BATON과 별도 저장소에서 개발하고 독립적으로 배포·실행합니다. BATON은 사용자, 스터디와
+참여 권한을 관리하고, ROUND는 메모리에 보관하는 방·참가자 상태, WebSocket 시그널링과 TURN 자격
+증명 발급을 담당합니다. 두 서비스는 데이터베이스를 공유하지 않으며 시그널링 프레임마다
 서로를 호출하지 않습니다.
 
 브라우저가 사용하는 동일 출처 경로는 다음 세 개입니다.
@@ -260,14 +260,14 @@ ROUND는 BATON과 별도 저장소·배포·런타임을 유지합니다. BATON�
 | WebSocket 시그널링 | `/round/rooms/{roomId}/signal`                      | ROUND     |
 | TURN 자격 증명     | `/round/rooms/{roomId}/turn-credentials`            | ROUND     |
 
-BATON은 현재 멤버십을 확인해 방 범위의 짧은 RS256 참여권 쿠키를 발급합니다. ROUND는 공개
-JWK로 참여권과 방 경계를 로컬 검증하며, BATON 모드에서 검증 실패나 필수 설정 누락을
-standalone으로 우회하지 않습니다. 참여권의 `sub`는 로그인 공급자 정보가 아닌 재할당되지
+BATON은 현재 스터디 참여 권한을 확인해 해당 방에서만 쓸 수 있는 단기 RS256 참여권 쿠키를 발급합니다.
+ROUND는 공개 JWK로 참여권 서명과 요청한 방 ID를 검증합니다. BATON 모드에서 검증에 실패하거나
+필수 설정이 누락되면 요청을 거부하며 standalone으로 전환하지 않습니다. 참여권의 `sub`는 로그인 공급자 정보가 아닌 재할당되지
 않는 BATON `Account.id`입니다.
 
 BATON 웹은 방 권한을 확인하기 전 입장 화면과 장치 권한 요청을 열지 않습니다. 활성 연결은
 참여권 만료, 같은 계정의 새 연결 인계, TURN 갱신 실패를 각각 정해진 종료·재시도 정책으로
-처리합니다. 상세 JWT claim, 쿠키, JWK 회전, 갱신 응답, 연결 admission과 배포 순서는
+처리합니다. 상세 JWT 클레임, 쿠키, JWK 교체, 갱신 응답, 연결 승인과 배포 순서는
 [BATON 연동 계약 원본인 ADR 0001](docs/adr/0001-round-independent-service.md)을 따릅니다.
-실제 배포 전 확인 항목은 [파일럿 체크리스트](docs/pilot-checklist.md)의 BATON 연동 gate를
+실제 배포 전 확인 항목은 [파일럿 체크리스트](docs/pilot-checklist.md)의 BATON 연동 필수 검사를
 사용합니다.
