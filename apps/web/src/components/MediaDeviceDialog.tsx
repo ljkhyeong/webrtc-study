@@ -262,8 +262,8 @@ export function MediaDeviceDialog({
             <option value="text">문서·코드 · 최대 1080p / 10fps</option>
           </select>
           <small>
-            공유 시작 전에 선택하세요. 문서·코드 모드는 글자를 선명하게 보냅니다. 실제 품질은
-            브라우저와 연결 상태에 따라 달라집니다.
+            공유 시작 전에 선택하세요. 문서·코드 모드는 움직임보다 글자 선명도를 우선합니다. 실제
+            품질은 브라우저와 연결 상태에 따라 달라집니다.
           </small>
         </label>
       ) : null}

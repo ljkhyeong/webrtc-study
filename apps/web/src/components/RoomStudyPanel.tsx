@@ -166,7 +166,7 @@ export function RoomStudyPanel({
     setError(
       onCommand(value, expectedRevision)
         ? ''
-        : '요청을 보내지 못했습니다. 최신 진행 상태와 방 연결을 확인해 주세요.',
+        : '타이머나 주제를 변경하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.',
     );
   };
   const requestTimerChange = (value: StudyCommand) => {

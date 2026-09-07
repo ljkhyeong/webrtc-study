@@ -10,7 +10,7 @@ import type { RoomSystemNoticeView } from '../components/RoomView';
 import type { ParticipantView } from '../components/VideoTile';
 
 export const PEER_CONNECTION_FAILURE_MESSAGE =
-  '일부 참가자와 직접 연결하지 못했습니다. 해당 참가자의 다시 연결 버튼을 눌러 주세요. 다른 참가자와의 통화는 유지됩니다.';
+  '일부 참가자와 연결하지 못했습니다. 해당 참가자의 다시 연결 버튼을 눌러 주세요. 다른 참가자와의 통화는 유지됩니다.';
 type RoomIssueMessages = Readonly<Record<'error' | 'warning', string>>;
 
 export type RoomStartupErrorCode =
@@ -40,7 +40,7 @@ const SIGNALING_ISSUE_MESSAGES = {
     warning: '이 스터디룸은 최대 인원에 도달했습니다.',
   },
   NOT_IN_ROOM: {
-    error: '서버가 이 브라우저의 방 입장 상태를 확인하지 못했습니다. 다시 연결해 주세요.',
+    error: '서버가 이 브라우저의 방 입장 상태를 확인하지 못했습니다. 방에 다시 입장해 주세요.',
     warning: '서버의 방 연결 상태가 어긋나 연결을 다시 설정합니다.',
   },
   ROOM_MISMATCH: {
@@ -60,7 +60,7 @@ const SIGNALING_ISSUE_MESSAGES = {
     warning: '이 작업을 수행할 방장 권한이 없습니다.',
   },
   INTERNAL_ERROR: {
-    error: '스터디 서버가 요청을 처리하지 못했습니다. 잠시 후 다시 연결해 주세요.',
+    error: '스터디 서버가 요청을 처리하지 못했습니다. 잠시 후 방에 다시 입장해 주세요.',
     warning: '스터디 서버가 요청 하나를 처리하지 못했습니다. 현재 통화는 유지됩니다.',
   },
 } satisfies Record<SignalingErrorCode, RoomIssueMessages>;
@@ -86,23 +86,23 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   },
   'join-failed': {
     error: '스터디룸 입장을 완료하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
-    warning: '스터디룸 입장을 완료하지 못했습니다. 다시 연결해 주세요.',
+    warning: '스터디룸 입장을 완료하지 못했습니다. 방에 다시 입장해 주세요.',
   },
   'room-join-timeout': {
     error: '서버가 입장 요청에 응답하지 않았습니다. 네트워크를 확인해 주세요.',
-    warning: '서버의 입장 응답이 늦어지고 있습니다. 다시 연결해 주세요.',
+    warning: '서버의 입장 응답이 늦어지고 있습니다. 방에 다시 입장해 주세요.',
   },
   'signaling-reconnecting': {
-    error: '스터디 서버와의 연결이 끊어졌습니다. 네트워크를 확인한 뒤 다시 연결해 주세요.',
+    error: '스터디 서버와의 연결이 끊어졌습니다. 네트워크를 확인한 뒤 방에 다시 입장해 주세요.',
     warning:
       '스터디 서버에 다시 연결하는 중입니다. 카메라와 마이크는 유지되지만 참가자 연결은 다시 설정됩니다.',
   },
   'reconnect-exhausted': {
-    error: '서버와의 연결을 복구하지 못했습니다. 네트워크를 확인한 뒤 다시 연결해 주세요.',
+    error: '서버와의 연결을 복구하지 못했습니다. 네트워크를 확인한 뒤 방에 다시 입장해 주세요.',
     warning: '서버와의 연결을 복구하지 못했습니다. 방에 다시 입장해 주세요.',
   },
   'reconnect-attempt-failed': {
-    error: '서버 재연결을 완료하지 못했습니다. 네트워크를 확인한 뒤 다시 연결해 주세요.',
+    error: '서버 재연결을 완료하지 못했습니다. 네트워크를 확인한 뒤 방에 다시 입장해 주세요.',
     warning: '서버 재연결을 다시 시도하고 있습니다.',
   },
   'signaling-connect-failed': {
@@ -114,7 +114,7 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
     warning: '스터디 서버의 연결 응답이 늦어지고 있습니다.',
   },
   'signaling-closed': {
-    error: '서버와의 연결을 복구하지 못했습니다. 네트워크를 확인한 뒤 다시 연결해 주세요.',
+    error: '서버와의 연결을 복구하지 못했습니다. 네트워크를 확인한 뒤 방에 다시 입장해 주세요.',
     warning: '스터디 서버와의 연결이 끊겨 다시 연결하고 있습니다.',
   },
   'connection-superseded': {
@@ -143,11 +143,11 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   },
   'peer-negotiation-retrying': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
-    warning: '일부 참가자와의 직접 연결을 다시 시도하고 있습니다.',
+    warning: '일부 참가자와 다시 연결하고 있습니다.',
   },
   'peer-connection-recovering': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
-    warning: '일부 참가자와의 직접 연결을 자동으로 복구하고 있습니다. 현재 통화는 유지됩니다.',
+    warning: '일부 참가자와의 연결을 복구하고 있습니다. 다른 참가자와의 통화는 유지됩니다.',
   },
   'peer-connection-recreated': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
@@ -164,7 +164,7 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   },
   'media-device-sender-recovery': {
     error: '장치 교체 후 일부 참가자와 연결하지 못했습니다. 방에 다시 입장해 주세요.',
-    warning: '기존 장치로 복원하지 못한 참가자의 연결을 자동으로 복구하고 있습니다.',
+    warning: '내 장치 변경 중 전송 오류가 발생해 일부 참가자와 다시 연결하고 있습니다.',
   },
   'data-channel-closed': {
     error: '채팅 연결을 복구하지 못했습니다. 방에 다시 입장해 주세요.',
