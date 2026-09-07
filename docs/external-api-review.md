@@ -56,7 +56,7 @@ Cloudflare의 **Realtime SFU 단독 API**는 이번 목적에서 우선순위가
 
 **현재는 도입 보류:** 추가요금 없는 조건에서는 기존 통화 엔진을 유지한다. 비용 조건이 바뀌어 전환을 검토할 때도 BATON 권한, 명시적 장치 접근, 채팅 수신 확인과 타이머 동작을 맞춰야 한다. 현재 mesh의 참가자별 재연결과 SFU의 서버 연결 복구는 구조가 다르다.
 
-## 2. 브라우저 오류 수집: 작은 규모로 추가할 후보
+## 2. 브라우저 오류 수집: 연동 코드 추가, 기본 비활성
 
 [compose.yml](../compose.yml)에는 Alloy가 Spring 지표를 Grafana Cloud로 전송하는 설정이 있다. 웹 앱에는 [browser-monitoring.ts](../apps/web/src/lib/browser-monitoring.ts)로 Faro SDK 연동을 추가했다. 통화 진단은 [connection-diagnostics.ts](../packages/rtc-core/src/connection-diagnostics.ts)의 기존 요청형 측정을 유지한다.
 

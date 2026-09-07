@@ -1,8 +1,8 @@
 # 외부 접속·백업 알림 설정
 
 이 문서는 선택 설치 절차입니다. 저장소의 설정만으로 외부 계정이나 알림이 활성화되지 않습니다.
-Grafana Cloud stack, Healthchecks.io 검사 두 개, 운영 연락처가 필요합니다. 계정의 사용 한도와
-과금 조건을 확인한 뒤 운영자가 활성화합니다. 비밀 URL·token은 채팅이나 Git에 남기지 않습니다.
+Grafana Cloud 스택, Healthchecks.io 검사 두 개, 운영 연락처가 필요합니다. 계정의 사용 한도와
+과금 조건을 확인한 뒤 운영자가 활성화합니다. 비밀 URL·토큰은 채팅이나 Git에 남기지 않습니다.
 
 ## 외부 HTTPS와 인증서
 
@@ -20,13 +20,13 @@ Grafana Cloud의 **Testing & synthetics → Synthetics**에서 HTTP 검사를 �
 | 인증서 검증 비활성화 / 리다이렉트 추적 | 모두 끔                             |
 
 Test로 두 위치의 성공을 확인한 뒤 Enabled로 저장합니다. `/healthz`는 공개 경로이므로
-공유 접근 비밀번호나 BATON 참여권을 제공하지 않습니다. 이 검사는 HTTPS 가용성만 확인하며
+공유 접근 비밀번호나 BATON 참여권을 제공하지 않습니다. 이 검사는 HTTPS 접속 가능 여부만 확인하며
 로그인·WebSocket·실제 TURN 통화 검사를 대신하지 않습니다.
 
 검사를 켠 뒤 `ops/observability/round-external-alerts.yml`을 Grafana Alerting에서 Prometheus
-규칙으로 가져오고 Synthetic Monitoring 지표가 저장되는 data source를 선택합니다. 모든 위치의
-3분 연속 실패, 10분간 검사 결과 누락, 14일 이내 인증서 만료를 감지합니다. data source 자체의
-조회 실패나 No data도 알림이 되도록 설정하고 운영 contact point에 연결해 테스트합니다.
+규칙으로 가져오고 Synthetic Monitoring 지표가 저장되는 데이터 소스를 선택합니다. 모든 위치의
+3분 연속 실패, 10분간 검사 결과 누락, 14일 이내 인증서 만료를 감지합니다. 데이터 소스 조회 실패나
+`No data`도 알림을 보내도록 설정하고 운영 연락처(Contact point)에 연결해 테스트합니다.
 
 서버 시간 기준 03:15~03:45 유지보수 창에는 `RoundPublicHttpsUnavailable` 알림만 mute timing으로
 제외합니다. 백업 실패·누락 알림까지 끄면 복구 실패를 놓칠 수 있습니다. Grafana의 mute timing
@@ -50,8 +50,8 @@ Grace Time은 일일 작업 종료·정리 제한, 주간 최대 30분 무작위
 각 검사에 운영 알림 채널을 연결합니다. 요청 방식은 POST만 허용하고 본문 기반 판정은 끕니다.
 성공 URL은 검사 기본 ping URL, 실패 URL은 그 뒤에 `/fail`을 붙인 값입니다.
 
-서버에 curl을 설치한 뒤 저장소 루트에서 다음 파일을 준비합니다. 아직 drop-in을 설치하지
-않으므로 이 단계에서는 백업 동작이 바뀌지 않습니다.
+서버에 curl을 설치한 뒤 저장소 루트에서 다음 파일을 준비합니다. systemd 추가 설정(drop-in)을
+설치하기 전이므로 이 단계에서는 백업 동작이 바뀌지 않습니다.
 
 ```bash
 install -d -m 0700 /etc/round/healthchecks
@@ -79,13 +79,13 @@ systemctl daemon-reload
 ```
 
 설치 시 서비스를 재시작하거나 백업을 즉시 실행하지 않습니다. 다음 예약부터 성공·실패를
-전달합니다. `ExecStartPost`는 로컬 archive 생성과 R2 전송이 모두 성공한 뒤 실행됩니다.
+전달합니다. `ExecStartPost`는 로컬 백업 파일 생성과 R2 전송이 모두 성공한 뒤 실행됩니다.
 주간 작업도 보존 정리와 `restic check`가 모두 성공해야 성공 ping을 보냅니다. 기본
 `round-ops` 오류 기록은 유지하고 실패 알림 서비스를 추가합니다.
 
 각 ping은 연결 대기 5초·전체 10초로 제한합니다. 알림 전송 장애 때문에 성공한 백업을
 실패로 바꾸지 않습니다. 전송 실패나 서버 종료로 신호가 없으면 외부 검사에서 예약 누락으로
-알립니다. Healthchecks 화면의 최근 ping과 systemd 로그를 함께 확인해 작업 실패와 알림망
+알립니다. Healthchecks 화면의 최근 ping과 systemd 로그를 함께 확인해 작업 실패와 알림 전송
 장애를 구분합니다. 성공 신호는 명령의 정상 종료만 뜻하며 실제 복원 검사를 대신하지 않습니다.
 
 ## 활성화 확인과 해제
@@ -93,8 +93,8 @@ systemctl daemon-reload
 - Grafana 연락처 테스트가 도착하고 공개 HTTPS 두 위치의 실제 성공을 확인합니다.
 - 운영 검사와 다른 시험용 Healthchecks 검사에서 `/fail`·성공·기한 초과 알림을 확인합니다.
   시험 ping으로 운영 백업 성공 이력을 만들지 않습니다.
-- 다음 예약 실행 뒤 R2 snapshot과 Healthchecks 성공 시각을 함께 확인합니다. 지금 백업을
-  실행해야 한다면 edge 중단이 허용된 유지보수 창을 먼저 확보합니다.
+- 다음 예약 실행 뒤 R2 백업 스냅샷과 Healthchecks 성공 시각을 함께 확인합니다. 지금 백업을
+  실행해야 한다면 Caddy를 중단할 수 있는 유지보수 시간을 먼저 확보합니다.
 - 서버 중단으로 일일 백업이 누락되면 알림을 받고, 재부팅 뒤 자동 보충 실행하지 않는 기존
   정책은 유지합니다. 복구 확인 없이 성공 ping을 수동으로 보내지 않습니다.
 - 알림만 해제할 때는 두 서비스의 `10-healthchecks.conf`를 `.disabled` 확장자로 옮기고

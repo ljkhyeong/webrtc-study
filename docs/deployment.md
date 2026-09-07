@@ -282,10 +282,10 @@ systemctl daemon-reload
 systemctl enable --now round-offsite-backup.timer round-offsite-maintenance.timer
 ```
 
-매일 작업은 로컬 age 백업을 만든 뒤 `restic backup`을 실행합니다. 매주 작업은 최근 14개 일별,
-8개 주별, 12개 월별 snapshot을 보존하면서 `forget --prune`과 `restic check`를 실행합니다.
-prune 중에는 repository가 잠기므로 일일 백업과 겹치지 않게 시간을 분리했습니다.
-로컬 age 백업은 systemd-tmpfiles가 30일 뒤 정리하고 장기 보존은 R2 snapshot이 담당합니다.
+일일 작업은 로컬 age 백업을 만든 뒤 `restic backup`을 실행합니다. 주간 작업은 일별 14개,
+주별 8개, 월별 12개 스냅샷을 보존하며 `forget --prune`과 `restic check`를 실행합니다.
+불필요한 백업 데이터를 정리하는 동안 저장소가 잠기므로 일일 백업과 실행 시간을 나눴습니다.
+로컬 age 백업은 systemd-tmpfiles가 30일 뒤 정리하고, 장기 백업은 R2 스냅샷으로 보관합니다.
 
 필수 실행 파일이나 설정 파일이 없으면 서비스를 실패 처리하고 `OnFailure`로 `round-ops` 태그의
 치명적인 운영 오류를 기록합니다. `Condition`·`Assert` 사전 검사는 실패 처리 전에 실행을
@@ -297,7 +297,7 @@ journalctl -u round-offsite-backup.service -u round-offsite-maintenance.service 
 ```
 
 일일 백업은 서버 시간 기준 03:15에 무작위 지연 없이 시작하며, timer의 허용 오차는 1초로 설정합니다.
-Caddy volume의 일관된 snapshot을 만드는 동안 edge를 잠시 중지하고 완료 또는 실패 시 다시
+Caddy 볼륨을 백업하는 동안 데이터가 바뀌지 않도록 Caddy를 잠시 중지하고 완료 또는 실패 시 다시
 시작합니다. 활성 WebSocket이 종료될 수 있으므로 03:15~03:45를 유지보수 창으로 운영합니다.
 이 시간대에 중단을 허용할 수 없으면 timer의 `OnCalendar`와 유지보수 창을 함께 옮깁니다.
 
@@ -367,13 +367,13 @@ trap - EXIT
 최소 분기마다 R2에서 별도 디렉터리로 복원하고 checksum과 `restore-caddy.sh` 입력 검사를
 통과시킵니다.
 
-## BATON 배포 경계
+## BATON 배포 구성
 
-기본 Compose는 standalone 계약을 고정합니다. BATON은 별도 edge manifest에서 방 범위 경로를
-proxy하고, 참여권 갱신 endpoint는 BATON에 남겨야 합니다. 환경 변수로 기본 Compose를 BATON
-모드로 조용히 바꾸지 않습니다.
+기본 Compose는 standalone 모드로 고정되어 있습니다. BATON은 별도의 외부 프록시 설정에서
+방별 경로를 ROUND로 전달하고 참여권 갱신 API는 직접 처리해야 합니다. 기본 Compose를 환경
+변수로 BATON 모드로 전환하지 않습니다.
 
-BATON 참여권, JWK 회전, 방 범위 TURN endpoint와 배포 순서는
+BATON 참여권, JWK 교체, 방별 TURN API와 배포 순서는
 [ADR 0001](adr/0001-round-independent-service.md)과
 [파일럿 체크리스트](pilot-checklist.md)를 따릅니다.
 
