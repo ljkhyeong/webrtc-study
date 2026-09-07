@@ -1297,18 +1297,6 @@ textarea:focus-visible {
   gap: 12px;
 }
 
-.connection-diagnostics__panel > header div {
-  display: grid;
-  gap: 2px;
-}
-
-.connection-diagnostics__panel > header span {
-  color: #759087;
-  font-size: 0.55rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-}
-
 .connection-diagnostics__panel > header strong {
   font-size: 0.9rem;
 }
@@ -2135,19 +2123,6 @@ textarea:focus-visible {
   border-bottom: 1px solid rgb(255 255 255 / 8%);
   align-items: center;
   justify-content: space-between;
-}
-
-.chat-panel__header div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.chat-panel__header span {
-  color: #75878c;
-  font-size: 0.54rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
 }
 
 .chat-panel__header strong {

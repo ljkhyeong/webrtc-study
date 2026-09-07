@@ -454,7 +454,7 @@ export function RoomView({
               {terminalConnectionError ? (
                 <div className="connecting-layer__actions">
                   <button type="button" onClick={() => requestExit('reconnect')}>
-                    다시 연결
+                    방 다시 입장
                   </button>
                   <button type="button" onClick={() => requestExit('leave')}>
                     나가기

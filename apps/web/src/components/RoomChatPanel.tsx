@@ -287,10 +287,7 @@ export function RoomChatPanel({
     <>
       <aside className="chat-panel" aria-hidden={!open} inert={!open}>
         <header className="chat-panel__header">
-          <div>
-            <span>ROOM CHAT</span>
-            <strong>스터디 대화</strong>
-          </div>
+          <strong>스터디 대화</strong>
           <button type="button" aria-label="채팅 닫기" onClick={onClose}>
             <CloseIcon />
           </button>
@@ -387,7 +384,7 @@ export function RoomChatPanel({
                         {recipient.state === 'acknowledged'
                           ? '수신 확인'
                           : recipient.state === 'pending'
-                            ? '확인 대기'
+                            ? '수신 확인 중'
                             : '수신 미확인'}
                         {recipient.canRetry && onRetryMessage ? (
                           <button
@@ -399,7 +396,7 @@ export function RoomChatPanel({
                         ) : null}
                       </span>
                     ))}
-                    <small>재전송은 보낸 뒤 2분 동안 연결된 상대에게 가능합니다.</small>
+                    <small>전송 후 2분 이내, 연결된 상대에게만 재전송할 수 있습니다.</small>
                   </div>
                 ) : null}
               </article>

@@ -23,7 +23,7 @@ export function ClientReleaseNotice({
           ? inRoom
             ? '새 버전이 있습니다. 통화를 마친 뒤 새로고침해 주세요.'
             : '새 버전이 있습니다. 새로고침 후 입장해 주세요.'
-          : '웹 버전을 확인하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.'}
+          : '업데이트를 확인하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.'}
       </p>
       {status === 'update' && inRoom ? (
         <button type="button" onClick={() => setDismissed(true)}>

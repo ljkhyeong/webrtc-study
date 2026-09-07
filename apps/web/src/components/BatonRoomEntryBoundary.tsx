@@ -126,9 +126,7 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
   if (state.status === 'forbidden') {
     return (
       <BatonEntryPanel
-        eyebrow="참여 권한 없음"
-        title="이 스터디룸에 참여할 수 없습니다."
-        description="로그인했지만 이 스터디룸의 참여 권한이 없습니다."
+        title="이 스터디룸의 참여 권한이 없습니다."
         primaryAction={{ href: '/', label: 'BATON으로 돌아가기' }}
       />
     );
@@ -185,9 +183,9 @@ interface BatonEntryAction {
 }
 
 interface BatonEntryPanelProps {
-  readonly eyebrow: string;
+  readonly eyebrow?: string;
   readonly title: string;
-  readonly description: string;
+  readonly description?: string;
   readonly primaryAction?: BatonEntryAction;
   readonly secondaryAction?: BatonEntryAction;
   readonly status?: boolean;
@@ -210,9 +208,9 @@ function BatonEntryPanel({
         </a>
       </header>
       <main className="baton-entry-main" aria-live="polite" {...(status ? { role: 'status' } : {})}>
-        <p className="eyebrow">{eyebrow}</p>
+        {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description ? <p>{description}</p> : null}
         {status ? <span className="connecting-ring" aria-hidden="true" /> : null}
         {primaryAction || secondaryAction ? (
           <div className="baton-entry-actions">

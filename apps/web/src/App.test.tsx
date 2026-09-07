@@ -196,7 +196,7 @@ describe('App pre-join boundary', () => {
       message: 'Ignored excessive DataChannel messages from internal-peer-id',
     });
 
-    expect(warning).toContain('너무 많은 데이터');
+    expect(warning).toContain('채팅 수신량이 한도를 넘어');
     expect(warning).toContain('통화는 유지');
     expect(warning).not.toContain('internal-peer-id');
   });
@@ -321,7 +321,7 @@ describe('App pre-join boundary', () => {
       message: 'Participation session superseded internal-peer-id',
     });
 
-    expect(message).toContain('새 접속으로 대체');
+    expect(message).toContain('같은 계정으로 다시 입장해 현재 연결이 종료');
     expect(message).not.toContain('Participation session superseded');
     expect(message).not.toContain('internal-peer-id');
   });

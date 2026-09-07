@@ -398,7 +398,7 @@ describe('BATON room entry boundary', () => {
 
     await waitForState(() => {
       expect(grantRequests).toBe(2);
-      expect(container.textContent).toContain('이 스터디룸에 참여할 수 없습니다.');
+      expect(container.textContent).toContain('이 스터디룸의 참여 권한이 없습니다.');
     });
     expect(container.textContent).not.toContain('revoked membership');
     expect(getUserMedia).not.toHaveBeenCalled();
@@ -511,7 +511,7 @@ describe('BATON room entry boundary', () => {
     });
 
     await waitForState(() =>
-      expect(container.textContent).toContain('이 스터디룸에 참여할 수 없습니다.'),
+      expect(container.textContent).toContain('이 스터디룸의 참여 권한이 없습니다.'),
     );
     expect(container.textContent).not.toContain('membership detail');
     expect(container.querySelector('a[href^="/login?"]')).toBeNull();

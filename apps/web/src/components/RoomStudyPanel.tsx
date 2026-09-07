@@ -160,7 +160,7 @@ export function RoomStudyPanel({
       ? '완료'
       : state.running
         ? '진행 중'
-        : '대기·일시정지';
+        : '정지';
   const disabled = !active || pending || !state;
   const command = (value: StudyCommand, expectedRevision?: number) => {
     setError(

@@ -22,7 +22,7 @@ const connectionStateLabels: Record<PeerConnectionStatus, string> = {
   disconnected: '연결 끊김',
   failed: '연결 실패',
   closed: '연결 종료',
-  negotiating: '협상 중',
+  negotiating: '연결 설정 중',
 };
 
 const candidateTypeLabels: Record<RTCIceCandidateType, string> = {
@@ -143,10 +143,7 @@ export function ConnectionDiagnosticsPanel({
       <summary>진단</summary>
       <section className="connection-diagnostics__panel" aria-label="연결 진단">
         <header>
-          <div>
-            <span>CONNECTION</span>
-            <strong>연결 진단</strong>
-          </div>
+          <strong>연결 진단</strong>
           <button
             type="button"
             disabled={diagnostics.status === 'loading'}
@@ -170,7 +167,7 @@ export function ConnectionDiagnosticsPanel({
           코드, 참가자 식별자를 포함하거나 서버로 보내지 않습니다.
         </p>
         {diagnostics.status === 'error' ? (
-          <p role="alert">연결 진단을 수집하지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
+          <p role="alert">연결 상태를 측정하지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
         ) : diagnostics.status === 'idle' ? (
           <p>연결 진단을 열면 약 3초 동안 측정합니다.</p>
         ) : ready === null ? (

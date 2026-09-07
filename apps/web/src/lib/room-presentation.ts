@@ -118,8 +118,8 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
     warning: '스터디 서버와의 연결이 끊겨 다시 연결하고 있습니다.',
   },
   'connection-superseded': {
-    error: '이 접속은 같은 계정의 새 접속으로 대체되었습니다. 계속 사용하려면 다시 입장해 주세요.',
-    warning: '이 접속은 같은 계정의 새 접속으로 대체되었습니다.',
+    error: '같은 계정으로 다시 입장해 현재 연결이 종료되었습니다. 계속하려면 다시 입장해 주세요.',
+    warning: '같은 계정으로 다시 입장해 현재 연결이 종료되었습니다.',
   },
   'invalid-signal-message': {
     error: '스터디 서버와 메시지 형식이 맞지 않습니다. 페이지를 새로고침한 뒤 다시 입장해 주세요.',
@@ -151,7 +151,7 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   },
   'peer-connection-recreated': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
-    warning: '일부 참가자와의 직접 연결을 새로 만들고 있습니다. 현재 통화는 유지됩니다.',
+    warning: '일부 참가자와 다시 연결하고 있습니다. 다른 참가자와의 통화는 유지됩니다.',
   },
   'peer-ice-restart-failed': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
@@ -181,7 +181,7 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   'data-channel-rate-limit': {
     error: '채팅 연결에서 너무 많은 데이터가 전송되었습니다. 방에 다시 입장해 주세요.',
     warning:
-      '한 참가자의 채팅 연결에서 너무 많은 데이터가 전송되어 일부 업데이트를 잠시 무시했습니다. 통화는 유지됩니다.',
+      '한 참가자의 채팅 수신량이 한도를 넘어 일부 데이터를 처리하지 않았습니다. 통화는 유지됩니다.',
   },
   'peer-negotiation-failed': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,

@@ -114,8 +114,7 @@ export function MediaDeviceDialog({
     try {
       const applied = await onSelectVideoQuality(quality);
       if (!mounted.current) return;
-      if (applied)
-        setNotice('카메라 전송 품질을 적용했습니다. 새 연결에도 같은 설정을 사용합니다.');
+      if (applied) setNotice('카메라 전송 품질을 적용했습니다.');
       else setError('일부 연결에 적용하지 못했습니다. 다시 적용하거나 카메라를 꺼 주세요.');
     } catch {
       if (mounted.current) setError('카메라 전송 품질을 적용하지 못했습니다. 다시 시도해 주세요.');
@@ -196,8 +195,8 @@ export function MediaDeviceDialog({
               ? '이 브라우저는 화면 꺼짐 방지를 지원하지 않습니다.'
               : {
                   off: '꺼짐',
-                  requesting: '화면 유지 요청 중',
-                  active: '적용 중 · 화면을 켜 둡니다.',
+                  requesting: '켜는 중',
+                  active: '켜짐',
                   waiting: '대기 중 · 방에 연결하고 화면으로 돌아오면 다시 적용합니다.',
                   released: '화면 꺼짐 방지가 해제되었습니다. 설정을 껐다 다시 켜 주세요.',
                   error:
