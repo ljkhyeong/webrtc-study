@@ -1,8 +1,8 @@
 # ROUND 배포 가이드
 
-운영 토폴로지는 Caddy edge와 단일 Spring signaling 인스턴스로 구성합니다. TURN relay와
-credential 생성은 Cloudflare TURN을 사용합니다. 운영 host에서 자체 TURN 서버, TURN 인증서,
-relay 포트 범위를 직접 관리하지 않습니다.
+운영 환경은 외부 요청을 받는 Caddy와 Spring 시그널링 서버 인스턴스 하나로 구성합니다. TURN 중계와
+자격 증명 발급은 Cloudflare TURN을 사용합니다. 운영 서버에서 TURN 서버·인증서·중계 포트를
+직접 관리하지 않습니다.
 
 ```text
 브라우저 ── HTTPS/WSS ── Caddy ── HTTP/WS ── signaling
@@ -79,9 +79,10 @@ WebRTC relay 트래픽은 브라우저와 Cloudflare 사이를 이동합니다.
 
 ## 배포
 
-Linux 배포 도구는 깨끗한 checkout, 불변 이미지, 서명된 provenance, 환경·Compose snapshot,
-단일 signaling replica와 host 준비 상태를 검사합니다. systemd 운영 단위가 참조하는 저장소
-경로는 `/opt/round`로 고정합니다. 운영 host에 처음 설치할 때 다음처럼 checkout을 준비합니다.
+Linux 배포 도구는 미커밋 변경이 없는 소스, digest로 고정한 이미지, 서명된 빌드 출처 증명,
+환경·Compose 설정 사본, 시그널링 서버의 단일 인스턴스 설정과 운영 서버의 준비 상태를 검사합니다.
+systemd 서비스가 참조하는 저장소 경로는 `/opt/round`로 고정합니다. 운영 서버에 처음 설치할 때
+다음과 같이 소스를 준비합니다.
 
 ```bash
 sudo git clone https://github.com/ljkhyeong/webrtc-study.git /opt/round
@@ -107,10 +108,9 @@ ops/linux/preflight.sh /etc/round/production.env
 ops/linux/deploy.sh /etc/round/production.env
 ```
 
-배포는 `edge`, `signaling` 이미지를 pull하고 health check가 통과한 뒤 현재 release 상태를
-`/var/lib/round/releases/current.env`에 기록합니다. `observability` profile을 사용하면 고정된
-Alloy 이미지도 함께 pull합니다. 중단된 배포 marker가 있으면 새 배포를 시도하기 전에
-rollback으로 복구합니다.
+배포 도구는 `edge`, `signaling` 이미지를 내려받고 상태 검사를 통과하면 현재 릴리스 정보를
+`/var/lib/round/releases/current.env`에 기록합니다. `observability` 프로필을 사용하면 고정된
+Alloy 이미지도 내려받습니다. 중단된 배포 기록이 있으면 새로 배포하기 전에 롤백으로 복구합니다.
 
 ```bash
 ops/linux/rollback.sh \
@@ -183,15 +183,15 @@ docker compose \
 
 ## 릴리스 이미지
 
-`release-images.yml`은 다음 이미지를 multi-architecture digest로 발행하고 provenance를
-첨부합니다.
+`release-images.yml`은 여러 CPU 아키텍처용 이미지를 묶은 digest로 다음 이미지를 발행하고,
+빌드 출처 증명(provenance)을 첨부합니다.
 
 - `round-edge`: standalone 웹과 Caddy
-- `round-edge` relay flavor: `VITE_ICE_TRANSPORT_POLICY=relay` 검증용
-- `round-baton-web`: BATON 소유 edge에 넣는 웹 runtime
-- `round-signaling`: Spring signaling runtime
+- `round-edge` 중계 전용 버전: `VITE_ICE_TRANSPORT_POLICY=relay` 검증용
+- `round-baton-web`: BATON의 외부 프록시 뒤에서 실행하는 웹 서버
+- `round-signaling`: Spring 시그널링 서버
 
-TURN 이미지는 발행하지 않습니다. Cloudflare가 relay runtime을 운영합니다.
+TURN 이미지는 발행하지 않습니다. Cloudflare가 TURN 중계 서버를 운영합니다.
 
 ## 검증
 
@@ -209,10 +209,9 @@ curl --fail --silent https://<ROUND_DOMAIN>/healthz
 docker compose --env-file /etc/round/production.env ps
 ```
 
-credential endpoint의 HTTP 200만으로 TURN relay 성공을 판정하지 않습니다. 별도 네트워크의
-브라우저 두 개에서 relay 전용 edge를 사용해 양방향 오디오·비디오가 흐르고 선택된 candidate
-pair가 relay인지 확인합니다. UDP가 제한된 네트워크에서는 Cloudflare가 제공한 TCP/TLS route도
-확인합니다.
+자격 증명 API의 HTTP 200 응답만으로 TURN 중계 성공을 판정하지 않습니다. 서로 다른 네트워크의
+브라우저 두 개에서 중계 전용 `edge` 이미지를 사용해 양방향 음성·영상이 전달되고 선택된 ICE 후보 쌍이
+`relay` 경로를 사용하는지 확인합니다. UDP가 제한된 네트워크에서는 Cloudflare가 제공한 TCP/TLS 경로도 확인합니다.
 
 ## Cloudflare 키 교체
 
@@ -227,9 +226,9 @@ pair가 relay인지 확인합니다. UDP가 제한된 네트워크에서는 Clou
 
 ## Caddy 상태 백업과 복원
 
-Caddy의 ACME 상태는 named volume에 저장됩니다. 기존 도구가 age로 암호화한 로컬 백업과
-checksum을 만들고, restic이 이를 Cloudflare R2의 암호화 repository에 다시 보관합니다.
-R2는 S3 호환 endpoint인 `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`을 사용합니다.
+Caddy의 인증서 발급·갱신 상태(ACME)는 Docker 볼륨(named volume)에 저장됩니다. 백업 도구가 age로 암호화한
+로컬 백업과 체크섬을 만들고, restic이 이를 Cloudflare R2의 암호화 저장소에 보관합니다.
+R2는 S3 호환 API 주소인 `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`을 사용합니다.
 
 age 복호화 키는 운영 서버가 아닌 관리용 기기에서 만들고, 암호화한 파일을 다시 복호화할 수 있는지 확인합니다.
 
@@ -244,7 +243,7 @@ test "$(
 )" = round-backup-test
 ```
 
-공개 recipient만 운영 host에 설치합니다.
+암호화에 쓰는 공개키(recipient)만 운영 서버에 설치합니다.
 
 ```bash
 sudo install -m 0644 round-backup-recipients.txt /etc/round/backup-recipients.txt
@@ -252,9 +251,9 @@ sudo install -m 0644 round-backup-recipients.txt /etc/round/backup-recipients.tx
 
 `round-backup-identity.txt`는 운영 host에 상시 두지 않고 별도 비밀 저장소에 보관합니다.
 
-먼저 restic을 설치하고 백업 전용 R2 bucket과 object read/write key를 만듭니다. 환경 예시와
-repository password를 root 전용 파일로 설치합니다. repository password를 잃으면 복구할 수
-없으므로 host 밖의 비밀 저장소에도 보관합니다.
+먼저 restic을 설치하고 백업 전용 R2 버킷과 객체 읽기·쓰기 키를 만듭니다. 환경 설정 파일과
+저장소 비밀번호 파일은 root만 접근할 수 있도록 설치합니다. 비밀번호를 잃으면 백업을 복구할 수
+없으므로 운영 서버 밖의 비밀 저장소에도 보관합니다.
 
 ```bash
 install -m 0600 ops/restic-r2.env.example /etc/round/restic-r2.env
