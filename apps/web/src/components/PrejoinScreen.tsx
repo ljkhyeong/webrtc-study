@@ -411,7 +411,7 @@ export function PrejoinScreen({
                   }
                 }}
               >
-                다시 시도
+                장치 다시 확인
               </button>
 
               <div className="prejoin-join-actions">

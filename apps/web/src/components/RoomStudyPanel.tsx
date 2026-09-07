@@ -230,7 +230,7 @@ export function RoomStudyPanel({
           <p role="status">
             {active
               ? `${state?.mode === 'break' ? '휴식' : '집중'} ${label}`
-              : '서버 연결 복구 후 최신 진행 상태를 확인합니다.'}
+              : '다시 연결되면 타이머와 주제를 불러옵니다.'}
           </p>
           {canControl ? (
             <>

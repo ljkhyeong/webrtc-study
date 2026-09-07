@@ -145,7 +145,7 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
 
   return (
     <BatonEntryPanel
-      eyebrow="연결 확인 실패"
+      eyebrow="참여 권한 확인 실패"
       title="스터디 참여 권한을 확인하지 못했습니다."
       description="네트워크 또는 BATON 연결을 확인한 뒤 다시 시도해 주세요."
       primaryAction={{ label: '다시 확인', onClick: () => setAttempt((value) => value + 1) }}

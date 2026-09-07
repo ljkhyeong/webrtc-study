@@ -33,7 +33,7 @@ const candidateTypeLabels: Record<RTCIceCandidateType, string> = {
 };
 
 function diagnosticValue(value: number | null, unit: string) {
-  return value === null ? '측정 불가' : `${value}${unit}`;
+  return value === null ? '측정값 없음' : `${value}${unit}`;
 }
 
 export function connectionDiagnosticAdvice(diagnostic: PeerConnectionDiagnostics): string {
@@ -53,7 +53,7 @@ export function connectionDiagnosticAdvice(diagnostic: PeerConnectionDiagnostics
 }
 
 function candidateTypeLabel(type: RTCIceCandidateType | null) {
-  return type === null ? '확인 전' : candidateTypeLabels[type];
+  return type === null ? '정보 없음' : candidateTypeLabels[type];
 }
 
 function ConnectionDiagnosticItem({
