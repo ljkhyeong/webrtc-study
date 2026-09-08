@@ -6,6 +6,8 @@ import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class RoundAuthPropertiesTest {
 
@@ -52,14 +54,15 @@ class RoundAuthPropertiesTest {
 						+ "standaloneHostTokenSha256=<redacted>, maxGrantLifetime=PT5M]");
 	}
 
-	@Test
-	void batonModeAllowsLoopbackHttpForLocalDevelopment() {
+	@ParameterizedTest
+	@ValueSource(strings = {"localhost", "LOCALHOST", "127.0.0.1", "[::1]"})
+	void batonModeAllowsLoopbackHttpForLocalDevelopment(String host) {
 		RoundAuthProperties properties = new RoundAuthProperties(
 				RoundAuthProperties.Mode.BATON,
 				"__Secure-round_access",
-				"http://127.0.0.1:8080/oauth2/issuer",
+				"http://" + host + ":8080/oauth2/issuer",
 				"round",
-				"http://localhost:8080/oauth2/jwks",
+				"http://" + host + ":8080/oauth2/jwks",
 				null,
 				Duration.ofMinutes(5));
 

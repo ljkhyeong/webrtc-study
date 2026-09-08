@@ -7,7 +7,6 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.net.URI;
 import java.time.Duration;
-import java.util.Locale;
 import org.hibernate.validator.constraints.time.DurationMax;
 import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -100,7 +99,7 @@ public record RoundAuthProperties(
 		try {
 			URI uri = URI.create(value);
 			String scheme = uri.getScheme();
-			String host = normalizeHost(uri.getHost());
+			String host = uri.getHost();
 			int port = uri.getPort();
 			if (scheme == null
 					|| host == null
@@ -123,18 +122,10 @@ public record RoundAuthProperties(
 		}
 	}
 
-	private static String normalizeHost(String host) {
-		if (host == null) {
-			return null;
-		}
-		String unwrapped = host.length() > 1 && host.startsWith("[") && host.endsWith("]")
-				? host.substring(1, host.length() - 1)
-				: host;
-		return unwrapped.toLowerCase(Locale.ROOT);
-	}
-
 	private static boolean isLoopback(String host) {
-		return "localhost".equals(host) || "127.0.0.1".equals(host) || "::1".equals(host);
+		return "localhost".equalsIgnoreCase(host)
+				|| "127.0.0.1".equals(host)
+				|| "[::1]".equals(host);
 	}
 
 	public enum Mode {
