@@ -66,9 +66,14 @@ describe('방 안의 채팅 입력과 검색', () => {
     });
     expect(container.querySelector('#chat-composer-count')?.textContent).toBe('1,000 / 1,000자');
     expect(container.querySelector('#chat-composer-notice')?.textContent).toContain('입력 한도');
-    act(() => input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    const send = container.querySelector<HTMLButtonElement>('[aria-label="메시지 보내기"]')!;
+    act(() => {
+      send.focus();
+      send.click();
+    });
     expect(sendMessage).toHaveBeenCalledWith(text);
     expect(input.value).toBe('');
+    expect(document.activeElement).toBe(input);
     expect(container.querySelector('#chat-composer-count')?.textContent).toBe('0 / 1,000자');
     expect(container.querySelector('#chat-composer-notice')?.textContent).toBe('');
   });
@@ -106,9 +111,16 @@ describe('방 안의 채팅 입력과 검색', () => {
     render([first, second]);
     search('guide');
     expect(container.querySelectorAll('[data-search-match]')).toHaveLength(2);
+    expect([...container.querySelectorAll('mark')].map((mark) => mark.textContent)).toEqual([
+      'GUIDE',
+    ]);
+    expect(container.querySelector('a mark')?.textContent).toBe('GUIDE');
     expect(container.querySelector('[data-search-current]')?.textContent).toContain('GUIDE');
     act(() => container.querySelector<HTMLButtonElement>('[aria-label="다음 검색 결과"]')!.click());
     expect(container.querySelector('[data-search-current]')?.textContent).toContain('다음 guide');
+    expect([...container.querySelectorAll('mark')].map((mark) => mark.textContent)).toEqual([
+      'guide',
+    ]);
     const list = container.querySelector<HTMLElement>('.chat-messages')!;
     list.scrollTop = 80;
     render([first, second, message('c', 'new', '새 guide')]);
@@ -140,5 +152,40 @@ describe('방 안의 채팅 입력과 검색', () => {
     );
     expect(container.querySelector<HTMLInputElement>('#chat-search')!.value).toBe('');
     expect(container.querySelector('[data-search-current]')).toBeNull();
+    expect(container.querySelectorAll('mark')).toHaveLength(0);
+    expect(document.activeElement).toBe(container.querySelector('#chat-message'));
+  });
+
+  it('한글 조합 중에는 결과를 이동하거나 닫지 않고 Escape로 검색을 마친다', () => {
+    render([first, second]);
+    search('guide');
+    const input = container.querySelector<HTMLInputElement>('#chat-search')!;
+    act(() => {
+      input.focus();
+      input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(input.value).toBe('guide');
+    expect(container.querySelector('[data-search-current]')?.textContent).toContain('GUIDE');
+    act(() => {
+      input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(container.querySelector('[data-search-current]')?.textContent).toContain('다음 guide');
+    act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(input.value).toBe('');
+    expect(container.querySelectorAll('mark')).toHaveLength(0);
+    expect(document.activeElement).toBe(container.querySelector('#chat-message'));
+  });
+
+  it('조합형 한글의 검색어를 원문 그대로 강조한다', () => {
+    const decomposed = '가이드'.normalize('NFD');
+    const text = `😀 ${decomposed}를 확인하세요.`;
+    render([message('a', 'nfd', text)]);
+    search('가이드');
+    expect(container.querySelectorAll('[data-search-match]')).toHaveLength(1);
+    expect(container.querySelector('mark')?.textContent).toBe(decomposed);
+    expect(container.querySelector('.chat-message p')?.textContent).toBe(text);
   });
 });

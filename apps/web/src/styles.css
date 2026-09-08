@@ -3279,6 +3279,11 @@ textarea:focus-visible {
   outline: 2px solid #a8d2ac;
   outline-offset: 4px;
 }
+.chat-message mark {
+  border-radius: 2px;
+  color: #18221c;
+  background: #f2dc81;
+}
 .room-study__actions {
   display: flex;
   gap: 8px;

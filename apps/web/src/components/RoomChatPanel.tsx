@@ -1,9 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ChatDeliveryState, ChatMessage } from '@round/rtc-core';
 import { CloseIcon, MessageIcon, SendIcon } from './Icons';
 import { ChatMessageContent } from './ChatMessageContent';
+import { findChatSearchMatches, normalizeChatSearch } from '../lib/chat-search';
 
 const MAX_COMPOSER_LENGTH = 1000;
+const messageKey = (item: ChatMessage) => JSON.stringify([item.senderId, item.id]);
 
 interface ChatMessageIdentity {
   readonly id: string;
@@ -162,25 +164,30 @@ export function RoomChatPanel({
   }, [hasDraft, onDraftChange]);
   const [search, setSearch] = useState('');
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
-  const query = search.trim().normalize('NFC').toLocaleLowerCase('ko-KR');
-  const messageKey = (item: ChatMessage) => JSON.stringify([item.senderId, item.id]);
-  const matches = query
-    ? messages.filter((item) =>
-        item.text.normalize('NFC').toLocaleLowerCase('ko-KR').includes(query),
-      )
-    : [];
-  const matchKeys = new Set(matches.map(messageKey));
-  const matchIndex = Math.max(
-    0,
-    matches.findIndex((item) => messageKey(item) === selectedMatch),
+  const query = normalizeChatSearch(search.trim());
+  const searchMatches = useMemo(
+    () =>
+      new Map(
+        messages.flatMap((item) => {
+          return query && normalizeChatSearch(item.text).includes(query)
+            ? [[messageKey(item), item] as const]
+            : [];
+        }),
+      ),
+    [messages, query],
   );
-  const currentMatch = matches[matchIndex];
-  const currentMatchKey = currentMatch ? messageKey(currentMatch) : null;
+  const matchKeys = [...searchMatches.keys()];
+  const matchIndex = Math.max(0, matchKeys.indexOf(selectedMatch ?? ''));
+  const currentMatchKey = matchKeys[matchIndex] ?? null;
+  const currentMatch = searchMatches.get(currentMatchKey ?? '');
+  const currentHighlights = useMemo(
+    () => (currentMatch ? findChatSearchMatches(currentMatch.text, query) : undefined),
+    [currentMatch, query],
+  );
   const messageElements = useRef(new Map<string, HTMLElement>());
   const moveMatch = (direction: number) => {
-    if (!matches.length) return;
-    const item = matches[(matchIndex + direction + matches.length) % matches.length];
-    if (item) setSelectedMatch(messageKey(item));
+    if (!matchKeys.length) return;
+    setSelectedMatch(matchKeys[(matchIndex + direction + matchKeys.length) % matchKeys.length]!);
   };
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [unseenDeliveryIssueCount, setUnseenDeliveryIssueCount] = useState(0);
@@ -193,6 +200,7 @@ export function RoomChatPanel({
   const messagesRef = useRef<HTMLDivElement>(null);
   const followingChatRef = useRef(true);
   const chatCompositionActive = useRef(false);
+  const searchCompositionActive = useRef(false);
 
   useLayoutEffect(() => {
     if (!open || !query || !currentMatchKey) return;
@@ -261,6 +269,11 @@ export function RoomChatPanel({
     if (list !== null) list.scrollTop = list.scrollHeight;
   };
 
+  const closeSearch = () => {
+    showLatestMessages();
+    composerRef.current?.focus();
+  };
+
   const handleChatScroll = () => {
     const list = messagesRef.current;
     if (list === null || !open || query) return;
@@ -280,6 +293,7 @@ export function RoomChatPanel({
       setMessage('');
       setPasteNotice('');
       showLatestMessages();
+      composerRef.current?.focus();
     }
   };
 
@@ -307,21 +321,33 @@ export function RoomChatPanel({
               setSearch(event.target.value);
               setSelectedMatch(null);
             }}
+            onCompositionStart={() => {
+              searchCompositionActive.current = true;
+            }}
+            onCompositionEnd={() => {
+              searchCompositionActive.current = false;
+            }}
             onKeyDown={(event) => {
-              if (event.key !== 'Enter') return;
+              if (
+                searchCompositionActive.current ||
+                event.nativeEvent.isComposing ||
+                event.keyCode === 229
+              )
+                return;
+              if (event.key !== 'Enter' && event.key !== 'Escape') return;
               event.preventDefault();
-              if (!event.nativeEvent.isComposing && event.keyCode !== 229)
-                moveMatch(event.shiftKey ? -1 : 1);
+              if (event.key === 'Escape') closeSearch();
+              else moveMatch(event.shiftKey ? -1 : 1);
             }}
           />
           {query ? (
             <div className="chat-search__navigation">
               <span role="status">
-                {matches.length ? `${matchIndex + 1} / ${matches.length}개` : '검색 결과 없음'}
+                {matchKeys.length ? `${matchIndex + 1} / ${matchKeys.length}개` : '검색 결과 없음'}
               </span>
               <button
                 type="button"
-                disabled={!matches.length}
+                disabled={!matchKeys.length}
                 onClick={() => moveMatch(-1)}
                 aria-label="이전 검색 결과"
               >
@@ -329,13 +355,13 @@ export function RoomChatPanel({
               </button>
               <button
                 type="button"
-                disabled={!matches.length}
+                disabled={!matchKeys.length}
                 onClick={() => moveMatch(1)}
                 aria-label="다음 검색 결과"
               >
                 다음
               </button>
-              <button type="button" onClick={showLatestMessages}>
+              <button type="button" onClick={closeSearch}>
                 검색 닫기
               </button>
             </div>
@@ -360,7 +386,7 @@ export function RoomChatPanel({
                 key={`${chatMessage.senderId}:${chatMessage.id}`}
                 className={`chat-message${chatMessage.isLocal ? ' chat-message--mine' : ''}`}
                 data-delivery-state={chatMessage.deliveryState}
-                data-search-match={matchKeys.has(messageKey(chatMessage)) || undefined}
+                data-search-match={searchMatches.has(messageKey(chatMessage)) || undefined}
                 data-search-current={currentMatchKey === messageKey(chatMessage) || undefined}
                 ref={(element) => {
                   const key = messageKey(chatMessage);
@@ -375,7 +401,12 @@ export function RoomChatPanel({
                     deliveryState={chatMessage.deliveryState}
                   />
                 </header>
-                <ChatMessageContent text={chatMessage.text} />
+                <ChatMessageContent
+                  text={chatMessage.text}
+                  matches={
+                    currentMatchKey === messageKey(chatMessage) ? currentHighlights : undefined
+                  }
+                />
                 {chatMessage.recipients?.some((recipient) => recipient.state !== 'acknowledged') ? (
                   <div className="chat-message__recipients">
                     {chatMessage.recipients.map((recipient) => (

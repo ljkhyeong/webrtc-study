@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatMessageContent } from './ChatMessageContent';
+import { findChatSearchMatches, normalizeChatSearch } from '../lib/chat-search';
 
 describe('채팅 링크와 복사', () => {
   let root: Root;
@@ -20,7 +21,11 @@ describe('채팅 링크와 복사', () => {
   it('HTTP와 HTTPS만 새 탭 링크로 표시하고 HTML과 다른 주소는 일반 텍스트로 유지한다', () => {
     const text =
       '자료 https://example.com/guide?a=1&b=2, HTTP://example.org/path.\n<script>alert(1)</script> javascript:alert(1) data:text/html,<b> ftp://example.com/a mailto:study@example.com example.com';
-    act(() => root.render(<ChatMessageContent text={text} />));
+    act(() =>
+      root.render(
+        <ChatMessageContent text={text} matches={findChatSearchMatches(text, '<script>')} />,
+      ),
+    );
     const links = [...container.querySelectorAll('a')];
     expect(links.map((link) => link.href)).toEqual([
       'https://example.com/guide?a=1&b=2',
@@ -31,14 +36,30 @@ describe('채팅 링크와 복사', () => {
       expect(link.rel).toBe('noopener noreferrer');
     }
     expect(container.querySelector('script, b')).toBeNull();
+    expect(container.querySelector('mark')?.textContent).toBe('<script>');
     expect(container.querySelector('p')?.textContent).toBe(text);
   });
 
-  it('표시된 링크나 줄바꿈을 바꾸지 않고 메시지 원문을 복사한다', async () => {
+  it('검색어가 일반 문구와 링크에 걸쳐 있어도 주소·줄바꿈·복사 원문을 유지한다', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText } });
     const text = '함께 볼 자료\nhttps://example.com/문서?q=스터디';
-    act(() => root.render(<ChatMessageContent text={text} />));
+    const query = '자료\nhttps://example.com/문서';
+    act(() =>
+      root.render(
+        <ChatMessageContent
+          text={text}
+          matches={findChatSearchMatches(text, normalizeChatSearch(query))}
+        />,
+      ),
+    );
+    expect([...container.querySelectorAll('mark')].map((mark) => mark.textContent).join('')).toBe(
+      query,
+    );
+    expect(container.querySelector('a')?.getAttribute('href')).toBe(
+      'https://example.com/문서?q=스터디',
+    );
+    expect(container.querySelector('p')?.textContent).toBe(text);
     expect(writeText).not.toHaveBeenCalled();
     await act(async () => container.querySelector('button')!.click());
     expect(writeText).toHaveBeenCalledWith(text);
