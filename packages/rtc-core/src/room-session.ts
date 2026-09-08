@@ -20,6 +20,7 @@ import {
   type PeerConnectionDiagnostics,
 } from './connection-diagnostics.js';
 import { LocalInputLifecycle } from './local-input-lifecycle.js';
+import type { LocalMediaLifecycleOptions } from './local-media-lifecycle.js';
 import {
   PeerConnectionLifecycle,
   type PeerMediaSenderUpdate,
@@ -225,16 +226,7 @@ interface OutboundChatTargets {
   readonly recipientStates: Map<string, ChatRecipientDeliveryState>;
 }
 
-interface ResolvedRecoveryOptions {
-  readonly signalingConnectTimeoutMs: number;
-  readonly roomJoinTimeoutMs: number;
-  readonly peerConnectionTimeoutMs: number;
-  readonly maxReconnectAttempts: number;
-  readonly reconnectInitialDelayMs: number;
-  readonly reconnectMaxDelayMs: number;
-  readonly peerDisconnectedGraceMs: number;
-  readonly peerRecoveryTimeoutMs: number;
-}
+type ResolvedRecoveryOptions = Required<RoomSessionRecoveryOptions>;
 
 // 일반적인 ICE 후보 수집량은 이 값보다 훨씬 적다. 초과 시 최신 후보를 유지한다.
 const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
@@ -447,15 +439,9 @@ export class RoomSession {
     this.#options = { ...options, roomId, displayName };
     this.#recoveryOptions = resolveRecoveryOptions(options.recovery);
     this.#chat = new RoomChatLedger(options.maxChatMessages ?? 200, () => this.#monotonicNow());
-    const onLocalMediaChanged = () => {
-      this.#syncLocalParticipantMedia();
-      this.#broadcastMediaState();
-      this.#emit();
-    };
-    this.#screenShare = new ScreenShareLifecycle({
+    const mediaLifecycleOptions: LocalMediaLifecycleOptions = {
       isRoomActive: () => !this.#disposed && this.#status === 'active',
       isDisposed: () => this.#disposed,
-      getMediaDevices: () => this.#getMediaDevices(),
       createMediaStream: () => (this.#options.mediaStreamFactory ?? (() => new MediaStream()))(),
       getLocalStream: () => this.#localStream,
       setLocalStream: (stream) => {
@@ -468,32 +454,28 @@ export class RoomSession {
       recoverPeersAfterSenderFailure: (failures, phase) =>
         this.#recoverPeersAfterSenderFailure(failures, phase),
       requestLocalRenegotiation: (peer) => this.#requestLocalRenegotiation(peer),
-      onStateChanged: onLocalMediaChanged,
+      onStateChanged: () => {
+        this.#syncLocalParticipantMedia();
+        this.#broadcastMediaState();
+        this.#emit();
+      },
+    };
+    this.#screenShare = new ScreenShareLifecycle({
+      ...mediaLifecycleOptions,
+      getMediaDevices: () => this.#getMediaDevices(),
     });
     this.#localInput = new LocalInputLifecycle(
       {
-        isRoomActive: () => !this.#disposed && this.#status === 'active',
-        isDisposed: () => this.#disposed,
+        ...mediaLifecycleOptions,
         canSelectInput: (kind) =>
           !this.#screenShare.isTransitioning() &&
           (kind !== 'video' || !this.#screenShare.isSharing()),
         isVideoToggleBlocked: () => this.#screenShare.hasActiveTrack(),
         getMediaDevices: () => this.#getMediaDevices(),
         getInputConstraints: (kind) => this.#options.mediaConstraints?.[kind],
-        createMediaStream: () => (this.#options.mediaStreamFactory ?? (() => new MediaStream()))(),
-        getLocalStream: () => this.#localStream,
-        setLocalStream: (stream) => {
-          this.#localStream = stream;
-        },
-        getPeers: () => this.#peers.values(),
-        isCurrentPeer: (peer) => this.#isCurrentPeer(peer),
-        replacePeerTrack: (peer, sender, track) => this.#replacePeerTrack(peer, sender, track),
-        rollbackSenderUpdates: (updates) => this.#rollbackSenderUpdates(updates),
         recoverPeersAfterSenderFailure: (failures, phase) =>
           this.#recoverPeersAfterSenderFailure(failures, phase, 'media-device-sender-recovery'),
-        requestLocalRenegotiation: (peer) => this.#requestLocalRenegotiation(peer),
         onInputTrackEnded: (track) => this.#screenShare.removeRetainedCameraTrack(track),
-        onStateChanged: onLocalMediaChanged,
       },
       options.initialInputEnabled,
     );

@@ -1,37 +1,14 @@
-import type {
-  PeerConnectionLifecycle,
-  PeerMediaSenderUpdate,
-} from './peer-connection-lifecycle.js';
+import type { LocalMediaLifecycleOptions } from './local-media-lifecycle.js';
+import type { PeerMediaSenderUpdate } from './peer-connection-lifecycle.js';
 
 type InputKind = 'audio' | 'video';
 
-interface LocalInputLifecycleOptions {
-  readonly isRoomActive: () => boolean;
-  readonly isDisposed: () => boolean;
+interface LocalInputLifecycleOptions extends LocalMediaLifecycleOptions {
   readonly canSelectInput: (kind: InputKind) => boolean;
   readonly isVideoToggleBlocked: () => boolean;
   readonly getMediaDevices: () => Pick<MediaDevices, 'getUserMedia'> | undefined;
   readonly getInputConstraints: (kind: InputKind) => boolean | MediaTrackConstraints | undefined;
-  readonly createMediaStream: () => MediaStream;
-  readonly getLocalStream: () => MediaStream | null;
-  readonly setLocalStream: (stream: MediaStream | null) => void;
-  readonly getPeers: () => Iterable<PeerConnectionLifecycle>;
-  readonly isCurrentPeer: (peer: PeerConnectionLifecycle) => boolean;
-  readonly replacePeerTrack: (
-    peer: PeerConnectionLifecycle,
-    sender: RTCRtpSender,
-    track: MediaStreamTrack | null,
-  ) => Promise<boolean>;
-  readonly rollbackSenderUpdates: (
-    updates: readonly PeerMediaSenderUpdate[],
-  ) => Promise<Map<PeerConnectionLifecycle, unknown>>;
-  readonly recoverPeersAfterSenderFailure: (
-    failures: ReadonlyMap<PeerConnectionLifecycle, unknown>,
-    phase: string,
-  ) => void;
-  readonly requestLocalRenegotiation: (peer: PeerConnectionLifecycle) => void;
   readonly onInputTrackEnded: (track: MediaStreamTrack) => void;
-  readonly onStateChanged: () => void;
 }
 
 /** 마이크·카메라 트랙과 통화 중 입력 장치 교체 상태를 소유한다. */

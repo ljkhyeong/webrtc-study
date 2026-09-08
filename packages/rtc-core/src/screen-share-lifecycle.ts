@@ -1,3 +1,4 @@
+import type { LocalMediaLifecycleOptions } from './local-media-lifecycle.js';
 import type {
   PeerConnectionLifecycle,
   PeerMediaSenderUpdate,
@@ -7,29 +8,8 @@ export type ScreenShareQuality = 'standard' | 'text';
 
 export type ScreenShareStartResult = 'started' | 'recovering' | 'cancelled' | 'failed';
 
-interface ScreenShareLifecycleOptions {
-  readonly isRoomActive: () => boolean;
-  readonly isDisposed: () => boolean;
+interface ScreenShareLifecycleOptions extends LocalMediaLifecycleOptions {
   readonly getMediaDevices: () => Partial<Pick<MediaDevices, 'getDisplayMedia'>> | undefined;
-  readonly createMediaStream: () => MediaStream;
-  readonly getLocalStream: () => MediaStream | null;
-  readonly setLocalStream: (stream: MediaStream | null) => void;
-  readonly getPeers: () => Iterable<PeerConnectionLifecycle>;
-  readonly isCurrentPeer: (peer: PeerConnectionLifecycle) => boolean;
-  readonly replacePeerTrack: (
-    peer: PeerConnectionLifecycle,
-    sender: RTCRtpSender,
-    track: MediaStreamTrack | null,
-  ) => Promise<boolean>;
-  readonly rollbackSenderUpdates: (
-    updates: readonly PeerMediaSenderUpdate[],
-  ) => Promise<Map<PeerConnectionLifecycle, unknown>>;
-  readonly recoverPeersAfterSenderFailure: (
-    failures: ReadonlyMap<PeerConnectionLifecycle, unknown>,
-    phase: string,
-  ) => void;
-  readonly requestLocalRenegotiation: (peer: PeerConnectionLifecycle) => void;
-  readonly onStateChanged: () => void;
 }
 
 const SCREEN_SHARE_CONSTRAINTS: Record<ScreenShareQuality, DisplayMediaStreamOptions> = {
