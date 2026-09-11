@@ -278,6 +278,45 @@ describe('RoomView connection state', () => {
     expect(markup).toContain('aria-pressed="true"');
   });
 
+  it.each([
+    {
+      pending: 'starting' as const,
+      screenSharing: false,
+      buttonLabel: '화면 공유 준비 중',
+      buttonText: '준비 중',
+      cameraLabel: '화면 공유를 준비하는 동안 카메라를 변경할 수 없습니다.',
+    },
+    {
+      pending: 'stopping' as const,
+      screenSharing: true,
+      buttonLabel: '화면 공유 중지 중',
+      buttonText: '중지 중',
+      cameraLabel: '화면 공유를 중지하는 동안 카메라를 변경할 수 없습니다.',
+    },
+  ])('$pending 화면 공유 작업 중 조작을 잠근다', (state) => {
+    const document = new DOMParser().parseFromString(
+      renderRoom({
+        status: 'active',
+        videoAvailable: true,
+        videoEnabled: true,
+        screenShareAvailable: true,
+        screenSharing: state.screenSharing,
+        screenSharePending: state.pending,
+      }),
+      'text/html',
+    );
+    const screenShareButton = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="' + state.buttonLabel + '"]',
+    );
+    const cameraButton = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="' + state.cameraLabel + '"]',
+    );
+
+    expect(screenShareButton?.disabled).toBe(true);
+    expect(screenShareButton?.textContent).toContain(state.buttonText);
+    expect(cameraButton?.disabled).toBe(true);
+  });
+
   it('renders the trusted moderation notice alongside other non-terminal notices', () => {
     const markup = renderRoom({
       status: 'active',

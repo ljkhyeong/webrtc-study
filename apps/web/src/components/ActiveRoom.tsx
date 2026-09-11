@@ -84,6 +84,9 @@ export function ActiveRoom({
   const [turnRefreshWarning, setTurnRefreshWarning] = useState('');
   const [qualityVisible, setQualityVisible] = useState(false);
   const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
+  const [screenSharePending, setScreenSharePending] = useState<'starting' | 'stopping' | null>(
+    null,
+  );
   const [audioOutput, setAudioOutput] = useState({ deviceId: '' });
   const outputDeviceId = audioOutput.deviceId;
   const [outputWarning, setOutputWarning] = useState('');
@@ -249,6 +252,7 @@ export function ActiveRoom({
     setActionError('');
     setParticipationGrantRefreshWarning('');
     setTurnRefreshWarning('');
+    setScreenSharePending(null);
     void startSession();
 
     return () => {
@@ -449,6 +453,7 @@ export function ActiveRoom({
         videoEnabled={localMedia.videoEnabled}
         screenShareAvailable={snapshot?.screenShareAvailable ?? false}
         screenSharing={snapshot?.screenSharing ?? false}
+        screenSharePending={screenSharePending}
         canModerateMedia={snapshot?.canModerateMedia ?? false}
         moderationNotice={
           snapshot?.lastModerationNotice?.kind === 'audio'
@@ -490,22 +495,15 @@ export function ActiveRoom({
           setActionWarning('');
           setActionError('');
           const wasSharing = snapshot?.screenSharing === true;
-          if (wasSharing) {
-            void session.stopScreenShare().catch(() => {
-              if (sessionRef.current === session) {
-                setActionWarning('');
-                setActionError('화면 공유를 중지하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-              }
-            });
-            return;
-          }
-          void session
-            .startScreenShare()
-            .then((result) => {
-              if (sessionRef.current !== session) {
+          setScreenSharePending(wasSharing ? 'stopping' : 'starting');
+          void (async () => {
+            try {
+              if (wasSharing) {
+                await session.stopScreenShare();
                 return;
               }
-              const notice = screenShareStartNotice(result);
+              const notice = screenShareStartNotice(await session.startScreenShare());
+              if (sessionRef.current !== session) return;
               if (notice?.tone === 'warning') {
                 setActionError('');
                 setActionWarning(notice.message);
@@ -513,13 +511,19 @@ export function ActiveRoom({
                 setActionWarning('');
                 setActionError(notice.message);
               }
-            })
-            .catch(() => {
+            } catch {
               if (sessionRef.current === session) {
                 setActionWarning('');
-                setActionError('화면 공유를 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                setActionError(
+                  wasSharing
+                    ? '화면 공유를 중지하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+                    : '화면 공유를 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+                );
               }
-            });
+            } finally {
+              if (sessionRef.current === session) setScreenSharePending(null);
+            }
+          })();
         }}
         onDisableParticipantAudio={(peerId) => {
           if (!sessionRef.current?.disableParticipantMedia(peerId, 'audio')) {

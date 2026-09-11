@@ -71,6 +71,7 @@ interface RoomViewProps {
   videoEnabled: boolean;
   screenShareAvailable: boolean;
   screenSharing: boolean;
+  screenSharePending?: 'starting' | 'stopping' | null | undefined;
   canModerateMedia: boolean;
   moderationNotice?: string | undefined;
   peerRecoveryMessage?: string | undefined;
@@ -115,6 +116,7 @@ export function RoomView({
   videoEnabled,
   screenShareAvailable,
   screenSharing,
+  screenSharePending = null,
   canModerateMedia,
   moderationNotice,
   peerRecoveryMessage,
@@ -570,17 +572,21 @@ export function RoomView({
         <button
           className={`control-button${videoEnabled ? '' : ' control-button--off'}`}
           type="button"
-          disabled={screenSharing || (!videoAvailable && !isActive)}
+          disabled={screenSharePending !== null || screenSharing || (!videoAvailable && !isActive)}
           aria-label={
-            screenSharing
-              ? '화면 공유 중에는 카메라를 변경할 수 없습니다.'
-              : !videoAvailable
-                ? isActive
-                  ? '카메라 장치 다시 선택'
-                  : '사용 가능한 카메라 없음'
-                : videoEnabled
-                  ? '카메라 끄기'
-                  : '카메라 켜기'
+            screenSharePending === 'starting'
+              ? '화면 공유를 준비하는 동안 카메라를 변경할 수 없습니다.'
+              : screenSharePending === 'stopping'
+                ? '화면 공유를 중지하는 동안 카메라를 변경할 수 없습니다.'
+                : screenSharing
+                  ? '화면 공유 중에는 카메라를 변경할 수 없습니다.'
+                  : !videoAvailable
+                    ? isActive
+                      ? '카메라 장치 다시 선택'
+                      : '사용 가능한 카메라 없음'
+                    : videoEnabled
+                      ? '카메라 끄기'
+                      : '카메라 켜기'
           }
           onClick={videoAvailable ? onToggleVideo : onSelectDevices}
           aria-keyshortcuts="Alt+Shift+C"
@@ -592,19 +598,31 @@ export function RoomView({
         <button
           className={`control-button${screenSharing ? ' control-button--active' : ''}`}
           type="button"
-          disabled={!screenShareAvailable || !isActive}
+          disabled={screenSharePending !== null || !screenShareAvailable || !isActive}
           aria-label={
-            !screenShareAvailable
-              ? '이 브라우저는 화면 공유를 지원하지 않습니다.'
-              : screenSharing
-                ? '화면 공유 중지'
-                : '화면 공유 시작'
+            screenSharePending === 'starting'
+              ? '화면 공유 준비 중'
+              : screenSharePending === 'stopping'
+                ? '화면 공유 중지 중'
+                : !screenShareAvailable
+                  ? '이 브라우저는 화면 공유를 지원하지 않습니다.'
+                  : screenSharing
+                    ? '화면 공유 중지'
+                    : '화면 공유 시작'
           }
           aria-pressed={screenSharing}
           onClick={onToggleScreenShare}
         >
           <ScreenShareIcon />
-          <span>{screenSharing ? '공유 중지' : '화면 공유'}</span>
+          <span>
+            {screenSharePending === 'starting'
+              ? '준비 중'
+              : screenSharePending === 'stopping'
+                ? '중지 중'
+                : screenSharing
+                  ? '공유 중지'
+                  : '화면 공유'}
+          </span>
         </button>
         <button
           className={`control-button${handRaised ? ' control-button--active' : ''}`}
