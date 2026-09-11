@@ -15,7 +15,7 @@ export function InviteDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [qrCode, setQrCode] = useState('');
   const [qrFailed, setQrFailed] = useState(false);
-  const [shareFailed, setShareFailed] = useState(false);
+  const [shareState, setShareState] = useState<'idle' | 'sharing' | 'success' | 'error'>('idle');
 
   useEffect(() => {
     const dialog = dialogRef.current!;
@@ -41,11 +41,14 @@ export function InviteDialog({
   }, [inviteUrl]);
 
   const handleShare = async () => {
-    setShareFailed(false);
+    setShareState('sharing');
     try {
       await navigator.share({ title: 'ROUND 스터디룸', url: inviteUrl });
+      setShareState('success');
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) setShareFailed(true);
+      setShareState(
+        error instanceof DOMException && error.name === 'AbortError' ? 'idle' : 'error',
+      );
     }
   };
 
@@ -89,15 +92,19 @@ export function InviteDialog({
         <button
           type="button"
           onClick={() => {
-            setShareFailed(false);
+            setShareState('idle');
             onCopy();
           }}
         >
           {copyStatus === 'success' ? '링크 복사됨' : '링크 복사'}
         </button>
         {typeof navigator.share === 'function' ? (
-          <button type="button" onClick={handleShare}>
-            공유하기
+          <button type="button" disabled={shareState === 'sharing'} onClick={handleShare}>
+            {shareState === 'sharing'
+              ? '공유 중'
+              : shareState === 'success'
+                ? '공유됨'
+                : '공유하기'}
           </button>
         ) : null}
       </div>
@@ -105,7 +112,10 @@ export function InviteDialog({
       {copyStatus === 'error' ? (
         <p role="alert">복사하지 못했습니다. 위 주소를 직접 선택해 복사해 주세요.</p>
       ) : null}
-      {shareFailed ? <p role="alert">공유 메뉴를 열지 못했습니다. 링크를 복사해 주세요.</p> : null}
+      {shareState === 'success' ? <p role="status">초대 링크를 공유했습니다.</p> : null}
+      {shareState === 'error' ? (
+        <p role="alert">공유 메뉴를 열지 못했습니다. 링크를 복사해 주세요.</p>
+      ) : null}
     </dialog>
   );
 }

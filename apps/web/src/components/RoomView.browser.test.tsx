@@ -433,16 +433,30 @@ describe('RoomView 브라우저 동작', () => {
 
   it('기기 공유 메뉴에 인증 정보와 검색 조건을 제외한 초대 주소만 전달한다', async () => {
     window.history.replaceState({}, '', '/room/abcd-efgh-jkmp?token=private#private');
-    const share = vi.fn().mockResolvedValue(undefined);
+    let finishShare!: () => void;
+    const sharing = new Promise<void>((resolve) => {
+      finishShare = resolve;
+    });
+    const share = vi.fn().mockReturnValue(sharing);
     Object.defineProperty(navigator, 'share', { configurable: true, value: share });
     const dialog = await openInviteDialog();
-    await act(async () => {
-      dialog.querySelector<HTMLButtonElement>('.invite-dialog__actions button:last-child')!.click();
-    });
+    const shareButton = dialog.querySelector<HTMLButtonElement>(
+      '.invite-dialog__actions button:last-child',
+    )!;
+    act(() => shareButton.click());
     expect(share).toHaveBeenCalledExactlyOnceWith({
       title: 'ROUND 스터디룸',
       url: `${window.location.origin}/room/abcd-efgh-jkmp`,
     });
+    expect(shareButton.disabled).toBe(true);
+    expect(shareButton.textContent).toBe('공유 중');
+    act(() => shareButton.click());
+    expect(share).toHaveBeenCalledTimes(1);
+
+    await act(async () => finishShare());
+    expect(shareButton.disabled).toBe(false);
+    expect(shareButton.textContent).toBe('공유됨');
+    expect(dialog.querySelector('[role="status"]')?.textContent).toBe('초대 링크를 공유했습니다.');
     expect(dialog.querySelector('[role="alert"]')).toBeNull();
   });
 
