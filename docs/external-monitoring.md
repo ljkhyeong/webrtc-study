@@ -11,26 +11,26 @@ Grafana Cloud의 **Testing & synthetics → Synthetics**에서 HTTP 검사를 �
 
 | 설정                                   | 값                                  |
 | -------------------------------------- | ----------------------------------- |
-| Job name                               | `round-public-https`                |
-| Target                                 | `https://실제-ROUND-도메인/healthz` |
-| Probe locations                        | 서로 다른 공개 검사 위치 두 곳      |
-| Frequency / Timeout                    | 60초 / 10초                         |
-| Method / Valid status codes            | GET / 200                           |
+| 작업 이름                              | `round-public-https`                |
+| 검사 주소                              | `https://실제-ROUND-도메인/healthz` |
+| 검사 위치                              | 서로 다른 공개 검사 위치 두 곳      |
+| 주기 / 제한 시간                       | 60초 / 10초                         |
+| 요청 방식 / 정상 상태 코드             | GET / 200                           |
 | 인증·요청 본문                         | 없음                                |
 | 인증서 검증 비활성화 / 리다이렉트 추적 | 모두 끔                             |
 
-Test로 두 위치의 성공을 확인한 뒤 Enabled로 저장합니다. `/healthz`는 공개 경로이므로
+시험 실행으로 두 위치의 성공을 확인한 뒤 활성 상태로 저장합니다. `/healthz`는 공개 경로이므로
 공유 접근 비밀번호나 BATON 참여권을 제공하지 않습니다. 이 검사는 HTTPS 접속 가능 여부만 확인하며
 로그인·WebSocket·실제 TURN 통화 검사를 대신하지 않습니다.
 
 검사를 켠 뒤 `ops/observability/round-external-alerts.yml`을 Grafana Alerting에서 Prometheus
 규칙으로 가져오고 Synthetic Monitoring 지표가 저장되는 데이터 소스를 선택합니다. 모든 위치의
 3분 연속 실패, 10분간 검사 결과 누락, 14일 이내 인증서 만료를 감지합니다. 데이터 소스 조회 실패나
-`No data`도 알림을 보내도록 설정하고 운영 연락처(Contact point)에 연결해 테스트합니다.
+데이터가 없어도 알림을 보내도록 설정하고 운영 연락처에 연결해 시험합니다.
 
-서버 시간 기준 03:15~03:45 유지보수 창에는 `RoundPublicHttpsUnavailable` 알림만 mute timing으로
-제외합니다. 백업 실패·누락 알림까지 끄면 복구 실패를 놓칠 수 있습니다. Grafana의 mute timing
-시간대는 서버의 `timedatectl` 출력과 맞춥니다. 별도 수동 유지보수는 종료 시간이 있는 silence로
+서버 시간 기준 03:15~03:45 유지보수 창에는 `RoundPublicHttpsUnavailable` 알림만 음소거 일정으로
+제외합니다. 백업 실패·누락 알림까지 끄면 복구 실패를 놓칠 수 있습니다. Grafana의 음소거 일정
+시간대는 서버의 `timedatectl` 출력과 맞춥니다. 별도 수동 유지보수는 종료 시간이 있는 일시 음소거로
 처리하고 종료 후 외부 검사 성공을 확인합니다.
 
 ## 백업 성공·실패·예약 누락

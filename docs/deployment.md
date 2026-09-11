@@ -131,9 +131,9 @@ Grafana Alloy는 시그널링 서버의 비공개 `/actuator/prometheus`를 30�
 Metrics로 원격 전송합니다. Alloy 관리 UI와 시그널링 관리 포트는 서버 외부에 공개하지
 않습니다. Alloy의 WAL은 `alloy_data` 볼륨에 저장해 일시적인 전송 장애가 복구되면 다시 보냅니다.
 
-Grafana Cloud에서 stack의 Prometheus remote write URL과 사용자 ID를 확인하고, 해당 stack에
-`metrics:write`만 허용한 access policy token을 만듭니다. `/etc/round/production.env`에 다음 값을
-넣고 profile을 활성화합니다.
+Grafana Cloud에서 스택의 Prometheus 원격 전송 URL과 사용자 ID를 확인하고, 해당 스택에
+`metrics:write`만 허용한 접근 정책 토큰을 만듭니다. `/etc/round/production.env`에 다음 값을
+넣고 프로필을 활성화합니다.
 
 ```dotenv
 COMPOSE_PROFILES=observability
@@ -148,17 +148,17 @@ preflight와 정식 배포를 실행한 뒤 Grafana Explore에서 다음 식이 
 up{job="round-signaling", environment="production"}
 ```
 
-Grafana Alerting의 rule 가져오기에서
-`ops/observability/round-alerts.yml`을 Prometheus 규칙으로 가져오고 Grafana Cloud Metrics data
-source를 선택합니다. `RoundSignalingUnavailable`은 Alloy 자체가 멈춰 시계열이 사라지는 경우도
-감지해야 하므로 No data 상태를 Alerting으로 설정합니다. 나머지 규칙은 다음 상황만 다룹니다.
+Grafana Alerting의 규칙 가져오기에서
+`ops/observability/round-alerts.yml`을 Prometheus 규칙으로 가져오고 Grafana Cloud Metrics 데이터
+소스를 선택합니다. `RoundSignalingUnavailable`은 Alloy 자체가 멈춰 시계열이 사라지는 경우도
+감지해야 하므로 데이터 없음 상태도 경보로 설정합니다. 나머지 규칙은 다음 상황만 다룹니다.
 
 - Cloudflare TURN 공급자 오류
 - BATON JWK 원본 장애
 - 전체 프레임 한도, 송신 대기열, 연결 수용 한도 도달
 
-마지막으로 운영 연락처를 contact point에 연결하고 테스트 알림을 보냅니다. token, remote write
-사용자 ID와 URL은 로그나 저장소에 기록하지 않으며 token은 `metrics:write` 외 권한을 부여하지
+마지막으로 운영 연락처를 연결하고 시험 알림을 보냅니다. 토큰, 원격 전송
+사용자 ID와 URL은 로그나 저장소에 기록하지 않으며 토큰은 `metrics:write` 외 권한을 부여하지
 않습니다.
 
 공인 HTTPS·TLS 인증서 장애와 백업 실패·예약 누락은 내부 지표만으로 확인할 수 없습니다.
@@ -168,7 +168,7 @@ source를 선택합니다. `RoundSignalingUnavailable`은 Alloy 자체가 멈춰
 ## 로컬과 macOS 파일럿
 
 로컬 개발은 `.env.example`의 `TURN_PROVIDER=disabled`를 기본으로 사용합니다. 실제 relay가
-필요할 때만 개인 Cloudflare key를 로컬 비공개 `.env`에 넣습니다.
+필요할 때만 개인 Cloudflare 키를 로컬 비공개 `.env`에 넣습니다.
 
 macOS 파일럿은 다음 override로 edge 포트만 바꿉니다. TURN 포트나 별도 Docker network는
 게시하지 않습니다.
@@ -226,7 +226,7 @@ docker compose --env-file /etc/round/production.env ps
 
 ## Caddy 상태 백업과 복원
 
-Caddy의 인증서 발급·갱신 상태(ACME)는 Docker 볼륨(named volume)에 저장됩니다. 백업 도구가 age로 암호화한
+Caddy의 인증서 발급·갱신 상태(ACME)는 Docker 명명 볼륨에 저장됩니다. 백업 도구가 age로 암호화한
 로컬 백업과 체크섬을 만들고, restic이 이를 Cloudflare R2의 암호화 저장소에 보관합니다.
 R2는 S3 호환 API 주소인 `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`을 사용합니다.
 
@@ -249,7 +249,7 @@ test "$(
 sudo install -m 0644 round-backup-recipients.txt /etc/round/backup-recipients.txt
 ```
 
-`round-backup-identity.txt`는 운영 host에 상시 두지 않고 별도 비밀 저장소에 보관합니다.
+`round-backup-identity.txt`는 운영 서버에 상시 두지 않고 별도 비밀 저장소에 보관합니다.
 
 먼저 restic을 설치하고 백업 전용 R2 버킷과 객체 읽기·쓰기 키를 만듭니다. 환경 설정 파일과
 저장소 비밀번호 파일은 root만 접근할 수 있도록 설치합니다. 비밀번호를 잃으면 백업을 복구할 수
@@ -265,8 +265,8 @@ systemd-run --wait --pipe \
   /usr/bin/restic init
 ```
 
-`restic-r2.env`의 `ACCOUNT_ID`, `BUCKET_NAME`, access key ID와 secret access key를 실제 값으로
-교체한 뒤 초기화합니다. bucket 생성 권한은 필요하지 않으며 해당 bucket의 object 읽기·쓰기
+`restic-r2.env`의 `ACCOUNT_ID`, `BUCKET_NAME`, 접근 키 ID와 비밀 접근 키를 실제 값으로
+교체한 뒤 초기화합니다. 버킷 생성 권한은 필요하지 않으며 해당 버킷의 객체 읽기·쓰기
 범위만 부여합니다.
 
 systemd 단위를 설치하고 매일 백업과 매주 보존·무결성 검사를 켭니다.
@@ -329,7 +329,7 @@ timeout --verbose --kill-after=5m 20m ops/linux/backup-caddy.sh \
   /etc/round/production.env
 ```
 
-R2 snapshot 확인과 테스트 복원:
+R2 스냅샷 확인과 테스트 복원:
 
 ```bash
 systemd-run --wait --pipe \

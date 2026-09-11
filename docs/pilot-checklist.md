@@ -18,10 +18,10 @@
 ## 릴리스 후보
 
 - [ ] 릴리스 커밋은 변경할 수 없으며 태그가 지정되어 있습니다.
-- [ ] GitHub artifact attestation 제공 범위를 확인했습니다. 저장소가 공개이거나, 비공개 또는
-      internal 저장소라면 GitHub Enterprise Cloud 소유 구조여야 합니다. 현재와 같은 비공개 개인
+- [ ] GitHub 빌드 출처 증명(artifact attestation) 제공 범위를 확인했습니다. 저장소가 공개이거나,
+      비공개 또는 내부 저장소라면 GitHub Enterprise Cloud 소유 구조여야 합니다. 현재와 같은 비공개 개인
       저장소에서는 이 조건을 충족하기 전 `release-images`를 실행하지 않습니다.
-- [ ] 기본 브랜치 HEAD의 annotated tag와 동일 SHA의 CI 성공을 확인한 뒤 `release-images`
+- [ ] 기본 브랜치 HEAD에 `git tag -a`로 만든 태그가 있고 동일 SHA의 CI가 성공했는지 확인한 뒤 `release-images`
       `repository_dispatch` 조정자가 통과하고 일반 edge, TURN 중계 전용 edge, 시그널링, BATON 웹
       manifest digest를 기록합니다.
 - [ ] 미커밋 변경이 없는 소스에서 `npm run check`가 통과합니다.
