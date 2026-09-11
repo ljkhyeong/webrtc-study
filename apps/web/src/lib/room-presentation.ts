@@ -41,7 +41,7 @@ const SIGNALING_ISSUE_MESSAGES = {
   },
   NOT_IN_ROOM: {
     error: '서버가 이 브라우저의 방 입장 상태를 확인하지 못했습니다. 방에 다시 입장해 주세요.',
-    warning: '서버의 방 연결 상태가 어긋나 연결을 다시 설정합니다.',
+    warning: '입장 정보가 일치하지 않아 연결을 다시 설정합니다.',
   },
   ROOM_MISMATCH: {
     error: '초대받은 방과 서버의 방 정보가 일치하지 않습니다. 새 초대 링크를 받아 주세요.',
@@ -118,8 +118,9 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
     warning: '스터디 서버와의 연결이 끊겨 다시 연결하고 있습니다.',
   },
   'connection-superseded': {
-    error: '같은 계정으로 다시 입장해 현재 연결이 종료되었습니다. 계속하려면 다시 입장해 주세요.',
-    warning: '같은 계정으로 다시 입장해 현재 연결이 종료되었습니다.',
+    error:
+      '같은 계정의 새 접속으로 현재 연결이 종료되었습니다. 계속하려면 방에 다시 입장해 주세요.',
+    warning: '같은 계정의 새 접속으로 현재 연결이 종료되었습니다.',
   },
   'invalid-signal-message': {
     error: '스터디 서버와 메시지 형식이 맞지 않습니다. 페이지를 새로고침한 뒤 다시 입장해 주세요.',
@@ -155,12 +156,12 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   },
   'peer-ice-restart-failed': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
-    warning: '일부 참가자의 네트워크 경로 복구에 실패해 연결을 새로 만들고 있습니다.',
+    warning: '일부 참가자와 연결되지 않아 새 연결을 만들고 있습니다.',
   },
   'screen-share-sender-recovery': {
     error: '일부 참가자에게 화면 공유를 전송하지 못했습니다. 방에 다시 입장해 주세요.',
     warning:
-      '일부 참가자와 화면 공유 전환에 실패해 영상 연결을 자동으로 복구하고 있습니다. 현재 통화는 유지됩니다.',
+      '화면 공유를 전환하지 못해 일부 참가자와 다시 연결하고 있습니다. 현재 통화는 유지됩니다.',
   },
   'media-device-sender-recovery': {
     error: '장치 교체 후 일부 참가자와 연결하지 못했습니다. 방에 다시 입장해 주세요.',
@@ -180,8 +181,7 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   },
   'data-channel-rate-limit': {
     error: '채팅 연결에서 너무 많은 데이터가 전송되었습니다. 방에 다시 입장해 주세요.',
-    warning:
-      '한 참가자의 채팅 수신량이 한도를 넘어 일부 데이터를 처리하지 않았습니다. 통화는 유지됩니다.',
+    warning: '한 참가자가 너무 많은 채팅 데이터를 보내 일부를 받지 않았습니다. 통화는 유지됩니다.',
   },
   'peer-negotiation-failed': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
@@ -208,7 +208,7 @@ const statusLabels: Record<RoomSessionStatus, string> = {
   'preparing-media': '카메라와 마이크 확인 중',
   'connecting-signal': '서버에 연결 중',
   joining: '스터디룸 입장 중',
-  active: '직접 연결됨',
+  active: '통화 연결됨',
   reconnecting: '연결 복구 중',
   ended: '통화 종료됨',
   error: '연결 오류',

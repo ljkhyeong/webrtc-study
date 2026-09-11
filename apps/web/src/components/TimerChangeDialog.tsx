@@ -31,7 +31,7 @@ export function TimerChangeDialog({
       <p>
         현재 남은 시간은 {Math.floor(remainingSeconds / 60)}분 {remainingSeconds % 60}초입니다.
       </p>
-      <p>{description} 모든 참가자의 타이머에 적용되며 이전 진행 시간은 되돌릴 수 없습니다.</p>
+      <p>{description} 모든 참가자의 타이머가 바뀌며 지금까지 진행한 시간은 초기화됩니다.</p>
       <div className="leave-room-dialog__actions">
         <button type="button" autoFocus onClick={onCancel}>
           기존 타이머 유지

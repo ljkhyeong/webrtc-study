@@ -28,7 +28,7 @@ const connectionStateLabels: Record<PeerConnectionStatus, string> = {
 const candidateTypeLabels: Record<RTCIceCandidateType, string> = {
   host: '직접 경로',
   srflx: '공인 주소 경로',
-  prflx: '피어 반사 경로',
+  prflx: '상대가 확인한 경로',
   relay: 'TURN 중계',
 };
 
@@ -85,7 +85,7 @@ function ConnectionDiagnosticItem({
           <dd>{diagnosticValue(diagnostic.packetLossPercent, '%')}</dd>
         </div>
         <div>
-          <dt>최대 jitter</dt>
+          <dt>최대 지연 변동</dt>
           <dd>{diagnosticValue(diagnostic.jitterMs, 'ms')}</dd>
         </div>
       </dl>
@@ -124,7 +124,7 @@ export function ConnectionDiagnosticsPanel({
       await navigator.clipboard.writeText(
         JSON.stringify(
           {
-            measurement: '요청 후 약 3초 동안의 수신 손실과 측정 종료 시점의 지연·jitter',
+            measurement: '약 3초 동안 측정한 수신 손실과 마지막 지연·지연 변동',
             ...diagnostics.value,
           },
           null,
@@ -163,8 +163,8 @@ export function ConnectionDiagnosticsPanel({
           </button>
         ) : null}
         <p className="connection-diagnostics__privacy">
-          요청 후 약 3초 동안 수신 손실을 측정합니다. 지연·jitter는 마지막 측정값이며, IP 주소, 방
-          코드, 참가자 식별자를 포함하거나 서버로 보내지 않습니다.
+          약 3초 동안 수신 손실을 측정하고 마지막 지연과 지연 변동을 표시합니다. IP 주소, 방 코드,
+          참가자 식별자는 수집하거나 서버로 보내지 않습니다.
         </p>
         {diagnostics.status === 'error' ? (
           <p role="alert">연결 상태를 측정하지 못했습니다. 잠시 후 다시 시도해 주세요.</p>

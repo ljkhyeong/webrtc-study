@@ -305,7 +305,7 @@ export function VideoTile({
         {qualityVisible && !participant.isLocal && isConnected ? (
           <span
             className={`video-tile__quality video-tile__quality--${participant.activity?.receptionQuality ?? 'unavailable'}`}
-            title="내 브라우저에서 받은 음성과 영상의 통계입니다. 자세한 수치는 연결 진단에서 확인하세요."
+            title="내 브라우저가 받은 음성·영상의 상태입니다. 자세한 수치는 연결 진단에서 확인하세요."
           >
             {participant.activity?.receptionQuality === 'unstable'
               ? '수신 불안정 · 연결 진단 확인'
@@ -378,8 +378,7 @@ export function VideoTile({
       ) : null}
       {isRemoteScreenShare ? (
         <p id={zoomHelpId} className="sr-only">
-          확대한 화면은 끌어서 이동할 수 있습니다. 화면에 초점을 두고 방향키로 이동, +와 -로
-          확대·축소, 0으로 초기화합니다.
+          공유 화면을 끌거나 방향키로 이동할 수 있습니다. +와 -로 확대·축소하고 0으로 초기화합니다.
         </p>
       ) : null}
 
@@ -414,7 +413,7 @@ export function VideoTile({
       {canModerateMedia && !participant.isLocal && participant.role === 'participant' ? (
         <div
           className="video-tile__moderation"
-          aria-label={`${participant.displayName} 미디어 관리`}
+          aria-label={`${participant.displayName} 마이크·영상 관리`}
         >
           <button
             type="button"

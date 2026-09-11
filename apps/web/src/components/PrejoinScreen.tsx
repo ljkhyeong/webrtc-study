@@ -256,7 +256,7 @@ export function PrejoinScreen({
           {isChecking ? (
             <div className="prejoin-preview__checking" role="status" aria-live="polite">
               <span className="connecting-ring" />
-              <strong>마이크와 카메라를 각각 확인하고 있습니다.</strong>
+              <strong>마이크와 카메라를 확인하고 있습니다.</strong>
             </div>
           ) : null}
         </section>

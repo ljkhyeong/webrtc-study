@@ -32,9 +32,7 @@ export function LeaveRoomDialog({
       <h2 id="leave-room-title">
         {action === 'reconnect' ? '방에 다시 입장할까요?' : '스터디룸에서 나갈까요?'}
       </h2>
-      {action === 'reconnect' ? (
-        <p>현재 방 연결을 종료하고 입장 준비 화면으로 돌아갑니다.</p>
-      ) : null}
+      {action === 'reconnect' ? <p>통화를 종료하고 입장 준비 화면으로 돌아갑니다.</p> : null}
       {hasDraft ? <p>나가면 작성 중인 메시지가 사라집니다.</p> : null}
       {screenSharing ? (
         <p>내 화면을 공유하고 있습니다. 나가면 화면 공유와 통화가 종료됩니다.</p>

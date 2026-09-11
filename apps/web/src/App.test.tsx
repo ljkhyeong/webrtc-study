@@ -74,7 +74,7 @@ describe('App pre-join boundary', () => {
       expect(markup).not.toContain('같이 공부할');
       expect(markup).not.toContain('ROUND 기능 미리보기');
       expect(markup).toContain('입장 준비');
-      expect(markup).not.toContain('직접 연결됨');
+      expect(markup).not.toContain('통화 연결됨');
       expect(getUserMedia).not.toHaveBeenCalled();
       expect(webSocket).not.toHaveBeenCalled();
     } finally {
@@ -196,7 +196,7 @@ describe('App pre-join boundary', () => {
       message: 'Ignored excessive DataChannel messages from internal-peer-id',
     });
 
-    expect(warning).toContain('채팅 수신량이 한도를 넘어');
+    expect(warning).toContain('너무 많은 채팅 데이터를 보내');
     expect(warning).toContain('통화는 유지');
     expect(warning).not.toContain('internal-peer-id');
   });
@@ -207,7 +207,7 @@ describe('App pre-join boundary', () => {
       message: 'internal recovery detail',
     });
 
-    expect(warning).toContain('자동으로 복구');
+    expect(warning).toContain('일부 참가자와 다시 연결');
     expect(warning).toContain('통화는 유지');
     expect(warning).not.toContain('internal recovery detail');
   });
@@ -321,7 +321,7 @@ describe('App pre-join boundary', () => {
       message: 'Participation session superseded internal-peer-id',
     });
 
-    expect(message).toContain('같은 계정으로 다시 입장해 현재 연결이 종료');
+    expect(message).toContain('같은 계정의 새 접속으로 현재 연결이 종료');
     expect(message).not.toContain('Participation session superseded');
     expect(message).not.toContain('internal-peer-id');
   });

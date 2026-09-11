@@ -21,7 +21,7 @@ export function RoomHandQueue({
     <details className="room-hand-queue">
       <summary>손들기 · {state && active ? `대기 ${queue.length}명` : '순서 확인 중'}</summary>
       <div className="room-hand-queue__body">
-        {!active ? <p role="status">연결 복구 후 대기 순서를 확인합니다.</p> : null}
+        {!active ? <p role="status">다시 연결되면 대기 순서를 불러옵니다.</p> : null}
         <ol aria-label="손들기 대기 순서" aria-live="polite" aria-relevant="all">
           {queue.map((peer) => (
             <li key={peer.peerId}>

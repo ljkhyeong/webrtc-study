@@ -52,7 +52,7 @@ export function AudioOutputControls({
       setSelected(next);
       onSelect(next);
       onRefresh();
-      setNotice('스피커를 선택했습니다. 소리 확인을 눌러 확인해 주세요.');
+      setNotice('스피커를 선택했습니다. ‘소리 확인’을 눌러 재생해 보세요.');
     } catch {
       if (mounted.current)
         setError('스피커 선택이 취소되었거나 장치를 사용할 수 없습니다. 기존 선택을 유지합니다.');
@@ -133,8 +133,8 @@ export function AudioOutputControls({
         </button>
       </div>
       <p>
-        소리 확인은 적용한 스피커로 짧은 확인음을 재생합니다. 목록에 없는 장치는 운영체제의 소리
-        설정도 확인해 주세요.
+        선택한 스피커로 짧은 확인음을 재생합니다. 목록에 없는 장치는 운영체제의 소리 설정을 확인해
+        주세요.
       </p>
       <p role="status">{pending ? '스피커를 선택하고 있습니다.' : notice}</p>
       {error ? <p role="alert">{error}</p> : null}

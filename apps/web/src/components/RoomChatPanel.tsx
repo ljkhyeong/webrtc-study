@@ -343,7 +343,7 @@ export function RoomChatPanel({
           {query ? (
             <div className="chat-search__navigation">
               <span role="status">
-                {matchKeys.length ? `${matchIndex + 1} / ${matchKeys.length}개` : '검색 결과 없음'}
+                {matchKeys.length ? `${matchIndex + 1} / ${matchKeys.length}` : '검색 결과 없음'}
               </span>
               <button
                 type="button"
@@ -468,7 +468,7 @@ export function RoomChatPanel({
               if (nextLength > MAX_COMPOSER_LENGTH) {
                 event.preventDefault();
                 setPasteNotice(
-                  '1,000자를 넘어 붙여넣지 않았습니다. 내용을 줄여 다시 붙여넣으세요.',
+                  '1,000자를 초과해 붙여넣지 않았습니다. 내용을 줄여 다시 시도해 주세요.',
                 );
               } else setPasteNotice('');
             }}
@@ -501,7 +501,7 @@ export function RoomChatPanel({
             <span id="chat-composer-help">Enter 전송 · Shift+Enter 줄바꿈</span>
             <span
               id="chat-composer-count"
-              title="최대 1,000자. 이모지 등 일부 문자는 2자 이상으로 계산됩니다."
+              title="최대 1,000자이며 이모지 등 일부 문자는 2자 이상으로 계산됩니다."
             >
               {message.length.toLocaleString('ko-KR')} / 1,000자
             </span>

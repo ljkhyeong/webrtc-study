@@ -53,7 +53,7 @@ export function LandingScreen({ initialDisplayName, onEnter, onGoHome }: Landing
         </button>
         <p className="landing-header__note">
           <span className="status-dot" />
-          직접 연결 · 최대 6명
+          영상 통화 · 최대 6명
         </p>
       </header>
 
@@ -68,9 +68,7 @@ export function LandingScreen({ initialDisplayName, onEnter, onGoHome }: Landing
             <br />
             <em>시간 제한 없이.</em>
           </h1>
-          <p className="landing-description">
-            설치 없이 링크 하나로 만나세요. 영상과 음성은 참가자끼리 직접 연결됩니다.
-          </p>
+          <p className="landing-description">설치 없이 링크 하나로 영상 통화를 시작하세요.</p>
 
           <form className="entry-form" onSubmit={handleJoin}>
             <label className="field-label" htmlFor="display-name">

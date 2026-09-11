@@ -107,6 +107,6 @@ describe('VideoTile', () => {
       <VideoTile participant={participant({ role: 'host' })} canModerateMedia />,
     );
 
-    expect(markup).not.toContain('미디어 관리');
+    expect(markup).not.toContain('마이크·영상 관리');
   });
 });

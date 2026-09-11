@@ -188,7 +188,7 @@ export function MediaDeviceDialog({
               disabled={!screenWakeLock.supported || (!active && !screenWakeLock.enabled)}
               onChange={(event) => screenWakeLock.setEnabled(event.target.checked)}
             />
-            통화 화면 꺼짐 방지
+            통화 중 화면 켜짐 유지
           </label>
           <p role="status">
             {!screenWakeLock.supported
@@ -197,10 +197,10 @@ export function MediaDeviceDialog({
                   off: '꺼짐',
                   requesting: '켜는 중',
                   active: '켜짐',
-                  waiting: '대기 중 · 방에 연결하고 화면으로 돌아오면 다시 적용합니다.',
-                  released: '화면 꺼짐 방지가 해제되었습니다. 설정을 껐다 다시 켜 주세요.',
+                  waiting: '대기 중 · 통화 화면으로 돌아오면 다시 켭니다.',
+                  released: '화면 켜짐 유지가 해제되었습니다. 설정을 껐다 다시 켜 주세요.',
                   error:
-                    '적용하지 못했습니다. 배터리 절약·브라우저 설정을 확인하고 껐다 다시 켜 주세요.',
+                    '화면 켜짐 유지를 적용하지 못했습니다. 배터리 절약 또는 브라우저 설정을 확인한 뒤 다시 켜 주세요.',
                 }[screenWakeLock.status]}
           </p>
           <small>
