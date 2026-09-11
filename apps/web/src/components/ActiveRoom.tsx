@@ -252,8 +252,8 @@ export function ActiveRoom({
 
     return () => {
       isCurrentSession = false;
-      // React StrictMode는 개발 환경에서 effect를 즉시 다시 실행한다. 정리를 미루면
-      // 두 번째 설정이 일회용 세션과 전달받은 입장 전 track을 재사용할 수 있다.
+      // React StrictMode는 개발 환경에서 effect를 즉시 다시 실행한다. 정리를 다음
+      // 마이크로태스크까지 미뤄 두 번째 실행에서 일회용 세션과 입장 전 트랙을 재사용한다.
       queueMicrotask(() => {
         const session = sessionRef.current;
         if (lifecycleRef.current !== lifecycle) {
@@ -453,7 +453,7 @@ export function ActiveRoom({
           snapshot?.lastModerationNotice?.kind === 'audio'
             ? '방장이 마이크를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.'
             : snapshot?.lastModerationNotice?.kind === 'video'
-              ? '방장이 비디오를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.'
+              ? '방장이 영상을 껐습니다. 필요하면 직접 다시 켤 수 있습니다.'
               : undefined
         }
         peerRecoveryMessage={hasFailedRemotePeer ? PEER_CONNECTION_FAILURE_MESSAGE : undefined}
@@ -531,7 +531,7 @@ export function ActiveRoom({
         onDisableParticipantVideo={(peerId) => {
           if (!sessionRef.current?.disableParticipantMedia(peerId, 'video')) {
             setActionWarning('');
-            setActionError('이 참가자의 비디오를 끌 수 없습니다.');
+            setActionError('이 참가자의 영상을 끌 수 없습니다.');
           }
         }}
         onSendMessage={handleSendMessage}

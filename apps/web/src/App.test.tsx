@@ -173,8 +173,8 @@ describe('App pre-join boundary', () => {
     expect(status).toBe('일부 참가자 연결 실패');
     for (const warning of [timeoutWarning, negotiationWarning]) {
       expect(warning).toContain('일부 참가자');
-      expect(warning).toContain('다른 참가자와의 통화는 유지');
-      expect(warning).toContain('해당 참가자의 다시 연결 버튼');
+      expect(warning).toContain('다른 통화는 유지');
+      expect(warning).toContain('해당 참가자 타일에서');
     }
     expect(timeoutWarning).not.toContain('raw peer timeout');
     expect(negotiationWarning).not.toContain('internal-peer-id');
@@ -186,7 +186,7 @@ describe('App pre-join boundary', () => {
       message: 'later warning',
     });
 
-    expect(warning).toContain('통화 연결 정보');
+    expect(warning).toContain('통화 중계 정보');
     expect(warning).not.toContain('later warning');
   });
 
@@ -217,7 +217,7 @@ describe('App pre-join boundary', () => {
     expect(screenShareStartNotice('recovering')).toBeUndefined();
     expect(screenShareStartNotice('cancelled')).toEqual({
       tone: 'warning',
-      message: '화면 공유가 시작되지 않았습니다. 다시 시도하려면 화면 공유 버튼을 눌러 주세요.',
+      message: '화면 공유를 시작하지 못했습니다. 화면 공유 버튼을 다시 눌러 주세요.',
     });
     expect(screenShareStartNotice('failed')).toEqual({
       tone: 'error',
@@ -268,7 +268,7 @@ describe('App pre-join boundary', () => {
     });
 
     expect(terminal.status).toBe('error');
-    expect(terminal.terminalErrorMessage).toContain('통화 연결 정보');
+    expect(terminal.terminalErrorMessage).toContain('통화 중계 정보');
     expect(terminal.terminalErrorMessage).not.toContain('credential request failed');
   });
 
@@ -308,7 +308,7 @@ describe('App pre-join boundary', () => {
 
   it('maps typed chat delivery failures without inspecting internal error text', () => {
     expect(chatErrorMessage(new ChatSendError('peer-unavailable', 'arbitrary detail'))).toContain(
-      '연결 가능한 참가자',
+      '연결된 참가자',
     );
     expect(chatErrorMessage(new ChatSendError('queue-full', 'arbitrary detail'))).toContain(
       '전송 대기 중인 메시지',

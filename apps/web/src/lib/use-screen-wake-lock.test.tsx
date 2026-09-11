@@ -12,7 +12,7 @@ class TestLock extends EventTarget {
   });
 }
 
-describe('선택형 화면 꺼짐 방지', () => {
+describe('선택형 화면 켜짐 유지', () => {
   let root: Root;
   let control: ReturnType<typeof useScreenWakeLock>;
   let hidden: boolean;

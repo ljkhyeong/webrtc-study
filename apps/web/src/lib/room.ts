@@ -62,7 +62,7 @@ export function pathForRoom(roomId: string) {
 export function canonicalRoomUrl(roomId: string, currentUrl: string) {
   const current = new URL(currentUrl);
   if (current.protocol !== 'https:' && current.protocol !== 'http:') {
-    throw new Error('Room links require an HTTP origin');
+    throw new Error('방 링크는 HTTP 또는 HTTPS 주소에서만 만들 수 있습니다.');
   }
   return new URL(pathForRoom(roomId), current.origin).toString();
 }

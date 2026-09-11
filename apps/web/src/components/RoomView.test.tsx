@@ -105,12 +105,12 @@ describe('RoomView connection state', () => {
     const markup = renderRoom({
       status: 'error',
       statusLabel: '연결 오류',
-      errorMessage: '통화 연결 정보를 받지 못했습니다.',
+      errorMessage: '통화 중계 정보를 받지 못했습니다.',
     });
 
     expect(markup).not.toContain('connecting-ring');
     expect(markup).toContain('연결하지 못했습니다');
-    expect(markup).toContain('통화 연결 정보를 받지 못했습니다.');
+    expect(markup).toContain('통화 중계 정보를 받지 못했습니다.');
     expect(markup).toContain('방 다시 입장');
     expect(markup).toContain('나가기');
   });
@@ -134,13 +134,13 @@ describe('RoomView connection state', () => {
       status: 'active',
       statusLabel: '일부 참가자 연결 실패',
       peerRecoveryMessage: '일부 참가자 연결 실패 안내',
-      mediaWarning: '통화 연결 정보 갱신 실패',
+      mediaWarning: '통화 중계 정보 갱신 실패',
       errorMessage: '메시지 전송 실패',
     });
 
     expect(markup).toContain('room-notice-stack');
     expect(markup).toContain('일부 참가자 연결 실패 안내');
-    expect(markup).toContain('통화 연결 정보 갱신 실패');
+    expect(markup).toContain('통화 중계 정보 갱신 실패');
     expect(markup).toContain('메시지 전송 실패');
     expect(markup.match(/role="alert"/g)).toHaveLength(2);
     expect(markup).toContain('role="status"');
@@ -223,7 +223,7 @@ describe('RoomView connection state', () => {
   it('offers device selection for unavailable local media after joining', () => {
     const markup = renderRoom({
       status: 'active',
-      statusLabel: '다른 참가자 기다리는 중',
+      statusLabel: '다른 참가자를 기다리는 중',
       audioAvailable: false,
       audioEnabled: false,
       videoAvailable: false,
@@ -237,11 +237,11 @@ describe('RoomView connection state', () => {
       'button[aria-label="카메라 장치 다시 선택"]',
     );
     const screenShareButton = renderedDocument.querySelector<HTMLButtonElement>(
-      'button[aria-label="이 브라우저는 화면 공유를 지원하지 않음"]',
+      'button[aria-label="이 브라우저는 화면 공유를 지원하지 않습니다."]',
     );
 
     expect(markup).toContain('마이크 연결');
-    expect(markup).toContain('카메라 연결');
+    expect(markup).toContain('카메라 선택');
     expect(microphoneButton?.disabled).toBe(false);
     expect(cameraButton?.disabled).toBe(false);
     expect(screenShareButton?.disabled).toBe(true);
@@ -255,7 +255,7 @@ describe('RoomView connection state', () => {
     });
     const generic = renderRoom({
       status: 'active',
-      mediaWarning: '통화 연결 정보를 갱신하지 못했습니다.',
+      mediaWarning: '통화 중계 정보를 갱신하지 못했습니다.',
     });
 
     expect(recoverable).toContain('room-notice--recoverable');
@@ -274,7 +274,7 @@ describe('RoomView connection state', () => {
     });
 
     expect(markup).toContain('aria-label="화면 공유 중지"');
-    expect(markup).toContain('aria-label="화면 공유 중에는 카메라를 변경할 수 없음"');
+    expect(markup).toContain('aria-label="화면 공유 중에는 카메라를 변경할 수 없습니다."');
     expect(markup).toContain('aria-pressed="true"');
   });
 

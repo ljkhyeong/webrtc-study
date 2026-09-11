@@ -99,7 +99,7 @@ export async function exitVideoFullscreen(
       await webkitDocument.webkitExitFullscreen();
       return true;
     } catch {
-      // 현재 표시는 브라우저 자체 비디오 전체 화면이 소유하고 있을 수 있다.
+      // 현재 화면은 브라우저 자체 비디오 전체 화면일 수 있다.
     }
   }
 

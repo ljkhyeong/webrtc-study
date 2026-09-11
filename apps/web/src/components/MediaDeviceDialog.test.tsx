@@ -82,7 +82,7 @@ describe('통화 장치 설정', () => {
     )!;
     await act(async () => apply.click());
     expect(input.onSelectVideoQuality).toHaveBeenCalledWith('data-saver');
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain('일부 연결');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('일부 참가자');
     expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
     input.onSelectVideoQuality.mockResolvedValue(true);
     await act(async () => apply.click());

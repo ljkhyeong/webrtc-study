@@ -44,7 +44,7 @@ describe('입장 전 호환성과 새 배포 확인', () => {
       expect.objectContaining({ cache: 'no-store', credentials: 'same-origin' }),
     );
     await expect(checkSignalingCompatibility('ws://localhost/signal')).rejects.toThrow(
-      '버전이 맞지',
+      '현재 화면을 지원하지 않습니다',
     );
   });
 

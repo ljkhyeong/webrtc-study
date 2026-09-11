@@ -20,14 +20,14 @@ export async function checkSignalingCompatibility(signalingUrl: string): Promise
     supported = response.ok && supportsCurrentClient(await response.json());
   } catch {
     throw new Error(
-      '서버 버전을 확인하지 못했습니다. 연결 상태를 확인한 뒤 입장을 다시 시도해 주세요.',
+      '시그널링 서버의 지원 기능을 확인하지 못했습니다. 네트워크를 확인하고 다시 시도해 주세요.',
     );
   } finally {
     window.clearTimeout(timeout);
   }
   if (!supported)
     throw new Error(
-      '서버와 현재 화면의 버전이 맞지 않습니다. 새로고침 후 다시 시도해 주세요. 계속되면 운영자에게 알려 주세요.',
+      '시그널링 서버가 현재 화면을 지원하지 않습니다. 새로고침해 주세요. 계속되면 운영자에게 알려 주세요.',
     );
 }
 

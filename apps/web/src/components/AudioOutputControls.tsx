@@ -95,7 +95,7 @@ export function AudioOutputControls({
             >
               <option value="">시스템 기본 스피커</option>
               {selected && !outputs.some((device) => device.deviceId === selected) ? (
-                <option value={selected}>선택한 스피커 (목록에서 확인되지 않음)</option>
+                <option value={selected}>선택한 스피커 (현재 목록에 없음)</option>
               ) : null}
               {outputs.map((device, index) => (
                 <option key={device.deviceId} value={device.deviceId}>

@@ -97,7 +97,7 @@ describe('VideoTile', () => {
     const markup = renderToStaticMarkup(<VideoTile participant={participant()} canModerateMedia />);
 
     expect(markup).toContain('스터디원 마이크 끄기');
-    expect(markup).toContain('스터디원 비디오 끄기');
+    expect(markup).toContain('스터디원 영상 끄기');
     expect(markup).not.toContain('마이크 켜기');
     expect(markup).not.toContain('비디오 켜기');
   });

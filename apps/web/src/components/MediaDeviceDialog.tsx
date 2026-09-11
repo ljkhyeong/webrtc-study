@@ -115,7 +115,10 @@ export function MediaDeviceDialog({
       const applied = await onSelectVideoQuality(quality);
       if (!mounted.current) return;
       if (applied) setNotice('카메라 전송 품질을 적용했습니다.');
-      else setError('일부 연결에 적용하지 못했습니다. 다시 적용하거나 카메라를 꺼 주세요.');
+      else
+        setError(
+          '일부 참가자에게 카메라 품질을 적용하지 못했습니다. 다시 적용하거나 카메라를 꺼 주세요.',
+        );
     } catch {
       if (mounted.current) setError('카메라 전송 품질을 적용하지 못했습니다. 다시 시도해 주세요.');
     } finally {
@@ -156,7 +159,7 @@ export function MediaDeviceDialog({
               >
                 <option value="">브라우저 기본 {label}</option>
                 {selected && !options.some((device) => device.deviceId === selected) ? (
-                  <option value={selected}>현재 {label} (목록에서 확인되지 않음)</option>
+                  <option value={selected}>현재 {label} (장치 목록에 없음)</option>
                 ) : null}
                 {options.map((device, index) => (
                   <option key={device.deviceId} value={device.deviceId}>
@@ -192,7 +195,7 @@ export function MediaDeviceDialog({
           </label>
           <p role="status">
             {!screenWakeLock.supported
-              ? '이 브라우저는 화면 꺼짐 방지를 지원하지 않습니다.'
+              ? '이 브라우저는 화면 켜짐 유지를 지원하지 않습니다.'
               : {
                   off: '꺼짐',
                   requesting: '켜는 중',

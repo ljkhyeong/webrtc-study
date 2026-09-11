@@ -77,7 +77,7 @@ describe('RTC configuration loading', () => {
     mockedLoadTurnCredentials.mockResolvedValue(null);
 
     await expect(loadRtcConfiguration('/api/turn')).rejects.toThrow(
-      '통화 연결 정보를 받지 못했습니다.',
+      '통화 중계 정보를 받지 못했습니다.',
     );
   });
 

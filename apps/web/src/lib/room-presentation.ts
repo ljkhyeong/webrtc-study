@@ -10,7 +10,7 @@ import type { RoomSystemNoticeView } from '../components/RoomView';
 import type { ParticipantView } from '../components/VideoTile';
 
 export const PEER_CONNECTION_FAILURE_MESSAGE =
-  '일부 참가자와 연결하지 못했습니다. 해당 참가자의 다시 연결 버튼을 눌러 주세요. 다른 참가자와의 통화는 유지됩니다.';
+  '일부 참가자와 연결하지 못했습니다. 해당 참가자 타일에서 ‘다시 연결’을 눌러 주세요. 다른 통화는 유지됩니다.';
 type RoomIssueMessages = Readonly<Record<'error' | 'warning', string>>;
 
 export type RoomStartupErrorCode =
@@ -21,8 +21,7 @@ const ROOM_STARTUP_ERROR_MESSAGES = {
     '스터디룸 연결 설정을 확인하지 못했습니다. BATON에서 다시 입장하거나 관리자에게 문의해 주세요.',
   'participation-grant':
     '스터디 참여 권한을 확인하지 못했습니다. 잠시 후 다시 시도하거나 BATON에서 다시 입장해 주세요.',
-  'turn-configuration':
-    '통화 연결 정보를 받지 못했습니다. 네트워크를 확인한 뒤 잠시 후 다시 시도해 주세요.',
+  'turn-configuration': '통화 중계 정보를 받지 못했습니다. 네트워크를 확인하고 다시 시도해 주세요.',
   'session-start': '스터디룸 연결을 시작하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
 } satisfies Record<RoomStartupErrorCode, string>;
 
@@ -61,7 +60,7 @@ const SIGNALING_ISSUE_MESSAGES = {
   },
   INTERNAL_ERROR: {
     error: '스터디 서버가 요청을 처리하지 못했습니다. 잠시 후 방에 다시 입장해 주세요.',
-    warning: '스터디 서버가 요청 하나를 처리하지 못했습니다. 현재 통화는 유지됩니다.',
+    warning: '스터디 서버가 요청을 처리하지 못했지만 현재 통화는 유지됩니다.',
   },
 } satisfies Record<SignalingErrorCode, RoomIssueMessages>;
 
@@ -78,11 +77,11 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   'video-quality-update-failed': {
     error: '카메라 전송 품질을 적용하지 못했습니다.',
     warning:
-      '일부 연결에 카메라 전송 품질을 적용하지 못했습니다. 통화 장치 설정에서 다시 적용하거나 카메라를 꺼 주세요.',
+      '일부 참가자에게 카메라 전송 품질을 적용하지 못했습니다. 통화 장치 설정에서 다시 적용하거나 카메라를 꺼 주세요.',
   },
   'rtc-configuration-update-failed': {
-    error: '통화 연결 정보를 적용하지 못했습니다. 네트워크를 확인한 뒤 다시 입장해 주세요.',
-    warning: '일부 참가자의 통화 연결 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.',
+    error: '통화 중계 정보를 적용하지 못했습니다. 네트워크를 확인한 뒤 다시 입장해 주세요.',
+    warning: '일부 참가자의 통화 중계 정보를 갱신하지 못했습니다. 현재 통화는 유지됩니다.',
   },
   'join-failed': {
     error: '스터디룸 입장을 완료하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
@@ -140,7 +139,7 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   },
   'ice-candidate-rejected': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
-    warning: '일부 참가자와 다른 경로로 연결을 계속 시도하고 있습니다.',
+    warning: '일부 참가자와 다시 연결하고 있습니다.',
   },
   'peer-negotiation-retrying': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
@@ -148,11 +147,11 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   },
   'peer-connection-recovering': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
-    warning: '일부 참가자와의 연결을 복구하고 있습니다. 다른 참가자와의 통화는 유지됩니다.',
+    warning: '일부 참가자와 다시 연결하고 있습니다. 다른 통화는 유지됩니다.',
   },
   'peer-connection-recreated': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
-    warning: '일부 참가자와 다시 연결하고 있습니다. 다른 참가자와의 통화는 유지됩니다.',
+    warning: '일부 참가자와 다시 연결하고 있습니다. 다른 통화는 유지됩니다.',
   },
   'peer-ice-restart-failed': {
     error: PEER_CONNECTION_FAILURE_MESSAGE,
@@ -169,15 +168,15 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
   },
   'data-channel-closed': {
     error: '채팅 연결을 복구하지 못했습니다. 방에 다시 입장해 주세요.',
-    warning: '일부 참가자와의 채팅 연결이 끊겨 자동으로 복구하고 있습니다.',
+    warning: '일부 참가자와의 채팅 연결이 끊겨 다시 연결하고 있습니다.',
   },
   'data-channel-error': {
     error: '채팅 연결을 복구하지 못했습니다. 방에 다시 입장해 주세요.',
-    warning: '일부 참가자와의 채팅 연결에서 오류가 발생해 자동으로 복구하고 있습니다.',
+    warning: '일부 참가자와의 채팅 연결 오류로 다시 연결하고 있습니다.',
   },
   'data-channel-send-failed': {
     error: '채팅 메시지를 보내지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.',
-    warning: '일부 참가자에게 채팅을 보내지 못해 연결을 자동으로 복구하고 있습니다.',
+    warning: '일부 참가자에게 채팅을 보내지 못해 채팅 연결을 다시 설정하고 있습니다.',
   },
   'data-channel-rate-limit': {
     error: '채팅 연결에서 너무 많은 데이터가 전송되었습니다. 방에 다시 입장해 주세요.',
@@ -232,7 +231,7 @@ export function chatErrorMessage(error: unknown): string {
   if (error instanceof ChatSendError) {
     switch (error.code) {
       case 'peer-unavailable':
-        return '연결 가능한 참가자가 없어 메시지를 보내지 못했습니다. 입력한 내용은 그대로 두었습니다.';
+        return '연결된 참가자가 없어 메시지를 보내지 못했습니다. 입력한 내용은 그대로 두었습니다.';
       case 'queue-full':
         return '전송 대기 중인 메시지가 많습니다. 잠시 후 다시 보내세요.';
       case 'room-not-active':
@@ -314,7 +313,7 @@ export function screenShareStartNotice(
   if (result === 'cancelled') {
     return {
       tone: 'warning',
-      message: '화면 공유가 시작되지 않았습니다. 다시 시도하려면 화면 공유 버튼을 눌러 주세요.',
+      message: '화면 공유를 시작하지 못했습니다. 화면 공유 버튼을 다시 눌러 주세요.',
     };
   }
   if (result === 'failed') {
@@ -337,7 +336,7 @@ export function roomStatusLabel(
 
   const remoteParticipants = participants.filter((participant) => !participant.isLocal);
   if (remoteParticipants.length === 0) {
-    return '다른 참가자 기다리는 중';
+    return '다른 참가자를 기다리는 중';
   }
   if (remoteParticipants.some((participant) => participant.connectionState === 'failed')) {
     return '일부 참가자 연결 실패';

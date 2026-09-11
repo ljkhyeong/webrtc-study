@@ -85,7 +85,7 @@ export function ParticipantAudioControls({
           {supported === false
             ? '이 브라우저는 개별 음량을 지원하지 않습니다. 기기 음량이나 소리 끄기를 사용하세요.'
             : supported === null
-              ? '소리가 연결되면 음량을 조절할 수 있습니다.'
+              ? '상대 음성이 재생되면 음량을 조절할 수 있습니다.'
               : muted
                 ? '소리 켜기를 누르면 설정한 음량으로 들립니다.'
                 : '내가 듣는 소리만 바뀝니다.'}

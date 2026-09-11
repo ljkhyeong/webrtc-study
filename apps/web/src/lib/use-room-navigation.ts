@@ -44,7 +44,7 @@ export function useRoomNavigation() {
         currentPath.current = window.location.pathname;
         setPathname(currentPath.current);
       };
-      // 확인 중에도 방 화면을 유지하고, 반복한 뒤로가기·앞으로가기는 원래 위치로 돌린다.
+      // 확인 중에도 방 화면을 유지하고, 연속된 뒤로가기·앞으로가기는 원래 위치로 돌린다.
       if (pending && target !== null) {
         pending.restored = target === currentIndex.current;
         if (pending.restored) finish();

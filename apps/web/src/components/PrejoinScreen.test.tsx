@@ -12,7 +12,11 @@ describe('PrejoinScreen', () => {
     const beforeJoin = vi
       .fn()
       .mockResolvedValueOnce(false)
-      .mockRejectedValueOnce(new Error('서버 버전을 확인하지 못했습니다.'))
+      .mockRejectedValueOnce(
+        new Error(
+          '시그널링 서버의 지원 기능을 확인하지 못했습니다. 네트워크를 확인하고 다시 시도해 주세요.',
+        ),
+      )
       .mockResolvedValueOnce(true);
     const onJoin = vi.fn();
     const container = document.createElement('div');
@@ -38,7 +42,7 @@ describe('PrejoinScreen', () => {
       expect(onJoin).not.toHaveBeenCalled();
       await act(async () => join.click());
       expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-        '서버 버전을 확인하지 못했습니다',
+        '시그널링 서버의 지원 기능을 확인하지 못했습니다',
       );
       expect(onJoin).not.toHaveBeenCalled();
       await act(async () => join.click());

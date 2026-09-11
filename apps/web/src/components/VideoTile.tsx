@@ -305,13 +305,13 @@ export function VideoTile({
         {qualityVisible && !participant.isLocal && isConnected ? (
           <span
             className={`video-tile__quality video-tile__quality--${participant.activity?.receptionQuality ?? 'unavailable'}`}
-            title="내 브라우저가 받은 음성·영상의 상태입니다. 자세한 수치는 연결 진단에서 확인하세요."
+            title="내가 받는 음성·영상의 연결 상태입니다. 자세한 수치는 연결 진단에서 확인하세요."
           >
             {participant.activity?.receptionQuality === 'unstable'
               ? '수신 불안정 · 연결 진단 확인'
               : participant.activity?.receptionQuality === 'stable'
                 ? '수신 양호'
-                : '수신 품질 정보 없음'}
+                : '수신 품질 측정값 없음'}
           </span>
         ) : null}
         {participant.handRaised ? (
@@ -426,7 +426,7 @@ export function VideoTile({
           <button
             type="button"
             disabled={!participant.videoEnabled}
-            aria-label={`${participant.displayName} 비디오 끄기`}
+            aria-label={`${participant.displayName} 영상 끄기`}
             onClick={() => onDisableVideo?.(participant.peerId)}
           >
             <CameraOffIcon />

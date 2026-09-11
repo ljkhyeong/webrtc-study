@@ -33,9 +33,7 @@ export function resolveNormalizedRoomEndpoints(
 
   if (options.authMode === 'baton') {
     if (signalingOverride !== undefined || turnCredentialsOverride !== undefined) {
-      throw new Error(
-        'BATON 모드에서는 방 단위 동일 출처 signaling과 TURN 경로만 사용할 수 있습니다.',
-      );
+      throw new Error('BATON 모드에서는 방별 동일 출처 시그널링과 TURN 경로만 사용할 수 있습니다.');
     }
 
     const roomPath = `/round/rooms/${encodeURIComponent(options.roomId)}`;
@@ -84,7 +82,7 @@ function normalizeSignalingOverride(value: string): string {
 
 function webSocketOrigin(location: RoomEndpointLocation): string {
   if (!location.host.trim()) {
-    throw new Error('ROUND 브라우저 origin 설정이 올바르지 않습니다.');
+    throw new Error('ROUND 브라우저 실행 주소(Origin) 설정이 올바르지 않습니다.');
   }
   if (location.protocol === 'https:') {
     return `wss://${location.host}`;
@@ -92,5 +90,5 @@ function webSocketOrigin(location: RoomEndpointLocation): string {
   if (location.protocol === 'http:') {
     return `ws://${location.host}`;
   }
-  throw new Error('ROUND는 HTTP 또는 HTTPS origin에서 실행해야 합니다.');
+  throw new Error('ROUND는 HTTP 또는 HTTPS 주소에서 실행해야 합니다.');
 }

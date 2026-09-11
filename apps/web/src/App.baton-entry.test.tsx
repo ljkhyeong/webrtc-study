@@ -311,7 +311,7 @@ describe('BATON room entry boundary', () => {
 
     await waitForState(() => expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce());
     expect(fetcher.mock.calls.filter(([input]) => input === TURN_ENDPOINT)).toHaveLength(1);
-    expect(container.textContent).not.toContain('통화 연결 정보를 받지 못했습니다.');
+    expect(container.textContent).not.toContain('통화 중계 정보를 받지 못했습니다.');
     expect(container.textContent).not.toContain('스터디 참여 권한을 확인하지 못했습니다.');
     expect(fetcher.mock.calls.filter(([input]) => input === GRANT_ENDPOINT)).toHaveLength(1);
     expect(fetcher.mock.calls.filter(([input]) => input === '/api/v1/auth/session')).toHaveLength(

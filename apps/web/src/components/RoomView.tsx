@@ -568,7 +568,7 @@ export function RoomView({
           disabled={screenSharing || (!videoAvailable && !isActive)}
           aria-label={
             screenSharing
-              ? '화면 공유 중에는 카메라를 변경할 수 없음'
+              ? '화면 공유 중에는 카메라를 변경할 수 없습니다.'
               : !videoAvailable
                 ? isActive
                   ? '카메라 장치 다시 선택'
@@ -582,7 +582,7 @@ export function RoomView({
           title="카메라 전환: Alt+Shift+C"
         >
           {videoEnabled ? <CameraIcon /> : <CameraOffIcon />}
-          <span>{!videoAvailable ? '카메라 연결' : videoEnabled ? '카메라' : '카메라 꺼짐'}</span>
+          <span>{!videoAvailable ? '카메라 선택' : videoEnabled ? '카메라' : '카메라 꺼짐'}</span>
         </button>
         <button
           className={`control-button${screenSharing ? ' control-button--active' : ''}`}
@@ -590,7 +590,7 @@ export function RoomView({
           disabled={!screenShareAvailable || !isActive}
           aria-label={
             !screenShareAvailable
-              ? '이 브라우저는 화면 공유를 지원하지 않음'
+              ? '이 브라우저는 화면 공유를 지원하지 않습니다.'
               : screenSharing
                 ? '화면 공유 중지'
                 : '화면 공유 시작'
