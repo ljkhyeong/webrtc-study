@@ -1,4 +1,4 @@
-import { useState, type SyntheticEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type SyntheticEvent } from 'react';
 import type {
   PeerConnectionDiagnostics,
   PeerConnectionStatus,
@@ -6,10 +6,11 @@ import type {
 } from '@round/rtc-core';
 
 type ConnectionDiagnosticsState =
-  | { readonly status: 'idle' | 'loading' | 'error' }
+  | { readonly status: 'idle' | 'stale' | 'loading' | 'error' }
   | { readonly status: 'ready'; readonly value: RoomConnectionDiagnostics };
 
 interface ConnectionDiagnosticsPanelProps {
+  readonly connectionContextKey?: string;
   readonly qualityVisible?: boolean;
   readonly onSetQualityVisible?: ((visible: boolean) => void) | undefined;
   readonly onCollect: () => Promise<RoomConnectionDiagnostics>;
@@ -108,25 +109,53 @@ function ConnectionDiagnosticItem({
 }
 
 export function ConnectionDiagnosticsPanel({
+  connectionContextKey = '',
   onCollect,
   qualityVisible = false,
   onSetQualityVisible,
 }: ConnectionDiagnosticsPanelProps) {
   const [diagnostics, setDiagnostics] = useState<ConnectionDiagnosticsState>({ status: 'idle' });
   const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle');
+  const collectionGeneration = useRef(0);
+  const previousContextKey = useRef(connectionContextKey);
+
+  useLayoutEffect(() => {
+    if (previousContextKey.current === connectionContextKey) return;
+    previousContextKey.current = connectionContextKey;
+    collectionGeneration.current += 1;
+    setDiagnostics({ status: 'stale' });
+    setCopyState('idle');
+  }, [connectionContextKey]);
+
+  useEffect(
+    () => () => {
+      collectionGeneration.current += 1;
+    },
+    [],
+  );
 
   const collect = async () => {
+    const generation = collectionGeneration.current + 1;
+    collectionGeneration.current = generation;
     setDiagnostics({ status: 'loading' });
     setCopyState('idle');
     try {
-      setDiagnostics({ status: 'ready', value: await onCollect() });
+      const value = await onCollect();
+      if (collectionGeneration.current === generation) {
+        setDiagnostics({ status: 'ready', value });
+      }
     } catch {
-      setDiagnostics({ status: 'error' });
+      if (collectionGeneration.current === generation) {
+        setDiagnostics({ status: 'error' });
+      }
     }
   };
 
   const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
-    if (event.currentTarget.open && diagnostics.status === 'idle') {
+    if (
+      event.currentTarget.open &&
+      (diagnostics.status === 'idle' || diagnostics.status === 'stale')
+    ) {
       void collect();
     }
   };
@@ -184,6 +213,8 @@ export function ConnectionDiagnosticsPanel({
           <p role="alert">연결 상태를 측정하지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
         ) : diagnostics.status === 'idle' ? (
           <p>연결 진단을 열면 약 3초 동안 측정합니다.</p>
+        ) : diagnostics.status === 'stale' ? (
+          <p role="status">참가자 연결이 바뀌었습니다. 다시 측정해 주세요.</p>
         ) : ready === null ? (
           <p role="status">최근 수신 상태를 약 3초 동안 측정하고 있습니다.</p>
         ) : (

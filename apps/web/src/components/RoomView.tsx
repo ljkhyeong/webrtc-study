@@ -288,6 +288,10 @@ export function RoomView({
   const gridSize = Math.min(Math.max(participants.length, 1), 6);
   const { unreadMessageCount, unseenDeliveryIssueCount } = chatNotifications;
   const chatNotificationCount = unreadMessageCount + unseenDeliveryIssueCount;
+  const connectionDiagnosticsKey = participants
+    .filter((participant) => !participant.isLocal)
+    .map((participant) => `${participant.peerId}:${participant.connectionState}`)
+    .join('|');
   const chatButtonLabel = chatOpen
     ? '채팅 닫기'
     : `채팅 열기${unreadMessageCount > 0 ? `, 새 메시지 ${unreadMessageCount}개` : ''}${
@@ -343,6 +347,7 @@ export function RoomView({
           </span>
 
           <ConnectionDiagnosticsPanel
+            connectionContextKey={connectionDiagnosticsKey}
             onCollect={onCollectConnectionDiagnostics}
             qualityVisible={qualityVisible}
             onSetQualityVisible={onSetQualityVisible}
