@@ -79,6 +79,47 @@ describe('VideoTile browser behavior', () => {
     document.body.replaceChildren();
   });
 
+  it('참가자 재연결 요청 실패를 안내하고 다음 요청이 성공하면 해제한다', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const onRetryPeer = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const root = createRoot(document.body);
+    const participant = {
+      ...remoteParticipant({} as MediaStream),
+      connectionState: 'failed' as const,
+    };
+
+    try {
+      await act(async () => root.render(<VideoTile {...{ participant, onRetryPeer }} />));
+      const retry = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="스터디원 다시 연결"]',
+      )!;
+
+      act(() => retry.click());
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+        '재연결 요청을 보내지 못했습니다.',
+      );
+      await act(async () =>
+        root.render(
+          <VideoTile
+            participant={{ ...participant, connectionState: 'connecting' }}
+            onRetryPeer={onRetryPeer}
+          />,
+        ),
+      );
+      await act(async () => root.render(<VideoTile {...{ participant, onRetryPeer }} />));
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+      act(() =>
+        document
+          .querySelector<HTMLButtonElement>('button[aria-label="스터디원 다시 연결"]')!
+          .click(),
+      );
+      expect(onRetryPeer).toHaveBeenCalledTimes(2);
+      expect(onRetryPeer).toHaveBeenLastCalledWith('peer-1');
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
   it('전체 화면 닫기 버튼과 브라우저 자체 종료 뒤에 버튼 상태를 복원한다', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
     const fullscreen = installFullscreenDocument();

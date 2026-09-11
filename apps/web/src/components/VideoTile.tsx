@@ -24,7 +24,7 @@ interface VideoTileProps {
   pinned?: boolean;
   onTogglePin?: () => void;
   canModerateMedia?: boolean;
-  onRetryPeer?: ((peerId: string) => void) | undefined;
+  onRetryPeer?: ((peerId: string) => boolean) | undefined;
   onDisableAudio?: ((peerId: string) => void) | undefined;
   onDisableVideo?: ((peerId: string) => void) | undefined;
 }
@@ -70,6 +70,7 @@ export function VideoTile({
   const [outputError, setOutputError] = useState(false);
   const [mutedLocally, setMutedLocally] = useState(false);
   const [previewHidden, setPreviewHidden] = useState(false);
+  const [retryError, setRetryError] = useState(false);
   const outputChange = useRef(Promise.resolve());
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -142,6 +143,10 @@ export function VideoTile({
     !participant.isLocal && participant.videoSource === 'screen' && hasVisibleVideo;
   const shareView = useScreenShareView(isRemoteScreenShare, participant.stream, videoRef);
   const isConnected = participant.isLocal || participant.connectionState === 'connected';
+
+  useEffect(() => {
+    setRetryError(false);
+  }, [participant.connectionState]);
 
   async function playVideo(video: HTMLVideoElement, attempt: number): Promise<void> {
     try {
@@ -438,9 +443,12 @@ export function VideoTile({
 
       {!participant.isLocal && participant.connectionState === 'failed' && onRetryPeer ? (
         <div className="video-tile__playback-recovery">
+          {retryError ? (
+            <span role="alert">재연결 요청을 보내지 못했습니다. 잠시 후 다시 시도해 주세요.</span>
+          ) : null}
           <button
             type="button"
-            onClick={() => onRetryPeer(participant.peerId)}
+            onClick={() => setRetryError(!onRetryPeer(participant.peerId))}
             aria-label={`${participant.displayName} 다시 연결`}
           >
             이 참가자 다시 연결

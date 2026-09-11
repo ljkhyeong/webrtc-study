@@ -476,9 +476,7 @@ export function ActiveRoom({
           if (!sessionRef.current?.retryChat(messageId, peerId))
             setActionError('재전송할 수 없습니다. 상대 연결과 재전송 가능 시간을 확인해 주세요.');
         }}
-        onRetryPeer={(peerId) => {
-          sessionRef.current?.retryPeer(peerId);
-        }}
+        onRetryPeer={(peerId) => sessionRef.current?.retryPeer(peerId) ?? false}
         onSetHandRaised={(raised) => {
           if (!sessionRef.current?.setHandRaised(raised))
             setActionError('손들기 요청을 보내지 못했습니다. 연결 상태를 확인해 주세요.');

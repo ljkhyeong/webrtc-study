@@ -89,7 +89,7 @@ interface RoomViewProps {
   onCollectConnectionDiagnostics: () => Promise<RoomConnectionDiagnostics>;
   onSelectDevices: () => void;
   onReconnect: () => void;
-  onRetryPeer?: ((peerId: string) => void) | undefined;
+  onRetryPeer?: ((peerId: string) => boolean) | undefined;
   onLeave: () => void;
   registerLeaveGuard?: RegisterLeaveGuard | undefined;
 }
