@@ -2,12 +2,12 @@
   color: #17202a;
   background: #e9efee;
   font-family:
-    Inter,
     Pretendard,
+    'Apple SD Gothic Neo',
     -apple-system,
     BlinkMacSystemFont,
+    'Malgun Gothic',
     'Segoe UI',
-    'Apple SD Gothic Neo',
     sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -602,7 +602,7 @@ textarea:focus-visible {
 .prejoin-shell {
   min-height: 100svh;
   color: var(--ink);
-  background: linear-gradient(130deg, rgb(73 181 142 / 9%), transparent 42%), var(--fog);
+  background: var(--fog);
 }
 
 .prejoin-header {
@@ -642,7 +642,7 @@ textarea:focus-visible {
   padding: 48px 0 64px;
   grid-template-columns: minmax(480px, 1.35fr) minmax(340px, 0.65fr);
   align-items: center;
-  gap: clamp(40px, 7vw, 96px);
+  gap: clamp(36px, 5vw, 72px);
 }
 
 .prejoin-preview {
@@ -651,10 +651,10 @@ textarea:focus-visible {
   width: 100%;
   aspect-ratio: 16 / 10;
   border: 1px solid rgb(255 255 255 / 9%);
-  border-radius: 22px;
+  border-radius: 16px;
   color: var(--paper);
-  background: radial-gradient(circle at 50% 42%, #263740, var(--night) 68%), var(--night);
-  box-shadow: 0 28px 70px rgb(18 33 35 / 20%);
+  background: var(--night-soft);
+  box-shadow: 0 12px 32px rgb(18 33 35 / 10%);
 }
 
 .prejoin-preview video {
@@ -677,7 +677,11 @@ textarea:focus-visible {
 .prejoin-preview__placeholder {
   gap: 12px;
   color: #aebbbd;
-  background: radial-gradient(circle at 50% 38%, #26363e, var(--night) 70%);
+  background: var(--night-soft);
+}
+
+.prejoin-preview:has(.prejoin-preview__controls) .prejoin-preview__placeholder {
+  padding-bottom: 64px;
 }
 
 .prejoin-preview__placeholder svg {
@@ -689,13 +693,15 @@ textarea:focus-visible {
   margin-top: 8px;
   padding-inline: 20px;
   color: #dce5e5;
-  font-size: 0.84rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.6;
   text-align: center;
 }
 
 .prejoin-preview__placeholder span {
-  color: #7f9196;
-  font-size: 0.72rem;
+  color: #aebec1;
+  font-size: 0.8rem;
 }
 
 .prejoin-preview__controls {
@@ -723,8 +729,8 @@ textarea:focus-visible {
 }
 
 .prejoin-preview__controls button.is-off {
-  color: #f0b6ad;
-  background: rgb(87 36 31 / 82%);
+  color: #b8c7c8;
+  background: rgb(20 33 39 / 90%);
 }
 
 .prejoin-preview__controls button:disabled {
@@ -759,17 +765,16 @@ textarea:focus-visible {
 
 .prejoin-settings h1 {
   margin: 0;
-  font-family: 'Iowan Old Style', 'Noto Serif KR', 'AppleMyungjo', Georgia, serif;
-  font-size: clamp(2rem, 3vw, 3.2rem);
-  font-weight: 500;
-  letter-spacing: -0.055em;
-  line-height: 1.16;
+  font-size: clamp(2rem, 2.6vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.25;
 }
 
 .prejoin-description {
-  margin: 20px 0 28px;
+  margin: 16px 0 28px;
   color: var(--ink-soft);
-  font-size: 0.84rem;
+  font-size: 0.9rem;
   letter-spacing: -0.015em;
   line-height: 1.7;
 }
@@ -790,15 +795,13 @@ textarea:focus-visible {
   align-items: center;
   justify-content: space-between;
   color: white;
-  background: var(--ink);
-  font-size: 0.86rem;
+  background: var(--mint);
+  font-size: 0.94rem;
   font-weight: 750;
 }
 
 .prejoin-primary-action:hover:not(:disabled) {
-  background: #263741;
-  box-shadow: 0 12px 24px rgb(23 32 42 / 15%);
-  transform: translateY(-1px);
+  background: #236650;
 }
 
 .prejoin-primary-action:disabled {
@@ -814,7 +817,7 @@ textarea:focus-visible {
 .prejoin-retry-action {
   border: 0;
   background: transparent;
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   font-weight: 700;
 }
 
@@ -841,7 +844,7 @@ textarea:focus-visible {
 }
 
 .prejoin-device-fields label > span {
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   font-weight: 750;
 }
 
@@ -898,7 +901,7 @@ textarea:focus-visible {
 
 .prejoin-name > label,
 .prejoin-host-capability > span {
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   font-weight: 750;
 }
 
@@ -926,7 +929,7 @@ textarea:focus-visible {
 .prejoin-name small,
 .prejoin-host-capability small {
   color: var(--ink-soft);
-  font-size: 0.66rem;
+  font-size: 0.75rem;
   line-height: 1.5;
 }
 
@@ -1478,7 +1481,6 @@ textarea:focus-visible {
   box-shadow: inset 0 0 0 1px rgb(73 181 142 / 6%);
   content: '';
   pointer-events: none;
-  animation: connected-breathe 4s ease-in-out infinite;
 }
 
 .video-tile video,
@@ -1542,21 +1544,21 @@ textarea:focus-visible {
 .video-tile__fallback {
   display: grid;
   place-items: center;
-  background: radial-gradient(circle at 50% 42%, rgb(62 92 88 / 55%), transparent 27%), #182229;
+  background: var(--night-soft);
 }
 
 .video-tile__fallback span {
   display: grid;
-  width: clamp(74px, 11vw, 132px);
+  width: clamp(72px, 9vw, 112px);
   aspect-ratio: 1;
   border: 1px solid rgb(255 255 255 / 13%);
   border-radius: 50%;
   place-items: center;
   color: #e4ecec;
-  background: #26363d;
-  font-family: 'Iowan Old Style', Georgia, serif;
-  font-size: clamp(1.35rem, 3vw, 2.5rem);
-  letter-spacing: -0.05em;
+  background: #293b40;
+  font-size: clamp(1.25rem, 2.5vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
 }
 
 .video-tile__preview-notice {
@@ -1872,7 +1874,7 @@ textarea:focus-visible {
 }
 
 .video-tile__local-mute[aria-pressed='true'] {
-  color: #f3bab0;
+  color: #b8c7c8;
 }
 
 .video-tile__muted {
@@ -1881,8 +1883,8 @@ textarea:focus-visible {
   height: 28px;
   border-radius: 50%;
   place-items: center;
-  color: #f3bab0;
-  background: rgb(78 28 24 / 78%);
+  color: #b8c7c8;
+  background: rgb(20 33 39 / 90%);
   backdrop-filter: blur(10px);
 }
 
@@ -2368,42 +2370,47 @@ textarea:focus-visible {
   left: 50%;
   z-index: 30;
   display: flex;
-  min-height: 70px;
+  min-height: 76px;
   padding: 8px;
-  border: 1px solid rgb(255 255 255 / 16%);
-  border-radius: 18px;
+  border: 1px solid #405159;
+  border-radius: 14px;
   align-items: stretch;
   gap: 3px;
-  color: var(--ink);
-  background: rgb(247 250 249 / 95%);
-  box-shadow: 0 22px 58px rgb(0 0 0 / 34%);
-  backdrop-filter: blur(18px);
+  color: #e7efed;
+  background: var(--night-soft);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 24%);
   transform: translateX(-50%);
-  animation: dock-entrance 500ms 250ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .control-button {
   position: relative;
   display: flex;
-  min-width: 70px;
+  min-width: 76px;
   padding: 7px 10px;
-  border: 0;
-  border-radius: 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 4px;
-  color: #33424a;
-  background: transparent;
+  gap: 6px;
+  color: #e0eae7;
+  background: #2a3b42;
   transition:
     color 160ms ease,
-    background 160ms ease,
-    transform 160ms ease;
+    background 160ms ease;
 }
 
-.control-button:hover {
-  background: #e7edec;
-  transform: translateY(-1px);
+.control-button:hover:not(:disabled) {
+  background: #374d54;
+}
+
+.control-button:focus-visible {
+  outline-color: #a4dfca;
+  outline-offset: 2px;
+}
+
+.control-button:disabled {
+  opacity: 0.45;
 }
 
 .control-button svg {
@@ -2411,18 +2418,22 @@ textarea:focus-visible {
 }
 
 .control-button span {
-  font-size: 0.58rem;
-  font-weight: 700;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: keep-all;
 }
 
 .control-button--off {
-  color: var(--coral-dark);
-  background: #f3dfdb;
+  border-color: #405159;
+  color: #b8c7c8;
+  background: #142127;
 }
 
 .control-button--active {
-  color: #155743;
-  background: #dcece7;
+  border-color: #629f89;
+  color: #d3f4e5;
+  background: #255a4a;
 }
 
 .control-button b {
@@ -2435,24 +2446,24 @@ textarea:focus-visible {
   padding: 0 4px;
   border-radius: 999px;
   place-items: center;
-  color: white;
-  background: var(--coral);
-  font-size: 0.52rem;
+  color: #17202a;
+  background: #b4ecda;
+  font-size: 0.65rem;
 }
 
 .control-dock__divider {
   width: 1px;
   margin: 6px 5px;
-  background: #d5dfdd;
+  background: #405159;
 }
 
 .control-button--leave {
   min-width: 74px;
   color: white;
-  background: var(--coral);
+  background: #a93e31;
 }
 
-.control-button--leave:hover {
+.control-button--leave:hover:not(:disabled) {
   color: white;
   background: var(--coral-dark);
 }
@@ -2476,17 +2487,6 @@ textarea:focus-visible {
   to {
     opacity: 1;
     transform: scale(1) rotate(0);
-  }
-}
-
-@keyframes dock-entrance {
-  from {
-    opacity: 0;
-    transform: translate(-50%, 18px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
   }
 }
 
@@ -2515,16 +2515,6 @@ textarea:focus-visible {
   }
   50% {
     transform: translateY(-7px);
-  }
-}
-
-@keyframes connected-breathe {
-  0%,
-  100% {
-    opacity: 0.45;
-  }
-  50% {
-    opacity: 1;
   }
 }
 
@@ -2688,7 +2678,7 @@ textarea:focus-visible {
   }
 
   .prejoin-settings h1 {
-    font-size: clamp(2rem, 8.5vw, 3rem);
+    font-size: clamp(1.8rem, 8vw, 2.2rem);
   }
 
   .room-shell {
@@ -2712,7 +2702,7 @@ textarea:focus-visible {
   }
 
   .connection-state {
-    min-height: 30px;
+    min-height: 34px;
     padding-inline: 8px;
     font-size: 0.61rem;
   }
@@ -2727,15 +2717,15 @@ textarea:focus-visible {
   }
 
   .participant-count {
-    min-height: 30px;
+    min-height: 34px;
   }
 
   .room-invite-button,
   .room-devices-button,
   .connection-diagnostics > summary {
-    min-height: 30px;
-    padding-inline: 8px;
-    font-size: 0.61rem;
+    min-height: 34px;
+    padding-inline: 7px;
+    font-size: 0.6875rem;
   }
 
   .connection-diagnostics__panel {
@@ -2889,6 +2879,10 @@ textarea:focus-visible {
   }
 
   .prejoin-preview {
+    aspect-ratio: 16 / 10;
+  }
+
+  .prejoin-preview:has(.prejoin-preview__controls) {
     aspect-ratio: 4 / 3;
   }
 
@@ -2927,7 +2921,12 @@ textarea:focus-visible {
   }
 
   .control-button span {
-    font-size: 0.52rem;
+    display: flex;
+    min-height: 2.5em;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6875rem;
+    line-height: 1.25;
   }
 }
 
@@ -3329,7 +3328,6 @@ textarea:focus-visible {
 .video-tile--speaking::after {
   border: 2px solid #8fdcbe;
   box-shadow: inset 0 0 0 1px #8fdcbe55;
-  animation: none;
 }
 .video-tile__badges .video-tile__speaking {
   color: #c5f6de;
