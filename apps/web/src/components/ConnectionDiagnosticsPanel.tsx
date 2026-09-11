@@ -56,6 +56,15 @@ function candidateTypeLabel(type: RTCIceCandidateType | null) {
   return type === null ? '정보 없음' : candidateTypeLabels[type];
 }
 
+function shareableDiagnostics(value: RoomConnectionDiagnostics): RoomConnectionDiagnostics {
+  return {
+    status: value.status,
+    connections: value.connections.map(
+      ({ participantName: _participantName, ...connection }) => connection,
+    ),
+  };
+}
+
 function ConnectionDiagnosticItem({
   diagnostic,
 }: {
@@ -63,7 +72,11 @@ function ConnectionDiagnosticItem({
 }) {
   return (
     <article className="connection-diagnostics__item">
-      <strong>연결 {diagnostic.connectionNumber}</strong>
+      <strong>
+        {diagnostic.participantName
+          ? `${diagnostic.participantName} · 연결 ${diagnostic.connectionNumber}`
+          : `연결 ${diagnostic.connectionNumber}`}
+      </strong>
       <dl>
         <div>
           <dt>상태</dt>
@@ -125,7 +138,7 @@ export function ConnectionDiagnosticsPanel({
         JSON.stringify(
           {
             measurement: '약 3초 동안 측정한 수신 손실과 마지막 지연·지연 변동',
-            ...diagnostics.value,
+            ...shareableDiagnostics(diagnostics.value),
           },
           null,
           2,
@@ -163,8 +176,9 @@ export function ConnectionDiagnosticsPanel({
           </button>
         ) : null}
         <p className="connection-diagnostics__privacy">
-          약 3초 동안 수신 손실을 측정하고 마지막 지연과 지연 변동을 표시합니다. IP 주소, 방 코드,
-          참가자 식별자는 수집하거나 서버로 보내지 않습니다.
+          약 3초 동안 수신 손실을 측정하고 마지막 지연과 지연 변동을 표시합니다. 참가자 이름은 현재
+          화면에서만 표시하며 복사하지 않습니다. IP 주소와 참가자 식별자는 수집하거나 서버로 보내지
+          않습니다.
         </p>
         {diagnostics.status === 'error' ? (
           <p role="alert">연결 상태를 측정하지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
@@ -194,7 +208,7 @@ export function ConnectionDiagnosticsPanel({
               {copyState === 'success' ? '진단 정보 복사됨' : '진단 정보 복사'}
             </button>
             {copyState === 'error' ? <p role="alert">클립보드에 복사하지 못했습니다.</p> : null}
-            <pre tabIndex={0}>{JSON.stringify(ready, null, 2)}</pre>
+            <pre tabIndex={0}>{JSON.stringify(shareableDiagnostics(ready), null, 2)}</pre>
           </>
         )}
       </section>

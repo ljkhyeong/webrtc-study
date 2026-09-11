@@ -724,17 +724,22 @@ export class RoomSession {
   /**
    * 요청 후 약 3초 동안의 수신 통계를 비교하며 주기적으로 수집하지 않는다.
    * candidate 주소, 방 코드, peer ID는 결과에 포함하지 않는다.
+   * 참가자 표시 이름은 현재 화면에서 연결을 구분하는 데 사용한다.
    */
   async collectConnectionDiagnostics(): Promise<RoomConnectionDiagnostics> {
     const peers = [...this.#peers.values()].filter(
       (peer) => !peer.closed && peer.connection.connectionState !== 'closed',
     );
     const connections = await measurePeerConnections(
-      peers.map((peer) => ({
-        connection: peer.connection,
-        signal: peer.trackReplacementAbort.signal,
-        isCurrent: () => this.#isCurrentPeer(peer),
-      })),
+      peers.map((peer) => {
+        const participantName = this.#participants.get(peer.peerId)?.displayName;
+        return {
+          connection: peer.connection,
+          ...(participantName === undefined ? {} : { participantName }),
+          signal: peer.trackReplacementAbort.signal,
+          isCurrent: () => this.#isCurrentPeer(peer),
+        };
+      }),
     );
     return {
       status: this.#status,

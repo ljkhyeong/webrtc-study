@@ -48,6 +48,7 @@ describe('최근 연결 진단', () => {
     const collecting = h.session.collectConnectionDiagnostics();
     await vi.advanceTimersByTimeAsync(3_000);
     const result = await collecting;
+    expect(result.connections[0]!.participantName).toBe('참가자');
     expect(result.connections[0]!.packetLossPercent).toBe(expected);
   });
 

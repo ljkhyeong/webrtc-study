@@ -19,6 +19,11 @@ test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) 
     await expect(firstTileOnSecondPage.getByText('방장', { exact: true })).toBeVisible();
     await expect(second.getByRole('button', { name: '가온 마이크 끄기' })).toHaveCount(0);
 
+    const diagnosticsSummary = first.locator('summary', { hasText: '진단' });
+    await diagnosticsSummary.click();
+    await expect(first.getByText('나래 · 연결 1', { exact: true })).toBeVisible();
+    await diagnosticsSummary.click();
+
     await first.getByRole('button', { name: '화면 공유 시작' }).click();
     await expect(firstTileOnSecondPage.getByText('화면 공유 중')).toBeVisible();
     await expect(

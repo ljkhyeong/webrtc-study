@@ -1,5 +1,6 @@
 export interface PeerConnectionDiagnostics {
   readonly connectionNumber: number;
+  readonly participantName?: string;
   readonly connectionState: RTCPeerConnectionState | 'negotiating';
   readonly localCandidateType: RTCIceCandidateType | null;
   readonly remoteCandidateType: RTCIceCandidateType | null;
@@ -10,6 +11,7 @@ export interface PeerConnectionDiagnostics {
 
 export interface ConnectionDiagnosticTarget {
   readonly connection: RTCPeerConnection;
+  readonly participantName?: string;
   readonly signal: AbortSignal;
   readonly isCurrent: () => boolean;
 }
@@ -26,7 +28,12 @@ export async function measurePeerConnections(
       if (!target.isCurrent()) return null;
       const report = await target.connection.getStats();
       if (!target.isCurrent()) return null;
-      return summarizeConnection(index + 1, target.connection.connectionState, before, report);
+      return {
+        ...summarizeConnection(index + 1, target.connection.connectionState, before, report),
+        ...(target.participantName === undefined
+          ? {}
+          : { participantName: target.participantName }),
+      };
     }),
   );
   return connections.filter((connection) => connection !== null);
