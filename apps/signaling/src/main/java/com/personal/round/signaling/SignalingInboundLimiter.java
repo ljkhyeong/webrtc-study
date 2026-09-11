@@ -4,7 +4,7 @@ import com.personal.round.config.SignalingProperties;
 import java.util.LinkedHashMap;
 
 /**
- * 시그널링 수신량의 세션·클라이언트·서버 전체 고정 구간과 클라이언트 상태 보관을 소유한다.
+ * 세션·클라이언트·서버 전체의 고정 집계 구간과 수신량 상태를 관리한다.
  *
  * <p>호출자는 SignalingService의 단일 monitor 안에서 이 객체를 사용한다.
  */

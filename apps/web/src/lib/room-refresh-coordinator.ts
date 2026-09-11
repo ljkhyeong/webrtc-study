@@ -21,7 +21,7 @@ interface RoomRefreshCoordinatorOptions {
   readonly onParticipationGrantAccessFailure?: (error: ParticipationGrantAccessError) => void;
 }
 
-/** 활성 방 하나의 참여권·TURN 갱신 타이머와 진행 중인 요청을 함께 소유한다. */
+/** 활성 방의 참여권·TURN 갱신 일정과 진행 중인 요청을 관리한다. */
 export class RoomRefreshCoordinator {
   readonly #options: RoomRefreshCoordinatorOptions;
   readonly #lifetime = new RoomRefreshLifetime();

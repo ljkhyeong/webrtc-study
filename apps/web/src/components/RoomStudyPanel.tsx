@@ -110,7 +110,7 @@ export function RoomStudyPanel({
     }
     if (state.running && remaining > 0 && completedRevision.current === null) armed.current = true;
     if (remaining === 0 && armed.current && completedRevision.current === null) {
-      // 화면의 0초는 조회 계기이며, 종료 알림은 서버의 완료 응답으로 확정한다.
+      // 화면에 0초가 표시되면 서버에 다시 조회하고, 완료 응답을 받은 뒤 종료를 알린다.
       if (state.running) {
         if (confirmationRevision.current !== state.revision) {
           confirmationRevision.current = state.revision;

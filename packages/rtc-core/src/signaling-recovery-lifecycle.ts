@@ -27,7 +27,7 @@ interface SignalingRecoveryLifecycleOptions {
   readonly onUnexpectedFailure: (error: unknown) => void;
 }
 
-/** 방 입장 확인과 제한된 시그널링 재연결 작업의 수명주기를 소유한다. */
+/** 방 입장 확인과 횟수가 제한된 시그널링 재연결을 관리한다. */
 export class SignalingRecoveryLifecycle {
   readonly #options: SignalingRecoveryLifecycleOptions;
 

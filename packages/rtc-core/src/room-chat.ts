@@ -36,7 +36,7 @@ export type ChatRecipientDeliveryState = 'pending' | 'acknowledged' | 'failed';
 // 표시와 전송이 끝난 ID만 제한된 FIFO로 보관하고, 대기 중인 ID는 완료될 때까지 유지한다.
 const MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS = 128;
 
-/** 화면에 보이는 채팅 기록과 로컬 메시지의 수신 확인 수명주기를 관리한다. */
+/** 화면 채팅 기록과 내가 보낸 메시지의 수신 확인 상태를 관리한다. */
 export class RoomChatLedger {
   readonly #activeLocalMessageIds = new Set<string>();
   readonly #recentlyRetiredLocalMessageIds = new Set<string>();

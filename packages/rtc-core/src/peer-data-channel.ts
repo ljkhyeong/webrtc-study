@@ -61,7 +61,7 @@ interface PeerDataChannelOptions {
   readonly onStateChanged: () => void;
 }
 
-/** 단일 피어의 DataChannel, ACK, 송신 대기열과 수신 제한 수명주기를 소유한다. */
+/** 참가자 한 명의 DataChannel, 수신 확인, 송신 대기열과 수신 제한을 관리한다. */
 export class PeerDataChannel {
   readonly #options: PeerDataChannelOptions;
   readonly #pendingChatMessages: PendingChatMessage[] = [];

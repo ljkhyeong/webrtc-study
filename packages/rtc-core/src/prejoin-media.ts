@@ -107,10 +107,10 @@ function hasEnded(track: MediaStreamTrack): boolean {
 }
 
 /**
- * 사용자가 참여 전 화면에 있는 동안 카메라와 마이크 트랙을 소유한다.
+ * 사용자가 입장 준비 화면에 있는 동안 카메라와 마이크 트랙을 관리한다.
  *
  * React 호출자는 이 객체를 ref에 보관하고 `getSnapshot()` 결과만 상태에 저장해야 한다.
- * `takeStream()`은 트랙 소유권을 `RoomSession`으로 이전한다.
+ * `takeStream()`은 트랙 관리를 `RoomSession`에 넘긴다.
  */
 export class PrejoinMedia {
   readonly #audioConstraints: MediaTrackConstraints;

@@ -18,7 +18,7 @@ interface PendingRemoteCandidates {
   readonly overflowWarned: boolean;
 }
 
-/** 단일 RTCPeerConnection의 협상 세대, ICE 대기열, 복구 타이머를 소유한다. */
+/** RTCPeerConnection 하나의 협상 번호, ICE 대기열과 복구 타이머를 관리한다. */
 export class PeerConnectionLifecycle {
   readonly trackReplacementAbort = new AbortController();
 

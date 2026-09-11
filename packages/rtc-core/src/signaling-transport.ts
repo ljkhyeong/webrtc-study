@@ -46,7 +46,7 @@ export class SignalingTransportError extends Error {
   }
 }
 
-/** 단일 RoomSession의 WebSocket과 요청 상관관계 수명주기를 소유한다. */
+/** RoomSession 하나의 WebSocket 연결과 요청·응답 연결을 관리한다. */
 export class SignalingTransport {
   readonly #options: SignalingTransportOptions;
   readonly #pendingRequests = new Map<string, PendingSignalRequest>();

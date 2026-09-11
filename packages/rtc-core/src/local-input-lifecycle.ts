@@ -11,7 +11,7 @@ interface LocalInputLifecycleOptions extends LocalMediaLifecycleOptions {
   readonly onInputTrackEnded: (track: MediaStreamTrack) => void;
 }
 
-/** 마이크·카메라 트랙과 통화 중 입력 장치 교체 상태를 소유한다. */
+/** 마이크·카메라 트랙과 통화 중 입력 장치 교체 상태를 관리한다. */
 export class LocalInputLifecycle {
   readonly #options: LocalInputLifecycleOptions;
   readonly #trackEndedListeners = new Map<MediaStreamTrack, EventListener>();

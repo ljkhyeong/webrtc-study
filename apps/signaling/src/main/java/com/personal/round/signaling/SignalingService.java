@@ -963,8 +963,8 @@ public class SignalingService implements SmartLifecycle {
 	private void enqueueAllLocked(
 			ArrayDeque<PendingOutbound> pendingOutbound,
 			WorkPlan workPlan) {
-		// 압력으로 발생한 퇴장 프레임은 원인 배치 뒤에 추가한다. 이 루프를 너비 우선으로
-		// 처리하면 재귀적 퇴거를 방지하고 인과적 이벤트 순서를 보존할 수 있다.
+		// 송신 큐 초과로 생긴 추가 퇴장은 원래 메시지 다음에 처리한다.
+		// 재귀 호출 없이 순서대로 처리해 퇴장 알림의 순서를 유지한다.
 		while (!pendingOutbound.isEmpty()) {
 			PendingOutbound outbound = pendingOutbound.removeFirst();
 			outbound.accepted = enqueueOneLocked(

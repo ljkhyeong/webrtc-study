@@ -31,7 +31,7 @@ const SCREEN_SHARE_CONSTRAINTS: Record<ScreenShareQuality, DisplayMediaStreamOpt
   },
 };
 
-/** 화면 공유 트랙과 비동기 시작·중지 작업의 수명주기를 소유한다. */
+/** 화면 공유 트랙과 비동기 시작·중지 작업을 관리한다. */
 export class ScreenShareLifecycle {
   readonly #options: ScreenShareLifecycleOptions;
 

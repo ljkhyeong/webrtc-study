@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "ROUND client와 signaling 서버가 공유하는 versioned wire 계약입니다.",
+  "description": "ROUND 클라이언트와 시그널링 서버가 공유하는 버전별 메시지 계약입니다.",
   "exports": {
     ".": {
       "types": "./src/index.ts",

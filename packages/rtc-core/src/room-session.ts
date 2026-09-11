@@ -370,7 +370,7 @@ function safeSignalingErrorMessage(code: SignalingErrorCode): string {
 }
 
 /**
- * 프레임워크와 무관하게 단일 방의 브라우저 WebRTC 리소스를 소유한다.
+ * 프레임워크와 무관하게 방 하나의 브라우저 WebRTC 자원을 관리한다.
  *
  * 세션은 의도적으로 일회용이다. `leave()` 또는 치명적인 시그널링 오류 후에는
  * 새 인스턴스를 생성해야 한다.

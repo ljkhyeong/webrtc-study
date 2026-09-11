@@ -46,6 +46,6 @@ public final class ParticipationGrantHandshakeInterceptor implements HandshakeIn
 			ServerHttpResponse response,
 			WebSocketHandler wsHandler,
 			Exception exception) {
-		// 업그레이드가 성공하면 불변 참여권의 소유권이 WebSocket 세션으로 넘어간다.
+		// 업그레이드가 성공하면 WebSocket 세션이 연결 당시 참여권과 만료 시점을 관리한다.
 	}
 }
