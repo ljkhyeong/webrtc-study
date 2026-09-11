@@ -39,45 +39,45 @@ public final class SignalingMetrics {
 
 	public SignalingMetrics(MeterRegistry registry) {
 		Gauge.builder("round.signaling.rooms.active", activeRooms, AtomicInteger::get)
-				.description("Current number of non-empty signaling rooms")
+				.description("현재 참가자가 있는 시그널링 방 수")
 				.register(registry);
 		Gauge.builder("round.signaling.peers.connected", connectedPeers, AtomicInteger::get)
-				.description("Current number of connected WebSocket peers")
+				.description("현재 연결된 WebSocket 참가자 수")
 				.register(registry);
 		Gauge.builder("round.signaling.peers.joined", joinedPeers, AtomicInteger::get)
-				.description("Current number of peers joined to a room")
+				.description("현재 방에 입장한 참가자 수")
 				.register(registry);
 		Gauge.builder(
 						"round.signaling.outbound.queue.bytes",
 						outboundQueuedBytes,
 						AtomicLong::get)
-				.description("Current signaling bytes queued or in flight across all peers")
+				.description("현재 전송 대기 중이거나 전송 중인 전체 시그널링 바이트 수")
 				.register(registry);
 		MeterProvider<Counter> joinRejections = Counter.builder("round.signaling.joins.rejected")
-				.description("Room join requests rejected by the signaling service")
+				.description("시그널링 서버가 거부한 방 입장 요청 수")
 				.withRegistry(registry);
 		roomFullRejections = joinRejections.withTag("reason", "room_full");
 		alreadyJoinedRejections = joinRejections.withTag("reason", "already_joined");
 		unauthorizedRoomRejections = joinRejections.withTag("reason", "unauthorized_room");
 		invalidHostCapabilityRejections = joinRejections.withTag("reason", "invalid_host_capability");
 		invalidFrames = Counter.builder("round.signaling.frames.invalid")
-				.description("Malformed, unsupported, or oversized inbound WebSocket frames")
+				.description("형식 오류, 미지원 또는 크기 초과로 거부한 수신 WebSocket 프레임 수")
 				.register(registry);
 		rateLimitedFrames = Counter.builder("round.signaling.frames.rate_limited")
-				.description("Inbound WebSocket frames rejected by per-session abuse limits")
+				.description("세션별 수신량 제한으로 거부한 WebSocket 프레임 수")
 				.register(registry);
 		clientRateLimitedFrames = Counter.builder(
 						"round.signaling.frames.client_rate_limited")
-				.description("Inbound WebSocket frames dropped by per-client abuse limits")
+				.description("클라이언트별 수신량 제한으로 버린 WebSocket 프레임 수")
 				.register(registry);
 		overloadedFrames = Counter.builder("round.signaling.frames.overloaded")
-				.description("Inbound WebSocket frames dropped by the global overload guard")
+				.description("서버 전체 수신량 제한으로 버린 WebSocket 프레임 수")
 				.register(registry);
 		sessionByteLimitedFrames = byteLimitCounter(registry, "session");
 		clientByteLimitedFrames = byteLimitCounter(registry, "client");
 		globalByteLimitedFrames = byteLimitCounter(registry, "global");
 		MeterProvider<Counter> connectionRejections = Counter.builder("round.signaling.connections.rejected")
-				.description("WebSocket handshakes rejected by connection admission")
+				.description("연결 한도 검사에서 거부한 WebSocket 연결 요청 수")
 				.withRegistry(registry);
 		serverCapacityRejections = connectionRejections.withTag("reason", "server_capacity");
 		clientCapacityRejections = connectionRejections.withTag("reason", "client_capacity");
@@ -88,17 +88,17 @@ public final class SignalingMetrics {
 		missingReservationRejections = connectionRejections.withTag("reason", "missing_reservation");
 		missingRoomAccessRejections = connectionRejections.withTag("reason", "missing_room_access");
 		queueOverflows = Counter.builder("round.signaling.outbound.queue.overflows")
-				.description("Peers closed by per-peer or server-wide outbound queue limits")
+				.description("참가자별 또는 서버 전체 송신 큐 제한으로 종료한 연결 수")
 				.register(registry);
 		globalQueueOverflows = Counter.builder(
 						"round.signaling.outbound.queue.global_overflows")
-				.description("Outbound frames that encountered the server-wide byte budget")
+				.description("서버 전체 송신 바이트 한도를 초과한 프레임 수")
 				.register(registry);
 		heartbeatCloses = Counter.builder("round.signaling.heartbeat.closes")
-				.description("Peers closed after failing the heartbeat check")
+				.description("연결 확인 실패로 종료한 참가자 연결 수")
 				.register(registry);
 		authorizationCloses = Counter.builder("round.signaling.authorization.closes")
-				.description("WebSocket sessions closed because room authorization expired")
+				.description("방 참여 권한 만료로 종료한 WebSocket 세션 수")
 				.register(registry);
 	}
 
@@ -199,7 +199,7 @@ public final class SignalingMetrics {
 	private static Counter byteLimitCounter(MeterRegistry registry, String scope) {
 		return Counter.builder("round.signaling.frames.byte_limited")
 				.tag("scope", scope)
-				.description("Inbound WebSocket frames rejected by payload byte budgets")
+				.description("본문 크기 한도로 거부한 수신 WebSocket 프레임 수")
 				.register(registry);
 	}
 }

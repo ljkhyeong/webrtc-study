@@ -15,10 +15,10 @@ public final class TurnCredentialMetrics {
 
 	public TurnCredentialMetrics(MeterRegistry registry) {
 		issued = Counter.builder("round.turn.credentials.issued")
-				.description("TURN credentials successfully issued")
+				.description("발급에 성공한 TURN 자격 증명 수")
 				.register(registry);
 		providerErrors = Counter.builder("round.turn.credentials.provider.errors")
-				.description("Cloudflare TURN credential requests that failed")
+				.description("실패한 Cloudflare TURN 자격 증명 요청 수")
 				.register(registry);
 		rateLimited = new EnumMap<>(TurnCredentialRateLimitScope.class);
 		for (TurnCredentialRateLimitScope scope
@@ -27,8 +27,7 @@ public final class TurnCredentialMetrics {
 					scope,
 					Counter.builder("round.turn.credentials.rate_limited")
 							.tag("scope", scope.metricTag())
-							.description(
-									"TURN credential requests rejected by an issuance quota")
+							.description("발급 한도로 거부한 TURN 자격 증명 요청 수")
 							.register(registry));
 		}
 	}
