@@ -404,6 +404,11 @@ export function ActiveRoom({
     }
   };
 
+  const handleActionResult = (succeeded: boolean, failureMessage: string) => {
+    setActionWarning('');
+    setActionError(succeeded ? '' : failureMessage);
+  };
+
   const sessionError = roomErrorMessage(snapshot?.error);
   const { status, terminalErrorMessage } = resolveActiveRoomTerminalState({
     snapshotStatus: snapshot?.status,
@@ -487,13 +492,17 @@ export function ActiveRoom({
           sessionRef.current?.toggleVideo();
         }}
         onRetryMessage={(messageId, peerId) => {
-          if (!sessionRef.current?.retryChat(messageId, peerId))
-            setActionError('재전송할 수 없습니다. 상대 연결과 재전송 가능 시간을 확인해 주세요.');
+          handleActionResult(
+            sessionRef.current?.retryChat(messageId, peerId) ?? false,
+            '재전송할 수 없습니다. 상대 연결과 재전송 가능 시간을 확인해 주세요.',
+          );
         }}
         onRetryPeer={(peerId) => sessionRef.current?.retryPeer(peerId) ?? false}
         onSetHandRaised={(raised) => {
-          if (!sessionRef.current?.setHandRaised(raised))
-            setActionError('손들기 요청을 보내지 못했습니다. 연결 상태를 확인해 주세요.');
+          handleActionResult(
+            sessionRef.current?.setHandRaised(raised) ?? false,
+            '손들기 요청을 보내지 못했습니다. 연결 상태를 확인해 주세요.',
+          );
         }}
         onToggleScreenShare={() => {
           const session = sessionRef.current;
@@ -534,16 +543,16 @@ export function ActiveRoom({
           })();
         }}
         onDisableParticipantAudio={(peerId) => {
-          if (!sessionRef.current?.disableParticipantMedia(peerId, 'audio')) {
-            setActionWarning('');
-            setActionError('이 참가자의 마이크를 끌 수 없습니다.');
-          }
+          handleActionResult(
+            sessionRef.current?.disableParticipantMedia(peerId, 'audio') ?? false,
+            '이 참가자의 마이크를 끌 수 없습니다.',
+          );
         }}
         onDisableParticipantVideo={(peerId) => {
-          if (!sessionRef.current?.disableParticipantMedia(peerId, 'video')) {
-            setActionWarning('');
-            setActionError('이 참가자의 영상을 끌 수 없습니다.');
-          }
+          handleActionResult(
+            sessionRef.current?.disableParticipantMedia(peerId, 'video') ?? false,
+            '이 참가자의 영상을 끌 수 없습니다.',
+          );
         }}
         onSendMessage={handleSendMessage}
         onCollectConnectionDiagnostics={async (): Promise<RoomConnectionDiagnostics> => {
