@@ -30,6 +30,10 @@ test('방장 제어와 참가자 퇴장 및 장치 종료를 복구한다', asyn
     const diagnosticsSummary = second.locator('summary', { hasText: '진단' });
     await diagnosticsSummary.click();
     await expect(second.getByText('가온 · 연결 1', { exact: true })).toBeVisible();
+    await expect(second.locator('.connection-diagnostics time')).toHaveAttribute(
+      'datetime',
+      /^\d{4}-\d{2}-\d{2}T.*Z$/,
+    );
 
     await first.getByRole('button', { name: '나가기', exact: true }).click();
     await expect(first.getByRole('button', { name: '새 스터디룸 만들기' })).toBeVisible();

@@ -7,7 +7,11 @@ import type {
 
 type ConnectionDiagnosticsState =
   | { readonly status: 'idle' | 'stale' | 'loading' | 'error' }
-  | { readonly status: 'ready'; readonly value: RoomConnectionDiagnostics };
+  | {
+      readonly status: 'ready';
+      readonly value: RoomConnectionDiagnostics;
+      readonly measuredAtMs: number;
+    };
 
 interface ConnectionDiagnosticsPanelProps {
   readonly connectionContextKey?: string;
@@ -33,6 +37,12 @@ const candidateTypeLabels: Record<RTCIceCandidateType, string> = {
   relay: 'TURN 중계',
 };
 
+const diagnosticTimeFormatter = new Intl.DateTimeFormat('ko-KR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
 function diagnosticValue(value: number | null, unit: string) {
   return value === null ? '측정값 없음' : `${value}${unit}`;
 }
@@ -57,8 +67,10 @@ function candidateTypeLabel(type: RTCIceCandidateType | null) {
   return type === null ? '정보 없음' : candidateTypeLabels[type];
 }
 
-function shareableDiagnostics(value: RoomConnectionDiagnostics): RoomConnectionDiagnostics {
+function shareableDiagnostics(value: RoomConnectionDiagnostics, measuredAtMs: number) {
   return {
+    measuredAt: new Date(measuredAtMs).toISOString(),
+    measurement: '약 3초 동안 측정한 수신 손실과 마지막 지연·지연 변동',
     status: value.status,
     connections: value.connections.map(
       ({ participantName: _participantName, ...connection }) => connection,
@@ -142,7 +154,7 @@ export function ConnectionDiagnosticsPanel({
     try {
       const value = await onCollect();
       if (collectionGeneration.current === generation) {
-        setDiagnostics({ status: 'ready', value });
+        setDiagnostics({ status: 'ready', value, measuredAtMs: Date.now() });
       }
     } catch {
       if (collectionGeneration.current === generation) {
@@ -164,14 +176,7 @@ export function ConnectionDiagnosticsPanel({
     if (diagnostics.status !== 'ready') return;
     try {
       await navigator.clipboard.writeText(
-        JSON.stringify(
-          {
-            measurement: '약 3초 동안 측정한 수신 손실과 마지막 지연·지연 변동',
-            ...shareableDiagnostics(diagnostics.value),
-          },
-          null,
-          2,
-        ),
+        JSON.stringify(shareableDiagnostics(diagnostics.value, diagnostics.measuredAtMs), null, 2),
       );
       setCopyState('success');
     } catch {
@@ -179,7 +184,7 @@ export function ConnectionDiagnosticsPanel({
     }
   };
 
-  const ready = diagnostics.status === 'ready' ? diagnostics.value : null;
+  const ready = diagnostics.status === 'ready' ? diagnostics : null;
   return (
     <details className="connection-diagnostics" onToggle={handleToggle}>
       <summary>진단</summary>
@@ -219,11 +224,17 @@ export function ConnectionDiagnosticsPanel({
           <p role="status">최근 수신 상태를 약 3초 동안 측정하고 있습니다.</p>
         ) : (
           <>
-            {ready.connections.length === 0 ? (
+            <p>
+              측정 완료:{' '}
+              <time dateTime={new Date(ready.measuredAtMs).toISOString()}>
+                {diagnosticTimeFormatter.format(ready.measuredAtMs)}
+              </time>
+            </p>
+            {ready.value.connections.length === 0 ? (
               <p>진단할 참가자 연결이 없습니다.</p>
             ) : (
               <div className="connection-diagnostics__list">
-                {ready.connections.map((diagnostic) => (
+                {ready.value.connections.map((diagnostic) => (
                   <ConnectionDiagnosticItem
                     key={diagnostic.connectionNumber}
                     diagnostic={diagnostic}
@@ -239,7 +250,9 @@ export function ConnectionDiagnosticsPanel({
               {copyState === 'success' ? '진단 정보 복사됨' : '진단 정보 복사'}
             </button>
             {copyState === 'error' ? <p role="alert">클립보드에 복사하지 못했습니다.</p> : null}
-            <pre tabIndex={0}>{JSON.stringify(shareableDiagnostics(ready), null, 2)}</pre>
+            <pre tabIndex={0}>
+              {JSON.stringify(shareableDiagnostics(ready.value, ready.measuredAtMs), null, 2)}
+            </pre>
           </>
         )}
       </section>

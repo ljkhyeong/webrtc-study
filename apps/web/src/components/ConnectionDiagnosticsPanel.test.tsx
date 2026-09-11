@@ -51,9 +51,14 @@ describe('연결 진단', () => {
       expect(container.textContent).toContain('가온 · 연결 1');
       expect(container.querySelector('pre')?.textContent).not.toContain('가온');
       expect(container.querySelector('pre')?.textContent).not.toContain('participantName');
+      const measuredAt = container.querySelector('time')?.getAttribute('datetime');
+      expect(measuredAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
       await act(async () => button('진단 정보 복사').click());
 
-      const copied = JSON.parse(writeText.mock.calls[0]![0]) as Record<string, unknown>;
+      const copiedText = writeText.mock.calls[0]![0];
+      const copied = JSON.parse(copiedText) as Record<string, unknown>;
+      expect(copiedText).toBe(container.querySelector('pre')?.textContent);
+      expect(copied.measuredAt).toBe(measuredAt);
       expect(JSON.stringify(copied)).not.toContain('가온');
       expect(JSON.stringify(copied)).not.toContain('participantName');
     } finally {
