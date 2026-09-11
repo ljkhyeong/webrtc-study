@@ -69,6 +69,33 @@ describe('VideoTile', () => {
     expect(markup).toContain('스터디원의 화면 공유 전체 화면으로 보기');
   });
 
+  it('통화 중 내 카메라만 좌우 반전하고 화면 공유와 상대 영상은 원본 방향으로 표시한다', () => {
+    const localCamera = renderToStaticMarkup(
+      <VideoTile
+        participant={participant({
+          isLocal: true,
+          stream: {} as MediaStream,
+        })}
+      />,
+    );
+    const localScreen = renderToStaticMarkup(
+      <VideoTile
+        participant={participant({
+          isLocal: true,
+          videoSource: 'screen',
+          stream: {} as MediaStream,
+        })}
+      />,
+    );
+    const remoteCamera = renderToStaticMarkup(
+      <VideoTile participant={participant({ stream: {} as MediaStream })} />,
+    );
+
+    expect(localCamera).toContain('video-tile__media--mirrored');
+    expect(localScreen).not.toContain('video-tile__media--mirrored');
+    expect(remoteCamera).not.toContain('video-tile__media--mirrored');
+  });
+
   it.each([
     { name: 'local share', overrides: { isLocal: true, videoSource: 'screen' as const } },
     { name: 'remote camera', overrides: { videoSource: 'camera' as const } },

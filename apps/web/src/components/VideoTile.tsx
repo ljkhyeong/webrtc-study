@@ -137,6 +137,7 @@ export function VideoTile({
   const hasStream = Boolean(participant.stream);
   const hasVisibleVideo = participant.videoEnabled && hasStream;
   const showPreview = hasVisibleVideo && !(participant.isLocal && previewHidden);
+  const mirrorLocalCamera = participant.isLocal && participant.videoSource === 'camera';
   const isRemoteScreenShare =
     !participant.isLocal && participant.videoSource === 'screen' && hasVisibleVideo;
   const shareView = useScreenShareView(isRemoteScreenShare, participant.stream, videoRef);
@@ -253,6 +254,7 @@ export function VideoTile({
               [
                 showPreview ? '' : 'video-tile__media--hidden',
                 participant.videoSource === 'screen' ? 'video-tile__media--screen' : '',
+                mirrorLocalCamera ? 'video-tile__media--mirrored' : '',
               ]
                 .filter(Boolean)
                 .join(' ') || undefined

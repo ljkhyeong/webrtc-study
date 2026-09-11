@@ -1541,6 +1541,10 @@ textarea:focus-visible {
   background: #060a0d;
 }
 
+.video-tile video.video-tile__media--mirrored {
+  transform: scaleX(-1);
+}
+
 .video-tile__fallback {
   display: grid;
   place-items: center;

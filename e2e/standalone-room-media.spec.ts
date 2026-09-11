@@ -9,18 +9,26 @@ import {
 test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) => {
   await runConnectedRoom(browser, baseURL, async ({ first, second }) => {
     await expectRemoteMedia(second, '가온');
+    const localCameraVideo = first
+      .getByRole('article', { name: '가온 (나) 참가자', exact: true })
+      .locator('video');
     const firstTileOnSecondPage = participantTile(second, '가온');
+    const firstVideoOnSecondPage = firstTileOnSecondPage.locator('video');
+    await expect(localCameraVideo).toHaveClass(/video-tile__media--mirrored/);
+    await expect(firstVideoOnSecondPage).not.toHaveClass(/video-tile__media--mirrored/);
     await expect(firstTileOnSecondPage.getByText('방장', { exact: true })).toBeVisible();
     await expect(second.getByRole('button', { name: '가온 마이크 끄기' })).toHaveCount(0);
 
     await first.getByRole('button', { name: '화면 공유 시작' }).click();
     await expect(firstTileOnSecondPage.getByText('화면 공유 중')).toBeVisible();
     await expect(
-      first.getByRole('button', { name: '화면 공유 중에는 카메라를 변경할 수 없음' }),
+      first.getByRole('button', { name: '화면 공유 중에는 카메라를 변경할 수 없습니다.' }),
     ).toBeDisabled();
+    await expect(localCameraVideo).not.toHaveClass(/video-tile__media--mirrored/);
+    await expect(firstVideoOnSecondPage).not.toHaveClass(/video-tile__media--mirrored/);
     await expect.poll(() => remoteVideoHasVisibleContent(second, '가온')).toBe(true);
 
-    const remoteScreenVideo = firstTileOnSecondPage.locator('video');
+    const remoteScreenVideo = firstVideoOnSecondPage;
     const originalVideo = await remoteScreenVideo.elementHandle();
     await firstTileOnSecondPage.getByRole('button', { name: '가온의 공유 화면 고정' }).click();
     await expect(firstTileOnSecondPage).toHaveClass(/video-tile--pinned/);
@@ -72,6 +80,7 @@ test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) 
     await expect(firstTileOnSecondPage).not.toHaveClass(/video-tile--pinned/);
     await expect(firstTileOnSecondPage.locator('.video-tile__fullscreen-error')).toHaveCount(0);
     await expectRemoteMedia(second, '가온');
+    await expect(localCameraVideo).toHaveClass(/video-tile__media--mirrored/);
 
     await first.getByRole('button', { name: '마이크 끄기', exact: true }).click();
     await expect(firstTileOnSecondPage.getByLabel('마이크 꺼짐')).toBeVisible();
