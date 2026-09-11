@@ -17,8 +17,8 @@
 사용자 신원과 현재 스터디 참여 권한을 다시 확인합니다.
 
 설정된 모든 `ALLOWED_ORIGINS` 항목이 정확한 HTTPS Origin이 아니면 `production` Spring
-profile은 시작 중 실패합니다. 이 profile에서는 wildcard, `null`, HTTP Origin을 허용하지
-않습니다. BATON 모드는 해당 profile이 없어도 wildcard, `null`, loopback이 아닌 HTTP
+프로필은 시작 중 실패합니다. 이 프로필에서는 와일드카드, `null`, HTTP Origin을 허용하지
+않습니다. BATON 모드는 해당 프로필이 없어도 와일드카드, `null`, 로컬 주소가 아닌 HTTP
 Origin을 별도로 거부합니다.
 
 ## 연결·요청 제한과 만료 처리
@@ -40,13 +40,13 @@ Origin을 별도로 거부합니다.
 주기 검사에서 활동이 없는 연결의 참여권 만료도 처리하므로 검사 주기는 100밀리초 이상 1초 이하로 제한합니다.
 
 BATON 모드의 WebSocket 만료 시점은 연결 당시의 참여권으로 고정됩니다. ROUND는 연결 직후,
-수신 한도 차감 전, 송신 큐에 넣기 전, heartbeat·pong 처리 중, 1초 주기 검사에서 만료 여부를
+수신 한도 차감 전, 송신 큐에 넣기 전, 연결 확인 Ping·Pong 처리 중, 1초 주기 검사에서 만료 여부를
 확인합니다. 참여권의 절대 만료 시각(`exp`)과 연결 시 기록한 남은 수명 중 하나라도 지나면
 연결을 종료합니다. 남은 수명은 단조 증가 시계로 계산하므로 시스템 시계를 뒤로 돌려도 연결이 연장되지 않습니다.
 만료된 연결은 기존 종료 절차로 상태를 한 번만 정리한 뒤 종료 코드 `4001`, 종료 사유
 `Participation grant expired`로 닫습니다. 활동이 없는 연결도 검사 한 주기 안에 닫습니다.
 HTTP 참여권 검증과 WebSocket 만료 검사는 같은 주입 시계를 사용하며 `exp`에 시간 오차를
-허용하지 않습니다. 미래 `iat`에만 60초의 오차를 허용합니다. standalone 연결에는 참여권 만료를 적용하지 않습니다.
+허용하지 않습니다. 미래 `iat`에만 60초의 오차를 허용합니다. 독립 실행 연결에는 참여권 만료를 적용하지 않습니다.
 
 BATON 모드는 연결을 맺는 중이거나 연결된 WebSocket을 같은 참여권 `jti`당 최대 1개, 같은
 `(room_id, sub)`당 최대 2개 허용합니다. 두 번째 연결은 BATON이 새 `jti`를 발급한 뒤
@@ -59,7 +59,7 @@ BATON 모드는 연결을 맺는 중이거나 연결된 WebSocket을 같은 참�
 이전 연결의 `room.join`이 뒤늦게 도착해도 해당 연결을 닫습니다. 브라우저는 `4002`로 종료되면
 자동 재연결하지 않으므로 두 연결이 번갈아 서로를 종료하는 일을 막습니다. 연결 슬롯은
 WebSocket이 닫힐 때까지 유지하며, 미입장 상태와 `room.leave` 이후도 포함합니다.
-standalone 모드에는 서버와 클라이언트 IP 제한만 적용합니다.
+독립 실행 모드에는 서버와 클라이언트 IP 제한만 적용합니다.
 
 IP별 프레임 한도는 세션 한도 이상이어야 합니다. IP와 서버의 집계 구간 시작 시점 차이를
 고려해 서버 전체 한도는 IP별 한도의 두 배 이상으로 설정해야 합니다. 기본값은 6명이 연결할 때
@@ -80,8 +80,8 @@ Micrometer는 다음 시그널링 지표를 제공합니다.
 - `round.signaling.frames.byte_limited` (`scope=session|client|global`)
 - `round.signaling.connections.rejected`
   (`reason=server_capacity|client_capacity|participation_token_capacity|participant_room_capacity|missing_reservation|missing_room_access`)
-- `round.signaling.outbound.queue.overflows` (peer별 또는 전체 송신 큐 제한으로 닫힌 peer 수)
-- `round.signaling.outbound.queue.global_overflows` (전체 송신 바이트 한도에 걸린 frame 수)
+- `round.signaling.outbound.queue.overflows` (참가자별 또는 전체 송신 큐 제한으로 닫힌 참가자 수)
+- `round.signaling.outbound.queue.global_overflows` (전체 송신 바이트 한도에 걸린 프레임 수)
 - `round.signaling.heartbeat.closes`
 - `round.signaling.authorization.closes`
 - `round.auth.jwk.source.healthy` (BATON JWK 원격 소스가 정상이면 `1`, 장애면 `0`)
@@ -123,9 +123,9 @@ Origin·헤더 값, Cloudflare API 토큰, 발급한 TURN 자격 증명은 로�
 참여권의 `exp`를 상한으로 추가 적용하므로 더 긴 TURN TTL로 참여권의 권한을 연장할 수 없습니다.
 BATON 모드는 같은 구간에 `(room_id, sub)`당 기본 6회의 발급 한도도 적용합니다. 참가자·IP·서버
 전체 한도를 모두 통과할 때만 함께 차감합니다. 새 `jti` 발급이나 IP 변경으로 참가자 한도를
-초기화할 수 없습니다. standalone 모드는 참가자별 발급 횟수를 관리하지 않습니다.
+초기화할 수 없습니다. 독립 실행 모드는 참가자별 발급 횟수를 관리하지 않습니다.
 
-자격 증명 API는 다음과 같은 no-store 응답을 반환합니다.
+자격 증명 API는 다음과 같은 `Cache-Control: no-store` 응답을 반환합니다.
 
 ```json
 {
@@ -145,20 +145,20 @@ BATON 모드는 같은 구간에 `(room_id, sub)`당 기본 6회의 발급 한�
 
 이 API는 동일 출처의 `Origin`을 포함한 POST 요청만 허용합니다. Fetch Metadata가
 있으면 `Sec-Fetch-Site`도 `same-origin`이어야 합니다. BATON 참가자, 유효 클라이언트 IP,
-서버 중 하나가 발급 한도에 도달하면 본문 없는 no-store HTTP 429 응답을 반환합니다.
+서버 중 하나가 발급 한도에 도달하면 본문 없는 `Cache-Control: no-store` HTTP 429 응답을 반환합니다.
 `Retry-After`는 요청을 차단한 집계 구간 중 가장 긴 남은 시간을 정수 초로 표시합니다.
 지표의 `scope`는 제한이 가장 늦게 풀리는 항목을 나타냅니다. 해제 시점이 같으면
 `participant_state_capacity`, `client_state_capacity`, `global`, `participant`, `client` 순으로 선택합니다.
-Cloudflare 자격 증명 API 호출 실패나 사용할 수 없는 응답은 본문 없는 no-store HTTP 503으로 반환하고
+Cloudflare 자격 증명 API 호출 실패나 사용할 수 없는 응답은 본문 없는 `Cache-Control: no-store` HTTP 503으로 반환하고
 `round.turn.credentials.provider.errors`를 증가시킵니다. 공급자 응답의 STUN 항목과 브라우저에서
 불안정한 53번 포트 주소는 브라우저 TURN 목록에 포함하지 않습니다.
 
 Origin과 Fetch Metadata 검사는 다른 웹사이트가 브라우저를 통해 방문자의 발급 한도를 소진하지 못하게
-합니다. standalone 모드에서 이 검사는 해당 헤더를 직접 만들 수 있는 비브라우저 클라이언트를 인증하지
+합니다. 독립 실행 모드에서 이 검사는 해당 헤더를 직접 만들 수 있는 비브라우저 클라이언트를 인증하지
 않습니다. 프록시의 공유 접근 인증, 발급 제한, 짧은 TTL은 TURN 중계 자원 고갈 위험을 줄이지만 제거하지는
 않습니다. BATON 모드는 서명된 방 범위 참여권을 추가로 요구합니다.
 
-TURN을 비활성화한 경우 이 API는 본문 없는 no-store HTTP 204 응답을 반환하므로 로컬 STUN
+TURN을 비활성화한 경우 이 API는 본문 없는 `Cache-Control: no-store` HTTP 204 응답을 반환하므로 로컬 STUN
 전용 개발에서 불필요한 브라우저 콘솔 오류가 생기지 않습니다.
 
 유효 클라이언트 IP와 BATON `(room_id, sub)`별 발급 횟수만 저장하며 자격 증명은 캐시하지

@@ -5,24 +5,24 @@
 직접 관리하지 않습니다.
 
 ```text
-브라우저 ── HTTPS/WSS ── Caddy ── HTTP/WS ── signaling
+브라우저 ── HTTPS/WSS ── Caddy ── HTTP/WS ── 시그널링
    │                                      │
-   └──── WebRTC media ── Cloudflare TURN ─┘ credential API(HTTPS)
+   └── WebRTC 미디어 ── Cloudflare TURN ──┘ 자격 증명 API(HTTPS)
 ```
 
 ## 운영 전제
 
-- Linux host와 Docker Engine
+- Linux 서버와 Docker Engine
 - `age`, `restic`, Git
 - Docker Compose 2.24.4 이상
 - 80/TCP, 443/TCP, 443/UDP를 수신할 수 있는 공개 주소
 - ROUND 도메인의 DNS와 Caddy가 발급할 HTTPS 인증서
-- Cloudflare Realtime TURN key ID와 해당 key의 API token
-- GHCR에서 발행한 `round-edge`, `round-signaling` 불변 digest
-- NTP가 동기화된 host 시계와 5GiB 이상의 여유 공간
+- Cloudflare Realtime TURN 키 ID와 해당 키의 API 토큰
+- GHCR에서 발행한 `round-edge`, `round-signaling`의 고정된 이미지 digest
+- NTP가 동기화된 서버 시계와 5GiB 이상의 여유 공간
 
-TURN key를 만들 때는 ROUND 전용 key와 token을 사용합니다. token은 signaling runtime에만
-주입하고 Git, 컨테이너 이미지, 브라우저 bundle, 명령행, 로그에 넣지 않습니다.
+TURN 키를 만들 때는 ROUND 전용 키와 토큰을 사용합니다. 토큰은 시그널링 서버에만
+주입하고 Git, 컨테이너 이미지, 브라우저 번들, 명령행, 로그에 넣지 않습니다.
 
 ## 환경 파일 준비
 
@@ -33,14 +33,14 @@ install -m 0600 ops/production.env.example /etc/round/production.env
 
 다음 값은 반드시 운영 값으로 교체합니다.
 
-- `ROUND_EDGE_IMAGE`, `ROUND_SIGNALING_IMAGE`: 릴리스 workflow가 출력한 digest 참조
+- `ROUND_EDGE_IMAGE`, `ROUND_SIGNALING_IMAGE`: 릴리스 작업이 출력한 digest 참조
 - `ROUND_DOMAIN`, `ACME_EMAIL`, `ALLOWED_ORIGINS`
 - `ROUND_ACCESS_USER`, `ROUND_ACCESS_PASSWORD_HASH`
 - `TURN_PROVIDER=cloudflare`
 - `TURN_CLOUDFLARE_KEY_ID`, `TURN_CLOUDFLARE_API_TOKEN`
 - `VITE_STUN_URLS=stun:stun.cloudflare.com:3478`
 
-공유 접근 비밀번호 hash는 Caddy의 bcrypt cost 12로 생성합니다. 평문 비밀번호는 환경
+공유 접근 비밀번호 해시는 Caddy의 bcrypt 비용 12로 생성합니다. 평문 비밀번호는 환경
 파일에 저장하지 않습니다.
 
 ```bash
@@ -57,25 +57,25 @@ Cloudflare API 토큰과 Caddy 비밀번호 해시를 담은 환경 파일은 �
 Cloudflare의 `generate-ice-servers` API를 호출합니다. 응답 중 TURN/TURNS 주소만 브라우저에
 전달하고 STUN 항목과 브라우저에서 불안정한 53번 포트 주소는 제외합니다.
 
-기본 credential TTL은 600초입니다. BATON 모드에서는 참여권 만료 시각보다 길게 발급하지
+기본 자격 증명 수명은 600초입니다. BATON 모드에서는 참여권 만료 시각보다 길게 발급하지
 않습니다. 브라우저는 서버가 반환한 `refreshAfterSeconds`에 따라 갱신하며 Cloudflare API
-token을 알 수 없습니다.
+토큰을 알 수 없습니다.
 
-공급자 호출 실패나 사용할 수 없는 응답은 credential endpoint의 빈 HTTP 503으로 변환하고
+공급자 호출 실패나 사용할 수 없는 응답은 자격 증명 API의 빈 HTTP 503으로 변환하고
 `round.turn.credentials.provider.errors`를 증가시킵니다. 다음 항목을 운영 경보에 포함합니다.
 
 - `round.turn.credentials.provider.errors` 증가
-- credential endpoint 503 비율
+- 자격 증명 API의 503 비율
 - Cloudflare TURN 사용량과 예산 한도
-- relay-only 실제 브라우저 점검 실패
+- TURN 중계 전용 실제 브라우저 점검 실패
 
 ## 방화벽과 네트워크
 
-운영 host의 inbound는 Caddy용 80/TCP, 443/TCP, 443/UDP만 허용합니다. signaling 8787은
-`backend` network에서 edge에만 노출합니다. signaling container는 Cloudflare credential API
-호출에 별도의 `egress` network를 사용하지만 host port를 발행하지 않습니다. 자체 TURN용
-3478, 5349, UDP relay 범위는 열지 않습니다. 실제
-WebRTC relay 트래픽은 브라우저와 Cloudflare 사이를 이동합니다.
+운영 서버 방화벽은 Caddy용 80/TCP, 443/TCP, 443/UDP만 외부에 엽니다. 시그널링 8787 포트는
+`backend` 네트워크에서 edge에만 노출합니다. 시그널링 컨테이너는 Cloudflare 자격 증명 API
+호출에 별도의 `egress` 네트워크를 사용하지만 서버 포트를 외부에 열지 않습니다. 자체 TURN용
+3478, 5349, UDP 중계 범위는 열지 않습니다. 실제
+WebRTC 중계 트래픽은 브라우저와 Cloudflare 사이를 이동합니다.
 
 ## 배포
 
@@ -99,7 +99,7 @@ test -z "$(sudo git -C /opt/round status --short)"
 cd /opt/round
 ```
 
-임의의 다른 checkout에서 배포 스크립트만 실행하면 배포 자체는 성공할 수 있지만 예약 백업은
+임의의 다른 작업 디렉터리에서 배포 스크립트만 실행하면 배포 자체는 성공할 수 있지만 예약 백업은
 `/opt/round/ops/linux/backup-caddy.sh`를 실행하므로 운영 도구의 기준 경로를 바꾸지 않습니다.
 
 ```bash
@@ -127,9 +127,9 @@ ops/linux/rollback.sh \
 
 ## Grafana Cloud 지표와 경보
 
-Grafana Alloy는 signaling의 비공개 `/actuator/prometheus`를 30초마다 수집하고 Grafana Cloud
-Metrics로 `remote_write`합니다. Alloy 관리 UI나 signaling actuator port는 host에 공개하지
-않습니다. Alloy의 WAL은 `alloy_data` volume에 저장해 일시적인 전송 장애 뒤 다시 보냅니다.
+Grafana Alloy는 시그널링 서버의 비공개 `/actuator/prometheus`를 30초마다 수집해 Grafana Cloud
+Metrics로 원격 전송합니다. Alloy 관리 UI와 시그널링 관리 포트는 서버 외부에 공개하지
+않습니다. Alloy의 WAL은 `alloy_data` 볼륨에 저장해 일시적인 전송 장애가 복구되면 다시 보냅니다.
 
 Grafana Cloud에서 stack의 Prometheus remote write URL과 사용자 ID를 확인하고, 해당 stack에
 `metrics:write`만 허용한 access policy token을 만듭니다. `/etc/round/production.env`에 다음 값을
@@ -186,7 +186,7 @@ docker compose \
 `release-images.yml`은 여러 CPU 아키텍처용 이미지를 묶은 digest로 다음 이미지를 발행하고,
 빌드 출처 증명(provenance)을 첨부합니다.
 
-- `round-edge`: standalone 웹과 Caddy
+- `round-edge`: 독립 실행 웹과 Caddy
 - `round-edge` 중계 전용 버전: `VITE_ICE_TRANSPORT_POLICY=relay` 검증용
 - `round-baton-web`: BATON의 외부 프록시 뒤에서 실행하는 웹 서버
 - `round-signaling`: Spring 시그널링 서버
@@ -215,14 +215,14 @@ docker compose --env-file /etc/round/production.env ps
 
 ## Cloudflare 키 교체
 
-1. Cloudflare에서 새 TURN key와 API token을 만듭니다.
-2. `/etc/round/production.env`의 key ID와 token을 교체합니다.
-3. preflight를 통과한 뒤 signaling만 다시 생성하거나 정식 배포를 실행합니다.
-4. 새 credential 발급과 relay-only 통화를 확인합니다.
-5. 이전 key와 token을 폐기합니다.
+1. Cloudflare에서 새 TURN 키와 API 토큰을 만듭니다.
+2. `/etc/round/production.env`의 키 ID와 토큰을 교체합니다.
+3. 배포 전 검사를 통과한 뒤 시그널링 서버만 다시 생성하거나 정식 배포를 실행합니다.
+4. 새 자격 증명 발급과 TURN 중계 전용 통화를 확인합니다.
+5. 이전 키와 토큰을 폐기합니다.
 
-이미 발급된 credential은 짧은 TTL 동안 남을 수 있습니다. 즉시 폐기가 필요한 사고 대응에서는
-현재 통화 재입장과 최대 10분의 credential 수명을 고려합니다.
+이미 발급된 자격 증명은 짧은 수명 동안 남을 수 있습니다. 즉시 폐기가 필요한 사고 대응에서는
+현재 통화 재입장과 최대 10분의 자격 증명 수명을 고려합니다.
 
 ## Caddy 상태 백업과 복원
 
@@ -369,7 +369,7 @@ trap - EXIT
 
 ## BATON 배포 구성
 
-기본 Compose는 standalone 모드로 고정되어 있습니다. BATON은 별도의 외부 프록시 설정에서
+기본 Compose는 독립 실행 모드로 고정되어 있습니다. BATON은 별도의 외부 프록시 설정에서
 방별 경로를 ROUND로 전달하고 참여권 갱신 API는 직접 처리해야 합니다. 기본 Compose를 환경
 변수로 BATON 모드로 전환하지 않습니다.
 
@@ -379,10 +379,10 @@ BATON 참여권, JWK 교체, 방별 TURN API와 배포 순서는
 
 ## 장애 대응 기준
 
-- Cloudflare credential API 장애: 신규 TURN credential은 503, 기존 WebSocket과 직접 연결은 유지
-- signaling 장애: Caddy health check 실패, 새 WebSocket·credential 발급 불가
+- Cloudflare 자격 증명 API 장애: 새 TURN 자격 증명은 503, 기존 WebSocket과 직접 연결은 유지
+- 시그널링 장애: Caddy 상태 검사 실패, 새 WebSocket 연결·자격 증명 발급 불가
 - edge 장애: 공개 웹·WSS 전체 불가
-- Cloudflare relay 장애: 직접 연결 가능한 사용자는 유지될 수 있으나 제한망 사용자는 미디어 불가
+- Cloudflare 중계 장애: 직접 연결 가능한 사용자는 유지될 수 있으나 제한망 사용자는 미디어 불가
 
-로그나 metric tag에 방 ID, 참가자 식별자, SDP, ICE candidate, credential, API token을 넣지
-않습니다. 공급자 장애를 조사할 때도 고정된 오류 counter와 상태 코드만 사용합니다.
+로그나 지표 태그에 방 ID, 참가자 식별자, SDP, ICE 후보, 자격 증명, API 토큰을 넣지
+않습니다. 공급자 장애를 조사할 때도 고정된 오류 횟수와 상태 코드만 사용합니다.

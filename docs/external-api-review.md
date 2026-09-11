@@ -5,7 +5,7 @@ ROUND 소스·배포 설정과 제공사의 공식 문서를 대조했다. 실�
 
 ## 현재 결정: 추가요금 없이 적용
 
-- 통화는 현재 mesh 구조를 유지한다. 사용량에 따라 요금이 발생하는 회의 서비스로 전환하지 않는다.
+- 통화는 현재 메시 구조를 유지한다. 사용량에 따라 요금이 발생하는 회의 서비스로 전환하지 않는다.
 - LiveKit 자체 호스팅도 보류한다. 소프트웨어 사용료와 별개로 서버·대역폭이 필요하므로 현재 서버의 여유 자원을 확인하지 않고 추가비용이 없다고 볼 수 없다. [LiveKit 자체 호스팅 요구사항](https://docs.livekit.io/transport/self-hosting/deployment/).
 - 브라우저 오류 수집은 Faro SDK 연동을 준비했다. 기본값은 비활성이며 **Grafana Cloud Free 플랜 확인 후에만** 수집 URL을 설정한다. Free 플랜은 월 5만 세션으로 제한되며, Pro 플랜의 무료 포함량과 구분해야 한다. [Frontend Observability 플랜](https://grafana.com/products/cloud/frontend-observability/).
 - 기존 TURN과 서버 지표 설정은 유지한다. 기존 서버·Cloudflare TURN 사용료가 없어지는 것은 아니다.
@@ -69,7 +69,7 @@ Grafana Faro는 브라우저 오류·성능·로그 수집을 제공하므로 �
 1. Grafana Cloud 계정이 **Free**인지 확인한다. 유료·체험 플랜의 잔여 무료량에 의존하지 않는다. 앱 코드로 계정 요금제를 판별하거나 유료 플랜의 과금을 차단할 수는 없다.
 2. Frontend Observability에 `round` 앱을 만들고 실제 ROUND/BATON Origin을 CORS 허용 목록에 넣는다. 수집 URL은 브라우저용 주소이며 Grafana 관리 API 토큰을 넣지 않는다. [공식 설정 절차](https://grafana.com/docs/grafana-cloud/observe-and-act/monitor-applications/frontend-observability/instrument/faro/).
 3. 로컬·직접 이미지 빌드는 `VITE_FARO_COLLECTOR_URL`을 설정한다. GitHub 릴리스 빌드는 저장소 변수 `ROUND_FARO_COLLECTOR_URL`을 사용한다. 빌드 시 반영되므로 이미 배포된 번들은 다시 빌드해야 한다.
-4. standalone Caddy에는 수집 URL의 `https://호스트` 부분만 `FARO_COLLECTOR_ORIGIN`으로 설정한다. 기본·macOS Compose에 전달된다. BATON 배포에서 CSP를 설정한다면 BATON의 `connect-src`에도 같은 Origin을 허용해야 한다.
+4. 독립 실행 Caddy에는 수집 URL의 `https://호스트` 부분만 `FARO_COLLECTOR_ORIGIN`으로 설정한다. 기본·macOS Compose에 전달된다. BATON 배포에서 CSP를 설정한다면 BATON의 `connect-src`에도 같은 Origin을 허용해야 한다.
 5. 실제 수집 확인은 무료 플랜과 URL이 준비된 뒤 진행한다. URL을 비우고 다시 빌드하면 SDK를 불러오거나 전송하지 않는다. 브라우저 오류 수집 실패는 통화 시작을 막지 않는다.
 
 현재는 계정 플랜과 수집 URL이 제공되지 않아 외부 전송을 활성화하지 않았다. 새 유료 서비스 가입이나 기존 계정의 플랜 변경도 하지 않았다.

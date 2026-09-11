@@ -4,25 +4,25 @@
 스터디 그룹 파일럿에 사용합니다. 자동 브라우저 테스트의 가상 미디어는 회귀 검사에 유용하지만
 실제 장치 검사를 대체하지는 않습니다.
 
-이 체크리스트는 저장소에서 관리하는 standalone Compose를 검증합니다. `compose.yml`은 의도적으로
+이 체크리스트는 저장소에서 관리하는 독립 실행 Compose를 검증합니다. `compose.yml`은 의도적으로
 `ROUND_AUTH_MODE=standalone`으로 고정되어 있으므로 이 검사 결과를 BATON 배포의 증거로 표시하지
 마세요. BATON을 사용하는 스터디는 이 문서 마지막의 연동 필수 검사도 통과해야 합니다.
 
-검사할 standalone 프록시 구성을 기록하세요. Linux 운영용 `compose.yml`은 웹 화면,
-`/signal`, `/api/turn-credentials`에 같은 Basic Auth 인증을 요구합니다. 임시 macOS Docker Desktop
-추가 설정은 `Caddyfile.macos-pilot`을 사용합니다. 이 구성은 웹 화면·정적 파일에만 Basic Auth를
-요구하고, 두 통신 경로에는 모바일 호환성을 위해 적용하지 않습니다. **Linux standalone** 또는
-**macOS pilot**으로 표시한 항목은 해당 구성에만 적용합니다. 한 구성의 검사 결과를 다른 구성의
+검사할 독립 실행 프록시 구성을 기록하세요. Linux 운영용 `compose.yml`은 웹 화면,
+`/signal`, `/api/turn-credentials`에 같은 HTTP 기본 인증을 요구합니다. 임시 macOS Docker Desktop
+추가 설정은 `Caddyfile.macos-pilot`을 사용합니다. 이 구성은 웹 화면·정적 파일에만 HTTP 기본 인증을
+요구하고, 두 통신 경로에는 모바일 호환성을 위해 적용하지 않습니다. **Linux 독립 실행** 또는
+**macOS 파일럿**으로 표시한 항목은 해당 구성에만 적용합니다. 한 구성의 검사 결과를 다른 구성의
 검증 근거로 사용하지 마세요.
 
 ## 릴리스 후보
 
-- [ ] 릴리스 commit은 변경할 수 없으며 tag가 지정되어 있습니다.
+- [ ] 릴리스 커밋은 변경할 수 없으며 태그가 지정되어 있습니다.
 - [ ] GitHub artifact attestation 제공 범위를 확인했습니다. 저장소가 공개이거나, 비공개 또는
       internal 저장소라면 GitHub Enterprise Cloud 소유 구조여야 합니다. 현재와 같은 비공개 개인
       저장소에서는 이 조건을 충족하기 전 `release-images`를 실행하지 않습니다.
 - [ ] 기본 브랜치 HEAD의 annotated tag와 동일 SHA의 CI 성공을 확인한 뒤 `release-images`
-      `repository_dispatch` 조정자가 통과하고 일반 edge, relay-only edge, signaling, BATON web
+      `repository_dispatch` 조정자가 통과하고 일반 edge, TURN 중계 전용 edge, 시그널링, BATON 웹
       manifest digest를 기록합니다.
 - [ ] 미커밋 변경이 없는 소스에서 `npm run check`가 통과합니다.
 - [ ] 환경 변수가 빠짐없이 적용된 운영 Compose 구성을 출력할 수 있습니다.
@@ -33,23 +33,23 @@
 
 ## 공개 네트워크 경로
 
-- [ ] HTTP가 HTTPS로 redirect됩니다.
-- [ ] 평문 HTTP에서는 HTTP Basic Auth를 절대로 허용하지 않으며 웹 앱이 mixed-content 경고 없이
+- [ ] HTTP 요청이 HTTPS로 이동합니다.
+- [ ] 평문 HTTP에서는 HTTP 기본 인증을 절대로 허용하지 않으며 웹 앱이 혼합 콘텐츠 경고 없이
       HTTPS로 로드됩니다.
-- [ ] **두 토폴로지 모두:** 공유 credential이 없거나 올바르지 않으면 UI와 정적 asset에 `401`을
+- [ ] **두 구성 모두:** 공유 자격 증명이 없거나 올바르지 않으면 화면과 정적 파일에 `401`을
       반환하고 `/healthz`는 공개 상태를 유지합니다.
-- [ ] **Linux standalone 전용:** 공유 credential이 없거나 올바르지 않으면 `/signal`과
+- [ ] **Linux 독립 실행 전용:** 공유 자격 증명이 없거나 올바르지 않으면 `/signal`과
       `/api/turn-credentials`에도 `401`을 반환합니다.
-- [ ] **macOS pilot 전용:** 정책상 `/signal`과 `/api/turn-credentials`가 Basic Auth를 우회하는지
+- [ ] **macOS 파일럿 전용:** 정책상 `/signal`과 `/api/turn-credentials`가 HTTP 기본 인증을 우회하는지
       확인합니다. 이 경로에 `401`을 요구하거나 기록하지 마세요. 이 단기 노출의 수용 여부를
-      기록하고 애플리케이션이 외부, 누락, wildcard, HTTPS가 아닌 Origin을 계속 거부하는지
+      기록하고 애플리케이션이 외부, 누락, 와일드카드, HTTPS가 아닌 Origin을 계속 거부하는지
       확인합니다.
-- [ ] 한 client 네트워크에서 credential을 포함한 요청을 5분 안에 96회 넘게 보내면 `429`를
-      반환하고, header가 없는 challenge와 `/healthz`는 이 고비용 인증 예산을 소모하지 않습니다.
+- [ ] 한 클라이언트 네트워크에서 자격 증명을 포함한 요청을 5분 안에 96회 넘게 보내면 `429`를
+      반환하고, 헤더가 없는 인증 요청과 `/healthz`는 이 고비용 인증 한도를 소모하지 않습니다.
 - [ ] 실제 파일럿 서버의 논리 CPU가 2개 이상인 상태에서, Basic Auth가 필요한 웹·정적 파일
       경로에 형식이 올바른 Basic 요청 96개를 동시에 보냅니다. 사용자 이름은 모두 서로 다르고
-      Caddy에 등록되지 않은 값으로, 비밀번호도 모두 다르게 지정합니다. 등록된 사용자의 cost-12
-      검사보다 연산 비용이 큰 미등록 사용자의 cost-14 가짜 해시 검사를 실행하기 위한 조건입니다.
+      Caddy에 등록되지 않은 값으로, 비밀번호도 모두 다르게 지정합니다. 등록된 사용자의 비용 12
+      검사보다 연산 비용이 큰 미등록 사용자의 비용 14 가짜 해시 검사를 실행하기 위한 조건입니다.
       실제 참가자 6명이 최대 부하의 스터디를 진행하는 동안 요청을 보내고, TURN과 시그널링 부하를
       함께 확인하도록 가능하면 중계 전용 이미지를 사용합니다. Caddy·운영 서버의 CPU와 메모리,
       컨테이너 재시작, 시그널링 서버의 직접 `/healthz`, 공개 `/healthz`, 다른 네트워크의 정상 인증
@@ -57,103 +57,103 @@
       요청은 5초 안에 완료되어야 합니다. 컨테이너 재시작이나 메모리 부족에 따른 강제 종료(OOM-kill)가
       없어야 하며, 잘못된 요청이 끝난 뒤 3분 안에 모든 측정값이 검사 전 범위로 돌아와야 합니다.
       공격 요청을 보낸 네트워크는 남은 5분 집계 구간 동안 계속 제한됨을 기록합니다. 공개 전에
-      standalone 파일럿의 남은 위험을 명시적으로 수용합니다.
-- [ ] **Linux standalone 전용:** Basic Auth로 인증한 `wss://<domain>/signal`이 정확한 프로덕션
-      Origin을 허용하고 Basic Auth로 인증한 TURN credential POST가 성공합니다.
-- [ ] **macOS pilot 전용:** `wss://<domain>/signal`과 TURN credential POST가 Authorization
-      header에 의존하지 않고 정확한 프로덕션 Origin을 허용합니다. probe에서 공유 credential을
+      독립 실행 파일럿의 남은 위험을 명시적으로 수용합니다.
+- [ ] **Linux 독립 실행 전용:** HTTP 기본 인증을 거친 `wss://<domain>/signal`이 정확한 운영
+      Origin을 허용하고 HTTP 기본 인증을 거친 TURN 자격 증명 POST가 성공합니다.
+- [ ] **macOS 파일럿 전용:** `wss://<domain>/signal`과 TURN 자격 증명 POST가 `Authorization`
+      헤더에 의존하지 않고 정확한 운영 Origin을 허용합니다. 점검 요청에서 공유 자격 증명을
       제공해도 이 우회 경로가 이를 인증했다는 증거가 되지는 않습니다.
-- [ ] 외부, 누락, wildcard, HTTPS가 아닌 Origin을 signaling 애플리케이션 경계에서 거부합니다.
-- [ ] 공개 인터넷에서 signaling container 포트에 직접 접근할 수 없습니다.
-- [ ] 배포 env에는 bcrypt cost-12 password hash만 저장합니다. 평문 공유 password는 Git, 이미지,
-      shell history, log에 없어야 하며 signaling으로 proxy하기 전에 `Authorization`을 제거합니다.
+- [ ] 외부, 누락, 와일드카드, HTTPS가 아닌 Origin을 시그널링 서버에서 거부합니다.
+- [ ] 공개 인터넷에서 시그널링 컨테이너 포트에 직접 접근할 수 없습니다.
+- [ ] 배포 환경에는 bcrypt 비용 12 비밀번호 해시만 저장합니다. 평문 공유 비밀번호는 Git, 이미지,
+      셸 기록, 로그에 없어야 하며 시그널링 서버로 전달하기 전에 `Authorization`을 제거합니다.
 - [ ] 공유 접근 자격 증명을 별도 경로로 전달했고 유출 시 교체 절차를 예행했습니다. BATON의
       사용자 인증·스터디 참여 권한 검사로 대체할 때까지 임시 수단으로 사용함을 팀이 수용합니다.
-      macOS pilot에서는 이 인증이 두 통신 경로에 적용되지 않고 웹·정적 파일만 보호한다는 점도
+      macOS 파일럿에서는 이 인증이 두 통신 경로에 적용되지 않고 웹·정적 파일만 보호한다는 점도
       기록합니다.
-- [ ] Cloudflare TURN API token은 Git, 이미지 history, 브라우저 bundle, access log,
-      애플리케이션 log에 없습니다.
-- [ ] 초대 경로를 방문해도 Caddy access log에 방 코드가 남지 않습니다. 동시에 공유 인증 `401`과
-      rate-limit `429`를 포함한 모든 경로는 header와 URI를 제거하고 client 주소를 hash한 상태로
-      status를 통해 계속 관측할 수 있습니다.
+- [ ] Cloudflare TURN API 토큰은 Git, 이미지 기록, 브라우저 번들, 접근 로그,
+      애플리케이션 로그에 없습니다.
+- [ ] 초대 경로를 방문해도 Caddy 접근 로그에 방 코드가 남지 않습니다. 공유 인증 `401`과
+      요청 제한 `429`를 포함한 모든 경로는 헤더와 URI를 제거하고 클라이언트 주소를 해시한 뒤
+      상태 코드로 계속 확인할 수 있습니다.
 
-## Relay-only 테스트
+## TURN 중계 전용 테스트
 
 서로 다른 네트워크에 있는 물리 장치 두 대에서 이 테스트를 실행합니다. 한 장치는 가정용 Wi-Fi를,
-다른 장치는 cellular tethering이나 다른 ISP를 사용해야 합니다.
+다른 장치는 모바일 테더링이나 다른 인터넷 회선을 사용해야 합니다.
 
-- [ ] signaling 또는 TURN 이미지 digest를 변경하지 않고 릴리스 workflow의 `-relay` edge 이미지를
+- [ ] 시그널링 또는 TURN 이미지 digest를 변경하지 않고 릴리스 작업의 `-relay` edge 이미지를
       배포합니다.
 - [ ] 두 참가자가 서로 보고 들을 수 있습니다.
-- [ ] 순서가 보장되는 DataChannel chat이 양방향으로 동작합니다.
+- [ ] 순서가 보장되는 DataChannel 채팅이 양방향으로 동작합니다.
 - [ ] 원격 브라우저가 메시지를 수신하고 ACK를 보낸 뒤 발신자의 **수신 확인 중** 상태가 끝납니다.
       수신자가 연결을 닫거나 제한 시간이 지나면 **일부 수신 미확인** 또는 **수신 미확인**으로 표시합니다.
       이미 ACK를 보낸 수신자에게는 다시 전송하지 않습니다.
 - [ ] 릴리스 후 모든 참가자가 새로고침합니다. 구버전 참가자가 ACK를 보내지 않는 경우,
       발신자는 45초 안에 수신 확인 응답이 없으면 **수신 미확인**으로 표시합니다.
-- [ ] `RTCPeerConnection.getStats()`에서 선택된 candidate pair의 local candidate type이 `relay`로
+- [ ] `RTCPeerConnection.getStats()`에서 선택된 ICE 후보 쌍의 로컬 후보 유형이 `relay`로
       표시됩니다.
-- [ ] UDP relay가 성공합니다.
-- [ ] UDP를 차단했을 때 TCP 또는 TLS relay fallback이 성공합니다.
+- [ ] UDP 중계가 성공합니다.
+- [ ] UDP를 차단했을 때 TCP 또는 TLS 중계로 전환됩니다.
 
 ## 권한 및 장치 동작
 
 - [ ] 명시적인 사용자 동작 전에 초대 링크를 열어도 미디어 권한을 요청하거나 WebSocket을 열지
       않습니다.
-- [ ] 입장 전 화면에서 선택한 camera를 미리 보여 줍니다.
-- [ ] 입장 후 선택한 camera와 microphone을 사용합니다.
+- [ ] 입장 전 화면에서 선택한 카메라 영상을 미리 보여 줍니다.
+- [ ] 입장 후 선택한 카메라와 마이크를 사용합니다.
 - [ ] 통화 장치 설정에서 현재 마이크의 입력 음량을 확인할 수 있습니다. 마이크 교체를 적용하면
       새 장치의 입력을 표시하며, 음소거 중에는 막대가 움직이지 않습니다. 설정창을 닫아도 상대에게
       보내는 음성은 유지됩니다.
 - [ ] 지원 브라우저에서 헤드셋·스피커를 선택하면 상대 음성과 확인음이 같은 장치로 들립니다.
       새 참가자의 음성에도 적용되며, 선택한 장치를 분리하면 안내를 표시하고 다른 스피커로 자동 전환하지 않습니다.
       브라우저가 출력 선택을 지원하지 않으면 운영체제 설정 안내가 나오는지 확인합니다.
-- [ ] 사용자가 **화면 공유**를 누른 뒤에만 화면 공유 prompt가 표시되고, 원격 참가자에게 보내는
-      camera를 대체하며, ROUND의 공유 중지 버튼과 브라우저의 기본 공유 중지 동작 모두에서 camera를
+- [ ] 사용자가 **화면 공유**를 누른 뒤에만 화면 선택창이 표시되고, 원격 참가자에게 보내는
+      카메라 영상을 대체하며, ROUND의 공유 중지 버튼과 브라우저의 기본 공유 중지 동작 모두에서 카메라 영상을
       복원합니다.
-- [ ] display picker를 거부하거나 취소해도 기존 camera 통화를 계속 사용할 수 있고 방을 끝내지 않은
+- [ ] 화면 선택창을 거부하거나 취소해도 기존 카메라 통화를 계속 사용할 수 있고 방을 끝내지 않은
       채 한국어로 다음 동작을 안내합니다.
-- [ ] camera를 거부했거나 사용할 수 없어도 audio-only 입장을 허용합니다.
-- [ ] microphone을 거부했거나 사용할 수 없어도 video-only 입장을 허용합니다.
+- [ ] 카메라를 거부했거나 사용할 수 없어도 음성 전용 입장을 허용합니다.
+- [ ] 마이크를 거부했거나 사용할 수 없어도 영상 전용 입장을 허용합니다.
 - [ ] 사용자가 장치 설정을 다시 시도하거나 의도적으로 카메라·마이크 없이 입장할 수 있습니다.
 - [ ] 권한, 장치 누락, 장치 사용 중 오류는 가공하지 않은 브라우저 예외 대신 한국어로 다음 동작을
       안내합니다.
-- [ ] 물리 공간마다 활성 microphone/speaker pair를 하나만 두거나 headphone을 사용해 acoustic echo를
-      테스트합니다. 브라우저 echo cancellation 활성화만으로 통과한 것으로 보지 않습니다. 가까운
-      두 번째 장치를 mute하거나 연결 해제해 들리던 echo가 사라지는지 확인합니다.
+- [ ] 같은 공간에서는 마이크와 스피커 한 쌍만 켜거나 헤드폰을 사용해 울림을
+      테스트합니다. 브라우저의 울림 제거 기능만으로 통과한 것으로 보지 않습니다. 가까운
+      두 번째 장치를 음소거하거나 연결 해제해 울림이 사라지는지 확인합니다.
 
 ## 방장 관리 동작
 
-- [ ] 설정한 standalone 방장 key는 공유 Basic Auth password와 달라야 하고 최소 32개의 random
-      byte를 포함해야 하며, runtime env에는 SHA-256 digest로만 존재해야 합니다. 평문은 Git, 이미지,
-      URL, 브라우저 storage, log, shell history에 없어야 합니다.
-- [ ] 운영자는 하나의 standalone 방장 키가 이 시그널링 서버의 모든 방에 적용됨을 수용하고,
+- [ ] 설정한 독립 실행 방장 키는 공유 HTTP 기본 인증 비밀번호와 달라야 하고 최소 32개의 무작위
+      바이트를 포함해야 하며, 실행 환경에는 SHA-256 해시로만 존재해야 합니다. 평문은 Git, 이미지,
+      URL, 브라우저 저장소, 로그, 셸 기록에 없어야 합니다.
+- [ ] 운영자는 하나의 독립 실행 방장 키가 이 시그널링 서버의 모든 방에 적용됨을 수용하고,
       유출 시 키 교체, 시그널링 서버 재시작, 권한이 있는 방장의 재연결 절차를
       예행했습니다.
 - [ ] 유효한 방장이 다른 참가자의 마이크나 영상을 끌 수 있고, 두 브라우저 모두 변경된
       상태와 명확한 관리 알림을 표시합니다.
-- [ ] 참가자, 올바르지 않은 방장 key, 자기 자신인 대상, 방장인 대상, 나간 대상, 다른 방의 대상을
+- [ ] 참가자, 올바르지 않은 방장 키, 자기 자신인 대상, 방장인 대상, 나간 대상, 다른 방의 대상을
       거부하며 어떤 미디어 상태도 변경하지 않습니다.
 - [ ] 어떤 화면이나 프로토콜 경로에서도 다른 사람의 마이크·카메라·화면 공유를 원격으로 켤 수 없습니다.
       해당 참가자는 꺼진 장치를 직접 다시 켤 수 있습니다.
 - [ ] 화면 공유 중인 참가자의 영상을 끄면 화면 공유가 중지되고 카메라도 꺼진 상태로 남습니다.
-- [ ] 변조된 mesh 클라이언트는 끄기 요청을 무시할 수 있음을 팀이 수용합니다. 강제 제어는
+- [ ] 변조된 메시 클라이언트는 끄기 요청을 무시할 수 있음을 팀이 수용합니다. 강제 제어는
       퇴장·재입장 차단 정책이나 SFU 미디어 중계를 도입할 때 검토합니다.
 
 ## 복구 동작
 
-- [ ] signaling 연결, 방 입장, peer 연결에는 각각 제한된 timeout이 있으며 어떤 spinner도 무한정
+- [ ] 시그널링 연결, 방 입장, 참가자 연결에는 각각 제한 시간이 있으며 어떤 대기 표시도 무한정
       기다리지 않습니다.
-- [ ] Wi-Fi와 hotspot 사이를 전환해도 페이지를 새로고침하지 않고 복구됩니다.
+- [ ] Wi-Fi와 핫스팟 사이를 전환해도 페이지를 새로고침하지 않고 복구됩니다.
 - [ ] 10초 동안 네트워크가 끊긴 뒤 연결이 돌아오면 15초 안에 복구됩니다.
-- [ ] signaling 프로세스를 restart하면 제한된 자동 재입장이 시작됩니다.
-- [ ] 복구 후 중복 참가자 tile이나 ghost 방 슬롯이 남지 않습니다.
-- [ ] **나가기**를 선택하면 모든 재연결 및 ICE 복구 timer를 취소합니다.
+- [ ] 시그널링 프로세스를 재시작하면 횟수가 제한된 자동 재입장이 시작됩니다.
+- [ ] 복구 후 중복 참가자 타일이나 이미 나간 참가자의 방 슬롯이 남지 않습니다.
+- [ ] **나가기**를 선택하면 모든 재연결 및 ICE 복구 타이머를 취소합니다.
 - [ ] 모든 재시도를 소진하면 **재연결**과 **나가기** 동작을 표시합니다.
 
 ## 브라우저 및 장치 조합표
 
-사용한 브라우저와 OS의 정확한 version을 기록합니다.
+사용한 브라우저와 OS의 정확한 버전을 기록합니다.
 
 GitHub Actions의 **실제 iOS Safari 검사**를 수동 실행해 BrowserStack iPhone 기본 검사를 먼저
 통과합니다. 이 검사는 화면과 카메라·마이크 없는 입장만 다루므로 아래 실장치 통화 조합표를 대신하지
@@ -166,21 +166,21 @@ GitHub Actions의 **실제 iOS Safari 검사**를 수동 실행해 BrowserStack 
 | iPhone/iPad           | Safari      | [ ] | [ ] | [ ] | [ ]                   |
 | Android 휴대폰/태블릿 | Chrome      | [ ] | [ ] | [ ] | [ ]                   |
 
-표시한 모든 칸에서 입장, 원격 audio/video, 화면 공유 시작/중지, chat, mute, camera 전환, 방장의
-비활성화 전용 제어, 나가기, 재입장, 초대 복사 동작을 확인하고 예상하지 못한 console 오류가 하나도
+표시한 모든 칸에서 입장, 원격 음성·영상, 화면 공유 시작·중지, 채팅, 음소거, 카메라 전환, 방장의
+끄기 전용 제어, 나가기, 재입장, 초대 복사 동작을 확인하고 예상하지 못한 콘솔 오류가 하나도
 없는지 검증합니다.
 
 ## 용량 및 장시간 테스트
 
 - [ ] 참가자 2명과 4명이 각각 최소 30분 동안 연결을 유지합니다.
 - [ ] 실제 참가자 6명이 최소 90분 동안 연결을 유지합니다.
-- [ ] 참가자 2명의 relay-only session이 4시간 동안 연결을 유지합니다.
-- [ ] relay-only 참가자 6명이 동시에 입장할 수 있고 Cloudflare TURN 사용량과 오류율을
+- [ ] 참가자 2명의 TURN 중계 전용 세션이 4시간 동안 연결을 유지합니다.
+- [ ] TURN 중계 전용 참가자 6명이 동시에 입장할 수 있고 Cloudflare TURN 사용량과 오류율을
       기록합니다.
-- [ ] 6명 video가 문서화한 저대역폭 capture 정책을 사용하고 알아들을 수 있는 audio를 유지합니다.
-- [ ] RTT, packet loss, 송신 bitrate, 프로세스 memory, 열린 file descriptor, TURN egress를
+- [ ] 6명 영상이 문서화한 저대역폭 캡처 정책을 사용하고 알아들을 수 있는 음성을 유지합니다.
+- [ ] RTT, 패킷 손실, 송신 비트 전송률, 프로세스 메모리, 열린 파일 수, TURN 송신량을
       기록합니다.
-- [ ] 브라우저 crash, 무제한 queue 증가, ghost peer, 원인을 설명할 수 없는 disconnect가 발생하지
+- [ ] 브라우저 비정상 종료, 무제한 대기열 증가, 이미 나간 참가자 잔류, 원인을 설명할 수 없는 연결 끊김이 발생하지
       않습니다.
 
 ## 운영
@@ -192,11 +192,11 @@ GitHub Actions의 **실제 iOS Safari 검사**를 수동 실행해 BrowserStack 
 
 - [ ] `docker compose up -d --wait --wait-timeout 120`으로 시그널링 서버와 외부 프록시가
       정상 기동하는지 확인합니다.
-- [ ] 운영 secret store에 Cloudflare TURN key ID와 최소 권한 API token이 있고 저장소·이미지·로그에
+- [ ] 운영 비밀 저장소에 Cloudflare TURN 키 ID와 최소 권한 API 토큰이 있고 저장소·이미지·로그에
       포함되지 않습니다.
-- [ ] 별도 네트워크 두 곳에서 relay 전용 릴리스로 실제 양방향 미디어가 연결됩니다. credential
-      endpoint 200만 relay 성공 증거로 인정하지 않습니다.
-- [ ] UDP 제한망에서 Cloudflare가 발급한 TCP/TLS route로 연결되는지 확인합니다.
+- [ ] 별도 네트워크 두 곳에서 TURN 중계 전용 릴리스로 실제 양방향 미디어가 연결됩니다. 자격 증명
+      API의 HTTP 200 응답만 중계 성공 증거로 인정하지 않습니다.
+- [ ] UDP 제한망에서 Cloudflare가 발급한 TCP/TLS 경로로 연결되는지 확인합니다.
 - [ ] Cloudflare 사용량과 `round.turn.credentials.provider.errors`가 정상 범위이며 공급자 503과
       브라우저 재시도 동작을 확인합니다.
 - [ ] 키 교체 후 새 자격 증명 발급과 기존 통화 유지 여부를 확인하고 폐기한 API 토큰이 더 이상
@@ -205,12 +205,12 @@ GitHub Actions의 **실제 iOS Safari 검사**를 수동 실행해 BrowserStack 
       실행이 성공했습니다.
 - [ ] Cloudflare R2 스냅샷을 운영 서버 밖의 임시 디렉터리에 복원해 체크섬과 Caddy 백업 파일
       입력 검사를 통과했습니다. 저장소 비밀번호와 R2 키는 백업 대상에 포함되지 않습니다.
-- [ ] `observability` profile의 Alloy가 signaling의 비공개 Prometheus endpoint를 수집하고 Grafana
+- [ ] `observability` 프로필의 Alloy가 시그널링 서버의 비공개 Prometheus API를 수집하고 Grafana
       Explore에서 `up{job="round-signaling", environment="production"} == 1`을 확인했습니다.
-- [ ] `ops/observability/round-alerts.yml`을 가져오고 연락처를 연결했습니다. signaling 또는 Alloy가
-      멈춘 경우 No data 상태를 포함해 실제 테스트 알림이 도착합니다.
+- [ ] `ops/observability/round-alerts.yml`을 가져오고 연락처를 연결했습니다. 시그널링 서버 또는 Alloy가
+      멈춘 경우 데이터 없음 상태를 포함해 실제 테스트 알림이 도착합니다.
 - [ ] 활성 방·참가자 수, 연결·입장 거부, 잘못된 프레임, 세션·IP·서버 전체 수신 한도 초과,
-      송신 큐 초과와 heartbeat에 따른 연결 종료를 지표로 확인할 수 있습니다. 방 ID, 이름, SDP,
+      송신 큐 초과와 연결 확인 실패에 따른 종료를 지표로 확인할 수 있습니다. 방 ID, 이름, SDP,
       ICE 후보와 채팅 내용은 기록하지 않습니다.
 - [ ] SIGTERM을 받으면 새 입장을 거부하고 기존 WebSocket을 재연결 가능한 코드로 닫은 뒤
       설정한 제한 시간 안에 종료합니다.
@@ -229,26 +229,26 @@ GitHub Actions의 **실제 iOS Safari 검사**를 수동 실행해 BrowserStack 
 ## BATON 연동 필수 검사
 
 BATON의 외부 프록시와 별도로 배포한 ROUND 서버를 대상으로 다음 검사를 실행합니다.
-이 검사를 위해 저장소의 standalone Compose를 변경하지 마세요.
+이 검사를 위해 저장소의 독립 실행 Compose를 변경하지 마세요.
 
 ### 2026-07-31 로컬 리허설 증거(프로덕션 승인 아님)
 
-- [x] 프로덕션 이미지, Caddy local-CA HTTPS, mock OIDC, 실제 MySQL session과 활성 OWNER/MEMBER
-      membership, BATON RS256/JWK, BATON 모드 web/signaling, 당시 로컬 TURN을 BATON 소유 edge 뒤에
+- [x] 운영 이미지, Caddy 로컬 CA HTTPS, 모의 OIDC, 실제 MySQL 세션과 활성 OWNER/MEMBER
+      멤버십, BATON RS256/JWK, BATON 모드 웹·시그널링, 당시 로컬 TURN을 BATON 소유 edge 뒤에
       구성했습니다.
-- [x] 격리된 Chromium identity 두 개가 refresh 200, TURN credential 200, WSS 입장, relay-only로
-      선택된 UDP candidate pair, 양방향 audio/video traffic, ACK된 chat, 원격 미디어 상태 전파,
+- [x] 분리된 Chromium 사용자 두 명이 갱신 200, TURN 자격 증명 200, WSS 입장, TURN 중계 전용으로
+      선택된 UDP ICE 후보 쌍, 양방향 음성·영상 전송, 확인된 채팅, 원격 미디어 상태 전파,
       정상 나가기를 완료했습니다.
 - [x] 당시 자체 TURN 비밀의 런타임 노출 여부와 정리 상태를 확인했습니다. 이 기록은 현재
-      Cloudflare TURN 운영 승인을 대신하지 않으며 위의 공급자 relay-only gate를 새로 통과해야
+      Cloudflare TURN 운영 승인을 대신하지 않으며 위의 TURN 중계 전용 검사를 새로 통과해야
       합니다.
-- [x] 로컬 안전성 suite는 안전하지 않거나 symlink되었거나 위조된 상태, Compose 2.24.3, stale
-      volume/network, 주위 Compose override, 실패한 정리를 거부하며 SIGINT/SIGTERM은 130/143을
+- [x] 로컬 안전성 검사 모음은 안전하지 않거나 심볼릭 링크이거나 위조된 상태, Compose 2.24.3, 남은
+      볼륨·네트워크, 외부 Compose 덮어쓰기, 실패한 정리를 거부하며 SIGINT/SIGTERM은 130/143을
       반환합니다.
-- [ ] 이 로컬 증거에는 실제 Google OIDC, Naver OAuth 2.0, 로컬 verified-email login, 하나의 BATON
-      `Account.id`를 유지하는 identity 연결, 공개 DNS/ACME, 실제 미디어 장치, 공개
-      TURN/NAT/firewall 동작, TCP/TLS relay fallback, 외부 네트워크, key 회전, 참여권 수명 두 번,
-      장시간 session 안정성, 6명 부하가 포함되지 않습니다.
+- [ ] 이 로컬 증거에는 실제 Google OIDC, Naver OAuth 2.0, 로컬 이메일 인증 로그인, 하나의 BATON
+      `Account.id`를 유지하는 계정 연결, 공개 DNS/ACME, 실제 미디어 장치, 공개
+      TURN/NAT/방화벽 동작, TCP/TLS 중계 전환, 외부 네트워크, 키 교체, 참여권 수명 두 번,
+      장시간 세션 안정성, 6명 부하가 포함되지 않습니다.
 
 운영 배포 여부는 아래의 미완료 필수 검사 결과로 판단합니다.
 
@@ -258,25 +258,25 @@ BATON의 외부 프록시와 별도로 배포한 ROUND 서버를 대상으로 �
 - [ ] 실제 Google·Naver·인증된 로컬 이메일 계정이 각각 참여권 갱신, TURN 발급과 WSS 입장을
       완료합니다. 여러 로그인 수단을 하나의 BATON 계정에 연결하면 같은 JWT `sub`를 유지합니다.
       이메일이나 로그인 제공사를 변경해도 새 ROUND 참가자가 생성되지 않습니다.
-- [ ] ROUND 배포는 `ROUND_AUTH_MODE=baton`, 정확한 BATON issuer, `aud=round`, 프로덕션 HTTPS JWK
+- [ ] ROUND 배포는 `ROUND_AUTH_MODE=baton`, 정확한 BATON 발급자, `aud=round`, 운영 HTTPS JWK
       Set URI, 최대 5분인 참여권 수명 상한, BATON의 정확한 HTTPS Origin을 사용합니다. 필수 검증
       설정을 하나라도 제거하면 시작에 실패합니다.
 - [ ] BATON은 참여권을 `RS256`으로 서명하고 JOSE 헤더에 서명 키의 `kid`를 포함하며 개인키를
       ROUND에 제공하지 않습니다. ROUND는 공개 JWK Set만 받습니다. 키 교체를 예행할 때는
       새 키로 발급하기 전에 공개키를 게시하고, 이전 참여권 수명과 허용 시계 오차가 지날 때까지 두 공개키를
       모두 유지합니다.
-- [ ] BATON은 참여권을 `Domain` attribute 없이 `/round/rooms/{roomId}` 범위의 `HttpOnly`, `Secure`,
-      `SameSite=Strict` cookie로만 발급합니다. token은 URL, 브라우저 storage, proxy log,
-      애플리케이션 log, monitoring label에 없어야 합니다.
-- [ ] edge는 방 ID, WebSocket upgrade, 원래 `Origin`, cookie를 보존하면서
+- [ ] BATON은 참여권을 `Domain` 속성 없이 `/round/rooms/{roomId}` 범위의 `HttpOnly`, `Secure`,
+      `SameSite=Strict` 쿠키로만 발급합니다. 토큰은 URL, 브라우저 저장소, 프록시 로그,
+      애플리케이션 로그, 모니터링 라벨에 없어야 합니다.
+- [ ] edge는 방 ID, WebSocket 업그레이드, 원래 `Origin`, 쿠키를 보존하면서
       `/round/rooms/{roomId}/signal`을 `/rooms/{roomId}/signal`로,
       `/round/rooms/{roomId}/turn-credentials`를 `/api/rooms/{roomId}/turn-credentials`로
-      mapping합니다. `/round/rooms/{roomId}/participation-grant/refresh`는 BATON에 남겨 두며 그
-      경로를 ROUND로 proxy하지 않습니다.
+      연결합니다. `/round/rooms/{roomId}/participation-grant/refresh`는 BATON에 남겨 두며 그
+      경로를 ROUND로 전달하지 않습니다.
 - [ ] BATON 웹을 `VITE_ROUND_AUTH_MODE=baton`으로 빌드하고 시그널링·TURN 경로를 덮어쓰는
       설정을 두지 않습니다. 공유 링크에서도 로그인 세션과 방 참여 권한을 확인한 뒤 입장 준비
       화면을 표시하고 장치 접근을 허용합니다. 사용자가 입장하면 방별 공개 경로 세 개만
-      사용하고 standalone 경로는 사용하지 않습니다.
+      사용하고 독립 실행 경로는 사용하지 않습니다.
 - [ ] 입장 권한 확인 시 `401`이면 정규 `/room/{roomId}`만 `returnTo`로 사용해 BATON 로그인을
       안내합니다. `403`이면 로그인을 반복하지 않고 BATON으로 돌아갑니다. 응답 본문, CSRF 토큰,
       참여권 쿠키, JWT를 화면에 표시하거나 URL에 넣지 않습니다.
@@ -288,15 +288,15 @@ BATON의 외부 프록시와 별도로 배포한 ROUND 서버를 대상으로 �
 - [ ] 준비 화면에서 `refreshAfterSeconds`가 지나면 카메라·마이크 접근과 미디어 없는 입장 전에
       참여권을 다시 확인합니다. 이후 `401`, `403`, `404` 응답을 받으면 30초마다 갱신을 반복하지
       않고 통화를 종료합니다. 지원하지 않는 인증 모드에서는 첫 화면과 입장 준비 화면을 표시하지 않습니다.
-- [ ] 한 account가 입력한 BATON alias를 account 구분이 없는 브라우저 storage에서 다음 account에
+- [ ] 한 계정이 입력한 BATON 표시 이름을 계정 구분이 없는 브라우저 저장소에서 다음 계정에
       미리 채우지 않습니다.
-- [ ] hash가 붙은 `/round-ui/assets/*`만 immutable cache합니다. `/room/*` HTML은 `no-store`이고,
-      `/round-ui/`는 standalone 방 생성이나 초대 코드 제어 없이 no-store 404를 반환합니다.
-- [ ] edge는 client가 보낸 forwarding header를 버리고 canonical HTTPS host와 client 주소를 직접
-      설정하며 방 범위 공개 경로 세 개 모두에 제한된 pre-auth rate limit을 적용합니다.
+- [ ] 해시가 붙은 `/round-ui/assets/*`만 불변 캐시합니다. `/room/*` HTML은 `no-store`이고,
+      `/round-ui/`는 독립 실행 방 생성이나 초대 코드 제어 없이 `no-store` 404를 반환합니다.
+- [ ] edge는 클라이언트가 보낸 전달 헤더를 버리고 기준 HTTPS 호스트와 클라이언트 주소를 직접
+      설정하며 방 범위 공개 경로 세 개 모두에 인증 전 요청 제한을 적용합니다.
 - [ ] 참여권 갱신에는 인증된 BATON 세션이 필요합니다. 현재 스터디 참여 권한, 동일 출처의
       `Origin`, `Sec-Fetch-Site: same-origin`을 다시 확인하며 CORS 접근은 허용하지 않습니다.
-      성공하면 새 `jti`와 만료 시각으로 host-only Strict 쿠키를 갱신하고 숫자 필드인 `expiresAt`과
+      성공하면 새 `jti`와 만료 시각으로 호스트 전용 Strict 쿠키를 갱신하고 숫자 필드인 `expiresAt`과
       `refreshAfterSeconds`만 반환합니다. `Cache-Control: no-store`를 설정하며 JWT를 JavaScript,
       URL, 로그에 노출하지 않습니다.
 - [ ] 동시에 실행한 참여권 검사는 갱신 요청 하나로 합칩니다. 브라우저는 단조 증가 시계와
@@ -304,15 +304,15 @@ BATON의 외부 프록시와 별도로 배포한 ROUND 서버를 대상으로 �
 - [ ] TURN 발급은 서버가 계산한 숫자 필드 `refreshAfterSeconds`를 반환합니다. 브라우저는 응답
       수신 시점의 단조 증가 시계에 이 값을 더해 갱신을 예약합니다. 기기 시계를 바꿔도 새 자격
       증명을 거부하거나 갱신을 미루지 않습니다.
-- [ ] 누락되었거나, 잘못된 형식이거나, 만료되었거나, 서명·issuer·audience·방이 잘못된 참여권을
-      WebSocket upgrade와 TURN credential 발급에서 모두 거부합니다.
-- [ ] 잘못된 참여권에는 no-store `401`을 반환합니다. 캐시가 없는 상태에서 JWK 조회에 실패하면
-      본문 없는 no-store `503`을 반환하고 인증 인프라 장애로 집계합니다.
+- [ ] 누락되었거나, 잘못된 형식이거나, 만료되었거나, 서명·발급자·수신 대상·방이 잘못된 참여권을
+      WebSocket 업그레이드와 TURN 자격 증명 발급에서 모두 거부합니다.
+- [ ] 잘못된 참여권에는 `Cache-Control: no-store`를 포함한 `401`을 반환합니다. 캐시가 없는 상태에서 JWK 조회에 실패하면
+      본문 없는 `Cache-Control: no-store` `503`을 반환하고 인증 인프라 장애로 집계합니다.
 - [ ] 미래 `iat`가 60초를 넘거나 `exp - iat`가 `ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS`보다 큰
       참여권을 거부합니다.
-- [ ] 유효한 참여권은 공개 path, 내부 path, `room.join` payload를 변경해도 다른 방에 입장할 수
+- [ ] 유효한 참여권은 공개 경로, 내부 경로, `room.join` 요청 본문을 변경해도 다른 방에 입장할 수
       없고, 거부된 시도는 방이나 참가자 상태를 만들지 않습니다.
-- [ ] 요청에 다른 면에서 유효한 참여권이 있어도 외부, 누락, wildcard, HTTPS가 아닌 Origin을
+- [ ] 요청에 다른 면에서 유효한 참여권이 있어도 외부, 누락, 와일드카드, HTTPS가 아닌 Origin을
       거부합니다.
 - [ ] Java 시그널링 포트는 BATON 프록시와 모니터링 시스템에서만 접근할 수 있습니다.
       `/actuator/prometheus`와 `/actuator/metrics/**`는 비공개이며, 상태 확인용 공개 경로는
@@ -320,13 +320,13 @@ BATON의 외부 프록시와 별도로 배포한 ROUND 서버를 대상으로 �
 - [ ] `round.auth.jwk.source.healthy`는 JWK 조회가 정상이면 `1`, 실제 조회 장애가 발생하면 `0`이
       됩니다. 운영 지표 수집에서 연속 2회 이상 `0`이면 외부 경보를 보냅니다. 잘못된 참여권의
       `401`과 인증 인프라 장애의 `503`은 별도 경보로 구분합니다.
-- [ ] BATON 페이지의 `Permissions-Policy`는 자체 camera, microphone, display-capture 사용을
+- [ ] BATON 페이지의 `Permissions-Policy`는 자체 카메라, 마이크, 화면 공유 사용을
       허용하고 `connect-src`는 정책 범위를 관계없는 Origin으로 넓히지 않으면서 방 범위 WSS
-      endpoint를 허용합니다.
-- [ ] 유효한 참가자는 signaling을 완료하고 TURN credential을 발급 및 갱신하며, 만료 전에 참여권을
-      갱신하고 참여권 수명의 두 배 이상 한 방에 머물 수 있습니다. 이전 socket 자체의 `exp`가 되면
-      ROUND는 `4001 / Participation grant expired`로 닫고 브라우저는 갱신된 cookie를 사용해 페이지
-      새로고침 없이 재연결하면서 로컬 미디어와 chat history를 유지합니다.
+      API를 허용합니다.
+- [ ] 유효한 참가자는 시그널링을 완료하고 TURN 자격 증명을 발급·갱신하며, 만료 전에 참여권을
+      갱신하고 참여권 수명의 두 배 이상 한 방에 머물 수 있습니다. 이전 연결 자체의 `exp`가 되면
+      ROUND는 `4001 / Participation grant expired`로 닫고 브라우저는 갱신된 쿠키를 사용해 페이지
+      새로고침 없이 재연결하면서 로컬 미디어와 채팅 기록을 유지합니다.
 - [ ] BATON이나 데이터베이스에 장애가 생겨도 기존 WebSocket의 시그널링은 현재 참여권이
       만료될 때까지 유지됩니다. BATON 복구 전에는 갱신·재연결을 거부하고 기존 연결은 만료 시 닫습니다.
 - [ ] 활동이 없거나 입장하지 않은 WebSocket은 늦어도 `exp + 1s`까지 닫힙니다. ROUND의 시스템
@@ -351,11 +351,11 @@ BATON의 외부 프록시와 별도로 배포한 ROUND 서버를 대상으로 �
       용량의 초과를 구분합니다.
 - [ ] `round.signaling.authorization.closes`는 종료 횟수만 집계하며 참가자·방·`jti`·역할·IP를
       태그로 남기지 않습니다.
-- [ ] BATON WebSocket·TURN 검사는 standalone 동작을 변경하지 않습니다. standalone은 TURN 발급을
+- [ ] BATON WebSocket·TURN 검사는 독립 실행 동작을 변경하지 않습니다. 독립 실행 모드는 TURN 발급을
       IP·서버 전체 한도로만 제한하며 참가자별 발급 횟수를 관리하지 않습니다. 참여권 갱신 요청,
       만료 타이머와 권한 만료에 따른 연결 종료 이벤트도 만들지 않습니다.
 - [ ] BATON 연동 검사 도구는 실제 단기 참여권을 받고 기존·새 토큰을 출력하지 않은 채 방별 쿠키를
-      갱신합니다. 새 `jti`와 정확한 no-store 메타데이터 응답, UDP·TCP·TLS 중계 경로를 확인합니다.
-      standalone Basic Auth 검사 결과를 BATON 연동의 검증 근거로 사용하지 않습니다.
+      갱신합니다. 새 `jti`와 정확한 `Cache-Control: no-store` 응답, UDP·TCP·TLS 중계 경로를 확인합니다.
+      독립 실행 HTTP 기본 인증 검사 결과를 BATON 연동의 검증 근거로 사용하지 않습니다.
 - [ ] BATON 인증·스터디 참여 권한·갱신 API와 외부 프록시, 참여권 사전 갱신을 지원하는 웹,
       참여권 만료 시 연결을 종료하는 ROUND 서버 순서로 배포를 예행했습니다. 롤백은 역순으로 예행했습니다.
