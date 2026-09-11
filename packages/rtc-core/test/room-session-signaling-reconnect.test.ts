@@ -197,6 +197,40 @@ describe('RoomSession', () => {
     }
   });
 
+  it('온라인 복귀 요청 시 재연결 대기를 끝내고 다음 시도를 시작한다', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        recovery: {
+          maxReconnectAttempts: 3,
+          reconnectInitialDelayMs: 100,
+          reconnectMaxDelayMs: 100,
+        },
+      });
+      await joinSession(harness);
+
+      expect(harness.session.retrySignalingNow()).toBe(false);
+
+      harness.socket.serverClose(1006, 'network lost');
+      await flushMicrotasks();
+      expect(harness.sockets).toHaveLength(2);
+
+      harness.socket.serverClose(1006, 'still offline');
+      await flushMicrotasks();
+      expect(harness.session.getSnapshot().status).toBe('reconnecting');
+      expect(harness.sockets).toHaveLength(2);
+
+      expect(harness.session.retrySignalingNow()).toBe(true);
+      await flushMicrotasks();
+      expect(harness.sockets).toHaveLength(3);
+      expect(harness.session.retrySignalingNow()).toBe(false);
+
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('performs bounded reconnect attempts and stops local media when they are exhausted', async () => {
     vi.useFakeTimers();
     try {

@@ -860,6 +860,10 @@ export class RoomSession {
     this.#emit();
   }
 
+  retrySignalingNow(): boolean {
+    return this.#status === 'reconnecting' && this.#signalingRecovery.cancelReconnectWait();
+  }
+
   selectInputDevice(kind: 'audio' | 'video', deviceId: string): Promise<boolean> {
     return this.#localInput.select(kind, deviceId);
   }

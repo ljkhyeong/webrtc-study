@@ -132,6 +132,14 @@ export function ActiveRoom({
   }, [outputDeviceId]);
 
   useEffect(() => {
+    const retrySignaling = () => {
+      sessionRef.current?.retrySignalingNow();
+    };
+    window.addEventListener('online', retrySignaling);
+    return () => window.removeEventListener('online', retrySignaling);
+  }, []);
+
+  useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
     let isCurrentSession = true;
     const isCurrentLifecycle = () => isCurrentSession && lifecycleRef.current === lifecycle;

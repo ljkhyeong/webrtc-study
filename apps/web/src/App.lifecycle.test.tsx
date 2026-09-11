@@ -116,7 +116,7 @@ describe('ActiveRoom mounted lifecycle', () => {
     vi.restoreAllMocks();
   });
 
-  it('keeps the latest grant guard through StrictMode and stops BATON work on a 4002 snapshot', async () => {
+  it('StrictMode에서 최신 갱신 관리자와 온라인 복귀 처리를 유지하고 4002 종료 시 BATON 작업을 정리한다', async () => {
     let monotonicNow = 0;
     vi.spyOn(globalThis.performance, 'now').mockImplementation(() => monotonicNow);
 
@@ -215,6 +215,7 @@ describe('ActiveRoom mounted lifecycle', () => {
         return () => listeners.delete(listener);
       }),
       updateRtcConfiguration: vi.fn(),
+      retrySignalingNow: vi.fn(() => true),
     } as unknown as RoomSession;
     rtcCoreMock.RoomSession.mockImplementation(function (options: RoomSessionOptions) {
       sessionState.options = options;
@@ -242,6 +243,10 @@ describe('ActiveRoom mounted lifecycle', () => {
       expect(rtcCoreMock.RoomSession).toHaveBeenCalledTimes(1);
       expect(container.querySelector('[data-testid="room-status"]')?.textContent).toBe('active');
     });
+
+    await act(async () => window.dispatchEvent(new Event('online')));
+    expect(session.retrySignalingNow).toHaveBeenCalledTimes(1);
+
     const mountedSessionOptions = sessionState.options;
     if (mountedSessionOptions === null) {
       throw new Error('Expected StrictMode handoff to create one room session');

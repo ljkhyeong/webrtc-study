@@ -103,8 +103,13 @@ export class SignalingRecoveryLifecycle {
       });
   }
 
-  cancelReconnectWait(): void {
-    this.#cancelReconnectDelay?.();
+  cancelReconnectWait(): boolean {
+    const cancel = this.#cancelReconnectDelay;
+    if (cancel === null) {
+      return false;
+    }
+    cancel();
+    return true;
   }
 
   async #performReconnect(initialFailure: SignalingRecoveryFailure): Promise<void> {
