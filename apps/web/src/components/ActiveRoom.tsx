@@ -121,6 +121,7 @@ export function ActiveRoom({
       }
     };
     mediaDevices.addEventListener('devicechange', checkOutput);
+    void checkOutput();
     return () => {
       disposed = true;
       mediaDevices.removeEventListener('devicechange', checkOutput);
