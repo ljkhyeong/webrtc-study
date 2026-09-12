@@ -122,6 +122,71 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('PrejoinMedia', () => {
+  it('목록 조회 실패와 현재 장치 누락에도 실제 입력과 켜기·끄기 상태를 유지한다', async () => {
+    const audio = new FakeTrack('audio', 'mic-active');
+    const video = new FakeTrack('video', 'camera-active');
+    const originalDevices = [
+      device('audioinput', 'mic-active', '사용 중인 마이크'),
+      device('videoinput', 'camera-active', '사용 중인 카메라'),
+    ];
+    const mediaDevices = Object.assign(new EventTarget(), {
+      enumerateDevices: vi.fn(async () => originalDevices),
+      getUserMedia: vi.fn(
+        async (constraints: MediaStreamConstraints = {}) =>
+          new FakeMediaStream([
+            constraints.audio !== false ? audio : video,
+          ]) as unknown as MediaStream,
+      ),
+    });
+    const controller = new PrejoinMedia({
+      mediaDevices,
+      mediaStreamFactory: () => new FakeMediaStream() as unknown as MediaStream,
+    });
+    try {
+      await controller.checkDevices();
+      controller.toggleAudio();
+      const before = controller.getSnapshot();
+      mediaDevices.enumerateDevices.mockRejectedValueOnce(namedError('NotReadableError'));
+      mediaDevices.dispatchEvent(new Event('devicechange'));
+      await flushMicrotasks();
+      expect(controller.getSnapshot()).toEqual(before);
+
+      mediaDevices.enumerateDevices.mockResolvedValueOnce([
+        device('audioinput', 'mic-other', '다른 마이크'),
+        device('videoinput', 'camera-other', '다른 카메라'),
+      ]);
+      mediaDevices.dispatchEvent(new Event('devicechange'));
+      await flushMicrotasks();
+      expect(controller.getSnapshot()).toMatchObject({
+        selectedAudioInputId: 'mic-active',
+        selectedVideoInputId: 'camera-active',
+        audioInputs: [{ deviceId: 'mic-other' }],
+        videoInputs: [{ deviceId: 'camera-other' }],
+        localMedia: before.localMedia,
+      });
+
+      mediaDevices.enumerateDevices.mockResolvedValueOnce([]);
+      mediaDevices.dispatchEvent(new Event('devicechange'));
+      await flushMicrotasks();
+      expect(controller.getSnapshot()).toMatchObject({
+        audioInputs: [],
+        videoInputs: [],
+        selectedAudioInputId: 'mic-active',
+        selectedVideoInputId: 'camera-active',
+        localMedia: before.localMedia,
+      });
+      expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+      expect(audio.stopped).toBe(false);
+      expect(video.stopped).toBe(false);
+      expect(controller.takeStream()?.getTracks()).toEqual([audio, video]);
+      expect(controller.getInputEnabled()).toEqual({ audio: false, video: true });
+    } finally {
+      controller.dispose();
+      audio.stop();
+      video.stop();
+    }
+  });
+
   it.each(['audio', 'video'] as const)(
     '입장 전에 끄고 분리한 %s 장치를 방에서 다시 선택해도 꺼진 상태를 유지한다',
     async (kind) => {

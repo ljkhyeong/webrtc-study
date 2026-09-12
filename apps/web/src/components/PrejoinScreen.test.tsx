@@ -3,6 +3,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { PrejoinMedia, type PrejoinMediaSnapshot } from '@round/rtc-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PrejoinScreen } from './PrejoinScreen';
 import { startSpeakerTest } from '../lib/speaker-test';
@@ -106,6 +107,75 @@ describe('입장 전 스피커 확인', () => {
 });
 
 describe('PrejoinScreen', () => {
+  it.each([false, true])(
+    '목록에 없는 활성 장치를 다른 장치나 사용 불가로 표시하지 않는다 (다른 장치: %s)',
+    async (hasOtherDevices) => {
+      const snapshot: PrejoinMediaSnapshot = {
+        status: 'ready',
+        audioInputs: hasOtherDevices ? [{ deviceId: 'mic-other', label: '다른 마이크' }] : [],
+        videoInputs: hasOtherDevices ? [{ deviceId: 'camera-other', label: '다른 카메라' }] : [],
+        selectedAudioInputId: 'mic-active',
+        selectedVideoInputId: 'camera-active',
+        localMedia: {
+          audioAvailable: true,
+          audioEnabled: false,
+          videoAvailable: true,
+          videoEnabled: true,
+        },
+        audioIssue: null,
+        videoIssue: null,
+      };
+      vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+      vi.stubGlobal('navigator', {
+        mediaDevices: { addEventListener: vi.fn(), removeEventListener: vi.fn() },
+      });
+      let publish!: (value: PrejoinMediaSnapshot) => void;
+      vi.spyOn(PrejoinMedia.prototype, 'subscribe').mockImplementation((listener) => {
+        publish = listener;
+        return () => {};
+      });
+      vi.spyOn(PrejoinMedia.prototype, 'checkDevices').mockImplementation(async () => {
+        publish(snapshot);
+        return snapshot;
+      });
+      const container = document.createElement('div');
+      const root = createRoot(container);
+      try {
+        act(() =>
+          root.render(
+            <PrejoinScreen
+              initialDisplayName="림"
+              backLabel="BATON으로 돌아가기"
+              roomId="abcd-efgh-jkmp"
+              showHostCapabilityInput={false}
+              onBack={vi.fn()}
+              onJoin={vi.fn()}
+            />,
+          ),
+        );
+        await act(async () =>
+          [...container.querySelectorAll('button')]
+            .find((button) => button.textContent?.trim() === '장치 확인')!
+            .click(),
+        );
+        const [microphone, camera] = container.querySelectorAll('select');
+        expect(microphone!.value).toBe('mic-active');
+        expect(camera!.value).toBe('camera-active');
+        expect(microphone!.selectedOptions[0]!.textContent).toBe('현재 마이크 (목록에 없음)');
+        expect(camera!.selectedOptions[0]!.textContent).toBe('현재 카메라 (목록에 없음)');
+        expect(microphone!.disabled).toBe(!hasOtherDevices);
+        expect(camera!.disabled).toBe(!hasOtherDevices);
+        expect(container.textContent).not.toContain('사용 가능한 마이크 없음');
+        expect(container.textContent).not.toContain('사용 가능한 카메라 없음');
+        expect(container.textContent).toContain('이 설정으로 입장');
+      } finally {
+        act(() => root.unmount());
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
   it('호환성을 확인한 뒤에만 입장하고 실패 안내와 재시도를 제공한다', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     const beforeJoin = vi

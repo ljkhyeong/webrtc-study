@@ -490,7 +490,7 @@ export class PrejoinMedia {
         continue;
       }
 
-      this.#applyDevices(devices);
+      if (devices !== null) this.#applyDevices(devices);
       this.#deviceRefreshCompletedGeneration = generation;
       if (this.#deviceRefreshShouldEmit) {
         this.#deviceRefreshShouldEmit = false;
@@ -500,15 +500,15 @@ export class PrejoinMedia {
     }
   }
 
-  async #enumerateDevices(): Promise<readonly MediaDeviceInfo[]> {
+  async #enumerateDevices(): Promise<readonly MediaDeviceInfo[] | null> {
     if (this.#mediaDevices === undefined) {
-      return [];
+      return null;
     }
 
     try {
       return await this.#mediaDevices.enumerateDevices();
     } catch {
-      return [];
+      return null;
     }
   }
 
@@ -553,6 +553,9 @@ export class PrejoinMedia {
     devices: readonly PrejoinMediaDevice[],
     track: MediaStreamTrack | undefined,
   ): string | null {
+    if (track !== undefined && !hasEnded(track)) {
+      return this.#trackDeviceId(track) ?? selectedDeviceId;
+    }
     if (
       selectedDeviceId !== null &&
       devices.some((device) => device.deviceId === selectedDeviceId)
@@ -560,10 +563,6 @@ export class PrejoinMedia {
       return selectedDeviceId;
     }
 
-    const activeDeviceId = track === undefined ? null : this.#trackDeviceId(track);
-    if (activeDeviceId !== null && devices.some((device) => device.deviceId === activeDeviceId)) {
-      return activeDeviceId;
-    }
     return devices[0]?.deviceId ?? selectedDeviceId;
   }
 

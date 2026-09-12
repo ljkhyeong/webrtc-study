@@ -378,18 +378,20 @@ export function PrejoinScreen({
                           }
                         }}
                       >
-                        {!available && inputs.length > 0 ? (
-                          <option value="">{label}를 선택해 주세요</option>
+                        {!available ? (
+                          <option value="">
+                            {inputs.length > 0
+                              ? `${label}를 선택해 주세요`
+                              : `사용 가능한 ${label} 없음`}
+                          </option>
+                        ) : !inputs.some((device) => device.deviceId === selectedInputId) ? (
+                          <option value={selectedInputId ?? ''}>현재 {label} (목록에 없음)</option>
                         ) : null}
-                        {inputs.length === 0 ? (
-                          <option value="">사용 가능한 {label} 없음</option>
-                        ) : (
-                          inputs.map((device) => (
-                            <option key={device.deviceId} value={device.deviceId}>
-                              {device.label}
-                            </option>
-                          ))
-                        )}
+                        {inputs.map((device) => (
+                          <option key={device.deviceId} value={device.deviceId}>
+                            {device.label}
+                          </option>
+                        ))}
                       </select>
                     </label>
                   );
