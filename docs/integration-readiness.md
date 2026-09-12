@@ -29,6 +29,14 @@ Alertmanager의 [Discord 연동](https://prometheus.io/docs/alerting/latest/conf
 - BATON 상태 검사가 읽는 `/srv/.round-auth-mode`를 실제 웹 빌드 모드에 맞춰 생성한다.
   BATON 이미지는 `baton`, 독립 실행 빌드는 `standalone`을 기록한다.
 
+## 중계 API 요청 제한 처리
+
+통화 중 중계 정보 갱신이 `429`로 거절되면 서버가 반환한 초 단위 `Retry-After`를 다음 요청에
+반영한다. 서버가 120초를 지정했는데 30초마다 재요청하던 동작을 수정했다. 최소 대기는 30초이며,
+대기 시간 누락·잘못된 값·일반 오류는 기존 30초 재시도를 유지한다. 통화는 유지하고 퇴장 시
+재시도를 취소한다. 새 환경변수나 운영 설정은 필요하지 않다.
+[HTTP Retry-After](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after).
+
 ## 빌드
 
 ```bash
