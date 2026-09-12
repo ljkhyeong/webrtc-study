@@ -4,6 +4,10 @@
 Grafana Cloud 스택, Healthchecks.io 검사 두 개, 운영 연락처가 필요합니다. 계정의 사용 한도와
 과금 조건을 확인한 뒤 운영자가 활성화합니다. 비밀 URL·토큰은 채팅이나 Git에 남기지 않습니다.
 
+홈서버의 coturn TLS·인증서 검사와 Discord 장애·복구 알림은
+[로컬 연동 안내](home-server-integrations.md#중계-tls인증서-검사)를 참고합니다.
+로컬 검사는 이 문서의 외부 HTTPS·예약 누락 감시를 대신하지 않습니다.
+
 ## 외부 HTTPS와 인증서
 
 내부 Alloy 지표만으로는 공인 DNS·인증서·방화벽·Caddy 장애를 확인할 수 없습니다.

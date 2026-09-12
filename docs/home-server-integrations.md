@@ -9,12 +9,14 @@ Ubuntu 홈서버의 k3s, `b4ton.com`과 서비스별 서브도메인, 기존 Let
 | ------------------ | ----------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
 | 통화 중계          | 홈서버 coturn                 | NAT 중계 서버·인증 프로토콜을 직접 만들 필요 없음 | `TURN_PROVIDER=coturn` 지원, 설정 예시 추가          |
 | 서버 지표·경보     | 로컬 Prometheus               | 지표 저장·조회·경보 판단을 직접 구현하지 않음     | 기존 Actuator와 경보 6개를 재사용하는 수집 설정 추가 |
+| 중계 접속·인증서   | Blackbox Exporter             | TLS 접속·인증서 만료 검사 코드 불필요             | 선택적인 coturn 상태 검사와 경보 3개 추가            |
+| 장애·복구 알림     | Alertmanager → Discord 웹훅   | 알림 묶기·반복 전송·복구 알림 코드 불필요         | 기본 수신처 연동 예시 추가, 전송은 비활성            |
 | 유동 IP의 DNS 갱신 | ddclient → Cloudflare DNS API | IP 확인·변경 감지·DNS API 호출 스크립트 불필요    | 선택적인 설정 예시 추가. 고정 IP면 사용하지 않음     |
 | 인증서             | 기존 Let’s Encrypt 자동 갱신  | 발급·갱신 작업 중복 방지                          | 기존 체계 사용, 새 갱신 프로그램 추가 없음           |
 | 초대 공유·QR       | Web Share API·qrcode          | 외부 링크·QR 생성 API 불필요                      | 기존 연동 유지                                       |
 | 브라우저 오류      | 기존 Faro 연동                | 별도 오류 수집 API·조회 화면 불필요               | 기본 비활성 유지, 사용 시 기존 무료 플랜 조건 확인   |
 
-coturn과 Prometheus는 외부 유료 API 대신 표준 오픈소스를 연동하는 선택이다. 사용량 과금은 없지만
+coturn·Prometheus·Blackbox Exporter·Alertmanager는 오픈소스 연동이다. 사용량 과금은 없지만
 홈서버의 전력·저장 공간·회선 자원을 사용한다. 로컬 Prometheus만으로 홈서버 전원·회선 장애를
 외부에서 감지할 수는 없다. 외부 장애 감시는 기존 [모니터링 연동](external-monitoring.md)을 참고한다.
 
@@ -76,15 +78,69 @@ BATON에서 일회용 입장 코드 교환 등 서브도메인 로그인 계약�
 
 ## 로컬 지표 수집
 
-[prometheus-local.yml](../ops/observability/prometheus-local.yml)과 기존
-[round-alerts.yml](../ops/observability/round-alerts.yml)을 Prometheus의 `/etc/prometheus`에 연결한다.
+[prometheus-local.yml](../ops/observability/prometheus-local.yml), 기존
+[round-alerts.yml](../ops/observability/round-alerts.yml),
+[alertmanager-targets.yml](../ops/observability/alertmanager-targets.yml)을 Prometheus의
+`/etc/prometheus`에 같은 파일명으로 연결한다. 알림 대상의 기본값은 빈 목록 `[]`이다.
 수집 주소는 실제 k3s Service·namespace에 맞춘다. `/actuator/prometheus`와 Prometheus 관리 화면은
 외부 Ingress로 공개하지 않는다. Grafana는 이 Prometheus를 데이터 소스로 사용할 수 있다.
 
 초기 보관 한도는 실행 옵션 `--storage.tsdb.retention.time=7d`, `--storage.tsdb.retention.size=512MB`로
 줄일 수 있다. WAL·현재 수집 데이터는 별도 공간을 사용한다. 같은 지표를 Alloy와 Prometheus에서
-불필요하게 이중 수집하지 않는다. 알림 전송은 별도 Alertmanager 수신처가 필요하며, 이 설정은
-지표 수집과 경보 평가까지만 제공한다. [Prometheus 설정](https://prometheus.io/docs/prometheus/latest/configuration/configuration/).
+불필요하게 이중 수집하지 않는다. 아래 선택 설정을 연결하기 전에는 기존 서버 지표와 경보 6개만
+사용한다. [Prometheus 설정](https://prometheus.io/docs/prometheus/latest/configuration/configuration/).
+
+## 중계 TLS·인증서 검사
+
+coturn 자격 증명은 ROUND 안에서 서명해 발급하므로, 발급 성공만으로 중계 서버가 살아 있는지
+알 수 없다. Blackbox Exporter가 1분마다 coturn의 TLS 포트에 접속해 인증서까지 확인하도록 한다.
+검사 주소는 내부 Service를 사용하되 인증서 이름은 `turn.b4ton.com`으로 검증한다.
+
+| 실행 도구         | 저장소 파일                                                         | 연결할 경로                                            |
+| ----------------- | ------------------------------------------------------------------- | ------------------------------------------------------ |
+| Blackbox Exporter | [blackbox-turn.yml](../ops/observability/blackbox-turn.yml)         | `/etc/blackbox-exporter/config.yml`                    |
+| Prometheus        | [scrape-turn-tls.yml](../ops/observability/scrape-turn-tls.yml)     | `/etc/prometheus/optional-scrapes/turn-tls.yml`        |
+| Prometheus        | [round-turn-alerts.yml](../ops/observability/round-turn-alerts.yml) | `/etc/prometheus/optional-rules/round-turn-alerts.yml` |
+
+Blackbox Exporter에는 `--config.file=/etc/blackbox-exporter/config.yml`을 지정한다.
+수집 설정의 coturn·Blackbox Exporter 주소는 실제 Service 이름으로 바꾼다. Prometheus의 선택 수집
+파일과 경보 파일을 **함께** 연결하고 설정을 다시 읽히면 다음 경보가 활성화된다.
+
+- TLS 접속·인증서 검증이 2분 동안 실패하면 중계 접속 실패를 알린다.
+- 실제 제공 중인 인증서가 14일 이내 만료될 상태로 10분간 유지되면 갱신·반영 확인을 알린다.
+- 검사 지표가 3분간 수집되지 않으면 Blackbox Exporter나 수집 설정 문제를 알린다.
+
+기존 Let’s Encrypt 자동 갱신은 그대로 사용한다. 이 검사는 TURN 인증·중계 할당·UDP·실제 통화를
+확인하지 않는다. 내부망 검사이므로 공인 DNS·포트 전달·홈서버 전원·회선 장애의 외부 감지도
+대신하지 않는다. [Blackbox Exporter 설정](https://github.com/prometheus/blackbox_exporter/blob/master/CONFIGURATION.md).
+
+검사를 끌 때는 선택 수집 파일과 경보 파일을 함께 제거하고 Prometheus 설정을 다시 읽힌다.
+경보 파일만 남기면 의도한 중지까지 지표 누락으로 감지한다.
+
+## 장애·복구 알림
+
+[Alertmanager의 기본 Discord 연동](https://prometheus.io/docs/alerting/latest/configuration/#discord_config)을
+사용한다. 별도 봇 서버나 유료 알림 서비스를 추가하지 않는다.
+[Discord 웹훅](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)을 받을 채널과
+연결할 때만 다음 설정을 활성화한다.
+
+1. [alertmanager-discord.yml](../ops/observability/alertmanager-discord.yml)을 Alertmanager의
+   `/etc/alertmanager/alertmanager.yml`에 연결하고 `--config.file`에 같은 경로를 지정한다.
+2. 웹훅 URL은 Kubernetes Secret 등 Git 밖에 보관하고 Alertmanager의
+   `/run/secrets/round-discord-webhook`에 읽기 전용 파일로 연결한다. 일반 Discord 웹훅 URL을 사용한다.
+3. `alertmanager-targets.yml`의 `[]`를 아래 목록으로 바꾸고 실제 Service 주소를 지정한다.
+
+```yaml
+- targets: ['alertmanager.monitoring.svc.cluster.local:9093']
+```
+
+같은 종류의 경보를 묶어 최초 30초 뒤 알리고, 변경은 5분 간격, 해결되지 않은 경보는 4시간 간격으로
+전송한다. 복구 알림도 보낸다. 전송 내용은 규칙에 적힌 경보 제목·설명이며 참가자·방·채팅 정보는
+포함하지 않는다. 새 경보 전달을 중지하려면 대상 목록을 다시 `[]`로 바꾼다.
+
+Prometheus 9090, Alertmanager 9093, Blackbox Exporter 9115는 클러스터 내부에서만 연결한다.
+특히 Blackbox Exporter는 요청자가 검사 주소를 지정할 수 있으므로 외부 Ingress로 공개하지 않는다.
+Alertmanager의 데이터 디렉터리를 영구 볼륨에 두면 재시작 후에도 음소거 설정·알림 전송 상태를 유지한다.
 
 ## 추가하지 않은 기능
 
@@ -98,4 +154,8 @@ BATON에서 일회용 입장 코드 교환 등 서브도메인 로그인 계약�
 코드와 설정을 준비했으며 홈서버 설치·DNS 변경·실제 인증서 연결은 하지 않았다.
 관련 Java 테스트와 아키텍처 검사, coturn을 통한 로컬 두 참가자의 영상·음성·채팅,
 Prometheus 설정과 기존 경보 6개를 통과했다. coturn 설정은 테스트 인증서로 시작을 확인했다.
+추가 연동은 Prometheus 3.14.0, Blackbox Exporter 0.28.0, Alertmanager 0.34.0으로 검증했다.
+기본·선택 설정 검사, 신규 경보의 실패·복구·인증서 갱신·지표 누락 테스트를 통과했다.
+격리된 로컬 환경에서 TLS 성공·이름 불일치·신뢰 실패·접속 거부와 Discord 형식의 장애·복구 전송을
+확인했다. 실제 Discord 채널로는 전송하지 않았다.
 외부망 중계, 실제 DNS 갱신, 인증서 갱신 후 반영은 운영 환경에서 확인할 항목이다.
