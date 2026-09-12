@@ -1,5 +1,29 @@
 # 에이전트 검증 절차
 
+## 2단계 피드백 루프
+
+작업을 시작할 때 기준 커밋을 기록한다. 변경 종류별로 커밋한 뒤에도 이 기준부터 전체 작업을
+다시 볼 수 있어야 한다.
+
+### 작성 직후
+
+파일이나 함께 컴파일되는 최소 묶음을 작성하면 다음 순서로 확인한다.
+
+1. `git diff -- <경로>`로 의도하지 않은 수정과 주변 규칙 위반을 확인한다.
+2. 문서·설정·TypeScript는 `npx prettier --check --ignore-unknown <경로>`로 형식을 확인한다.
+3. TypeScript는 변경 패키지의 타입 검사와 가장 가까운 테스트를 실행한다.
+4. Java 운영 코드는 `compileJava`, 테스트 코드는 `compileTestJava`를 실행하고 변경 동작의 관련 테스트를 선택한다.
+
+### 작업 종료 직전
+
+1. `git status --short`로 누락한 새 파일과 예상하지 않은 변경을 확인한다. `git diff`에
+   나타나지 않는 미추적 파일은 내용을 따로 읽거나 스테이징한 뒤 전체 차이에 포함한다.
+2. `git diff --check <기준 커밋> --`로 전체 공백 오류를 확인한다.
+3. `git diff <기준 커밋> --`를 읽고 계층 의존, 책임 배치, 공개 계약, 문서와 테스트의 누락을 확인한다.
+4. Java 소스나 빌드 설정을 바꿨으면 `npm run check:architecture`로 패키지 경계를 확인한다. 같은 리비전에서 `npm run check:java`가 통과했다면 다시 실행하지 않는다.
+
+ArchUnit 검사는 구조 규칙만 확인한다. 변경 동작의 테스트와 Spring 컨텍스트 검사를 대신하지 않는다.
+
 ## 검사 선택
 
 변경 파일과 확인할 동작을 먼저 정한다. 테스트 파일은 `rg --files`로 현재 저장소에서 찾는다.
@@ -8,6 +32,7 @@
 - 작은 웹 수정: `npm run check:web -- src/components/VideoTile.test.tsx`. 파일은 여러 개 지정할 수 있으며 `apps/web` 기준이다. 인자를 생략하면 웹 전체 테스트를 실행한다.
 - 웹 전체 확인: `npm run check:web`. 배포 번들이 바뀌면 웹 빌드를 실행한다. 웹 빌드에 타입 검사가 포함되므로 바로 앞뒤로 같은 타입 검사를 반복하지 않는다.
 - Java 수정: `./gradlew --no-daemon :apps:signaling:test --tests '<대상 클래스>'`. 서버 전체 테스트와 배포 파일이 필요하면 `npm run check:java`로 한 번에 실행한다.
+- Java 계층 확인: `npm run check:architecture`. `ArchitectureTest`는 일반 서버 테스트에도 포함된다.
 - 여러 TypeScript 패키지 확인: `npm run check:typescript`. 프로토콜·RTC 코어의 타입 검사에는 테스트 코드도 포함되므로 유지한다.
 - 전체 확인: `npm run check`. 브라우저 검사는 입장·통화 등 바뀐 동작에 해당하는 `e2e/` 파일과 프로젝트만 선택한다.
 
