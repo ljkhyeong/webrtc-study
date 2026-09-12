@@ -119,6 +119,9 @@ export class PrejoinMedia {
   readonly #mediaStreamFactory: () => MediaStream;
   readonly #listeners = new Set<PrejoinMediaListener>();
   readonly #trackEndedListeners = new Map<MediaStreamTrack, EventListener>();
+  readonly #deviceChangeListener = () => {
+    void this.#requestDeviceRefresh(true);
+  };
   readonly #deviceRefreshWaiters: {
     readonly generation: number;
     readonly resolve: () => void;
@@ -136,7 +139,6 @@ export class PrejoinMedia {
   #desiredVideoEnabled = true;
   #snapshot: PrejoinMediaSnapshot;
   #disposed = false;
-  #deviceChangeListener: EventListener | null = null;
   #deviceRefreshRequestedGeneration = 0;
   #deviceRefreshCompletedGeneration = 0;
   #deviceRefreshPromise: Promise<void> | null = null;
@@ -150,7 +152,7 @@ export class PrejoinMedia {
       (typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined);
     this.#mediaStreamFactory = options.mediaStreamFactory ?? (() => new MediaStream());
     this.#snapshot = this.#buildSnapshot();
-    this.#attachDeviceChangeListener();
+    this.#mediaDevices?.addEventListener('devicechange', this.#deviceChangeListener);
   }
 
   getSnapshot(): PrejoinMediaSnapshot {
@@ -241,7 +243,7 @@ export class PrejoinMedia {
     const stream = this.#stream;
     this.#disposed = true;
     this.#detachAllTrackEndedListeners();
-    this.#detachDeviceChangeListener();
+    this.#mediaDevices?.removeEventListener('devicechange', this.#deviceChangeListener);
     this.#stream = null;
     this.#listeners.clear();
     this.#resolveDeviceRefreshWaiters(true);
@@ -255,7 +257,7 @@ export class PrejoinMedia {
 
     this.#disposed = true;
     this.#detachAllTrackEndedListeners();
-    this.#detachDeviceChangeListener();
+    this.#mediaDevices?.removeEventListener('devicechange', this.#deviceChangeListener);
     if (this.#stream !== null) {
       stopTracks(this.#stream);
       this.#stream = null;
@@ -413,28 +415,6 @@ export class PrejoinMedia {
   #detachAllTrackEndedListeners(): void {
     for (const track of [...this.#trackEndedListeners.keys()]) {
       this.#detachTrackEndedListener(track);
-    }
-  }
-
-  #attachDeviceChangeListener(): void {
-    const mediaDevices = this.#mediaDevices;
-    if (mediaDevices === undefined) {
-      return;
-    }
-
-    const listener: EventListener = () => {
-      void this.#requestDeviceRefresh(true);
-    };
-    this.#deviceChangeListener = listener;
-    mediaDevices.addEventListener('devicechange', listener);
-  }
-
-  #detachDeviceChangeListener(): void {
-    const listener = this.#deviceChangeListener;
-    const mediaDevices = this.#mediaDevices;
-    this.#deviceChangeListener = null;
-    if (listener !== null && mediaDevices !== undefined) {
-      mediaDevices.removeEventListener('devicechange', listener);
     }
   }
 

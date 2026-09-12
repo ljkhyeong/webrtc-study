@@ -5,7 +5,6 @@ import com.personal.round.signaling.ConnectionAdmissionPolicy;
 import com.personal.round.signaling.ConnectionAdmissionPolicy.Accepted;
 import com.personal.round.signaling.ConnectionAdmissionPolicy.Admission;
 import com.personal.round.signaling.ConnectionAdmissionPolicy.Rejected;
-import com.personal.round.signaling.ConnectionAdmissionPolicy.Rejection;
 import com.personal.round.signaling.SignalingService;
 import jakarta.servlet.ServletContext;
 import java.security.Principal;

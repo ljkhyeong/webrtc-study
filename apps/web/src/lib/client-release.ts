@@ -7,14 +7,12 @@ export async function checkSignalingCompatibility(signalingUrl: string): Promise
   const url = new URL(signalingUrl);
   url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
   url.searchParams.set('compatibility', '1');
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 5000);
   let supported: boolean;
   try {
     const response = await fetch(url.href, {
       cache: 'no-store',
       credentials: 'same-origin',
-      signal: controller.signal,
+      signal: AbortSignal.timeout(5_000),
     });
     if (response.status >= 500) throw new Error('서버 응답 오류');
     supported = response.ok && supportsCurrentClient(await response.json());
@@ -22,8 +20,6 @@ export async function checkSignalingCompatibility(signalingUrl: string): Promise
     throw new Error(
       '시그널링 서버의 지원 기능을 확인하지 못했습니다. 네트워크를 확인하고 다시 시도해 주세요.',
     );
-  } finally {
-    window.clearTimeout(timeout);
   }
   if (!supported)
     throw new Error(
@@ -41,14 +37,13 @@ export function useClientRelease(enabled = true) {
     if (request.current) return request.current.result;
     const generation = lifetime.current;
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 5000);
     const result = (async (): Promise<ReleaseStatus> => {
       let next: ReleaseStatus;
       try {
         const response = await fetch(`${import.meta.env.BASE_URL}release.json`, {
           cache: 'no-store',
           credentials: 'same-origin',
-          signal: controller.signal,
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5_000)]),
         });
         const value: unknown = response.ok ? await response.json() : null;
         if (
@@ -65,7 +60,6 @@ export function useClientRelease(enabled = true) {
       } catch {
         next = 'unavailable';
       } finally {
-        window.clearTimeout(timeout);
         if (generation === lifetime.current) request.current = null;
       }
       if (generation !== lifetime.current) return 'unavailable';
