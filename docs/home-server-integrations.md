@@ -14,6 +14,7 @@ Ubuntu 홈서버의 k3s, `b4ton.com`과 서비스별 서브도메인, 기존 Let
 | 유동 IP의 DNS 갱신 | ddclient → Cloudflare DNS API | IP 확인·변경 감지·DNS API 호출 스크립트 불필요    | 선택적인 설정 예시 추가. 고정 IP면 사용하지 않음     |
 | 인증서             | 기존 Let’s Encrypt 자동 갱신  | 발급·갱신 작업 중복 방지                          | 기존 체계 사용, 새 갱신 프로그램 추가 없음           |
 | 초대 공유·QR       | Web Share API·qrcode          | 외부 링크·QR 생성 API 불필요                      | 기존 연동 유지                                       |
+| 공유 화면 작은 창  | Picture-in-Picture API        | 다른 앱 위에 영상을 띄우는 창 관리 구현 불필요    | 지원 브라우저에서 상대 공유 화면의 작은 창 보기 추가 |
 | 브라우저 오류      | 기존 Faro 연동                | 별도 오류 수집 API·조회 화면 불필요               | 기본 비활성 유지, 사용 시 기존 무료 플랜 조건 확인   |
 
 coturn·Prometheus·Blackbox Exporter·Alertmanager는 오픈소스 연동이다. 사용량 과금은 없지만

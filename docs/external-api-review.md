@@ -3,7 +3,8 @@
 확인일: 2026-09-07. 최초 검토 코드 기준: `fd874e2`. 이후 추가요금 없는 조건을 적용했다.
 ROUND 소스·배포 설정과 제공사의 공식 문서를 대조했다. 실제 계정 설정과 제공사 API 호출은 확인하지 않았다.
 
-2026-09-12 갱신: 홈서버 조건에서는 coturn 발급 지원과 로컬 Prometheus·Cloudflare DDNS 설정을 추가했다.
+2026-09-12 갱신: coturn 발급, 로컬 지표·중계 상태 검사·장애 알림, Cloudflare DDNS 설정과
+브라우저 Picture-in-Picture API를 통한 공유 화면 작은 창 보기를 추가했다.
 최신 선택과 `b4ton.com` 인증 조건은 [홈서버 연동 검토](home-server-integrations.md)를 따른다.
 아래 SDK 비교와 무료 플랜 수치는 최초 확인일의 기록이다.
 
@@ -85,6 +86,18 @@ Grafana Faro는 브라우저 오류·성능·로그 수집을 제공하므로 �
 Google Calendar API로 BATON 일정과 ROUND 입장 링크를 개인 캘린더에 등록·수정할 수 있다. 사용자 OAuth 동의가 필요하며, 변경 알림을 받는 방식도 알림 수신 후 실제 변경 내용을 다시 조회해야 한다. 알림 누락과 구독 갱신을 처리해야 하므로 API 호출 하나로 양방향 실시간 동기화가 끝나지는 않는다. [일정 생성](https://developers.google.com/workspace/calendar/api/guides/create-events), [변경 알림](https://developers.google.com/workspace/calendar/api/guides/push).
 
 이 저장소에 없는 새 기능이므로 이번 코드 감소 대상에서는 제외한다. BATON의 기존 캘린더 연동은 이번 점검에서 확인하지 않았다.
+
+## 4. 공유 화면 작은 창: 브라우저 API 적용
+
+공유 화면을 보면서 문서·코드 편집기를 사용할 수 있도록 **작은 창** 버튼을 추가했다.
+브라우저의 Picture-in-Picture API가 다른 앱 위에 영상 창을 띄우고 이동·크기 조절을 맡는다.
+기존 수신 영상을 사용하므로 추가 영상 서버·외부 전송·패키지·사용료는 없다.
+[공식 API 안내](https://developer.chrome.com/blog/watch-video-using-picture-in-picture/).
+
+지원되는 브라우저에서 상대의 공유 화면에만 버튼을 표시한다. 공유 종료·참가자 퇴장 때 창을 닫고
+음성·영상 스트림은 기존 통화 세션이 관리한다. 작은 창에는 영상 원본이 표시되며 ROUND의
+확대·이동 도구는 포함되지 않는다. 미지원 브라우저에서는 기존 화면 고정·전체 화면을 사용한다.
+[표준의 영상 표시 규칙](https://w3c.github.io/picture-in-picture/#picture-in-picture).
 
 ## 이미 외부 서비스를 사용하도록 구현된 부분
 
