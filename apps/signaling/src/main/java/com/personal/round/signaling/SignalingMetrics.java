@@ -73,9 +73,12 @@ public final class SignalingMetrics {
 		overloadedFrames = Counter.builder("round.signaling.frames.overloaded")
 				.description("서버 전체 수신량 제한으로 버린 WebSocket 프레임 수")
 				.register(registry);
-		sessionByteLimitedFrames = byteLimitCounter(registry, "session");
-		clientByteLimitedFrames = byteLimitCounter(registry, "client");
-		globalByteLimitedFrames = byteLimitCounter(registry, "global");
+		MeterProvider<Counter> byteLimitedFrames = Counter.builder("round.signaling.frames.byte_limited")
+				.description("본문 크기 한도로 거부한 수신 WebSocket 프레임 수")
+				.withRegistry(registry);
+		sessionByteLimitedFrames = byteLimitedFrames.withTag("scope", "session");
+		clientByteLimitedFrames = byteLimitedFrames.withTag("scope", "client");
+		globalByteLimitedFrames = byteLimitedFrames.withTag("scope", "global");
 		MeterProvider<Counter> connectionRejections = Counter.builder("round.signaling.connections.rejected")
 				.description("연결 한도 검사에서 거부한 WebSocket 연결 요청 수")
 				.withRegistry(registry);
@@ -194,12 +197,5 @@ public final class SignalingMetrics {
 
 	void recordAuthorizationClose() {
 		authorizationCloses.increment();
-	}
-
-	private static Counter byteLimitCounter(MeterRegistry registry, String scope) {
-		return Counter.builder("round.signaling.frames.byte_limited")
-				.tag("scope", scope)
-				.description("본문 크기 한도로 거부한 수신 WebSocket 프레임 수")
-				.register(registry);
 	}
 }

@@ -5,7 +5,9 @@ import com.personal.round.config.SignalingProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
 import java.net.InetSocketAddress;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -14,12 +16,11 @@ public final class ConnectionAdmissionPolicy {
 	public static final String RESERVATION_ATTRIBUTE =
 			ConnectionAdmissionPolicy.class.getName() + ".reservation";
 
-	private static final int MAX_CONNECTIONS_PER_PARTICIPATION_TOKEN = 1;
 	private static final int MAX_CONNECTIONS_PER_PARTICIPANT_ROOM = 2;
 
 	private final Object monitor = new Object();
 	private final Map<String, Integer> connectionsByClient = new HashMap<>();
-	private final Map<String, Integer> connectionsByParticipationToken = new HashMap<>();
+	private final Set<String> reservedParticipationTokens = new HashSet<>();
 	private final Map<ParticipantRoomKey, Integer> connectionsByParticipantRoom =
 			new HashMap<>();
 	private final int maxConnections;
@@ -60,10 +61,7 @@ public final class ConnectionAdmissionPolicy {
 			}
 
 			if (participationTokenId != null
-					&& connectionsByParticipationToken.getOrDefault(
-									participationTokenId,
-									0)
-							>= MAX_CONNECTIONS_PER_PARTICIPATION_TOKEN) {
+					&& reservedParticipationTokens.contains(participationTokenId)) {
 				metrics.recordConnectionRejectedParticipationTokenCapacity();
 				return new Rejected(Rejection.PARTICIPATION_TOKEN_CAPACITY);
 			}
@@ -79,7 +77,9 @@ public final class ConnectionAdmissionPolicy {
 
 			activeReservations++;
 			increment(connectionsByClient, clientKey);
-			increment(connectionsByParticipationToken, participationTokenId);
+			if (participationTokenId != null) {
+				reservedParticipationTokens.add(participationTokenId);
+			}
 			increment(connectionsByParticipantRoom, participantRoomKey);
 			return new Accepted(new Reservation(
 					this,
@@ -104,7 +104,7 @@ public final class ConnectionAdmissionPolicy {
 
 	int activeParticipationTokenReservationCount(String tokenId) {
 		synchronized (monitor) {
-			return connectionsByParticipationToken.getOrDefault(tokenId, 0);
+			return reservedParticipationTokens.contains(tokenId) ? 1 : 0;
 		}
 	}
 
@@ -124,9 +124,7 @@ public final class ConnectionAdmissionPolicy {
 			reservation.released = true;
 			activeReservations--;
 			decrement(connectionsByClient, reservation.clientKey);
-			decrement(
-					connectionsByParticipationToken,
-					reservation.participationTokenId);
+			reservedParticipationTokens.remove(reservation.participationTokenId);
 			decrement(
 					connectionsByParticipantRoom,
 					reservation.participantRoomKey);
