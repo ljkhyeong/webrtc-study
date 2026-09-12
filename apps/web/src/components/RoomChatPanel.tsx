@@ -258,14 +258,15 @@ export function RoomChatPanel({
       previousLocalDeliveryStates.current = currentLocalDeliveryStates;
       return;
     }
-    if (!open || query || !followingChatRef.current) {
-      setUnreadMessageCount(
-        (count) => count + countNewRemoteMessages(messages, previousLastMessage.current),
-      );
-      setUnseenDeliveryIssueCount(
-        (count) =>
-          count + countNewLocalDeliveryIssues(messages, previousLocalDeliveryStates.current),
-      );
+    if (!open || document.hidden || !document.hasFocus() || query || !followingChatRef.current) {
+      const newMessages = countNewRemoteMessages(messages, previousLastMessage.current);
+      const newIssues = countNewLocalDeliveryIssues(messages, previousLocalDeliveryStates.current);
+      setUnreadMessageCount((count) => count + newMessages);
+      setUnseenDeliveryIssueCount((count) => count + newIssues);
+      if (open && (newMessages > 0 || newIssues > 0)) {
+        followingChatRef.current = false;
+        setFollowingChat(false);
+      }
     } else if (
       messages.at(-1)?.id !== previousLastMessage.current?.id ||
       messages.at(-1)?.senderId !== previousLastMessage.current?.senderId
@@ -278,7 +279,7 @@ export function RoomChatPanel({
   }, [open, messages, query]);
 
   useEffect(() => {
-    if (!open || query) return;
+    if (!open || query || document.hidden || !document.hasFocus()) return;
     followingChatRef.current = true;
     setFollowingChat(true);
     setUnreadMessageCount(0);
@@ -305,7 +306,7 @@ export function RoomChatPanel({
 
   const handleChatScroll = () => {
     const list = messagesRef.current;
-    if (list === null || !open || query) return;
+    if (list === null || !open || query || document.hidden || !document.hasFocus()) return;
     const following = list.scrollHeight - list.scrollTop - list.clientHeight <= 32;
     followingChatRef.current = following;
     setFollowingChat(following);

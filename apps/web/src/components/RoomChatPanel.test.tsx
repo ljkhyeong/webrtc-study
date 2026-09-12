@@ -41,6 +41,8 @@ describe('방 안의 채팅 입력과 검색', () => {
     });
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -50,8 +52,67 @@ describe('방 안의 채팅 입력과 검색', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
+
+  it.each(['다른 탭', '다른 창'])(
+    '%s에서 작업 중 받은 대화는 위치와 새 메시지 수를 유지한다',
+    (away) => {
+      render([first]);
+      const list = container.querySelector<HTMLDivElement>('.chat-messages')!;
+      let height = 1000;
+      Object.defineProperties(list, {
+        scrollHeight: { get: () => height },
+        clientHeight: { get: () => 300 },
+      });
+      list.scrollTop = 700;
+      vi.mocked(document.hasFocus).mockReturnValue(false);
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(away === '다른 탭');
+      height = 1200;
+      render([first, second]);
+      expect(list.scrollTop).toBe(700);
+      expect(notifications).toHaveBeenLastCalledWith({
+        unreadMessageCount: 1,
+        unseenDeliveryIssueCount: 0,
+      });
+      expect(container.querySelector('.chat-latest')?.textContent).toContain('새 메시지 1개');
+
+      const local: ChatMessage = {
+        ...message('me', 'mine', '내 메시지'),
+        isLocal: true,
+        deliveryState: 'pending',
+      };
+      render([first, second, local]);
+      const failed: ChatMessage = { ...local, deliveryState: 'failed' };
+      render([first, second, failed]);
+      // 백그라운드의 스크롤 이벤트가 읽음 표시를 지우지 않아야 한다.
+      act(() => {
+        list.scrollTop = 900;
+        list.dispatchEvent(new Event('scroll'));
+      });
+      expect(notifications).toHaveBeenLastCalledWith({
+        unreadMessageCount: 1,
+        unseenDeliveryIssueCount: 1,
+      });
+
+      vi.mocked(document.hasFocus).mockReturnValue(true);
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+      render([first, second, failed]);
+      expect(container.querySelector('.chat-latest')?.textContent).toContain('새 메시지 1개');
+      act(() => container.querySelector<HTMLButtonElement>('.chat-latest')!.click());
+      expect(list.scrollTop).toBe(1200);
+      expect(container.querySelector('.chat-latest')).toBeNull();
+      expect(notifications).toHaveBeenLastCalledWith({
+        unreadMessageCount: 0,
+        unseenDeliveryIssueCount: 0,
+      });
+      height = 1400;
+      render([first, second, failed, message('b', 'next', '새 자료')]);
+      expect(list.scrollTop).toBe(1400);
+      expect(container.querySelector('.chat-latest')).toBeNull();
+    },
+  );
 
   it('현재 대화를 이름·날짜·수신 상태와 함께 복사하고 검색·초안은 유지한다', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);

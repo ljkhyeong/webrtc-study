@@ -43,6 +43,8 @@ describe('RoomView 브라우저 동작', () => {
   let root: Root;
 
   beforeEach(() => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
     Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
       configurable: true,
       value: true,
