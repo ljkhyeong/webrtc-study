@@ -838,6 +838,27 @@ textarea:focus-visible {
   gap: 15px;
 }
 
+.prejoin-speaker-test {
+  display: grid;
+  gap: 8px;
+  margin: 20px 0;
+  font-size: 0.78rem;
+}
+
+.prejoin-speaker-test small {
+  color: var(--ink-soft);
+}
+
+.prejoin-speaker-test .prejoin-retry-action {
+  justify-self: start;
+  margin: 0;
+}
+
+.prejoin-speaker-test p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .prejoin-device-fields label {
   display: grid;
   gap: 7px;

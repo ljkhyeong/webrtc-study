@@ -6,6 +6,7 @@ import { prejoinMediaIssueMessage } from '../lib/prejoin-presentation';
 import { ArrowIcon, CameraIcon, CameraOffIcon, MicIcon, MicOffIcon } from './Icons';
 import { MicrophoneLevel } from './MicrophoneLevel';
 import { DISPLAY_NAME_MAX_LENGTH, sanitizeDisplayName } from '../lib/room';
+import { useSpeakerTest } from '../lib/use-speaker-test';
 
 interface PrejoinScreenProps {
   initialDisplayName: string;
@@ -65,6 +66,7 @@ export function PrejoinScreen({
   const [actionError, setActionError] = useState('');
   const [authorizationPending, setAuthorizationPending] = useState(false);
   const [hostCapability, setHostCapability] = useState('');
+  const speakerTest = useSpeakerTest('');
 
   const normalizedHostCapability = hostCapability.trim() || undefined;
   const hostCapabilityInvalid =
@@ -312,6 +314,20 @@ export function PrejoinScreen({
               </small>
             </label>
           ) : null}
+
+          <section className="prejoin-speaker-test" aria-label="입장 전 스피커 확인">
+            <button
+              className="prejoin-retry-action"
+              type="button"
+              disabled={speakerTest.testing || authorizationPending}
+              onClick={() => void speakerTest.play()}
+            >
+              {speakerTest.testing ? '확인음 재생 중' : '스피커 소리 확인'}
+            </button>
+            <small>시스템 기본 스피커로 짧은 확인음을 재생합니다.</small>
+            {speakerTest.notice ? <p role="status">{speakerTest.notice}</p> : null}
+            {speakerTest.error ? <p role="alert">{speakerTest.error}</p> : null}
+          </section>
 
           {isIdle ? (
             <div className="prejoin-idle-actions">

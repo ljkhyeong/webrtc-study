@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { startSpeakerTest } from '../lib/speaker-test';
+import { useSpeakerTest } from '../lib/use-speaker-test';
 
 interface AudioOutputControlsProps {
   deviceId: string;
@@ -20,11 +20,11 @@ export function AudioOutputControls({
 }: AudioOutputControlsProps) {
   const [selected, setSelected] = useState(deviceId);
   const [pending, setPending] = useState(false);
-  const [testing, setTesting] = useState(false);
+  const speakerTest = useSpeakerTest(deviceId);
+  const { testing } = speakerTest;
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const mounted = useRef(false);
-  const testRef = useRef<ReturnType<typeof startSpeakerTest> | null>(null);
   const supported = typeof HTMLMediaElement.prototype.setSinkId === 'function';
   const mediaDevices = navigator.mediaDevices as OutputMediaDevices | undefined;
   const outputs = devices.filter(
@@ -35,7 +35,6 @@ export function AudioOutputControls({
     mounted.current = true;
     return () => {
       mounted.current = false;
-      testRef.current?.stop();
     };
   }, []);
 
@@ -43,6 +42,7 @@ export function AudioOutputControls({
     setPending(true);
     setNotice('');
     setError('');
+    speakerTest.clear();
     try {
       const next = choose
         ? (await mediaDevices!.selectAudioOutput!({ deviceId })).deviceId
@@ -61,25 +61,10 @@ export function AudioOutputControls({
     }
   }
 
-  async function testSpeaker() {
-    setTesting(true);
+  function testSpeaker() {
     setNotice('');
     setError('');
-    try {
-      const test = startSpeakerTest(deviceId);
-      testRef.current = test;
-      await test.finished;
-      if (mounted.current)
-        setNotice('확인음을 재생했습니다. 들리지 않으면 볼륨과 스피커 연결을 확인해 주세요.');
-    } catch {
-      if (mounted.current)
-        setError(
-          '확인음을 재생하지 못했습니다. 스피커 연결과 브라우저의 소리 권한을 확인해 주세요.',
-        );
-    } finally {
-      testRef.current = null;
-      if (mounted.current) setTesting(false);
-    }
+    void speakerTest.play();
   }
 
   return (
@@ -136,8 +121,8 @@ export function AudioOutputControls({
         선택한 스피커로 짧은 확인음을 재생합니다. 목록에 없는 장치는 운영체제의 소리 설정을 확인해
         주세요.
       </p>
-      <p role="status">{pending ? '스피커를 선택하고 있습니다.' : notice}</p>
-      {error ? <p role="alert">{error}</p> : null}
+      <p role="status">{pending ? '스피커를 선택하고 있습니다.' : notice || speakerTest.notice}</p>
+      {error || speakerTest.error ? <p role="alert">{error || speakerTest.error}</p> : null}
     </section>
   );
 }

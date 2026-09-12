@@ -1,10 +1,109 @@
 // @vitest-environment jsdom
 
 import { act } from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PrejoinScreen } from './PrejoinScreen';
+import { startSpeakerTest } from '../lib/speaker-test';
+
+vi.mock('../lib/speaker-test', () => ({ startSpeakerTest: vi.fn() }));
+
+describe('입장 전 스피커 확인', () => {
+  let root: Root;
+  let container: HTMLDivElement;
+  const getUserMedia = vi.fn();
+  const authorize = vi.fn();
+  const onJoin = vi.fn();
+  const onBack = vi.fn();
+  const button = (name: string) =>
+    [...container.querySelectorAll('button')].find(
+      (item) => item.textContent?.trim() === name || item.getAttribute('aria-label') === name,
+    )!;
+
+  beforeEach(() => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
+    vi.mocked(startSpeakerTest).mockReset();
+    getUserMedia.mockClear();
+    authorize.mockReset();
+    onJoin.mockReset();
+    onBack.mockReset();
+    container = document.createElement('div');
+    root = createRoot(container);
+    act(() =>
+      root.render(
+        <PrejoinScreen
+          initialDisplayName="림"
+          backLabel="BATON으로 돌아가기"
+          roomId="abcd-efgh-jkmp"
+          showHostCapabilityInput={false}
+          authorizeBeforeEntryAction={authorize}
+          onBack={onBack}
+          onJoin={onJoin}
+        />,
+      ),
+    );
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  });
+
+  it('버튼을 누른 뒤 기본 스피커만 확인하고 실패하면 다시 시도할 수 있다', async () => {
+    let reject!: (error: Error) => void;
+    vi.mocked(startSpeakerTest).mockReturnValueOnce({
+      stop: vi.fn(),
+      finished: new Promise<void>((_, fail) => {
+        reject = fail;
+      }),
+    });
+    expect(startSpeakerTest).not.toHaveBeenCalled();
+    act(() => button('스피커 소리 확인').click());
+    expect(startSpeakerTest).toHaveBeenCalledExactlyOnceWith('');
+    expect(button('확인음 재생 중').disabled).toBe(true);
+    act(() => button('확인음 재생 중').click());
+    expect(startSpeakerTest).toHaveBeenCalledOnce();
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(authorize).not.toHaveBeenCalled();
+    expect(onJoin).not.toHaveBeenCalled();
+    await act(async () => reject(new DOMException('재생 거부', 'NotAllowedError')));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('재생하지 못했습니다');
+    expect(button('스피커 소리 확인').disabled).toBe(false);
+    vi.mocked(startSpeakerTest).mockReturnValueOnce({ stop: vi.fn(), finished: Promise.resolve() });
+    await act(async () => button('스피커 소리 확인').click());
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      '확인음을 재생했습니다',
+    );
+  });
+
+  it.each(['입장', '돌아가기'])(
+    '재생 중 %s하면 확인음을 중지하고 늦은 결과를 무시한다',
+    async (action) => {
+      const stop = vi.fn();
+      let finish!: () => void;
+      vi.mocked(startSpeakerTest).mockReturnValueOnce({
+        stop,
+        finished: new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+      });
+      onJoin.mockImplementation(() => root.render(null));
+      onBack.mockImplementation(() => root.render(null));
+      authorize.mockResolvedValue(true);
+      act(() => button('스피커 소리 확인').click());
+      await act(async () =>
+        button(action === '입장' ? '카메라·마이크 없이 입장' : 'BATON으로 돌아가기').click(),
+      );
+      expect(stop).toHaveBeenCalledOnce();
+      expect(action === '입장' ? onJoin : onBack).toHaveBeenCalledOnce();
+      await act(async () => finish());
+      expect(container.textContent).toBe('');
+    },
+  );
+});
 
 describe('PrejoinScreen', () => {
   it('호환성을 확인한 뒤에만 입장하고 실패 안내와 재시도를 제공한다', async () => {
