@@ -84,9 +84,6 @@ export function ActiveRoom({
   const [turnRefreshWarning, setTurnRefreshWarning] = useState('');
   const [qualityVisible, setQualityVisible] = useState(false);
   const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
-  const [screenSharePending, setScreenSharePending] = useState<'starting' | 'stopping' | null>(
-    null,
-  );
   const [audioOutput, setAudioOutput] = useState({ deviceId: '' });
   const outputDeviceId = audioOutput.deviceId;
   const [outputWarning, setOutputWarning] = useState('');
@@ -260,7 +257,6 @@ export function ActiveRoom({
     setActionError('');
     setParticipationGrantRefreshWarning('');
     setTurnRefreshWarning('');
-    setScreenSharePending(null);
     void startSession();
 
     return () => {
@@ -466,7 +462,7 @@ export function ActiveRoom({
         videoEnabled={localMedia.videoEnabled}
         screenShareAvailable={snapshot?.screenShareAvailable ?? false}
         screenSharing={snapshot?.screenSharing ?? false}
-        screenSharePending={screenSharePending}
+        screenSharePending={snapshot?.screenSharePending ?? null}
         canModerateMedia={snapshot?.canModerateMedia ?? false}
         moderationNotice={
           snapshot?.lastModerationNotice?.kind === 'audio'
@@ -512,7 +508,6 @@ export function ActiveRoom({
           setActionWarning('');
           setActionError('');
           const wasSharing = snapshot?.screenSharing === true;
-          setScreenSharePending(wasSharing ? 'stopping' : 'starting');
           void (async () => {
             try {
               if (wasSharing) {
@@ -537,8 +532,6 @@ export function ActiveRoom({
                     : '화면 공유를 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.',
                 );
               }
-            } finally {
-              if (sessionRef.current === session) setScreenSharePending(null);
             }
           })();
         }}

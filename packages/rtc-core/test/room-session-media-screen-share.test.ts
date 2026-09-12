@@ -165,6 +165,38 @@ describe('RoomSession', () => {
     await harness.session.leave();
   });
 
+  it.each([
+    { errorName: null, result: 'started' },
+    { errorName: 'NotAllowedError', result: 'cancelled' },
+    { errorName: 'NotReadableError', result: 'failed' },
+  ])('공유 시작 결과가 $result여도 대기 상태를 알리고 해제한다', async ({ errorName, result }) => {
+    const pickerGate = createPromiseGate();
+    const getDisplayMedia = vi.fn(async () => {
+      await pickerGate.promise;
+      if (errorName !== null) throw new DOMException('화면 선택 실패', errorName);
+      return new FakeMediaStream([new FakeTrack('video')]) as unknown as MediaStream;
+    });
+    const harness = createHarness({ getDisplayMedia });
+    await joinSession(harness);
+    const listener = vi.fn();
+    const unsubscribe = harness.session.subscribe(listener);
+
+    const starting = harness.session.startScreenShare();
+    expect(harness.session.startScreenShare()).toBe(starting);
+    expect(getDisplayMedia).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ screenSharePending: 'starting' }),
+    );
+    pickerGate.resolve();
+    await expect(starting).resolves.toBe(result);
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ screenSharePending: null, screenSharing: result === 'started' }),
+    );
+
+    unsubscribe();
+    await harness.session.leave();
+  });
+
   it('classifies a denied display picker as a recoverable user cancellation', async () => {
     const harness = createHarness({
       getDisplayMedia: vi.fn(async () => {
@@ -424,12 +456,14 @@ describe('RoomSession', () => {
     await expect(harness.session.startScreenShare()).resolves.toBe('cancelled');
     expect(harness.session.getSnapshot()).toMatchObject({
       screenSharing: false,
+      screenSharePending: 'stopping',
       localMedia: { videoSource: 'camera' },
     });
 
     stopGate.resolve();
     await expect(firstStop).resolves.toBe(true);
     await expect(duplicateStop).resolves.toBe(true);
+    expect(harness.session.getSnapshot().screenSharePending).toBeNull();
     expect(cameraSender.replacements).toEqual([harness.videoTrack as unknown as MediaStreamTrack]);
     expect(
       channel.sent.filter(
@@ -478,11 +512,13 @@ describe('RoomSession', () => {
       screenSharing: false,
       localMedia: { videoEnabled: false, videoSource: 'camera' },
       lastModerationNotice: { kind: 'video' },
+      screenSharePending: 'stopping',
     });
 
     stopGate.resolve();
     await expect(firstStop).resolves.toBe(true);
     expect(cameraSender.track).toBe(harness.videoTrack as unknown as MediaStreamTrack);
+    expect(harness.session.getSnapshot().screenSharePending).toBeNull();
     expect(harness.videoTrack.enabled).toBe(false);
     await harness.session.leave();
   });
@@ -641,9 +677,11 @@ describe('RoomSession', () => {
 
     const starting = harness.session.startScreenShare();
     await flushMicrotasks();
+    expect(harness.session.getSnapshot().screenSharePending).toBe('starting');
     await harness.session.leave();
 
     expect(harness.session.getSnapshot().status).toBe('ended');
+    expect(harness.session.getSnapshot().screenSharePending).toBeNull();
     await expect(harness.session.startScreenShare()).resolves.toBe('cancelled');
     pickerGate.resolve();
     await expect(starting).resolves.toBe('cancelled');

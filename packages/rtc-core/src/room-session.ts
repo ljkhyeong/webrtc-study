@@ -145,6 +145,7 @@ export interface RoomSessionSnapshot {
   readonly canModerateMedia: boolean;
   readonly screenShareAvailable: boolean;
   readonly screenSharing: boolean;
+  readonly screenSharePending: 'starting' | 'stopping' | null;
   readonly screenShareQuality?: ScreenShareQuality;
   readonly videoQualityMode: VideoQualityMode;
   readonly participants: readonly ParticipantSnapshot[];
@@ -463,6 +464,7 @@ export class RoomSession {
     this.#screenShare = new ScreenShareLifecycle({
       ...mediaLifecycleOptions,
       getMediaDevices: () => this.#getMediaDevices(),
+      onTransitionChanged: () => this.#emit(),
     });
     this.#localInput = new LocalInputLifecycle(
       {
@@ -2524,6 +2526,7 @@ export class RoomSession {
       canModerateMedia: this.#canModerateMedia,
       screenShareAvailable: this.#screenShare.isAvailable(),
       screenSharing: this.#screenShare.isSharing(),
+      screenSharePending: this.#screenShare.getPending(),
       screenShareQuality: this.#screenShare.getQuality(),
       videoQualityMode: this.#videoQualityMode,
       participants: [...this.#participants.values()].map((participant) => ({

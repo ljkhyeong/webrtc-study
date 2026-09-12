@@ -46,6 +46,7 @@ function roomSnapshot(
     screenShareAvailable: false,
     videoQualityMode: 'standard',
     screenSharing: false,
+    screenSharePending: null,
     participants: [],
     localMedia: {
       audioAvailable: false,

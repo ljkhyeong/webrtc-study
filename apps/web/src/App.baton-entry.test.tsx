@@ -76,6 +76,7 @@ function activeRoomSnapshot(): RoomSessionSnapshot {
     screenShareAvailable: false,
     videoQualityMode: 'standard',
     screenSharing: false,
+    screenSharePending: null,
     participants: [],
     localMedia: {
       audioAvailable: false,

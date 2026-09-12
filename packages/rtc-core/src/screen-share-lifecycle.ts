@@ -10,6 +10,7 @@ export type ScreenShareStartResult = 'started' | 'recovering' | 'cancelled' | 'f
 
 interface ScreenShareLifecycleOptions extends LocalMediaLifecycleOptions {
   readonly getMediaDevices: () => Partial<Pick<MediaDevices, 'getDisplayMedia'>> | undefined;
+  readonly onTransitionChanged: () => void;
 }
 
 const SCREEN_SHARE_CONSTRAINTS: Record<ScreenShareQuality, DisplayMediaStreamOptions> = {
@@ -81,6 +82,12 @@ export class ScreenShareLifecycle {
     return this.#startPromise !== null || this.#stopPromise !== null;
   }
 
+  getPending(): 'starting' | 'stopping' | null {
+    if (this.#options.isDisposed()) return null;
+    if (this.#stopPromise !== null) return 'stopping';
+    return this.#startPromise !== null ? 'starting' : null;
+  }
+
   isSharingOrStopping(): boolean {
     return this.#activeTrack !== null || this.#stopPromise !== null;
   }
@@ -103,9 +110,11 @@ export class ScreenShareLifecycle {
     const startPromise = this.#performStart(operation).finally(() => {
       if (this.#startPromise === startPromise) {
         this.#startPromise = null;
+        this.#options.onTransitionChanged();
       }
     });
     this.#startPromise = startPromise;
+    this.#options.onTransitionChanged();
     return startPromise;
   }
 
@@ -149,6 +158,7 @@ export class ScreenShareLifecycle {
         this.#stopTrack = null;
         this.#stopGeneration = 0;
         this.#stopDisablesCamera = false;
+        this.#options.onTransitionChanged();
       }
     };
     this.#stopPromise = stopPromise;
