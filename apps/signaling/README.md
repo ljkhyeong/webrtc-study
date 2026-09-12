@@ -99,6 +99,12 @@ Origin·헤더 값, Cloudflare API 토큰, 발급한 TURN 자격 증명은 로�
 
 `TURN_PROVIDER`로 `coturn`, `cloudflare`, `disabled`를 선택합니다.
 
+`production` 프로필은 BATON 인증과 coturn을 기본으로 선택합니다. 기존 BATON의
+`TURN_URLS`와 `round.turn.shared-secret` Secret 파일도 읽으며, 명시한
+`TURN_COTURN_URLS`·`TURN_COTURN_SECRET`이 우선합니다. 파일은 Spring의
+`SPRING_CONFIG_IMPORT=configtree:/run/secrets/`로 읽습니다. 실행 예시는
+[BATON 환경변수](../../ops/baton.env.example)를 참고합니다.
+
 - `coturn`: `TURN_COTURN_URLS`(쉼표 구분)와 `TURN_COTURN_SECRET`(32자 이상)을 설정합니다.
   공유키는 coturn의 `static-auth-secret`과 같아야 합니다. Cloudflare 설정은 비웁니다.
 - `cloudflare`: `TURN_CLOUDFLARE_KEY_ID`와 `TURN_CLOUDFLARE_API_TOKEN`을 설정하고 coturn 설정은 비웁니다.
