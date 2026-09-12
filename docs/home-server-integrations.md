@@ -5,18 +5,18 @@ Ubuntu 홈서버의 k3s, `b4ton.com`과 서비스별 서브도메인, 기존 Let
 
 ## 적용 결과
 
-| 대상               | 선택                          | 줄어드는 작업                                     | 이번 변경                                            |
-| ------------------ | ----------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
-| 통화 중계          | 홈서버 coturn                 | NAT 중계 서버·인증 프로토콜을 직접 만들 필요 없음 | `TURN_PROVIDER=coturn` 지원, 설정 예시 추가          |
-| 서버 지표·경보     | 로컬 Prometheus               | 지표 저장·조회·경보 판단을 직접 구현하지 않음     | 기존 Actuator와 경보 6개를 재사용하는 수집 설정 추가 |
-| 중계 접속·인증서   | Blackbox Exporter             | TLS 접속·인증서 만료 검사 코드 불필요             | 선택적인 coturn 상태 검사와 경보 3개 추가            |
-| 장애·복구 알림     | Alertmanager → Discord 웹훅   | 알림 묶기·반복 전송·복구 알림 코드 불필요         | 기본 수신처 연동 예시 추가, 전송은 비활성            |
-| 유동 IP의 DNS 갱신 | ddclient → Cloudflare DNS API | IP 확인·변경 감지·DNS API 호출 스크립트 불필요    | 선택적인 설정 예시 추가. 고정 IP면 사용하지 않음     |
-| 인증서             | 기존 Let’s Encrypt 자동 갱신  | 발급·갱신 작업 중복 방지                          | 기존 체계 사용, 새 갱신 프로그램 추가 없음           |
-| 초대 공유·QR       | Web Share API·qrcode          | 외부 링크·QR 생성 API 불필요                      | 기존 연동 유지                                       |
-| 공유 화면 작은 창  | Picture-in-Picture API        | 다른 앱 위에 영상을 띄우는 창 관리 구현 불필요    | 지원 브라우저에서 상대 공유 화면의 작은 창 보기 추가 |
-| 브라우저 오류      | 기존 Faro 연동                | 별도 오류 수집 API·조회 화면 불필요               | 기본 비활성 유지, 사용 시 기존 무료 플랜 조건 확인   |
-| Alloy 이미지 갱신  | Dependabot Docker Compose     | 새 버전·digest 확인 작업 감소                     | 주간 업데이트 PR 설정, 환경 파일의 중복 버전 제거    |
+| 대상                  | 선택                          | 줄어드는 작업                                     | 이번 변경                                            |
+| --------------------- | ----------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
+| 통화 중계             | 홈서버 coturn                 | NAT 중계 서버·인증 프로토콜을 직접 만들 필요 없음 | `TURN_PROVIDER=coturn` 지원, 설정 예시 추가          |
+| 서버 지표·경보        | 로컬 Prometheus               | 지표 저장·조회·경보 판단을 직접 구현하지 않음     | 기존 Actuator와 경보 6개를 재사용하는 수집 설정 추가 |
+| 중계 접속·인증서      | Blackbox Exporter             | TLS 접속·인증서 만료 검사 코드 불필요             | 선택적인 coturn 상태 검사와 경보 3개 추가            |
+| 장애·복구 알림        | Alertmanager → Discord 웹훅   | 알림 묶기·반복 전송·복구 알림 코드 불필요         | 기본 수신처 연동 예시 추가, 전송은 비활성            |
+| 유동 IP의 DNS 갱신    | ddclient → Cloudflare DNS API | IP 확인·변경 감지·DNS API 호출 스크립트 불필요    | 선택적인 설정 예시 추가. 고정 IP면 사용하지 않음     |
+| 인증서                | 기존 Let’s Encrypt 자동 갱신  | 발급·갱신 작업 중복 방지                          | 기존 체계 사용, 새 갱신 프로그램 추가 없음           |
+| 초대 공유·QR          | Web Share API·qrcode          | 외부 링크·QR 생성 API 불필요                      | 기존 연동 유지                                       |
+| 공유 화면 작은 창     | Picture-in-Picture API        | 다른 앱 위에 영상을 띄우는 창 관리 구현 불필요    | 지원 브라우저에서 상대 공유 화면의 작은 창 보기 추가 |
+| 브라우저 오류         | 기존 Faro 연동                | 별도 오류 수집 API·조회 화면 불필요               | 기본 비활성 유지, 사용 시 기존 무료 플랜 조건 확인   |
+| 운영·검사 이미지 갱신 | Dependabot Docker Compose     | 새 버전·digest 확인 작업 감소                     | Alloy와 공식 검사 도구의 주간 업데이트 PR            |
 
 coturn·Prometheus·Blackbox Exporter·Alertmanager는 오픈소스 연동이다. 사용량 과금은 없지만
 홈서버의 전력·저장 공간·회선 자원을 사용한다. 로컬 Prometheus만으로 홈서버 전원·회선 장애를
@@ -24,8 +24,9 @@ coturn·Prometheus·Blackbox Exporter·Alertmanager는 오픈소스 연동이다
 
 ## 운영 이미지 업데이트
 
-Dependabot의 `docker-compose` 항목으로 `compose.yml`의 Alloy 이미지 기본값을 매주 확인하고
-업데이트 PR을 최대 1개 엽니다. 설정이 GitHub 기본 브랜치에 반영된 뒤 작동하며, PR 검토·병합과
+Dependabot의 `docker-compose` 항목으로 `compose.yml`의 Alloy 이미지와
+`ops/ci/compose.observability.yml`의 검사 도구 이미지를 매주 확인하고 업데이트 PR을 엽니다.
+설정이 GitHub 기본 브랜치에 반영된 뒤 작동하며, PR 검토·병합과
 배포는 별도로 진행합니다. Dependabot 버전 업데이트는 모든 GitHub 저장소에서 사용할 수 있습니다.
 [지원 범위](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories),
 [버전 업데이트](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-version-updates).
@@ -33,6 +34,9 @@ Dependabot의 `docker-compose` 항목으로 `compose.yml`의 Alloy 이미지 기
 이 항목은 서비스의 `image`를 확인합니다. 빌드 인자로 지정한 Node·Java·Caddy 이미지와
 `CADDY_VERSION`은 여전히 함께 확인해 갱신해야 합니다.
 [Compose 파서](https://github.com/dependabot/dependabot-core/blob/main/docker/lib/dependabot/docker_compose/file_parser.rb).
+
+Alloy 배포 전 검사는 환경 파일과 기본값을 합친 Compose 결과를 사용한다. 특정 버전 번호를
+검사 코드에 복제하지 않고, `grafana/alloy`의 태그와 SHA-256 digest가 고정됐는지 확인한다.
 
 ## 통화 중계
 
@@ -155,6 +159,20 @@ Blackbox Exporter에는 `--config.file=/etc/blackbox-exporter/config.yml`을 지
 Prometheus 9090, Alertmanager 9093, Blackbox Exporter 9115는 클러스터 내부에서만 연결한다.
 특히 Blackbox Exporter는 요청자가 검사 주소를 지정할 수 있으므로 외부 Ingress로 공개하지 않는다.
 Alertmanager의 데이터 디렉터리를 영구 볼륨에 두면 재시작 후에도 음소거 설정·알림 전송 상태를 유지한다.
+
+## 연동 설정 검사
+
+아래 명령으로 Prometheus 기본·선택 수집 설정, 경보식과 기존 경보 테스트,
+Alertmanager 알림 설정, Blackbox TLS 설정을 확인한다. 기존 배포 CI에서도 실행한다.
+
+```bash
+bash ops/ci/validate-observability.sh
+```
+
+설정 해석과 경보 판단은 공식 `promtool`, `amtool`, Blackbox의 `--config.check`에 맡긴다.
+검사 컨테이너는 외부 통신을 차단하며, 실제 웹훅이나 홈서버 연결 정보가 필요하지 않다.
+이미지를 처음 받을 때는 레지스트리 연결이 필요하다.
+[Prometheus 검사 명령](https://prometheus.io/docs/prometheus/latest/command-line/promtool/).
 
 ## 추가하지 않은 기능
 

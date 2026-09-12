@@ -34,6 +34,7 @@ ArchUnit 검사는 구조 규칙만 확인한다. 변경 동작의 테스트와 
 - Java 수정: `./gradlew --no-daemon :apps:signaling:test --tests '<대상 클래스>'`. 서버 전체 테스트와 배포 파일이 필요하면 `npm run check:java`로 한 번에 실행한다.
 - Java 계층 확인: `npm run check:architecture`. `ArchitectureTest`는 일반 서버 테스트에도 포함된다.
 - 여러 TypeScript 패키지 확인: `npm run check:typescript`. 프로토콜·RTC 코어의 타입 검사에는 테스트 코드도 포함되므로 유지한다.
+- Prometheus·Alertmanager·Blackbox 설정: `bash ops/ci/validate-observability.sh`. Docker로 공식 검사 도구와 기존 경보 테스트만 실행한다. 웹·Java 이미지 빌드는 필요하지 않다.
 - 전체 확인: `npm run check`. 브라우저 검사는 입장·통화 등 바뀐 동작에 해당하는 `e2e/` 파일과 프로젝트만 선택한다.
 
 Vitest 파일 지정은 영향받는 테스트를 자동으로 모두 찾아주는 기능이 아니다. 공용 코드나 설정이 바뀌면 해당 패키지 또는 전체 검사로 범위를 넓힌다.
