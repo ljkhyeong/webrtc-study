@@ -53,6 +53,84 @@ describe('방 안의 채팅 입력과 검색', () => {
     vi.unstubAllGlobals();
   });
 
+  it('현재 대화를 이름·날짜·수신 상태와 함께 복사하고 검색·초안은 유지한다', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    render([]);
+    const copy = () => container.querySelector<HTMLButtonElement>('.chat-panel__copy')!;
+    expect(copy().disabled).toBe(true);
+    const messages: ChatMessage[] = [
+      {
+        ...message('가온', 'same', '첫 설명\nhttps://example.com/문서'),
+        sentAt: new Date(2026, 8, 12, 14, 30).getTime(),
+      },
+      {
+        ...message('나래', 'same', '다음 자료'),
+        sentAt: new Date(2026, 8, 12, 14, 31).getTime(),
+        isLocal: true,
+        deliveryState: 'partial',
+      },
+      {
+        ...message('나래', 'missing', '확인이 필요한 내용'),
+        sentAt: new Date(2026, 8, 12, 14, 32).getTime(),
+        isLocal: true,
+        deliveryState: 'failed',
+      },
+    ];
+    render(messages);
+    search('설명');
+    const input = container.querySelector<HTMLTextAreaElement>('#chat-message')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+        input,
+        '전송 전 초안',
+      );
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(writeText).not.toHaveBeenCalled();
+    await act(async () => copy().click());
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(
+      '[26. 9. 12. 14:30] 가온\n첫 설명\nhttps://example.com/문서\n\n' +
+        '[26. 9. 12. 14:31] 나래 · 일부 수신 미확인\n다음 자료\n\n' +
+        '[26. 9. 12. 14:32] 나래 · 수신 미확인\n확인이 필요한 내용',
+    );
+    expect(container.querySelector('.chat-panel__copy-notice')?.textContent).toBe(
+      '메시지 3개를 복사했습니다.',
+    );
+    expect(input.value).toBe('전송 전 초안');
+    expect(container.querySelector<HTMLInputElement>('#chat-search')?.value).toBe('설명');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('복사 중 중복 실행을 막고 거부 뒤 새 대화로 다시 복사할 수 있다', async () => {
+    let reject!: (error: Error) => void;
+    const writeText = vi.fn().mockImplementationOnce(
+      () =>
+        new Promise((_, fail) => {
+          reject = fail;
+        }),
+    );
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    render([first]);
+    const copy = () => container.querySelector<HTMLButtonElement>('.chat-panel__copy')!;
+    act(() => copy().click());
+    expect(copy().disabled).toBe(true);
+    act(() => copy().click());
+    expect(writeText).toHaveBeenCalledOnce();
+    await act(async () => reject(new DOMException('거부', 'NotAllowedError')));
+    expect(copy().disabled).toBe(false);
+    expect(
+      container.querySelector('.chat-panel__copy-notice[role="alert"]')?.textContent,
+    ).toContain('직접 선택');
+    render([first, second]);
+    writeText.mockResolvedValueOnce(undefined);
+    await act(async () => copy().click());
+    expect(writeText.mock.calls[1]?.[0]).toContain(second.text);
+    expect(container.querySelector('.chat-panel__copy-notice')?.textContent).toBe(
+      '메시지 2개를 복사했습니다.',
+    );
+  });
+
   it('입력 길이와 한도를 표시하고 전송 후 입력과 안내를 비운다', () => {
     render([]);
     const input = container.querySelector<HTMLTextAreaElement>('#chat-message')!;

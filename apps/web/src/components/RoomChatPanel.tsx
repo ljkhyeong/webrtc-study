@@ -50,6 +50,11 @@ const messageTime = new Intl.DateTimeFormat('ko-KR', {
   minute: '2-digit',
   hour12: false,
 });
+const transcriptTime = new Intl.DateTimeFormat('ko-KR', {
+  dateStyle: 'short',
+  timeStyle: 'short',
+  hour12: false,
+});
 
 const chatDeliveryLabels: Record<ChatDeliveryState, string> = {
   pending: ' · 수신 확인 중',
@@ -131,6 +136,30 @@ export function RoomChatPanel({
 }: RoomChatPanelProps) {
   const [message, setMessage] = useState('');
   const [pasteNotice, setPasteNotice] = useState('');
+  const [copying, setCopying] = useState(false);
+  const [copyResult, setCopyResult] = useState<{ message: string; error: boolean } | null>(null);
+  const copyConversation = async () => {
+    if (messages.length === 0 || copying) return;
+    setCopying(true);
+    setCopyResult(null);
+    const text = messages
+      .map(
+        (item) =>
+          `[${transcriptTime.format(item.sentAt)}] ${item.senderName}${chatDeliveryLabels[item.deliveryState]}\n${item.text}`,
+      )
+      .join('\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyResult({ message: `메시지 ${messages.length}개를 복사했습니다.`, error: false });
+    } catch {
+      setCopyResult({
+        message: '대화를 복사하지 못했습니다. 필요한 내용을 직접 선택해 복사해 주세요.',
+        error: true,
+      });
+    } finally {
+      setCopying(false);
+    }
+  };
   const composerRef = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const input = composerRef.current;
@@ -300,12 +329,28 @@ export function RoomChatPanel({
   return (
     <>
       <aside className="chat-panel" aria-hidden={!open} inert={!open}>
-        <header className="chat-panel__header">
-          <strong>스터디 대화</strong>
-          <button type="button" aria-label="채팅 닫기" onClick={onClose}>
-            <CloseIcon />
-          </button>
-        </header>
+        <div>
+          <header className="chat-panel__header">
+            <strong>스터디 대화</strong>
+            <button
+              className="chat-panel__copy"
+              type="button"
+              title="현재 남아 있는 대화를 이름·날짜·시간과 함께 복사"
+              disabled={copying || messages.length === 0}
+              onClick={() => void copyConversation()}
+            >
+              {copying ? '복사 중' : '대화 복사'}
+            </button>
+            <button type="button" aria-label="채팅 닫기" onClick={onClose}>
+              <CloseIcon />
+            </button>
+          </header>
+          {copyResult ? (
+            <p className="chat-panel__copy-notice" role={copyResult.error ? 'alert' : 'status'}>
+              {copyResult.message}
+            </p>
+          ) : null}
+        </div>
 
         <section className="chat-search" aria-label="채팅 검색">
           <label className="sr-only" htmlFor="chat-search">

@@ -2124,6 +2124,7 @@ textarea:focus-visible {
 
 .chat-panel__header {
   display: flex;
+  gap: 8px;
   min-height: 72px;
   padding: 0 18px;
   border-bottom: 1px solid rgb(255 255 255 / 8%);
@@ -2151,6 +2152,27 @@ textarea:focus-visible {
 .chat-panel__header button:hover {
   color: white;
   background: rgb(255 255 255 / 7%);
+}
+
+.chat-panel__header .chat-panel__copy {
+  width: auto;
+  margin-left: auto;
+  padding: 0 8px;
+  white-space: nowrap;
+  font-size: 0.76rem;
+}
+
+.chat-panel__header button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chat-panel__copy-notice {
+  margin: 0;
+  padding: 10px 18px;
+  color: #b6c8ca;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 .chat-panel__header svg {
