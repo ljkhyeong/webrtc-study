@@ -69,6 +69,7 @@ describe('RoomView 브라우저 동작', () => {
     act(() => root.unmount());
     document.body.replaceChildren();
     vi.restoreAllMocks();
+    Reflect.deleteProperty(navigator, 'clipboard');
     Reflect.deleteProperty(navigator, 'share');
     Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
     Reflect.deleteProperty(HTMLDialogElement.prototype, 'close');
@@ -433,6 +434,74 @@ describe('RoomView 브라우저 동작', () => {
     );
   });
 
+  it('상단과 초대 창이 복사 상태를 공유하고 중복 복사와 동시 공유를 막는다', async () => {
+    let finishCopy!: () => void;
+    const writeText = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishCopy = resolve;
+          }),
+      )
+      .mockRejectedValueOnce(new Error('denied'))
+      .mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const share = vi.fn();
+    Object.defineProperty(navigator, 'share', { configurable: true, value: share });
+    const dialog = await openInviteDialog();
+    const headerCopy = container.querySelector<HTMLButtonElement>('.room-code')!;
+    const copy = dialog.querySelector<HTMLButtonElement>('.invite-dialog__actions button')!;
+    const sharing = dialog.querySelector<HTMLButtonElement>(
+      '.invite-dialog__actions button:last-child',
+    )!;
+    act(() => {
+      copy.click();
+      copy.click();
+      headerCopy.click();
+    });
+    expect(writeText).toHaveBeenCalledOnce();
+    expect(copy.textContent).toBe('복사 중');
+    expect(copy.disabled).toBe(true);
+    expect(headerCopy.disabled).toBe(true);
+    expect(sharing.disabled).toBe(true);
+    act(() => sharing.click());
+    expect(share).not.toHaveBeenCalled();
+
+    await act(async () =>
+      dialog.querySelector<HTMLButtonElement>('[aria-label="초대 닫기"]')!.click(),
+    );
+    expect(container.querySelector('.invite-dialog')).toBeNull();
+    expect(headerCopy.disabled).toBe(true);
+    await act(async () => finishCopy());
+    expect(headerCopy.disabled).toBe(false);
+    expect(container.textContent).toContain('초대 링크를 복사했습니다.');
+
+    await act(async () => headerCopy.click());
+    expect(container.querySelector('.room-copy-recovery')).not.toBeNull();
+    await act(async () => headerCopy.click());
+    expect(container.querySelector('.room-copy-recovery')).toBeNull();
+    expect(writeText).toHaveBeenCalledTimes(3);
+  });
+
+  it('복사 대기 중 방 화면을 닫으면 늦은 성공으로 안내 타이머를 만들지 않는다', async () => {
+    let finishCopy!: () => void;
+    const copying = new Promise<void>((resolve) => {
+      finishCopy = resolve;
+    });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockReturnValue(copying) },
+    });
+    act(() => root.render(<RoomView {...roomViewProps()} />));
+    act(() => container.querySelector<HTMLButtonElement>('.room-code')!.click());
+    act(() => root.render(null));
+    const timer = vi.spyOn(window, 'setTimeout');
+    await act(async () => finishCopy());
+    expect(timer).not.toHaveBeenCalled();
+    expect(container.textContent).toBe('');
+  });
+
   it('기기 공유 메뉴에 인증 정보와 검색 조건을 제외한 초대 주소만 전달한다', async () => {
     window.history.replaceState({}, '', '/room/abcd-efgh-jkmp?token=private#private');
     let finishShare!: () => void;
@@ -452,11 +521,16 @@ describe('RoomView 브라우저 동작', () => {
     });
     expect(shareButton.disabled).toBe(true);
     expect(shareButton.textContent).toBe('공유 중');
+    const copyButton = dialog.querySelector<HTMLButtonElement>('.invite-dialog__actions button')!;
+    expect(copyButton.disabled).toBe(true);
+    act(() => copyButton.click());
+    expect(shareButton.textContent).toBe('공유 중');
     act(() => shareButton.click());
     expect(share).toHaveBeenCalledTimes(1);
 
     await act(async () => finishShare());
     expect(shareButton.disabled).toBe(false);
+    expect(copyButton.disabled).toBe(false);
     expect(shareButton.textContent).toBe('공유됨');
     expect(dialog.querySelector('[role="status"]')?.textContent).toBe('초대 링크를 공유했습니다.');
     expect(dialog.querySelector('[role="alert"]')).toBeNull();

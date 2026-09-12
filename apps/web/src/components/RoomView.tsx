@@ -48,7 +48,7 @@ export interface RoomSystemNoticeView {
 }
 
 type InviteCopyState =
-  | { readonly status: 'idle' | 'success' }
+  | { readonly status: 'idle' | 'copying' | 'success' }
   | { readonly status: 'error'; readonly inviteUrl: string };
 
 interface RoomViewProps {
@@ -226,9 +226,14 @@ export function RoomView({
   const chatButtonRef = useRef<HTMLButtonElement>(null);
   const restoreChatFocus = useRef(false);
   const inviteCopyResetTimer = useRef<number | null>(null);
+  const inviteCopyRequest = useRef<{ active: boolean } | null>(null);
 
   useEffect(
     () => () => {
+      if (inviteCopyRequest.current) {
+        inviteCopyRequest.current.active = false;
+        inviteCopyRequest.current = null;
+      }
       if (inviteCopyResetTimer.current !== null) {
         window.clearTimeout(inviteCopyResetTimer.current);
       }
@@ -244,19 +249,27 @@ export function RoomView({
   }, [chatOpen]);
 
   const handleCopy = async () => {
+    if (inviteCopyRequest.current) return;
+    const request = { active: true };
+    inviteCopyRequest.current = request;
+    setInviteCopyState({ status: 'copying' });
     if (inviteCopyResetTimer.current !== null) {
       window.clearTimeout(inviteCopyResetTimer.current);
+      inviteCopyResetTimer.current = null;
     }
     const inviteUrl = canonicalRoomUrl(roomId, window.location.href);
     try {
       await navigator.clipboard.writeText(inviteUrl);
+      if (!request.active) return;
       setInviteCopyState({ status: 'success' });
       inviteCopyResetTimer.current = window.setTimeout(() => {
         setInviteCopyState({ status: 'idle' });
         inviteCopyResetTimer.current = null;
       }, 1800);
     } catch {
-      setInviteCopyState({ status: 'error', inviteUrl });
+      if (request.active) setInviteCopyState({ status: 'error', inviteUrl });
+    } finally {
+      if (inviteCopyRequest.current === request) inviteCopyRequest.current = null;
     }
   };
 
@@ -323,10 +336,13 @@ export function RoomView({
           <button
             className="room-code"
             type="button"
-            aria-label="초대 링크 복사"
+            aria-label={
+              inviteCopyState.status === 'copying' ? '초대 링크 복사 중' : '초대 링크 복사'
+            }
+            disabled={inviteCopyState.status === 'copying'}
             onClick={handleCopy}
           >
-            <span>ROOM</span>
+            <span>{inviteCopyState.status === 'copying' ? '복사 중' : 'ROOM'}</span>
             <strong>{roomId}</strong>
             {inviteCopyState.status === 'success' ? <CheckIcon /> : <CopyIcon />}
           </button>

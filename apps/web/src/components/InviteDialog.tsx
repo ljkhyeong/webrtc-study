@@ -8,7 +8,7 @@ export function InviteDialog({
   onClose,
 }: {
   inviteUrl: string;
-  copyStatus: 'idle' | 'success' | 'error';
+  copyStatus: 'idle' | 'copying' | 'success' | 'error';
   onCopy: () => void;
   onClose: () => void;
 }) {
@@ -91,15 +91,24 @@ export function InviteDialog({
       <div className="invite-dialog__actions">
         <button
           type="button"
+          disabled={copyStatus === 'copying' || shareState === 'sharing'}
           onClick={() => {
             setShareState('idle');
             onCopy();
           }}
         >
-          {copyStatus === 'success' ? '링크 복사됨' : '링크 복사'}
+          {copyStatus === 'copying'
+            ? '복사 중'
+            : copyStatus === 'success'
+              ? '링크 복사됨'
+              : '링크 복사'}
         </button>
         {typeof navigator.share === 'function' ? (
-          <button type="button" disabled={shareState === 'sharing'} onClick={handleShare}>
+          <button
+            type="button"
+            disabled={shareState === 'sharing' || copyStatus === 'copying'}
+            onClick={handleShare}
+          >
             {shareState === 'sharing'
               ? '공유 중'
               : shareState === 'success'
