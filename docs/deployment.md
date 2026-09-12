@@ -146,6 +146,10 @@ GRAFANA_CLOUD_PROMETHEUS_USER=<Metrics instance 사용자 ID>
 GRAFANA_CLOUD_API_TOKEN=<metrics:write token>
 ```
 
+`GRAFANA_ALLOY_IMAGE`는 비워 두면 `compose.yml`의 고정 버전을 사용합니다. 기존 환경 파일에
+이미지 주소가 있으면 저장소의 버전 변경이 적용되지 않으므로, 기본 버전을 따르려면 값을 지웁니다.
+다른 버전을 지정할 때는 태그와 digest를 함께 고정합니다.
+
 preflight와 정식 배포를 실행한 뒤 Grafana Explore에서 다음 식이 `1`인지 확인합니다.
 
 ```promql

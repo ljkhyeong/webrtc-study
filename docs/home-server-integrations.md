@@ -16,10 +16,23 @@ Ubuntu 홈서버의 k3s, `b4ton.com`과 서비스별 서브도메인, 기존 Let
 | 초대 공유·QR       | Web Share API·qrcode          | 외부 링크·QR 생성 API 불필요                      | 기존 연동 유지                                       |
 | 공유 화면 작은 창  | Picture-in-Picture API        | 다른 앱 위에 영상을 띄우는 창 관리 구현 불필요    | 지원 브라우저에서 상대 공유 화면의 작은 창 보기 추가 |
 | 브라우저 오류      | 기존 Faro 연동                | 별도 오류 수집 API·조회 화면 불필요               | 기본 비활성 유지, 사용 시 기존 무료 플랜 조건 확인   |
+| Alloy 이미지 갱신  | Dependabot Docker Compose     | 새 버전·digest 확인 작업 감소                     | 주간 업데이트 PR 설정, 환경 파일의 중복 버전 제거    |
 
 coturn·Prometheus·Blackbox Exporter·Alertmanager는 오픈소스 연동이다. 사용량 과금은 없지만
 홈서버의 전력·저장 공간·회선 자원을 사용한다. 로컬 Prometheus만으로 홈서버 전원·회선 장애를
 외부에서 감지할 수는 없다. 외부 장애 감시는 기존 [모니터링 연동](external-monitoring.md)을 참고한다.
+
+## 운영 이미지 업데이트
+
+Dependabot의 `docker-compose` 항목으로 `compose.yml`의 Alloy 이미지 기본값을 매주 확인하고
+업데이트 PR을 최대 1개 엽니다. 설정이 GitHub 기본 브랜치에 반영된 뒤 작동하며, PR 검토·병합과
+배포는 별도로 진행합니다. Dependabot 버전 업데이트는 모든 GitHub 저장소에서 사용할 수 있습니다.
+[지원 범위](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories),
+[버전 업데이트](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-version-updates).
+
+이 항목은 서비스의 `image`를 확인합니다. 빌드 인자로 지정한 Node·Java·Caddy 이미지와
+`CADDY_VERSION`은 여전히 함께 확인해 갱신해야 합니다.
+[Compose 파서](https://github.com/dependabot/dependabot-core/blob/main/docker/lib/dependabot/docker_compose/file_parser.rb).
 
 ## 통화 중계
 
