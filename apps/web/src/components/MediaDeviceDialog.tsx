@@ -12,6 +12,7 @@ interface MediaDeviceDialogProps {
   outputDeviceId: string;
   onSelectOutput: (deviceId: string) => void;
   screenSharing: boolean;
+  screenSharePending?: 'starting' | 'stopping' | null | undefined;
   screenWakeLock?: ScreenWakeLockControl | undefined;
   active: boolean;
   screenShareQuality?: ScreenShareQuality | undefined;
@@ -30,6 +31,7 @@ export function MediaDeviceDialog({
   outputDeviceId,
   onSelectOutput,
   screenSharing,
+  screenSharePending = null,
   screenWakeLock,
   active,
   videoQualityMode,
@@ -159,13 +161,18 @@ export function MediaDeviceDialog({
         const label = kind === 'audio' ? '마이크' : '카메라';
         const selected = kind === 'audio' ? audio : video;
         const options = inputOptions(kind === 'audio' ? 'audioinput' : 'videoinput');
+        const disabled =
+          pending !== null ||
+          !active ||
+          screenSharePending !== null ||
+          (kind === 'video' && screenSharing);
         return (
           <div className="media-device-dialog__input" key={kind}>
             <label>
               <span>{label}</span>
               <select
                 value={selected}
-                disabled={pending !== null || !active || (kind === 'video' && screenSharing)}
+                disabled={disabled}
                 onChange={(event) => (kind === 'audio' ? setAudio : setVideo)(event.target.value)}
               >
                 <option value="">브라우저 기본 {label}</option>
@@ -179,11 +186,7 @@ export function MediaDeviceDialog({
                 ))}
               </select>
             </label>
-            <button
-              type="button"
-              disabled={pending !== null || !active || (kind === 'video' && screenSharing)}
-              onClick={() => void apply(kind)}
-            >
+            <button type="button" disabled={disabled} onClick={() => void apply(kind)}>
               {label} 적용
             </button>
             {kind === 'audio' ? (
@@ -258,7 +261,11 @@ export function MediaDeviceDialog({
           ? '카메라 전송 품질을 적용하고 있습니다.'
           : pending !== null
             ? '장치를 변경하고 있습니다. 권한 요청이 뜨면 확인해 주세요.'
-            : notice}
+            : screenSharePending === 'starting'
+              ? '화면 공유 준비 중 · 입력 장치는 완료 후 변경할 수 있습니다.'
+              : screenSharePending === 'stopping'
+                ? '화면 공유 중지 중 · 입력 장치는 완료 후 변경할 수 있습니다.'
+                : notice}
       </p>
       {error ? <p role="alert">{error}</p> : null}
       {onSelectScreenShareQuality ? (
@@ -266,7 +273,7 @@ export function MediaDeviceDialog({
           화면 공유 품질
           <select
             value={screenShareQuality}
-            disabled={!active || screenSharing || pending !== null}
+            disabled={!active || screenSharing || screenSharePending !== null || pending !== null}
             onChange={(event) => {
               if (!onSelectScreenShareQuality(event.target.value as ScreenShareQuality))
                 setError('공유를 중지한 뒤 품질을 선택해 주세요.');

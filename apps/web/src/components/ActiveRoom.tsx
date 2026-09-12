@@ -562,6 +562,7 @@ export function ActiveRoom({
       />
       {deviceSettingsOpen ? (
         <MediaDeviceDialog
+          screenSharePending={snapshot?.screenSharePending ?? null}
           screenShareQuality={snapshot?.screenShareQuality}
           onSelectScreenShareQuality={(mode) =>
             sessionRef.current?.setScreenShareQuality(mode) ?? false

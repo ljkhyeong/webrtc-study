@@ -171,4 +171,62 @@ describe('통화 장치 설정', () => {
     );
     expect(input.onClose).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { phase: 'starting' as const, message: '화면 공유 준비 중', sharingAfter: true },
+    { phase: 'stopping' as const, message: '화면 공유 중지 중', sharingAfter: false },
+  ])('$phase 동안 입력 교체를 막고 완료 후 기존 선택을 유지한다', async (state) => {
+    const input = props();
+    const onSelectScreenShareQuality = vi.fn(() => true);
+    const render = (screenSharePending: 'starting' | 'stopping' | null, screenSharing = false) =>
+      root.render(
+        <MediaDeviceDialog
+          {...input}
+          screenSharing={screenSharing}
+          screenSharePending={screenSharePending}
+          onSelectScreenShareQuality={onSelectScreenShareQuality}
+        />,
+      );
+    await act(async () => render(null));
+    const microphone = container.querySelector<HTMLSelectElement>('select')!;
+    act(() => {
+      microphone.value = 'mic-2';
+      microphone.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => render(state.phase));
+    const inputs = container.querySelectorAll<HTMLSelectElement>(
+      '.media-device-dialog__input select:not([aria-label])',
+    );
+    const applyButtons = [...container.querySelectorAll<HTMLButtonElement>('button')].filter(
+      (button) => ['마이크 적용', '카메라 적용'].includes(button.textContent ?? ''),
+    );
+    const shareQuality = container.querySelector<HTMLSelectElement>(
+      '.screen-quality-setting select',
+    )!;
+    expect(inputs).toHaveLength(2);
+    for (const select of inputs) expect(select.disabled).toBe(true);
+    for (const button of applyButtons) {
+      expect(button.disabled).toBe(true);
+      act(() => button.click());
+    }
+    expect(shareQuality.disabled).toBe(true);
+    expect(container.textContent).toContain(state.message);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(input.onSelect).not.toHaveBeenCalled();
+    expect(onSelectScreenShareQuality).not.toHaveBeenCalled();
+    expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    const close = container.querySelector<HTMLButtonElement>('[aria-label="장치 설정 닫기"]')!;
+    expect(close.disabled).toBe(false);
+
+    await act(async () => render(null, state.sharingAfter));
+    expect(microphone.value).toBe('mic-2');
+    expect(microphone.disabled).toBe(false);
+    expect(applyButtons[0]!.disabled).toBe(false);
+    expect(applyButtons[1]!.disabled).toBe(state.sharingAfter);
+    expect(shareQuality.disabled).toBe(state.sharingAfter);
+    expect(container.textContent).not.toContain(state.message);
+    await act(async () => applyButtons[0]!.click());
+    expect(input.onSelect).toHaveBeenCalledExactlyOnceWith('audio', 'mic-2');
+    expect(container.textContent).toContain('마이크를 변경했습니다.');
+  });
 });
