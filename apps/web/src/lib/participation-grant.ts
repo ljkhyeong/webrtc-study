@@ -32,10 +32,6 @@ interface ParticipationGrantLeaseManagerOptions {
   readonly timeoutMs?: number;
 }
 
-interface ParticipationGrantLeaseState {
-  readonly refreshDueAtMs: number;
-}
-
 interface BatonCsrfCredential {
   readonly headerName: string;
   readonly token: string;
@@ -72,7 +68,7 @@ export class ParticipationGrantLeaseManager {
   readonly #storage: Pick<Storage, 'getItem' | 'removeItem'> | null | undefined;
   readonly #timeoutMs: number;
 
-  #state: ParticipationGrantLeaseState | null = null;
+  #refreshDueAtMs: number | null = null;
   #refreshing: Promise<void> | null = null;
   #refreshController: AbortController | null = null;
   #closed = false;
@@ -98,7 +94,7 @@ export class ParticipationGrantLeaseManager {
       return Promise.reject(new Error('Participation grant refresh manager is closed'));
     }
     const nowMs = this.#now();
-    if (this.#state !== null && nowMs < this.#state.refreshDueAtMs) {
+    if (this.#refreshDueAtMs !== null && nowMs < this.#refreshDueAtMs) {
       return Promise.resolve();
     }
     if (this.#refreshing !== null) {
@@ -115,10 +111,10 @@ export class ParticipationGrantLeaseManager {
   }
 
   refreshDelayMs(): number | null {
-    if (this.#closed || this.#state === null) {
+    if (this.#closed || this.#refreshDueAtMs === null) {
       return null;
     }
-    return Math.max(0, this.#state.refreshDueAtMs - this.#now());
+    return Math.max(0, this.#refreshDueAtMs - this.#now());
   }
 
   close(): void {
@@ -180,10 +176,7 @@ export class ParticipationGrantLeaseManager {
 
       const lease = validateLease(await response.json());
       this.#assertOpen();
-      const receivedAtMs = this.#now();
-      this.#state = {
-        refreshDueAtMs: receivedAtMs + lease.refreshAfterSeconds * 1_000,
-      };
+      this.#refreshDueAtMs = this.#now() + lease.refreshAfterSeconds * 1_000;
     } catch (error) {
       if (
         error instanceof DOMException &&

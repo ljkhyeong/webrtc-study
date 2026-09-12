@@ -58,7 +58,6 @@ export function PrejoinScreen({
   const [nameError, setNameError] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
   const controllerRef = useRef<PrejoinMedia | null>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
   const previewRef = useRef<HTMLVideoElement>(null);
   const actionLifetimeRef = useRef(true);
   const actionInFlightRef = useRef(false);
@@ -84,7 +83,7 @@ export function PrejoinScreen({
       videoConstraints: DEFAULT_VIDEO_CONSTRAINTS,
     });
     controllerRef.current = controller;
-    unsubscribeRef.current = controller.subscribe(setSnapshot);
+    controller.subscribe(setSnapshot);
     return controller;
   };
 
@@ -92,8 +91,6 @@ export function PrejoinScreen({
     actionLifetimeRef.current = true;
     return () => {
       actionLifetimeRef.current = false;
-      unsubscribeRef.current?.();
-      unsubscribeRef.current = null;
       controllerRef.current?.dispose();
       controllerRef.current = null;
     };
@@ -141,9 +138,7 @@ export function PrejoinScreen({
   };
 
   const handleCheckDevices = () => {
-    runAuthorized(async () => {
-      await ensureController().checkDevices();
-    });
+    runAuthorized(() => ensureController().checkDevices());
   };
 
   const handleJoin = (withMedia: boolean) => {
