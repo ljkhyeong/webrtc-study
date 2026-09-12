@@ -1,0 +1,28 @@
+# 공식 검사 도구만 실행합니다. 운영 서비스나 외부 연결은 만들지 않습니다.
+services:
+  promtool:
+    image: prom/prometheus:v3.14.0-distroless@sha256:50c707e96da5ade383cb1707790576480485e93de06aa60ad8802cb5f744bd0a
+    entrypoint: /bin/promtool
+    working_dir: /etc/prometheus
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - '${ROUND_OBSERVABILITY_FIXTURE_DIR:?검사 스크립트에서 실행하세요}:/etc/prometheus:ro'
+
+  amtool:
+    image: prom/alertmanager:v0.34.0@sha256:690c7b525f4367aa91f73e2f91c632206d32e97c6384bdbf2fb7a861b420340d
+    entrypoint: /bin/amtool
+    network_mode: none
+    read_only: true
+    volumes:
+      - '${ROUND_OBSERVABILITY_FIXTURE_DIR:?검사 스크립트에서 실행하세요}:/etc/alertmanager:ro'
+      - '${ROUND_OBSERVABILITY_FIXTURE_DIR:?검사 스크립트에서 실행하세요}/round-discord-webhook:/run/secrets/round-discord-webhook:ro'
+
+  blackbox:
+    image: prom/blackbox-exporter:v0.28.0@sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc
+    network_mode: none
+    read_only: true
+    volumes:
+      - '${ROUND_OBSERVABILITY_FIXTURE_DIR:?검사 스크립트에서 실행하세요}:/etc/blackbox-exporter:ro'

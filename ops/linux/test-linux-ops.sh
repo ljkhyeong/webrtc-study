@@ -36,7 +36,7 @@ COMPOSE_PROJECT_NAME=round-linux-test
 COMPOSE_PROFILES=$compose_profiles
 ROUND_EDGE_IMAGE=$image_namespace/round-edge@sha256:$edge_digest
 ROUND_SIGNALING_IMAGE=$image_namespace/round-signaling@sha256:$signaling_digest
-GRAFANA_ALLOY_IMAGE=grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33
+GRAFANA_ALLOY_IMAGE=
 GRAFANA_CLOUD_PROMETHEUS_URL=https://prometheus.example.invalid/api/prom/push
 GRAFANA_CLOUD_PROMETHEUS_USER=12345
 GRAFANA_CLOUD_API_TOKEN=test-token
@@ -291,7 +291,12 @@ case "$command_line" in
       printf '\nMAX_ROOM_SIZE=99\n' >>"$original_env"
       rm -f -- "$fake_root/mutate-original-env-after-config"
     fi
-    printf '{"name":"round-linux-test","services":{"signaling":{"deploy":{"replicas":1}}},"volumes":{"caddy_data":{"name":"round-linux-test_caddy_data"},"caddy_config":{"name":"round-linux-test_caddy_config"}}}\n'
+    alloy_image="grafana/alloy:ci-fixture@sha256:$(printf 'a%.0s' {1..64})"
+    if [[ -f "$fake_root/alloy-image" ]]; then
+      alloy_image=$(cat "$fake_root/alloy-image")
+    fi
+    jq -n --arg alloy_image "$alloy_image" \
+      '{name:"round-linux-test",services:{signaling:{deploy:{replicas:1}},alloy:{image:$alloy_image}},volumes:{caddy_data:{name:"round-linux-test_caddy_data"},caddy_config:{name:"round-linux-test_caddy_config"}}}'
     ;;
   *' config --quiet '*)
     log_compose "$@"
@@ -531,6 +536,15 @@ PATH="$fake_bin:$PATH" \
   ops/linux/deploy.sh --state-dir "$observability_state_dir" "$observability_env" >/dev/null
 grep -Fq 'pull alloy' "$fixture_dir/docker.log" ||
   fail 'enabled observability profile did not pull Alloy'
+
+for alloy_image in 'grafana/alloy:latest' "untrusted/alloy:ci-fixture@sha256:$digest_a"; do
+  printf '%s\n' "$alloy_image" >"$fixture_dir/alloy-image"
+  if PATH="$fake_bin:$PATH" \
+    ops/linux/preflight.sh --state-dir "$observability_state_dir" "$observability_env" >/dev/null 2>&1; then
+    fail 'preflight accepted an unpinned or unexpected Alloy image'
+  fi
+done
+rm -- "$fixture_dir/alloy-image"
 
 printf 'ghcr.io/ljkhyeong/round-edge@sha256:%s\n' "$digest_a" \
   >"$fixture_dir/fail-provenance-reference"

@@ -37,7 +37,9 @@ updates:
           - '*'
 
   - package-ecosystem: 'docker-compose'
-    directory: '/'
+    directories:
+      - '/'
+      - '/ops/ci'
     schedule:
       interval: 'weekly'
     open-pull-requests-limit: 1

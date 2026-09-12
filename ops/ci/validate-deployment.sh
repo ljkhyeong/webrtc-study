@@ -107,7 +107,7 @@ jq -e '
   and ((.services.alloy.networks | keys | sort) == ["backend", "egress"])
   and ((.services.alloy.ports // []) == [])
   and (.services.alloy.image
-    == "grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33")
+    | test("^grafana/alloy:[^@[:space:]]+@sha256:[0-9a-f]{64}$"))
   and (.configs.alloy_config.content | contains("/actuator/prometheus"))
   and (.configs.alloy_config.content | contains("prometheus.remote_write"))
 ' <<<"$observability_config" >/dev/null
@@ -121,6 +121,8 @@ docker run --rm \
   -v "$alloy_config_file:/etc/alloy/config.alloy:ro" \
   "$(jq -er '.services.alloy.image' <<<"$observability_config")" \
   validate /etc/alloy/config.alloy
+
+bash ops/ci/validate-observability.sh
 
 printf 'Validating the macOS pilot Compose override...\n'
 macos_pilot_config=$(

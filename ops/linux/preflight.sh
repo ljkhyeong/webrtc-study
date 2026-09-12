@@ -134,10 +134,6 @@ access_password_hash=$(round_ops_read_env_value "$env_file" ROUND_ACCESS_PASSWOR
 case "$compose_profiles" in
   none) ;;
   observability)
-    alloy_image=$(round_ops_read_env_value "$env_file" GRAFANA_ALLOY_IMAGE)
-    round_ops_validate_digest_ref GRAFANA_ALLOY_IMAGE "$alloy_image"
-    [[ "${alloy_image%@sha256:*}" == 'grafana/alloy:v1.18.1' ]] ||
-      round_ops_die "GRAFANA_ALLOY_IMAGE must use the reviewed grafana/alloy:v1.18.1 repository and tag"
     grafana_prometheus_url=$(
       round_ops_read_env_value "$env_file" GRAFANA_CLOUD_PROMETHEUS_URL
     )
@@ -151,12 +147,18 @@ esac
 [[ "$access_password_hash" =~ ^\'\$2[ab]\$12\$[./A-Za-z0-9]{53}\'$ ]] ||
   round_ops_die "ROUND_ACCESS_PASSWORD_HASH must be a single-quoted bcrypt cost-12 hash"
 
-replicas=$(
+compose_config=$(
   round_ops_compose_with_file \
     "$compose_file" "$env_file" "$edge_image" "$signaling_image" \
-    config --format json |
-    jq -er '.services.signaling.deploy.replicas'
+    config --format json
 )
+replicas=$(jq -er '.services.signaling.deploy.replicas' <<<"$compose_config")
 [[ "$replicas" == '1' ]] || round_ops_die "signaling must remain a single replica"
+if [[ "$compose_profiles" == observability ]]; then
+  jq -e '.services.alloy.image
+    | test("^grafana/alloy:[^@[:space:]]+@sha256:[0-9a-f]{64}$")' \
+    <<<"$compose_config" >/dev/null ||
+    round_ops_die "Alloy 이미지는 grafana/alloy의 태그와 SHA-256 digest로 고정해야 합니다"
+fi
 
 printf 'ROUND Linux preflight passed for immutable images, host clock, disk, Compose, Cloudflare TURN, and optional Grafana Cloud.\n'
