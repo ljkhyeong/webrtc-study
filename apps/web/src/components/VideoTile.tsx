@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ParticipantSnapshot, PeerConnectionStatus } from '@round/rtc-core';
 import { enterVideoFullscreen, exitVideoFullscreen, isVideoFullscreen } from '../lib/fullscreen';
+import { useVideoPictureInPicture } from '../lib/use-video-picture-in-picture';
 import { CameraOffIcon, FullscreenIcon, HandIcon, MicOffIcon } from './Icons';
 import { ParticipantAudioControls } from './ParticipantAudioControls';
 import { useScreenShareView } from './useScreenShareView';
@@ -142,6 +143,11 @@ export function VideoTile({
   const isRemoteScreenShare =
     !participant.isLocal && participant.videoSource === 'screen' && hasVisibleVideo;
   const shareView = useScreenShareView(isRemoteScreenShare, participant.stream, videoRef);
+  const pictureInPicture = useVideoPictureInPicture(
+    isRemoteScreenShare,
+    participant.stream,
+    videoRef,
+  );
   const isConnected = participant.isLocal || participant.connectionState === 'connected';
 
   useEffect(() => {
@@ -267,6 +273,7 @@ export function VideoTile({
             autoPlay
             muted
             playsInline
+            disablePictureInPicture={!isRemoteScreenShare}
             aria-label={`${participant.displayName}의 영상`}
             aria-hidden={!showPreview}
           />
@@ -373,6 +380,17 @@ export function VideoTile({
               {pinned ? '고정 해제' : '화면 고정'}
             </button>
           ) : null}
+          {pictureInPicture.supported ? (
+            <button
+              type="button"
+              aria-label={`${participant.displayName}의 공유 화면 ${pictureInPicture.open ? '작은 창 닫기' : '작은 창으로 보기'}`}
+              aria-pressed={pictureInPicture.open}
+              disabled={!pictureInPicture.ready || pictureInPicture.pending}
+              onClick={() => void pictureInPicture.toggle()}
+            >
+              {pictureInPicture.open ? '작은 창 닫기' : '작은 창'}
+            </button>
+          ) : null}
           <button
             type="button"
             aria-label={`${participant.displayName}의 화면 공유 ${fullscreen ? '전체 화면 닫기' : '전체 화면으로 보기'}`}
@@ -381,17 +399,16 @@ export function VideoTile({
             <FullscreenIcon />
             <span>{fullscreen ? '전체 화면 닫기' : '전체 화면'}</span>
           </button>
+          {pictureInPicture.error || fullscreenError ? (
+            <p className="video-tile__fullscreen-error" role="alert">
+              {pictureInPicture.error || fullscreenError}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {isRemoteScreenShare ? (
         <p id={zoomHelpId} className="sr-only">
           공유 화면을 끌거나 방향키로 이동할 수 있습니다. +와 -로 확대·축소하고 0으로 초기화합니다.
-        </p>
-      ) : null}
-
-      {isRemoteScreenShare && fullscreenError ? (
-        <p className="video-tile__fullscreen-error" role="alert">
-          {fullscreenError}
         </p>
       ) : null}
 

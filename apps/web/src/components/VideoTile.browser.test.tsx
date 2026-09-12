@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VideoTile, type ParticipantView } from './VideoTile';
@@ -62,6 +62,38 @@ function installFullscreenDocument() {
   };
 }
 
+function installPictureInPicture() {
+  let owner: HTMLVideoElement | null = null;
+  const enter = (video: HTMLVideoElement) => {
+    const previous = owner;
+    owner = video;
+    previous?.dispatchEvent(new Event('leavepictureinpicture'));
+    video.dispatchEvent(new Event('enterpictureinpicture'));
+  };
+  const exit = vi.fn(async () => {
+    const previous = owner;
+    owner = null;
+    previous?.dispatchEvent(new Event('leavepictureinpicture'));
+  });
+  const request = vi.fn(async function (this: HTMLVideoElement) {
+    enter(this);
+    return {} as PictureInPictureWindow;
+  });
+  Object.defineProperties(document, {
+    pictureInPictureEnabled: { configurable: true, value: true },
+    pictureInPictureElement: { configurable: true, get: () => owner },
+    exitPictureInPicture: { configurable: true, value: exit },
+  });
+  Object.defineProperty(HTMLVideoElement.prototype, 'requestPictureInPicture', {
+    configurable: true,
+    value: request,
+  });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(4);
+  vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(640);
+  return { enter, exit, request };
+}
+
 describe('VideoTile browser behavior', () => {
   beforeEach(() => {
     Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
@@ -76,7 +108,154 @@ describe('VideoTile browser behavior', () => {
     Reflect.deleteProperty(HTMLMediaElement.prototype, 'sinkId');
     Reflect.deleteProperty(document, 'fullscreenElement');
     Reflect.deleteProperty(document, 'exitFullscreen');
+    Reflect.deleteProperty(document, 'pictureInPictureEnabled');
+    Reflect.deleteProperty(document, 'pictureInPictureElement');
+    Reflect.deleteProperty(document, 'exitPictureInPicture');
+    Reflect.deleteProperty(HTMLVideoElement.prototype, 'requestPictureInPicture');
     document.body.replaceChildren();
+  });
+
+  it('작은 창의 버튼과 브라우저 자체 종료를 반영하고 공유 종료 시 창만 닫는다', async () => {
+    const pip = installPictureInPicture();
+    const root = createRoot(document.body);
+    const participant = remoteParticipant({} as MediaStream, 'screen');
+    const button = () => document.querySelector<HTMLButtonElement>('[aria-label*="작은 창"]')!;
+    try {
+      await act(async () =>
+        root.render(
+          <StrictMode>
+            <VideoTile participant={participant} />
+          </StrictMode>,
+        ),
+      );
+      const video = document.querySelector('video')!;
+      await act(async () => button().click());
+      expect(document.pictureInPictureElement).toBe(video);
+      expect(button().textContent).toBe('작은 창 닫기');
+      await act(async () => button().click());
+      expect(document.pictureInPictureElement).toBeNull();
+      await act(async () => button().click());
+      await act(async () => pip.exit());
+      expect(button().getAttribute('aria-pressed')).toBe('false');
+      await act(async () => button().click());
+      await act(async () =>
+        root.render(
+          <StrictMode>
+            <VideoTile participant={{ ...participant, videoSource: 'camera' }} />
+          </StrictMode>,
+        ),
+      );
+      expect(document.pictureInPictureElement).toBeNull();
+      expect(button()).toBeNull();
+      expect(document.querySelector('video')).toBe(video);
+      expect(video.srcObject).toBe(participant.stream);
+      expect(video.muted).toBe(false);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it('작은 창 요청 중 중복 실행을 막고 공유 종료 뒤 늦게 열린 창을 닫는다', async () => {
+    const pip = installPictureInPicture();
+    const pending = deferredCompletion();
+    pip.request.mockImplementationOnce(async function (this: HTMLVideoElement) {
+      await pending.promise;
+      pip.enter(this);
+      return {} as PictureInPictureWindow;
+    });
+    const root = createRoot(document.body);
+    const participant = remoteParticipant({} as MediaStream, 'screen');
+    try {
+      await act(async () => root.render(<VideoTile participant={participant} />));
+      const button = document.querySelector<HTMLButtonElement>('[aria-label*="작은 창"]')!;
+      act(() => {
+        button.click();
+        button.click();
+      });
+      expect(pip.request).toHaveBeenCalledOnce();
+      expect(button.disabled).toBe(true);
+      await act(async () =>
+        root.render(<VideoTile participant={{ ...participant, videoSource: 'camera' }} />),
+      );
+      await act(async () => pending.resolve());
+      expect(pip.exit).toHaveBeenCalledOnce();
+      expect(document.pictureInPictureElement).toBeNull();
+      expect(document.querySelector('video')!.srcObject).toBe(participant.stream);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it.each([false, true])('타일을 제거할 때 자기 작은 창만 닫는다: 다른 창=%s', async (other) => {
+    const pip = installPictureInPicture();
+    const root = createRoot(document.body);
+    await act(async () =>
+      root.render(<VideoTile participant={remoteParticipant({} as MediaStream, 'screen')} />),
+    );
+    const owner = other ? document.createElement('video') : document.querySelector('video')!;
+    act(() => pip.enter(owner));
+    await act(async () => root.unmount());
+    expect(document.pictureInPictureElement).toBe(other ? owner : null);
+    expect(pip.exit).toHaveBeenCalledTimes(other ? 0 : 1);
+  });
+
+  it('작은 창 열기·닫기 실패를 안내하고 재시도할 수 있다', async () => {
+    const pip = installPictureInPicture();
+    pip.request.mockRejectedValueOnce(new DOMException('blocked', 'NotAllowedError'));
+    const root = createRoot(document.body);
+    const button = () => document.querySelector<HTMLButtonElement>('[aria-label*="작은 창"]')!;
+    try {
+      await act(async () =>
+        root.render(<VideoTile participant={remoteParticipant({} as MediaStream, 'screen')} />),
+      );
+      await act(async () => button().click());
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+        '작은 창을 열지 못했습니다.',
+      );
+      expect(button().disabled).toBe(false);
+      await act(async () => button().click());
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+      pip.exit.mockRejectedValueOnce(new Error('blocked'));
+      await act(async () => button().click());
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+        '작은 창을 닫지 못했습니다.',
+      );
+      expect(button().textContent).toBe('작은 창 닫기');
+      await act(async () => button().click());
+      expect(document.pictureInPictureElement).toBeNull();
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it('작은 창 미지원이면 버튼을 숨기고 지원 시 영상이 준비될 때까지 기다린다', async () => {
+    installPictureInPicture();
+    Object.defineProperty(document, 'pictureInPictureEnabled', {
+      configurable: true,
+      value: false,
+    });
+    const width = vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(0);
+    const root = createRoot(document.body);
+    const participant = remoteParticipant({} as MediaStream, 'screen');
+    const button = () => document.querySelector<HTMLButtonElement>('[aria-label*="작은 창"]');
+    try {
+      await act(async () => root.render(<VideoTile participant={participant} />));
+      expect(button()).toBeNull();
+      Object.defineProperty(document, 'pictureInPictureEnabled', {
+        configurable: true,
+        value: true,
+      });
+      await act(async () =>
+        root.render(<VideoTile participant={{ ...participant, stream: {} as MediaStream }} />),
+      );
+      expect(button()?.disabled).toBe(true);
+      width.mockReturnValue(640);
+      act(() => document.querySelector('video')!.dispatchEvent(new Event('resize')));
+      expect(button()?.disabled).toBe(false);
+    } finally {
+      act(() => root.unmount());
+    }
   });
 
   it('참가자 재연결 요청 실패를 안내하고 다음 요청이 성공하면 해제한다', async () => {

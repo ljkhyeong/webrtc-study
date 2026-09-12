@@ -1719,10 +1719,10 @@ textarea:focus-visible {
 
 .video-tile__fullscreen-error {
   position: absolute;
-  right: 13px;
-  bottom: 94px;
+  right: 0;
+  bottom: calc(100% + 8px);
   z-index: 7;
-  max-width: min(280px, calc(100% - 26px));
+  max-width: min(280px, 100%);
   padding: 9px 11px;
   border: 1px solid rgb(255 145 125 / 40%);
   border-radius: 9px;
