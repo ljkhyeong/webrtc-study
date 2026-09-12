@@ -16,9 +16,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 		webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
 		properties = {
 			"server.address=127.0.0.1",
-			"round.turn.provider=coturn",
-			"round.turn.coturn-urls=turn:turn.b4ton.com:3478?transport=udp,turns:turn.b4ton.com:5349?transport=tcp",
-			"round.turn.coturn-secret=integration-only-secret-32-characters",
+			"spring.profiles.active=production",
+			"ALLOWED_ORIGINS=https://b4ton.com",
+			"ROUND_AUTH_ISSUER=https://b4ton.com",
+			"ROUND_AUTH_JWK_SET_URI=https://b4ton.com/.well-known/round-participation-jwks.json",
+			"TURN_URLS=turn:turn.b4ton.com:3478?transport=udp,turns:turn.b4ton.com:5349?transport=tcp",
+			"round.turn.shared-secret=integration-only-secret-32-characters",
 			"round.turn.rate-limit-max-requests=2",
 			"round.turn.rate-limit-global-max-requests=4"
 		})

@@ -43,6 +43,11 @@ export function createViteConfig({ mode }: ConfigEnv): UserConfig {
         },
         generateBundle() {
           this.emitFile({ type: 'asset', fileName: 'release.json', source: release });
+          this.emitFile({
+            type: 'asset',
+            fileName: '.round-auth-mode',
+            source: base === '/round-ui/' ? 'baton\n' : 'standalone\n',
+          });
         },
       },
     ],

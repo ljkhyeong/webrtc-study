@@ -1,0 +1,8 @@
+round:
+  auth:
+    mode: ${ROUND_AUTH_MODE:baton}
+  turn:
+    provider: ${TURN_PROVIDER:coturn}
+    # BATON의 기존 환경변수·configtree Secret 이름도 읽는다.
+    coturn-urls: ${TURN_COTURN_URLS:${TURN_URLS:}}
+    coturn-secret: ${TURN_COTURN_SECRET:${round.turn.shared-secret:}}

@@ -18,6 +18,8 @@
     "build:packages": "npm run build -w @round/protocol && npm run build -w @round/rtc-core",
     "build:signaling": "./gradlew --no-daemon :apps:signaling:bootJar",
     "build": "npm run build:packages && npm run build:signaling && npm run build -w @round/web",
+    "build:web:baton": "VITE_ROUND_AUTH_MODE=baton VITE_SIGNALING_URL= VITE_TURN_CREDENTIALS_URL= npm run build -w @round/web -- --mode baton",
+    "build:baton": "npm run build:packages && npm run build:signaling && npm run build:web:baton",
     "typecheck": "npm run typecheck -w @round/protocol && npm run typecheck -w @round/rtc-core && npm run typecheck -w @round/web && ./gradlew --no-daemon :apps:signaling:compileJava :apps:signaling:compileTestJava",
     "pretest": "npm run build -w @round/protocol",
     "test": "npm run test -w @round/protocol && npm run test -w @round/rtc-core && npm run test -w @round/web && ./gradlew --no-daemon :apps:signaling:test",
