@@ -228,6 +228,8 @@ describe('RoomSession', () => {
         frameRate: { ideal: 10, max: 10 },
       },
       audio: false,
+      selfBrowserSurface: 'exclude',
+      surfaceSwitching: 'include',
     });
     expect(screenTrack.contentHint).toBe('text');
     expect(harness.session.setScreenShareQuality('standard')).toBe(false);
@@ -269,6 +271,8 @@ describe('RoomSession', () => {
         frameRate: { ideal: 15, max: 15 },
       },
       audio: false,
+      selfBrowserSurface: 'exclude',
+      surfaceSwitching: 'include',
     });
     expect(screenTrack.contentHint).toBe('detail');
     expect(cameraSender.track).toBe(screenTrack as unknown as MediaStreamTrack);

@@ -222,7 +222,12 @@ export class ScreenShareLifecycle {
 
     let displayStream: MediaStream;
     try {
-      displayStream = await mediaDevices.getDisplayMedia(SCREEN_SHARE_CONSTRAINTS[this.#quality]);
+      const options = {
+        ...SCREEN_SHARE_CONSTRAINTS[this.#quality],
+        selfBrowserSurface: 'exclude',
+        surfaceSwitching: 'include',
+      };
+      displayStream = await mediaDevices.getDisplayMedia(options);
     } catch (error) {
       return isDisplayMediaCancellation(error) ? 'cancelled' : 'failed';
     }
