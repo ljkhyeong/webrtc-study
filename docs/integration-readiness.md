@@ -37,6 +37,12 @@ Alertmanager의 [Discord 연동](https://prometheus.io/docs/alerting/latest/conf
 재시도를 취소한다. 새 환경변수나 운영 설정은 필요하지 않다.
 [HTTP Retry-After](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after).
 
+BATON의 5분 참여권으로 6명이 같은 IP에서 접속하면 10분 동안 정상 발급·갱신만으로도 18회가
+필요하다. 독립 실행용 IP별 12회 한도로 8분 후 갱신이 차단되는 문제를 수정했다.
+`production` 기본값은 IP별 36회·서버 전체 72회이며, 참가자·방별 6회 제한은 유지한다.
+한도를 환경변수로 지정했다면 그 값이 우선한다. 두 IP에서 방마다 6명이 갱신하는 경우와
+참가자 한도 초과·집계 구간 종료 후 발급 재개를 실제 운영 프로필 설정으로 검증한다.
+
 ## 빌드
 
 ```bash
