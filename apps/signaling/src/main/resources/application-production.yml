@@ -6,3 +6,6 @@ round:
     # BATON의 기존 환경변수·configtree Secret 이름도 읽는다.
     coturn-urls: ${TURN_COTURN_URLS:${TURN_URLS:}}
     coturn-secret: ${TURN_COTURN_SECRET:${round.turn.shared-secret:}}
+    # 5분 참여권의 잦은 갱신과 같은 NAT의 6명 참가자를 수용한다.
+    rate-limit-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS:36}
+    rate-limit-global-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_GLOBAL_MAX_REQUESTS:72}
