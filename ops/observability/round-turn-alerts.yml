@@ -1,0 +1,37 @@
+# /etc/prometheus/optional-rules/round-turn-alerts.yml에 연결할 때 활성화됩니다.
+groups:
+  - name: round-turn-health
+    interval: 1m
+    rules:
+      - alert: RoundTurnTlsUnavailable
+        expr: probe_success{job="round-turn-tls"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: round-turn
+          environment: production
+        annotations:
+          summary: ROUND 중계 서버 TLS 접속 실패
+          description: coturn TLS 포트나 인증서 검증이 2분 동안 실패했습니다. 중계 서버와 인증서 적용 상태를 확인하세요.
+
+      - alert: RoundTurnCertificateExpiring
+        expr: (probe_ssl_earliest_cert_expiry{job="round-turn-tls"} - time() < 14 * 24 * 60 * 60) and on (job, instance) (probe_success{job="round-turn-tls"} == 1)
+        for: 10m
+        labels:
+          severity: warning
+          service: round-turn
+          environment: production
+        annotations:
+          summary: ROUND 중계 인증서 만료 임박
+          description: coturn이 제공하는 인증서가 14일 이내 만료됩니다. 기존 자동 갱신과 갱신 후 coturn 반영 상태를 확인하세요.
+
+      - alert: RoundTurnProbeUnavailable
+        expr: (up{job="round-turn-tls"} == 0) or absent(up{job="round-turn-tls"})
+        for: 3m
+        labels:
+          severity: critical
+          service: round-turn
+          environment: production
+        annotations:
+          summary: ROUND 중계 상태 검사 중단
+          description: 검사 지표를 3분 동안 수집하지 못했습니다. Blackbox Exporter와 Prometheus 수집 설정을 확인하세요.

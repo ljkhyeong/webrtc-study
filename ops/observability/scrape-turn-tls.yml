@@ -1,0 +1,21 @@
+# /etc/prometheus/optional-scrapes/turn-tls.yml에 연결할 때 활성화됩니다.
+scrape_configs:
+  - job_name: round-turn-tls
+    metrics_path: /probe
+    scrape_interval: 1m
+    scrape_timeout: 10s
+    params:
+      module: [turn_tls]
+    static_configs:
+      # 실제 coturn Service로 바꿉니다. TLS 이름은 turn.b4ton.com으로 검사합니다.
+      - targets: ['coturn.round.svc.cluster.local:5349']
+        labels:
+          service: round-turn
+          environment: production
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter.monitoring.svc.cluster.local:9115

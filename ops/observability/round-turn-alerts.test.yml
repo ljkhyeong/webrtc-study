@@ -1,0 +1,50 @@
+rule_files:
+  - round-turn-alerts.yml
+evaluation_interval: 1m
+
+tests:
+  - name: TLS 장애와 복구 및 인증서 갱신
+    interval: 1m
+    input_series:
+      - series: 'up{job="round-turn-tls",instance="coturn:5349"}'
+        values: '1x30'
+      - series: 'probe_success{job="round-turn-tls",instance="coturn:5349"}'
+        values: '1x4 0x3 1x22'
+      - series: 'probe_ssl_earliest_cert_expiry{job="round-turn-tls",instance="coturn:5349"}'
+        values: '864000x20 2592000x10'
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertstate="firing"}) or vector(0)'
+        eval_time: 3m
+        exp_samples: [{ labels: '{}', value: 0 }]
+      - expr: 'count(ALERTS{alertname="RoundTurnTlsUnavailable",alertstate="firing"})'
+        eval_time: 7m
+        exp_samples: [{ labels: '{}', value: 1 }]
+      - expr: 'count(ALERTS{alertname="RoundTurnCertificateExpiring",alertstate="firing"})'
+        eval_time: 19m
+        exp_samples: [{ labels: '{}', value: 1 }]
+      - expr: 'count(ALERTS{alertname="RoundTurnTlsUnavailable",alertstate="firing"}) or vector(0)'
+        eval_time: 19m
+        exp_samples: [{ labels: '{}', value: 0 }]
+      - expr: 'count(ALERTS{alertstate="firing"}) or vector(0)'
+        eval_time: 25m
+        exp_samples: [{ labels: '{}', value: 0 }]
+
+  - name: Exporter 장애와 없는 지표를 정상으로 판단하지 않음
+    interval: 1m
+    input_series:
+      - series: 'up{job="round-turn-tls",instance="coturn:5349"}'
+        values: '0x6'
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertname="RoundTurnProbeUnavailable",alertstate="firing"})'
+        eval_time: 4m
+        exp_samples: [{ labels: '{}', value: 1 }]
+      - expr: 'count(ALERTS{alertname="RoundTurnCertificateExpiring",alertstate="firing"}) or vector(0)'
+        eval_time: 4m
+        exp_samples: [{ labels: '{}', value: 0 }]
+
+  - name: 수집 대상 자체가 빠진 경우
+    interval: 1m
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertname="RoundTurnProbeUnavailable",alertstate="firing"})'
+        eval_time: 4m
+        exp_samples: [{ labels: '{}', value: 1 }]

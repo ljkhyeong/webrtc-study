@@ -1,0 +1,4 @@
+# /etc/prometheus/alertmanager-targets.yml에 연결합니다. 기본값은 전송 대상 없음입니다.
+# Alertmanager와 수신처를 준비한 뒤 []를 아래 목록으로 바꿉니다.
+# - targets: ['alertmanager.monitoring.svc.cluster.local:9093']
+[]

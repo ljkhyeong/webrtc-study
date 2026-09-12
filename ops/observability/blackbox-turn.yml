@@ -1,0 +1,12 @@
+modules:
+  turn_tls:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      tls: true
+      tls_config:
+        server_name: turn.b4ton.com
+        min_version: TLS12
+        insecure_skip_verify: false

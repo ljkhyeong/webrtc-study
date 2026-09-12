@@ -1,0 +1,18 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: round-discord
+  group_by: [alertname, environment]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: round-discord
+    discord_configs:
+      - webhook_url_file: /run/secrets/round-discord-webhook
+        send_resolved: true
+        username: ROUND 알림
+        title: '[ROUND {{ if eq .Status "firing" }}장애{{ else }}복구{{ end }}] {{ .CommonAnnotations.summary }}'
+        message: '{{ .CommonAnnotations.description }}'
