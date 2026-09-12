@@ -30,6 +30,12 @@ export function AudioOutputControls({
   const outputs = devices.filter(
     (device) => device.kind === 'audiooutput' && device.deviceId !== 'default',
   );
+  const appliedOutput = devices.find(
+    (device) => device.kind === 'audiooutput' && device.deviceId === deviceId,
+  );
+  const appliedOutputName = deviceId
+    ? appliedOutput?.label || '선택한 스피커'
+    : '시스템 기본 스피커';
 
   useEffect(() => {
     mounted.current = true;
@@ -117,10 +123,10 @@ export function AudioOutputControls({
           {testing ? '확인음 재생 중' : '소리 확인'}
         </button>
       </div>
-      <p>
-        선택한 스피커로 짧은 확인음을 재생합니다. 목록에 없는 장치는 운영체제의 소리 설정을 확인해
-        주세요.
-      </p>
+      <p>현재 적용: {appliedOutputName}. ‘소리 확인’은 이 스피커로 재생합니다.</p>
+      {supported && selected !== deviceId ? (
+        <p>선택한 스피커를 사용하려면 ‘스피커 적용’을 눌러 주세요.</p>
+      ) : null}
       <p role="status">{pending ? '스피커를 선택하고 있습니다.' : notice || speakerTest.notice}</p>
       {error || speakerTest.error ? <p role="alert">{error || speakerTest.error}</p> : null}
     </section>

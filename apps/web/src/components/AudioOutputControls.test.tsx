@@ -23,6 +23,7 @@ describe('스피커 선택과 확인음', () => {
 
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    vi.mocked(startSpeakerTest).mockReset();
     setSinkId = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', {
       configurable: true,
@@ -58,6 +59,37 @@ describe('스피커 선택과 확인음', () => {
     expect(input.onSelect).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('기존 선택을 유지');
     expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it('현재 적용한 스피커를 표시하고 선택만 한 장치로 확인음을 보내지 않는다', async () => {
+    const input = props();
+    input.devices.push({
+      deviceId: 'speaker-2',
+      kind: 'audiooutput',
+      label: '모니터',
+    } as MediaDeviceInfo);
+    vi.mocked(startSpeakerTest).mockImplementation(() => ({
+      stop: vi.fn(),
+      finished: Promise.resolve(),
+    }));
+    act(() => root.render(<AudioOutputControls {...input} deviceId="speaker-1" />));
+    const select = container.querySelector('select')!;
+    act(() => {
+      select.value = 'speaker-2';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(container.textContent).toContain('현재 적용: 헤드셋');
+    expect(container.textContent).toContain('사용하려면 ‘스피커 적용’');
+    await act(async () => button('소리 확인').click());
+    expect(startSpeakerTest).toHaveBeenCalledExactlyOnceWith('speaker-1');
+    expect(input.onSelect).not.toHaveBeenCalled();
+    await act(async () => button('스피커 적용').click());
+    expect(input.onSelect).toHaveBeenCalledExactlyOnceWith('speaker-2');
+    act(() => root.render(<AudioOutputControls {...input} deviceId="speaker-2" />));
+    expect(container.textContent).toContain('현재 적용: 모니터');
+    expect(container.textContent).not.toContain('사용하려면 ‘스피커 적용’');
+    await act(async () => button('소리 확인').click());
+    expect(startSpeakerTest).toHaveBeenLastCalledWith('speaker-2');
   });
 
   it('명시적 버튼으로 브라우저 선택창을 열고 새 출력 장치를 적용한다', async () => {

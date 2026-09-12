@@ -109,6 +109,54 @@ describe('통화 장치 설정', () => {
     expect(mediaDevices.enumerateDevices).toHaveBeenCalledTimes(3);
   });
 
+  it('목록 조회 실패를 새로고침으로 복구하고 선택 중인 장치·품질을 유지한다', async () => {
+    const input = props();
+    await act(async () => root.render(<MediaDeviceDialog {...input} />));
+    const microphone = container.querySelector('select')!;
+    const quality = container.querySelector<HTMLSelectElement>('[aria-label="카메라 전송 품질"]')!;
+    const refresh = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === '장치 목록 새로고침',
+    )!;
+    act(() => {
+      microphone.value = 'mic-2';
+      microphone.dispatchEvent(new Event('change', { bubbles: true }));
+      quality.value = 'data-saver';
+      quality.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    mediaDevices.enumerateDevices.mockRejectedValueOnce(new Error('목록 조회 실패'));
+    await act(async () => refresh.click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('장치 목록 새로고침');
+    expect(microphone.value).toBe('mic-2');
+
+    let finish!: (devices: Partial<MediaDeviceInfo>[]) => void;
+    mediaDevices.enumerateDevices.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    act(() => refresh.click());
+    expect(refresh.disabled).toBe(true);
+    expect(refresh.textContent).toBe('목록 확인 중');
+    act(() => refresh.click());
+    expect(mediaDevices.enumerateDevices).toHaveBeenCalledTimes(3);
+    await act(async () =>
+      finish([
+        { deviceId: 'mic-1', kind: 'audioinput', label: '내장 마이크' },
+        { deviceId: 'mic-2', kind: 'audioinput', label: '외장 마이크' },
+        { deviceId: 'mic-3', kind: 'audioinput', label: '새 마이크' },
+      ]),
+    );
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(refresh.disabled).toBe(false);
+    expect(microphone.textContent).toContain('새 마이크');
+    expect(microphone.value).toBe('mic-2');
+    expect(quality.value).toBe('data-saver');
+    expect(input.onSelect).not.toHaveBeenCalled();
+    expect(input.onSelectVideoQuality).not.toHaveBeenCalled();
+    expect(input.onClose).not.toHaveBeenCalled();
+    expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
+  });
+
   it('교체 실패를 안내하고 화면 공유 중에는 카메라 적용을 막는다', async () => {
     const input = props();
     input.onSelect.mockResolvedValue(false);

@@ -49,6 +49,7 @@ export function MediaDeviceDialog({
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [deviceListError, setDeviceListError] = useState(false);
+  const [loadingDevices, setLoadingDevices] = useState(false);
   const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
@@ -67,6 +68,7 @@ export function MediaDeviceDialog({
     let request = 0;
     const load = async () => {
       const current = ++request;
+      setLoadingDevices(true);
       try {
         const available = await mediaDevices.enumerateDevices();
         if (!disposed && current === request) {
@@ -75,6 +77,8 @@ export function MediaDeviceDialog({
         }
       } catch {
         if (!disposed && current === request) setDeviceListError(true);
+      } finally {
+        if (!disposed && current === request) setLoadingDevices(false);
       }
     };
     void load();
@@ -144,6 +148,13 @@ export function MediaDeviceDialog({
       <p>
         통화와 채팅을 유지한 채 장치를 바꿉니다. 꺼 둔 마이크와 카메라는 꺼진 상태를 유지합니다.
       </p>
+      <button
+        type="button"
+        disabled={loadingDevices || pending !== null}
+        onClick={() => setRefresh((value) => value + 1)}
+      >
+        {loadingDevices ? '목록 확인 중' : '장치 목록 새로고침'}
+      </button>
       {(['audio', 'video'] as const).map((kind) => {
         const label = kind === 'audio' ? '마이크' : '카메라';
         const selected = kind === 'audio' ? audio : video;
@@ -238,8 +249,8 @@ export function MediaDeviceDialog({
         않습니다.
       </p>
       {deviceListError ? (
-        <p>
-          장치 목록을 불러오지 못했습니다. 브라우저 기본 장치를 적용하거나 설정을 다시 열어 주세요.
+        <p role="alert">
+          장치 목록을 불러오지 못했습니다. ‘장치 목록 새로고침’을 눌러 다시 확인해 주세요.
         </p>
       ) : null}
       <p role="status">
