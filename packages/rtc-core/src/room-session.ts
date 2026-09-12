@@ -2395,18 +2395,18 @@ export class RoomSession {
       return;
     }
 
-    const request =
-      requestId === undefined ? null : this.#signalingTransport.takePendingRequest(requestId);
+    const requestedPeerId =
+      requestId === undefined ? null : this.#signalingTransport.takePendingPeerId(requestId);
 
     switch (code) {
       case 'TARGET_NOT_FOUND': {
-        if (request !== null) {
-          this.#removePeer(request.peerId);
+        if (requestedPeerId !== null) {
+          this.#removePeer(requestedPeerId);
         }
         return;
       }
       case 'TARGET_SELF': {
-        if (request !== null) {
+        if (requestedPeerId !== null) {
           this.#signalingTransport.close(1000, 'signaling identity mismatch');
           this.#beginReconnect(error);
         }

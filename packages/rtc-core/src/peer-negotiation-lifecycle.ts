@@ -72,10 +72,6 @@ export class PeerNegotiationLifecycle {
       this.#options.createNegotiationId(peerId),
     );
     peer.remoteDescriptionSet = false;
-    peer.resetLocalDescription();
-    if (options.iceRestart === true) {
-      peer.clearPendingRemoteCandidates();
-    }
     this.#options.setPeerConnectionStatus(peerId, 'negotiating');
 
     try {

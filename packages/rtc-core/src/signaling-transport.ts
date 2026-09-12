@@ -17,10 +17,6 @@ interface SocketBinding {
   readonly close: (event: CloseEvent) => void;
 }
 
-interface PendingSignalRequest {
-  readonly peerId: string;
-}
-
 interface SignalingTransportOptions {
   readonly url: string;
   readonly roomId: string;
@@ -49,7 +45,7 @@ export class SignalingTransportError extends Error {
 /** RoomSession 하나의 WebSocket 연결과 요청·응답 연결을 관리한다. */
 export class SignalingTransport {
   readonly #options: SignalingTransportOptions;
-  readonly #pendingRequests = new Map<string, PendingSignalRequest>();
+  readonly #pendingRequests = new Map<string, string>();
 
   #socket: WebSocket | null = null;
   #binding: SocketBinding | null = null;
@@ -174,7 +170,7 @@ export class SignalingTransport {
     const socket = this.#requireOpenSocket();
     this.#requestSequence += 1;
     const requestId = `signal-${this.#generation}-${this.#requestSequence.toString(36)}`;
-    const correlatedMessage = { ...message, requestId } as RelayClientMessage;
+    const correlatedMessage = { ...message, requestId };
     const serialized = serializeClientMessage(correlatedMessage);
     this.#rememberRequest(requestId, correlatedMessage.to);
     try {
@@ -185,16 +181,15 @@ export class SignalingTransport {
     }
   }
 
-  takePendingRequest(requestId: string): { readonly peerId: string } | null {
-    const request = this.#pendingRequests.get(requestId);
-    if (request === undefined) return null;
+  takePendingPeerId(requestId: string): string | null {
+    const peerId = this.#pendingRequests.get(requestId) ?? null;
     this.#pendingRequests.delete(requestId);
-    return { peerId: request.peerId };
+    return peerId;
   }
 
   purgeRequestsForPeer(peerId: string): void {
-    for (const [requestId, request] of this.#pendingRequests) {
-      if (request.peerId === peerId) {
+    for (const [requestId, targetPeerId] of this.#pendingRequests) {
+      if (targetPeerId === peerId) {
         this.#pendingRequests.delete(requestId);
       }
     }
@@ -266,9 +261,7 @@ export class SignalingTransport {
   }
 
   #rememberRequest(requestId: string, peerId: string): void {
-    this.#pendingRequests.set(requestId, {
-      peerId,
-    });
+    this.#pendingRequests.set(requestId, peerId);
     while (this.#pendingRequests.size > MAX_PENDING_SIGNAL_REQUESTS) {
       const oldestRequestId = this.#pendingRequests.keys().next().value as string;
       this.#pendingRequests.delete(oldestRequestId);
