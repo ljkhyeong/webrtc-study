@@ -78,15 +78,14 @@ export class PeerNegotiationLifecycle {
     }
     this.#options.setPeerConnectionStatus(peerId, 'negotiating');
 
-    if (!peer.data.isAttached()) {
-      peer.data.attach(
-        peer.connection.createDataChannel(PEER_DATA_CHANNEL_LABEL, {
-          ordered: true,
-        }),
-      );
-    }
-
     try {
+      if (!peer.data.isAttached()) {
+        peer.data.attach(
+          peer.connection.createDataChannel(PEER_DATA_CHANNEL_LABEL, {
+            ordered: true,
+          }),
+        );
+      }
       const offer =
         options.iceRestart === true
           ? await peer.connection.createOffer({ iceRestart: true })

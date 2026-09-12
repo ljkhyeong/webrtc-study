@@ -754,6 +754,70 @@ describe('RoomSession', () => {
     }
   });
 
+  it.each([false, true])(
+    '채팅 채널 생성 실패를 재시도하고 반복 실패는 제한한다: 반복=%s',
+    async (persistent) => {
+      vi.useFakeTimers();
+      const harness = createHarness({
+        recovery: { maxReconnectAttempts: 1, reconnectInitialDelayMs: 10 },
+        onPeerConnectionCreated: (peer, index) => {
+          if (index !== 0) return;
+          const createChannel = vi.spyOn(peer, 'createDataChannel');
+          const fail = () => {
+            throw new Error('channel creation failed');
+          };
+          if (persistent) createChannel.mockImplementation(fail);
+          else createChannel.mockImplementationOnce(fail);
+        },
+      });
+      try {
+        await joinSession(harness, [
+          { peerId: 'peer-a', displayName: '가온' },
+          { peerId: 'peer-b', displayName: '나래' },
+        ]);
+        const [target, healthy] = harness.peerConnections;
+        await answerPeer(harness, 'peer-b');
+        healthy!.setConnectionState('connected');
+        const message = harness.session.sendChat('연결되면 전달할 메시지');
+        acknowledgeChat(healthy!.channels[0]!, message.id);
+        expect(harness.session.getSnapshot().warning?.code).toBe('peer-negotiation-retrying');
+
+        await vi.advanceTimersByTimeAsync(10);
+        expect(target!.createDataChannel).toHaveBeenCalledTimes(2);
+        if (persistent) {
+          expect(target!.closed).toBe(true);
+          expect(harness.session.getSnapshot().warning?.code).toBe('peer-negotiation-failed');
+        } else {
+          await answerPeer(harness, 'peer-a');
+          target!.setConnectionState('connected');
+          const channel = target!.channels[0]!;
+          expect(
+            channel.sent
+              .map((raw) => JSON.parse(raw))
+              .filter((item) => item.type === 'chat.message'),
+          ).toEqual([expect.objectContaining({ id: message.id, text: message.text })]);
+          acknowledgeChat(channel, message.id);
+          expect(target!.closed).toBe(false);
+          expect(harness.session.getSnapshot().warning).toBeNull();
+        }
+        expect(harness.session.getSnapshot().messages[0]?.deliveryState).toBe(
+          persistent ? 'partial' : 'sent',
+        );
+        expect(harness.session.getSnapshot().status).toBe('active');
+        expect(healthy!.closed).toBe(false);
+        expect(harness.audioTrack.stopped).toBe(false);
+        expect(harness.videoTrack.stopped).toBe(false);
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(target!.createDataChannel).toHaveBeenCalledTimes(2);
+        expect(harness.peerConnections).toHaveLength(2);
+      } finally {
+        await harness.session.leave();
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it('retries one transient initial offer failure instead of leaving the peer failed', async () => {
     vi.useFakeTimers();
     try {
