@@ -66,7 +66,6 @@ export class PeerDataChannel {
   readonly #options: PeerDataChannelOptions;
   readonly #pendingChatMessages: PendingChatMessage[] = [];
   readonly #receivedChatIds = new Set<string>();
-  readonly #receivedChatIdOrder: string[] = [];
   readonly #pendingAckIds = new Set<string>();
 
   #channel: RTCDataChannel | null = null;
@@ -153,7 +152,6 @@ export class PeerDataChannel {
     }
     this.#pendingChatMessages.length = 0;
     this.#receivedChatIds.clear();
-    this.#receivedChatIdOrder.length = 0;
     this.#pendingAckIds.clear();
     this.#pendingMediaState = null;
     this.#pendingHandState = null;
@@ -355,9 +353,8 @@ export class PeerDataChannel {
 
   #rememberReceivedChatId(messageId: string): void {
     this.#receivedChatIds.add(messageId);
-    this.#receivedChatIdOrder.push(messageId);
-    while (this.#receivedChatIdOrder.length > MAX_RECEIVED_CHAT_IDS) {
-      const removed = this.#receivedChatIdOrder.shift() as string;
+    while (this.#receivedChatIds.size > MAX_RECEIVED_CHAT_IDS) {
+      const removed = this.#receivedChatIds.values().next().value!;
       this.#receivedChatIds.delete(removed);
     }
   }

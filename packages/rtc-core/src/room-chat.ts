@@ -38,7 +38,6 @@ const MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS = 128;
 
 /** 화면 채팅 기록과 내가 보낸 메시지의 수신 확인 상태를 관리한다. */
 export class RoomChatLedger {
-  readonly #activeLocalMessageIds = new Set<string>();
   readonly #recentlyRetiredLocalMessageIds = new Set<string>();
   readonly #localRecipientStates = new Map<string, Map<string, ChatRecipientDeliveryState>>();
   readonly #messages: ChatMessage[] = [];
@@ -54,7 +53,7 @@ export class RoomChatLedger {
 
   assertLocalMessageIdAvailable(messageId: string): void {
     if (
-      this.#activeLocalMessageIds.has(messageId) ||
+      this.#localRecipientStates.has(messageId) ||
       this.#recentlyRetiredLocalMessageIds.has(messageId)
     ) {
       throw new ChatSendError(
@@ -176,9 +175,6 @@ export class RoomChatLedger {
   }
 
   #rememberMessage(message: ChatMessage): void {
-    if (message.isLocal) {
-      this.#activeLocalMessageIds.add(message.id);
-    }
     this.#messages.push(message);
 
     while (this.#messages.length > this.#maxMessages) {
@@ -191,7 +187,7 @@ export class RoomChatLedger {
 
   #retireLocalMessageIdIfUnused(messageId: string): void {
     if (
-      !this.#activeLocalMessageIds.has(messageId) ||
+      !this.#localRecipientStates.has(messageId) ||
       [...(this.#localRecipientStates.get(messageId)?.values() ?? [])].some(
         (state) => state === 'pending',
       ) ||
@@ -202,7 +198,6 @@ export class RoomChatLedger {
 
     this.#localRecipientStates.delete(messageId);
     this.#retryDeadlines.delete(messageId);
-    this.#activeLocalMessageIds.delete(messageId);
     this.#recentlyRetiredLocalMessageIds.add(messageId);
     while (this.#recentlyRetiredLocalMessageIds.size > MAX_RECENTLY_RETIRED_LOCAL_CHAT_IDS) {
       const oldest = this.#recentlyRetiredLocalMessageIds.values().next().value as string;
