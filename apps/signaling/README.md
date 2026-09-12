@@ -3,8 +3,8 @@
 시그널링 서버는 항상 다음 경로를 제공합니다.
 
 - WebSocket 전송 계층 상태 확인을 위한 `GET /healthz`
-- `GET /actuator/health/liveness`와 `/actuator/health/readiness`
-- `GET /actuator/prometheus`와 `/actuator/metrics`
+- 서버 생존·준비 상태 확인을 위한 `GET /actuator/health/liveness`와 `/actuator/health/readiness`
+- 운영 지표 조회를 위한 `GET /actuator/prometheus`와 `/actuator/metrics`
 
 방 관련 작업은 `ROUND_AUTH_MODE`에 따라 달라집니다.
 
@@ -16,10 +16,10 @@
 이 요청을 ROUND로 프록시하면 안 됩니다. BATON은 방별 참여권 쿠키를 갱신하기 전에
 사용자 신원과 현재 스터디 참여 권한을 다시 확인합니다.
 
-설정된 모든 `ALLOWED_ORIGINS` 항목이 정확한 HTTPS Origin이 아니면 `production` Spring
-프로필은 시작 중 실패합니다. 이 프로필에서는 와일드카드, `null`, HTTP Origin을 허용하지
+설정된 모든 `ALLOWED_ORIGINS` 항목이 유효한 HTTPS 출처(Origin)가 아니면 `production` Spring
+프로필은 시작 중 실패합니다. 이 프로필에서는 와일드카드, `null`, HTTP 출처를 허용하지
 않습니다. BATON 모드는 해당 프로필이 없어도 와일드카드, `null`, 로컬 주소가 아닌 HTTP
-Origin을 별도로 거부합니다.
+출처를 별도로 거부합니다.
 
 ## 연결·요청 제한과 만료 처리
 
@@ -44,7 +44,7 @@ BATON 모드의 WebSocket 만료 시점은 연결 당시의 참여권으로 고�
 확인합니다. 참여권의 절대 만료 시각(`exp`)과 연결 시 기록한 남은 수명 중 하나라도 지나면
 연결을 종료합니다. 남은 수명은 단조 증가 시계로 계산하므로 시스템 시계를 뒤로 돌려도 연결이 연장되지 않습니다.
 만료된 연결은 기존 종료 절차로 상태를 한 번만 정리한 뒤 종료 코드 `4001`, 종료 사유
-`Participation grant expired`로 닫습니다. 활동이 없는 연결도 검사 한 주기 안에 닫습니다.
+참여권 만료(`Participation grant expired`)로 닫습니다. 활동이 없는 연결도 검사 한 주기 안에 닫습니다.
 HTTP 참여권 검증과 WebSocket 만료 검사는 같은 주입 시계를 사용하며 `exp`에 시간 오차를
 허용하지 않습니다. 미래 `iat`에만 60초의 오차를 허용합니다. 독립 실행 연결에는 참여권 만료를 적용하지 않습니다.
 
@@ -54,7 +54,7 @@ BATON 모드는 연결을 맺는 중이거나 연결된 WebSocket을 같은 참�
 같은 참가자가 같은 방에 세 번째 연결을 열면 HTTP 429를 반환합니다. 연결 승인 단계에서는 기존 연결을 종료하지 않습니다.
 여러 연결의 `room.join` 요청이 겹치면 연결 순번이 더 큰 WebSocket을 유지합니다. ROUND는
 이전 참가자를 방에서 제거하고 이전 연결을 종료 코드 `4002`와 종료 사유
-`Participation session superseded`로 닫습니다. 연결 종료 시도가 끝나면 연결 슬롯의 예약을 해제합니다.
+참여 연결 교체(`Participation session superseded`)로 닫습니다. 연결 종료 시도가 끝나면 연결 슬롯의 예약을 해제합니다.
 종료 중 I/O 오류가 발생해도 해제는 한 번만 수행합니다.
 이전 연결의 `room.join`이 뒤늦게 도착해도 해당 연결을 닫습니다. 브라우저는 `4002`로 종료되면
 자동 재연결하지 않으므로 두 연결이 번갈아 서로를 종료하는 일을 막습니다. 연결 슬롯은

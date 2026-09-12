@@ -69,7 +69,7 @@ cp .env.example .env
 npm run dev
 ```
 
-Gradle은 저장소의 Wrapper를 사용하므로 별도로 설치하지 않아도 됩니다. `npm run dev`가
+Gradle은 저장소에 포함된 실행 스크립트를 사용하므로 별도로 설치하지 않아도 됩니다. `npm run dev`가
 루트 `.env`를 Spring Boot와 Vite 양쪽에 전달하고 시그널링 서버와 웹 앱을 함께
 실행합니다.
 
@@ -110,7 +110,7 @@ sudo systemctl start avahi-daemon
 ```
 
 `chromium-full-media` 프로젝트는 가상 카메라·마이크·화면 스트림을 사용해 직접 초대 입장,
-원격 미디어 연결, 화면 공유 전환, 방장의 원격 미디어 끄기, DataChannel 채팅과 수신 ACK,
+원격 미디어 연결, 화면 공유 전환, 방장의 원격 미디어 끄기, DataChannel 채팅과 수신 확인,
 퇴장을 확인합니다. `webkit-smoke` 프로젝트는 Playwright WebKit 엔진에서 직접 초대 입장을
 확인합니다. ‘장치 확인’을 누르기 전에는 카메라·마이크 권한을 요청하지 않는지, 두 참가자가
 카메라·마이크 없이 입장해 DataChannel로 채팅하고 퇴장할 수 있는지 검사합니다.
@@ -121,9 +121,9 @@ sudo systemctl start avahi-daemon
 저장됩니다.
 
 실제 iOS Safari의 기본 화면과 카메라·마이크 없이 입장하는 흐름은 BrowserStack Automate에서 선택적으로
-검사합니다. 저장소 Actions secret에 `BROWSERSTACK_USERNAME`과 `BROWSERSTACK_ACCESS_KEY`를
-등록한 뒤 **실제 iOS Safari 검사** workflow를 수동 실행합니다. 일반 push나 PR에서는 실행하지
-않으므로 실장치 사용 시간을 소모하지 않습니다. 로컬에서도 같은 secret과 실행 식별자를 환경
+검사합니다. 저장소의 GitHub Actions 비밀 변수에 `BROWSERSTACK_USERNAME`과 `BROWSERSTACK_ACCESS_KEY`를
+등록한 뒤 **실제 iOS Safari 검사** 워크플로를 수동 실행합니다. 일반 푸시나 PR에서는 실행하지
+않으므로 실장치 사용 시간을 소모하지 않습니다. 로컬에서도 같은 비밀 변수와 실행 식별자를 환경
 변수로 전달해 실행할 수 있습니다.
 
 ```bash
@@ -141,13 +141,13 @@ GITHUB_RUN_ID=local GITHUB_RUN_ATTEMPT=1 npm run test:e2e:ios-safari
 | ----------------------------------------------------- | ----------------------- | ------------------------------- |
 | `PORT`                                                | `8787`                  | 시그널링 HTTP/WebSocket 포트    |
 | `HOST`                                                | `0.0.0.0`               | 시그널링 수신 주소              |
-| `ALLOWED_ORIGINS`                                     | `http://localhost:5173` | 쉼표로 구분한 허용 Origin       |
+| `ALLOWED_ORIGINS`                                     | `http://localhost:5173` | 쉼표로 구분한 허용 출처(Origin) |
 | `ROUND_AUTH_MODE`                                     | `standalone`            | `standalone` 또는 `baton`       |
 | `ROUND_STANDALONE_HOST_TOKEN_SHA256`                  | 없음                    | 독립 실행 방장 키 SHA-256       |
 | `ROUND_AUTH_COOKIE_NAME`                              | `__Secure-round_access` | BATON 참여권 쿠키 이름          |
 | `ROUND_AUTH_ISSUER`                                   | 없음                    | 신뢰할 BATON JWT 발급자         |
 | `ROUND_AUTH_AUDIENCE`                                 | `round`                 | 참여권의 유일한 수신 대상       |
-| `ROUND_AUTH_JWK_SET_URI`                              | 없음                    | BATON 공개 JWK Set HTTPS URI    |
+| `ROUND_AUTH_JWK_SET_URI`                              | 없음                    | BATON 공개 JWK 집합 주소(HTTPS) |
 | `ROUND_AUTH_MAX_GRANT_LIFETIME_SECONDS`               | `300`                   | 참여권 최대 허용 수명(초)       |
 | `MAX_ROOM_SIZE`                                       | `6`                     | 방 최대 참가자 수               |
 | `MAX_SIGNALING_CONNECTIONS`                           | `1000`                  | 서버 전체 시그널링 연결 제한    |
@@ -183,7 +183,7 @@ GITHUB_RUN_ID=local GITHUB_RUN_ATTEMPT=1 npm run test:e2e:ios-safari
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_CLIENTS`              | `10000`                 | 발급 제한 상태의 최대 IP 수     |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_PARTICIPANTS`         | `10000`                 | BATON 참가자 상태 최대 수       |
 | `COMPOSE_PROFILES`                                    | `none`                  | `observability`이면 Alloy 실행  |
-| `GRAFANA_ALLOY_IMAGE`                                 | Alloy 1.18.1 digest     | digest로 고정한 Alloy 이미지    |
+| `GRAFANA_ALLOY_IMAGE`                                 | Alloy 1.18.1 해시       | 해시로 고정한 Alloy 이미지      |
 | `GRAFANA_CLOUD_PROMETHEUS_URL`                        | 없음                    | 메트릭 원격 전송 URL            |
 | `GRAFANA_CLOUD_PROMETHEUS_USER`                       | 없음                    | 메트릭 인스턴스 사용자 ID       |
 | `GRAFANA_CLOUD_API_TOKEN`                             | 없음                    | `metrics:write` 전용 토큰       |
