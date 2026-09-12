@@ -165,7 +165,9 @@ export function RoomStudyPanel({
   const label = !state
     ? '불러오는 중'
     : remaining === 0
-      ? '완료'
+      ? state.running
+        ? '종료 확인 중'
+        : '완료'
       : state.running
         ? '진행 중'
         : '정지';

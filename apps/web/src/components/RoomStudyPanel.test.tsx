@@ -67,18 +67,26 @@ describe('타이머 종료 안내', () => {
   it('종료를 한 번 알리고 시간 보정·이미 끝난 타이머 조회에는 다시 알리지 않는다', () => {
     render({ remainingMs: 0, running: false });
     expect(container.querySelector('.room-study-completion')).toBeNull();
+    expect(container.querySelector('.room-study summary')?.textContent).toContain('완료');
     render();
     now = 2000;
     act(() => vi.advanceTimersByTime(2000));
     expect(container.querySelector('.room-study-completion')).toBeNull();
+    expect(container.querySelector('.room-study summary')?.textContent).toContain('종료 확인 중');
+    expect(container.querySelector('.room-study summary')?.textContent).not.toContain('완료');
     expect(onSync).toHaveBeenCalledOnce();
     render({ remainingMs: 0, running: false, sampledAt: now });
+    expect(container.querySelector('.room-study summary')?.textContent).toContain('완료');
+    expect(container.querySelector('.room-study summary')?.textContent).not.toContain(
+      '종료 확인 중',
+    );
     expect(container.querySelector('.room-study-completion')?.textContent).toContain(
       '집중 시간이 끝났습니다',
     );
     expect(document.title).toContain('집중 시간이 끝났습니다');
     act(() => container.querySelector<HTMLButtonElement>('.room-study-completion button')!.click());
     render({ remainingMs: 2000, sampledAt: 2000 });
+    expect(container.querySelector('.room-study summary')?.textContent).toContain('진행 중');
     now = 4000;
     act(() => vi.advanceTimersByTime(2000));
     render({ remainingMs: 0, running: false, sampledAt: now });

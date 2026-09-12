@@ -127,7 +127,7 @@ export function ConnectionDiagnosticsPanel({
   onSetQualityVisible,
 }: ConnectionDiagnosticsPanelProps) {
   const [diagnostics, setDiagnostics] = useState<ConnectionDiagnosticsState>({ status: 'idle' });
-  const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle');
+  const [copyState, setCopyState] = useState<'idle' | 'copying' | 'success' | 'error'>('idle');
   const collectionGeneration = useRef(0);
   const previousContextKey = useRef(connectionContextKey);
 
@@ -173,14 +173,16 @@ export function ConnectionDiagnosticsPanel({
   };
 
   const copy = async () => {
-    if (diagnostics.status !== 'ready') return;
+    if (diagnostics.status !== 'ready' || copyState === 'copying') return;
+    const generation = collectionGeneration.current;
+    setCopyState('copying');
     try {
       await navigator.clipboard.writeText(
         JSON.stringify(shareableDiagnostics(diagnostics.value, diagnostics.measuredAtMs), null, 2),
       );
-      setCopyState('success');
+      if (collectionGeneration.current === generation) setCopyState('success');
     } catch {
-      setCopyState('error');
+      if (collectionGeneration.current === generation) setCopyState('error');
     }
   };
 
@@ -245,9 +247,14 @@ export function ConnectionDiagnosticsPanel({
             <button
               className="connection-diagnostics__copy"
               type="button"
+              disabled={copyState === 'copying'}
               onClick={() => void copy()}
             >
-              {copyState === 'success' ? '진단 정보 복사됨' : '진단 정보 복사'}
+              {copyState === 'copying'
+                ? '복사 중'
+                : copyState === 'success'
+                  ? '진단 정보 복사됨'
+                  : '진단 정보 복사'}
             </button>
             {copyState === 'error' ? <p role="alert">클립보드에 복사하지 못했습니다.</p> : null}
             <pre tabIndex={0}>
