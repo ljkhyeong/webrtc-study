@@ -73,6 +73,10 @@ TURN_CLOUDFLARE_API_TOKEN=
 coturn의 `external-ip` 설정까지 바뀌지는 않는다. 실제 운영 전에는 서로 다른 외부망의 두 참가자로
 `iceTransportPolicy=relay`에서 영상·음성·채팅을 확인한다. 로컬 통과와 외부망 통과는 구분한다.
 
+Compose 배포 전 검사도 coturn을 지원한다. 새 `ops/production.env.example`은 coturn을 기본으로
+사용하며, 기존 Cloudflare 환경은 그대로 사용할 수 있다. 두 공급자의 필수값 검사와 Compose
+보간을 같은 CI에서 확인한다. 이 배포 검사는 k3s 설치나 실제 중계 접속 검사를 수행하지 않는다.
+
 ## DNS와 서비스 주소
 
 기본 주소는 `b4ton.com`, 서비스 주소는 `round.b4ton.com`, `cal.b4ton.com`으로 정한다.

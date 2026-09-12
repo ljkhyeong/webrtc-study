@@ -1,13 +1,13 @@
 # ROUND 배포 가이드
 
-운영 환경은 외부 요청을 받는 Caddy와 Spring 시그널링 서버 인스턴스 하나로 구성합니다. TURN 중계와
-자격 증명 발급은 Cloudflare TURN을 사용합니다. 운영 서버에서 TURN 서버·인증서·중계 포트를
-직접 관리하지 않습니다.
+이 문서는 Linux Docker Compose 배포 절차입니다. 홈서버 k3s 연동은
+[홈서버 연동 설정](home-server-integrations.md)을 참고합니다.
+웹 요청은 Caddy가 받고 시그널링 서버는 하나만 실행합니다. TURN 중계는 coturn 또는
+Cloudflare를 선택하며, 새 환경 파일 예시는 coturn을 기본으로 사용합니다.
 
 ```text
 브라우저 ── HTTPS/WSS ── Caddy ── HTTP/WS ── 시그널링
-   │                                      │
-   └── WebRTC 미디어 ── Cloudflare TURN ──┘ 자격 증명 API(HTTPS)
+   └── WebRTC 미디어 ── coturn / Cloudflare TURN
 ```
 
 ## 운영 전제
@@ -17,11 +17,11 @@
 - Docker Compose 2.24.4 이상
 - 80/TCP, 443/TCP, 443/UDP를 수신할 수 있는 공개 주소
 - ROUND 도메인의 DNS와 Caddy가 발급할 HTTPS 인증서
-- Cloudflare Realtime TURN 키 ID와 해당 키의 API 토큰
+- coturn 주소·공유키 또는 Cloudflare Realtime TURN 키 ID·API 토큰
 - GHCR에서 발행한 `round-edge`, `round-signaling`의 고정된 이미지 digest
 - NTP가 동기화된 서버 시계와 5GiB 이상의 여유 공간
 
-TURN 키를 만들 때는 ROUND 전용 키와 토큰을 사용합니다. 토큰은 시그널링 서버에만
+TURN 공유키나 API 토큰은 ROUND 전용으로 만듭니다. ROUND에서는 비밀값을 시그널링 서버에만
 주입하고 Git, 컨테이너 이미지, 브라우저 번들, 명령행, 로그에 넣지 않습니다.
 
 ## 환경 파일 준비
@@ -36,8 +36,7 @@ install -m 0600 ops/production.env.example /etc/round/production.env
 - `ROUND_EDGE_IMAGE`, `ROUND_SIGNALING_IMAGE`: 릴리스 작업이 출력한 digest 참조
 - `ROUND_DOMAIN`, `ACME_EMAIL`, `ALLOWED_ORIGINS`
 - `ROUND_ACCESS_USER`, `ROUND_ACCESS_PASSWORD_HASH`
-- `TURN_PROVIDER=cloudflare`
-- `TURN_CLOUDFLARE_KEY_ID`, `TURN_CLOUDFLARE_API_TOKEN`
+- `TURN_PROVIDER`: `coturn` 또는 `cloudflare`와 해당 공급자의 필수값
 - `VITE_STUN_URLS=stun:stun.cloudflare.com:3478`
 
 공유 접근 비밀번호 해시는 Caddy의 bcrypt 비용 12로 생성합니다. 평문 비밀번호는 환경
@@ -48,12 +47,15 @@ docker run --rm -it caddy:2.11.4-alpine \
   caddy hash-password --algorithm bcrypt --bcrypt-cost 12
 ```
 
-Cloudflare API 토큰과 Caddy 비밀번호 해시를 담은 환경 파일은 일반 파일로 만들고,
+TURN 공유키·API 토큰과 Caddy 비밀번호 해시를 담은 환경 파일은 일반 파일로 만들고,
 소유자만 읽고 쓸 수 있도록 권한을 0600으로 설정합니다. 심볼릭 링크는 배포 도구가 거부합니다.
 
 홈서버의 coturn 중계를 선택하면 `TURN_PROVIDER=coturn`, `TURN_COTURN_URLS`,
-`TURN_COTURN_SECRET`을 설정하고 Cloudflare 두 값은 비웁니다. 공급자별 필수값은 서버 시작 때
-검증합니다. [홈서버 연동 설정](home-server-integrations.md)을 참고하세요.
+`TURN_COTURN_SECRET`을 설정하고 Cloudflare 두 값은 비웁니다. Cloudflare를 선택하면
+`TURN_CLOUDFLARE_KEY_ID`와 `TURN_CLOUDFLARE_API_TOKEN`을 채우고 coturn 두 값은 비웁니다.
+배포 전 검사는 Compose가 해석한 값으로 필수값 누락과 공급자 설정 혼용을 거부합니다.
+URL 형식과 coturn 공유키 길이(32자 이상)는 서버 시작 때 검증합니다.
+운영 배포에서는 `disabled`를 허용하지 않습니다.
 
 ## Cloudflare TURN 계약
 
