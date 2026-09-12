@@ -375,8 +375,12 @@ describe('VideoTile browser behavior', () => {
 
   it('음량 변경을 무시하는 브라우저에서는 조절 막대 대신 기기 음량을 안내한다', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
-    vi.spyOn(HTMLMediaElement.prototype, 'volume', 'get').mockReturnValue(1);
-    vi.spyOn(HTMLMediaElement.prototype, 'volume', 'set').mockImplementation(() => {});
+    const volume = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'volume')!;
+    Object.defineProperty(HTMLMediaElement.prototype, 'volume', {
+      ...volume,
+      get: () => 1,
+      set: () => {},
+    });
     const root = createRoot(document.body);
     try {
       await act(async () =>
@@ -390,6 +394,7 @@ describe('VideoTile browser behavior', () => {
       expect(document.querySelector('video')!.muted).toBe(true);
     } finally {
       act(() => root.unmount());
+      Object.defineProperty(HTMLMediaElement.prototype, 'volume', volume);
     }
   });
 
@@ -554,6 +559,8 @@ describe('VideoTile browser behavior', () => {
       );
       const video = document.querySelector('video')!;
       expect(video.muted).toBe(true);
+      act(() => video.dispatchEvent(new Event('pause')));
+      expect(document.querySelector('button[aria-label="스터디원의 소리와 영상 재생"]')).toBeNull();
       await act(async () =>
         root.render(<VideoTile participant={participant} audioOutput={{ deviceId: 'new' }} />),
       );
@@ -569,11 +576,93 @@ describe('VideoTile browser behavior', () => {
       );
       expect(video.muted).toBe(true);
       expect(document.querySelector('[role="alert"]')?.textContent).toContain('선택한 스피커');
+      act(() => video.dispatchEvent(new Event('pause')));
+      expect(document.querySelector('button[aria-label="스터디원의 소리와 영상 재생"]')).toBeNull();
       await act(async () =>
         root.render(<VideoTile participant={participant} audioOutput={{ deviceId: 'missing' }} />),
       );
       expect(video.muted).toBe(false);
       expect(document.querySelector('[role="alert"]')).toBeNull();
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it.each([false, true])(
+    '일시정지 후 같은 영상과 음량으로 재생하고 내 쪽 음소거를 유지한다 (음소거: %s)',
+    async (muted) => {
+      const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+      const paused = vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockReturnValue(false);
+      const participant = remoteParticipant({} as MediaStream);
+      const root = createRoot(document.body);
+      try {
+        await act(async () => root.render(<VideoTile participant={participant} />));
+        const video = document.querySelector('video')!;
+        if (muted) {
+          await act(async () =>
+            document.querySelector<HTMLButtonElement>('.video-tile__local-mute')!.click(),
+          );
+        }
+        const slider = document.querySelector<HTMLInputElement>('input[type="range"]')!;
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+            slider,
+            '35',
+          );
+          slider.dispatchEvent(new Event('input', { bubbles: true }));
+          slider.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        expect(video.volume).toBe(0.35);
+        const previousCalls = play.mock.calls.length;
+        paused.mockReturnValue(true);
+        act(() => video.dispatchEvent(new Event('pause')));
+        const resume = document.querySelector<HTMLButtonElement>(
+          'button[aria-label="스터디원의 소리와 영상 재생"]',
+        );
+        expect(resume).not.toBeNull();
+        expect(play).toHaveBeenCalledTimes(previousCalls);
+        play.mockImplementationOnce(async () => {
+          paused.mockReturnValue(false);
+          video.dispatchEvent(new Event('playing'));
+        });
+        await act(async () => resume!.click());
+        expect(play).toHaveBeenCalledTimes(previousCalls + 1);
+        expect(
+          document.querySelector('button[aria-label="스터디원의 소리와 영상 재생"]'),
+        ).toBeNull();
+        expect(document.querySelector('video')).toBe(video);
+        expect(video.srcObject).toBe(participant.stream);
+        expect(video.muted).toBe(muted);
+        expect(video.volume).toBe(0.35);
+      } finally {
+        act(() => root.unmount());
+      }
+    },
+  );
+
+  it('브라우저에서 재생을 재개하면 안내를 지우고 늦은 재생 이벤트는 현재 상태로 판단한다', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const paused = vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockReturnValue(false);
+    const root = createRoot(document.body);
+    const recovery = () =>
+      document.querySelector('button[aria-label="스터디원의 소리와 영상 재생"]');
+    try {
+      await act(async () =>
+        root.render(<VideoTile participant={remoteParticipant({} as MediaStream)} />),
+      );
+      const video = document.querySelector('video')!;
+      paused.mockReturnValue(true);
+      act(() => video.dispatchEvent(new Event('pause')));
+      expect(recovery()).not.toBeNull();
+      paused.mockReturnValue(false);
+      act(() => video.dispatchEvent(new Event('playing')));
+      expect(recovery()).toBeNull();
+      act(() => video.dispatchEvent(new Event('pause')));
+      expect(recovery()).toBeNull();
+      paused.mockReturnValue(true);
+      act(() => video.dispatchEvent(new Event('pause')));
+      act(() => video.dispatchEvent(new Event('playing')));
+      expect(recovery()).not.toBeNull();
     } finally {
       act(() => root.unmount());
     }

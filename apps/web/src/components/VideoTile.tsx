@@ -68,7 +68,7 @@ export function VideoTile({
   const fullscreenShareGenerationRef = useRef(0);
   const latestFullscreenRequestGenerationRef = useRef(0);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
-  const [outputError, setOutputError] = useState(false);
+  const [outputStatus, setOutputStatus] = useState<'pending' | 'ready' | 'error'>('pending');
   const [mutedLocally, setMutedLocally] = useState(false);
   const [previewHidden, setPreviewHidden] = useState(false);
   const [retryError, setRetryError] = useState(false);
@@ -110,9 +110,10 @@ export function VideoTile({
     const attempt = ++playbackAttemptRef.current;
     video.muted = true;
     setPlaybackBlocked(false);
-    setOutputError(false);
+    setOutputStatus('pending');
     const play = () => {
       if (playbackAttemptRef.current !== attempt) return;
+      setOutputStatus('ready');
       video.muted = participant.isLocal || mutedLocally;
       void playVideo(video, attempt);
     };
@@ -125,7 +126,7 @@ export function VideoTile({
           }
           play();
         } catch {
-          if (playbackAttemptRef.current === attempt) setOutputError(true);
+          if (playbackAttemptRef.current === attempt) setOutputStatus('error');
         }
       });
     } else {
@@ -273,6 +274,14 @@ export function VideoTile({
             autoPlay
             muted
             playsInline
+            onPause={(event) => {
+              if (event.currentTarget.srcObject && event.currentTarget.paused) {
+                setPlaybackBlocked(true);
+              }
+            }}
+            onPlaying={(event) => {
+              if (!event.currentTarget.paused) setPlaybackBlocked(false);
+            }}
             disablePictureInPicture={!isRemoteScreenShare}
             aria-label={`${participant.displayName}의 영상`}
             aria-hidden={!showPreview}
@@ -412,7 +421,7 @@ export function VideoTile({
         </p>
       ) : null}
 
-      {hasStream && outputError ? (
+      {hasStream && outputStatus === 'error' ? (
         <div className="video-tile__playback-recovery">
           <span role="alert">선택한 스피커로 소리를 재생하지 못했습니다.</span>
           <button type="button" onClick={onSelectDevices}>
@@ -421,9 +430,9 @@ export function VideoTile({
         </div>
       ) : null}
 
-      {hasStream && playbackBlocked ? (
+      {hasStream && playbackBlocked && outputStatus === 'ready' ? (
         <div className="video-tile__playback-recovery">
-          <span role="status">자동 재생이 차단되었습니다.</span>
+          <span role="status">소리와 영상이 재생되지 않고 있습니다.</span>
           <button
             type="button"
             aria-label={`${participant.displayName}의 소리와 영상 재생`}
