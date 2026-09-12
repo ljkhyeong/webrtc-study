@@ -172,6 +172,98 @@ describe('통화 장치 설정', () => {
     expect(input.onClose).not.toHaveBeenCalled();
   });
 
+  it.each(['audio', 'video'] as const)(
+    '%s 실제 장치 변경을 표시하되 적용 전 선택과 실패 후 재시도 값은 유지한다',
+    async (kind) => {
+      const input = props();
+      let deviceId = `${kind}-1`;
+      const render = () =>
+        root.render(
+          <MediaDeviceDialog
+            {...input}
+            {...(kind === 'audio' ? { audioDeviceId: deviceId } : { videoDeviceId: deviceId })}
+          />,
+        );
+      mediaDevices.enumerateDevices.mockResolvedValue(
+        [1, 2, 3].map((index) => ({
+          deviceId: `${kind}-${index}`,
+          kind: kind === 'audio' ? 'audioinput' : 'videoinput',
+          label: `장치 ${index}`,
+        })),
+      );
+      await act(async () => render());
+      const row = container.querySelectorAll('.media-device-dialog__input')[
+        kind === 'audio' ? 0 : 1
+      ]!;
+      const select = row.querySelector('select')!;
+      const apply = row.querySelector('button')!;
+      deviceId = `${kind}-2`;
+      await act(async () => render());
+      expect(select.value).toBe(deviceId);
+      expect(input.onSelect).not.toHaveBeenCalled();
+      expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
+
+      act(() => {
+        select.value = `${kind}-3`;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      deviceId = `${kind}-1`;
+      await act(async () => render());
+      expect(select.value).toBe(`${kind}-3`);
+      input.onSelect.mockResolvedValueOnce(false);
+      await act(async () => apply.click());
+      expect(select.value).toBe(`${kind}-3`);
+      input.onSelect.mockImplementationOnce(async () => {
+        deviceId = `${kind}-3`;
+        render();
+        return true;
+      });
+      await act(async () => apply.click());
+      expect(input.onSelect).toHaveBeenLastCalledWith(kind, `${kind}-3`);
+      expect(select.value).toBe(deviceId);
+
+      deviceId = `${kind}-2`;
+      await act(async () => render());
+      expect(select.value).toBe(deviceId);
+    },
+  );
+
+  it('공유 종료로 복원된 카메라와 외부에서 완료된 품질 변경을 표시한다', async () => {
+    const input = props();
+    await act(async () => root.render(<MediaDeviceDialog {...input} screenSharing />));
+    const camera = container.querySelectorAll<HTMLSelectElement>('select')[1]!;
+    const quality = container.querySelector<HTMLSelectElement>('[aria-label="카메라 전송 품질"]')!;
+    await act(async () =>
+      root.render(
+        <MediaDeviceDialog
+          {...input}
+          videoDeviceId="restored-camera"
+          videoQualityMode="data-saver"
+        />,
+      ),
+    );
+    expect(camera.value).toBe('restored-camera');
+    expect(camera.disabled).toBe(false);
+    expect(quality.value).toBe('data-saver');
+    act(() => {
+      quality.value = 'standard';
+      quality.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () =>
+      root.render(
+        <MediaDeviceDialog
+          {...input}
+          videoDeviceId="restored-camera"
+          videoQualityMode="data-saver"
+        />,
+      ),
+    );
+    expect(quality.value).toBe('standard');
+    expect(input.onSelectVideoQuality).not.toHaveBeenCalled();
+    expect(input.onSelect).not.toHaveBeenCalled();
+    expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
+  });
+
   it.each([
     { phase: 'starting' as const, message: '화면 공유 준비 중', sharingAfter: true },
     { phase: 'stopping' as const, message: '화면 공유 중지 중', sharingAfter: false },

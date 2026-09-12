@@ -43,9 +43,12 @@ export function MediaDeviceDialog({
 }: MediaDeviceDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const mounted = useRef(false);
-  const [audio, setAudio] = useState(audioDeviceId);
-  const [video, setVideo] = useState(videoDeviceId);
-  const [quality, setQuality] = useState(videoQualityMode);
+  const [audioSelection, setAudio] = useState<string | null>(null);
+  const [videoSelection, setVideo] = useState<string | null>(null);
+  const [qualitySelection, setQuality] = useState<VideoQualityMode | null>(null);
+  const audio = audioSelection ?? audioDeviceId;
+  const video = videoSelection ?? videoDeviceId;
+  const quality = qualitySelection ?? videoQualityMode;
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [pending, setPending] = useState<'audio' | 'video' | 'quality' | null>(null);
   const [notice, setNotice] = useState('');
@@ -99,6 +102,7 @@ export function MediaDeviceDialog({
       const changed = await onSelect(kind, kind === 'audio' ? audio : video);
       if (!mounted.current) return;
       if (changed) {
+        (kind === 'audio' ? setAudio : setVideo)(null);
         setNotice(`${kind === 'audio' ? '마이크' : '카메라'}를 변경했습니다.`);
         setRefresh((value) => value + 1);
       } else {
@@ -120,8 +124,10 @@ export function MediaDeviceDialog({
     try {
       const applied = await onSelectVideoQuality(quality);
       if (!mounted.current) return;
-      if (applied) setNotice('카메라 전송 품질을 적용했습니다.');
-      else
+      if (applied) {
+        setQuality(null);
+        setNotice('카메라 전송 품질을 적용했습니다.');
+      } else
         setError(
           '일부 참가자에게 카메라 품질을 적용하지 못했습니다. 다시 적용하거나 카메라를 꺼 주세요.',
         );
@@ -177,7 +183,7 @@ export function MediaDeviceDialog({
               >
                 <option value="">브라우저 기본 {label}</option>
                 {selected && !options.some((device) => device.deviceId === selected) ? (
-                  <option value={selected}>현재 {label} (장치 목록에 없음)</option>
+                  <option value={selected}>선택한 {label} (장치 목록에 없음)</option>
                 ) : null}
                 {options.map((device, index) => (
                   <option key={device.deviceId} value={device.deviceId}>
