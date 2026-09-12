@@ -105,6 +105,11 @@ Google Calendar API로 BATON 일정과 ROUND 입장 링크를 개인 캘린더�
 카메라 버튼을 해제한다. 웹 화면에서 바꾼 장치 상태도 작은 창에 반영한다.
 [Chrome 공식 통화 제어 예제](https://googlechrome.github.io/samples/media-session/video-conferencing.html).
 
+화면 공유 요청에는 현재 ROUND 탭을 선택 목록에서 제외하고, 공유 중 다른 탭으로 바꾸는
+브라우저 버튼을 표시하도록 명시했다. 일반·문서/코드 모드에 함께 적용하며,
+옵션을 지원하지 않는 브라우저에서는 기존 화면 선택창을 사용한다.
+[화면 공유 선택 옵션](https://developer.chrome.com/docs/web-platform/screen-sharing-controls).
+
 ## 5. 타이머 종료: 데스크톱 알림 적용
 
 타이머에서 **종료 데스크톱 알림**을 켜면 브라우저 알림 권한을 요청한다. 설정은 현재 입장에만
