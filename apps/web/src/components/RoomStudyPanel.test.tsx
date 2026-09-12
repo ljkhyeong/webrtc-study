@@ -103,6 +103,38 @@ describe('타이머 종료 안내', () => {
     expect(document.title).toBe('ROUND');
   });
 
+  it('서버가 확정한 종료만 한 번 데스크톱에 알리고 이미 끝난 타이머는 알리지 않는다', async () => {
+    const shown = vi.fn();
+    const close = vi.fn();
+    vi.stubGlobal(
+      'Notification',
+      class {
+        static permission = 'granted';
+        close = close;
+        constructor(title: string, options: NotificationOptions) {
+          shown(title, options);
+        }
+      },
+    );
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    render({ remainingMs: 0, running: false });
+    const toggle = () =>
+      container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1]!.click();
+    await act(async () => toggle());
+    expect(shown).not.toHaveBeenCalled();
+    render();
+    now = 2000;
+    act(() => vi.advanceTimersByTime(2000));
+    expect(shown).not.toHaveBeenCalled();
+    expect(onSync).toHaveBeenCalledOnce();
+    render({ running: false, remainingMs: 0, sampledAt: now });
+    expect(shown).toHaveBeenCalledWith('ROUND 타이머', { body: '집중 시간이 끝났습니다' });
+    render({ running: false, remainingMs: 0, sampledAt: now });
+    expect(shown).toHaveBeenCalledOnce();
+    render({ revision: 2, remainingMs: 60_000, sampledAt: now });
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it('진행 중 교체·초기화를 확인하고 취소하면 명령을 보내지 않으며 승인한 개정으로 한 번 변경한다', () => {
     const button = (text: string) =>
       [...container.querySelectorAll('button')].find((el) => el.textContent === text)!;

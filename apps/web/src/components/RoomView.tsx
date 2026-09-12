@@ -30,6 +30,7 @@ import { canonicalRoomUrl } from '../lib/room';
 import { RoomChatPanel, type ChatNotificationSummary } from './RoomChatPanel';
 import { ConnectionDiagnosticsPanel } from './ConnectionDiagnosticsPanel';
 import { useRoomShortcuts } from '../lib/use-room-shortcuts';
+import { useCallMediaSession } from '../lib/use-call-media-session';
 import type { RegisterLeaveGuard } from '../lib/use-room-navigation';
 
 type RoomSystemNoticeId =
@@ -271,6 +272,15 @@ export function RoomView({
   };
 
   const isActive = status === 'active';
+  useCallMediaSession({
+    active: isActive,
+    audioAvailable,
+    audioEnabled,
+    cameraAvailable: videoAvailable && !screenSharing && screenSharePending === null,
+    cameraEnabled: videoEnabled,
+    onToggleAudio,
+    onToggleVideo,
+  });
   const handRaised = participants.some(
     (participant) => participant.isLocal && participant.handRaised,
   );

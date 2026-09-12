@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RoomStudySnapshot, StudyCommand, StudyMode } from '@round/rtc-core';
 import { createTimerChime } from '../lib/timer-chime';
+import { useTimerNotifications } from '../lib/use-timer-notifications';
 import { TimerChangeDialog } from './TimerChangeDialog';
 
 interface RoomStudyPanelProps {
@@ -32,6 +33,11 @@ export function RoomStudyPanel({
   const [completion, setCompletion] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [soundNotice, setSoundNotice] = useState('');
+  const desktopNotification = useTimerNotifications();
+  const { notify, close: closeNotification } = desktopNotification;
+  useEffect(() => {
+    if (!completion || !active) closeNotification();
+  }, [completion, active, closeNotification]);
   const [pendingChange, setPendingChange] = useState<{
     command: StudyCommand;
     revision: number;
@@ -120,7 +126,9 @@ export function RoomStudyPanel({
       }
       armed.current = false;
       completedRevision.current = state.revision;
-      setCompletion(`${state.mode === 'break' ? '휴식' : '집중'} 시간이 끝났습니다`);
+      const message = `${state.mode === 'break' ? '휴식' : '집중'} 시간이 끝났습니다`;
+      setCompletion(message);
+      notify(message);
       if (chime.current) {
         try {
           if (!chime.current.play())
@@ -130,7 +138,7 @@ export function RoomStudyPanel({
         }
       }
     }
-  }, [state, active, remaining, onSync]);
+  }, [state, active, remaining, onSync, notify]);
   const toggleSound = () => {
     setSoundNotice('');
     if (chime.current) {
@@ -227,6 +235,18 @@ export function RoomStudyPanel({
             종료 알림음 · 기기 기본 스피커
           </label>
           {soundNotice ? <p role="status">{soundNotice}</p> : null}
+          {desktopNotification.supported ? (
+            <label className="room-study__sound">
+              <input
+                type="checkbox"
+                checked={desktopNotification.enabled}
+                disabled={desktopNotification.pending}
+                onChange={() => void desktopNotification.toggle()}
+              />
+              종료 데스크톱 알림 · 다른 창 사용 중
+            </label>
+          ) : null}
+          {desktopNotification.notice ? <p role="status">{desktopNotification.notice}</p> : null}
           <p role="status">
             {active
               ? `${state?.mode === 'break' ? '휴식' : '집중'} ${label}`
