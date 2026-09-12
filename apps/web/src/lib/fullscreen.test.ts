@@ -101,21 +101,44 @@ describe('video fullscreen compatibility', () => {
     expect(exitFullscreen).toHaveBeenCalledOnce();
   });
 
-  it('continues to the prefixed document exit API when standard exit is rejected', async () => {
-    const exitFullscreen = vi.fn(async () => {
-      throw new DOMException('denied', 'NotAllowedError');
-    });
-    const webkitExitFullscreen = vi.fn(async () => {});
-    const video = {} as HTMLVideoElement;
+  it.each(['video', 'container'])(
+    '표준 종료가 거부되면 현재 %s 전체 화면을 호환 API로 닫는다',
+    async (owner) => {
+      const exitFullscreen = vi.fn(async () => {
+        throw new DOMException('denied', 'NotAllowedError');
+      });
+      const webkitExitFullscreen = vi.fn(async () => {});
+      const video = {} as HTMLVideoElement;
+      const container = {} as HTMLElement;
+      const fullscreenElement = owner === 'video' ? video : container;
+      const documentRef = {
+        fullscreenElement,
+        exitFullscreen,
+        webkitFullscreenElement: fullscreenElement,
+        webkitExitFullscreen,
+      } as unknown as Document;
+
+      await expect(exitVideoFullscreen(video, documentRef, container)).resolves.toBe(true);
+      expect(exitFullscreen).toHaveBeenCalledOnce();
+      expect(webkitExitFullscreen).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('다른 참가자의 전체 화면은 닫지 않는다', async () => {
+    const exitFullscreen = vi.fn();
+    const webkitExitFullscreen = vi.fn();
+    const other = {} as HTMLElement;
     const documentRef = {
-      fullscreenElement: video,
+      fullscreenElement: other,
+      webkitFullscreenElement: other,
       exitFullscreen,
-      webkitFullscreenElement: video,
       webkitExitFullscreen,
     } as unknown as Document;
 
-    await expect(exitVideoFullscreen(video, documentRef)).resolves.toBe(true);
-    expect(exitFullscreen).toHaveBeenCalledOnce();
-    expect(webkitExitFullscreen).toHaveBeenCalledOnce();
+    await expect(
+      exitVideoFullscreen({} as HTMLVideoElement, documentRef, {} as HTMLElement),
+    ).resolves.toBe(false);
+    expect(exitFullscreen).not.toHaveBeenCalled();
+    expect(webkitExitFullscreen).not.toHaveBeenCalled();
   });
 });

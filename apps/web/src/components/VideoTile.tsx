@@ -64,9 +64,8 @@ export function VideoTile({
   const tileRef = useRef<HTMLElement>(null);
   const zoomHelpId = useId();
   const playbackAttemptRef = useRef(0);
-  const fullscreenAttemptRef = useRef(0);
+  const fullscreenRequestPending = useRef(false);
   const fullscreenShareGenerationRef = useRef(0);
-  const latestFullscreenRequestGenerationRef = useRef(0);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [outputStatus, setOutputStatus] = useState<'pending' | 'ready' | 'error'>('pending');
   const [mutedLocally, setMutedLocally] = useState(false);
@@ -75,6 +74,7 @@ export function VideoTile({
   const outputChange = useRef(Promise.resolve());
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreenPending, setFullscreenPending] = useState(false);
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -183,13 +183,11 @@ export function VideoTile({
     fullscreenShareGenerationRef.current = generation;
     if (isRemoteScreenShare) {
       return () => {
-        fullscreenAttemptRef.current += 1;
         if (fullscreenShareGenerationRef.current === generation) {
           fullscreenShareGenerationRef.current += 1;
         }
       };
     }
-    fullscreenAttemptRef.current += 1;
     setFullscreenError(null);
     const video = videoRef.current;
     if (video !== null) {
@@ -198,16 +196,28 @@ export function VideoTile({
     return undefined;
   }, [isRemoteScreenShare]);
 
-  async function openFullscreen() {
+  async function toggleFullscreen() {
+    if (fullscreenRequestPending.current) return;
+    fullscreenRequestPending.current = true;
+    setFullscreenPending(true);
+    try {
+      await changeFullscreen();
+    } finally {
+      fullscreenRequestPending.current = false;
+      setFullscreenPending(false);
+    }
+  }
+
+  async function changeFullscreen() {
     const video = videoRef.current;
     if (video === null) {
       return;
     }
+    const shareGeneration = fullscreenShareGenerationRef.current;
     if (isVideoFullscreen(video, tileRef.current ?? undefined)) {
-      const closeAttempt = ++fullscreenAttemptRef.current;
       setFullscreenError(null);
       const exited = await exitVideoFullscreen(video, undefined, tileRef.current ?? undefined);
-      if (fullscreenAttemptRef.current !== closeAttempt) return;
+      if (fullscreenShareGenerationRef.current !== shareGeneration) return;
       setFullscreen(isVideoFullscreen(video, tileRef.current ?? undefined));
       if (!exited)
         setFullscreenError(
@@ -216,21 +226,11 @@ export function VideoTile({
       return;
     }
 
-    const attempt = fullscreenAttemptRef.current + 1;
-    fullscreenAttemptRef.current = attempt;
-    const shareGeneration = fullscreenShareGenerationRef.current;
-    latestFullscreenRequestGenerationRef.current = shareGeneration;
     setFullscreenError(null);
     const container = tileRef.current ?? undefined;
     const entered = await enterVideoFullscreen(video, container);
-    if (fullscreenAttemptRef.current !== attempt) {
-      if (
-        entered &&
-        fullscreenShareGenerationRef.current !== shareGeneration &&
-        latestFullscreenRequestGenerationRef.current === shareGeneration
-      ) {
-        await exitVideoFullscreen(video, undefined, container);
-      }
+    if (fullscreenShareGenerationRef.current !== shareGeneration) {
+      if (entered) await exitVideoFullscreen(video, undefined, container);
       return;
     }
     if (!entered) {
@@ -403,10 +403,13 @@ export function VideoTile({
           <button
             type="button"
             aria-label={`${participant.displayName}의 화면 공유 ${fullscreen ? '전체 화면 닫기' : '전체 화면으로 보기'}`}
-            onClick={() => void openFullscreen()}
+            disabled={fullscreenPending}
+            onClick={() => void toggleFullscreen()}
           >
             <FullscreenIcon />
-            <span>{fullscreen ? '전체 화면 닫기' : '전체 화면'}</span>
+            <span>
+              {fullscreenPending ? '전환 중' : fullscreen ? '전체 화면 닫기' : '전체 화면'}
+            </span>
           </button>
           {pictureInPicture.error || fullscreenError ? (
             <p className="video-tile__fullscreen-error" role="alert">

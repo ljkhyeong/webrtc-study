@@ -92,7 +92,8 @@ export async function exitVideoFullscreen(
   }
 
   if (
-    webkitDocument?.webkitFullscreenElement === video &&
+    (webkitDocument?.webkitFullscreenElement === video ||
+      (container && webkitDocument?.webkitFullscreenElement === container)) &&
     typeof webkitDocument.webkitExitFullscreen === 'function'
   ) {
     try {

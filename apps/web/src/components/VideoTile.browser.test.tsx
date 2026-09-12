@@ -55,7 +55,7 @@ function installFullscreenDocument() {
     exitFullscreen: { configurable: true, value: exitFullscreen },
   });
   return {
-    enter: (element: Element) => {
+    enter: (element: Element | null) => {
       fullscreenElement = element;
     },
     exitFullscreen,
@@ -741,10 +741,10 @@ describe('VideoTile browser behavior', () => {
     }
   });
 
-  it('does not let an older fullscreen request close the newer request', async () => {
+  it('전체 화면을 열고 닫는 동안 중복 요청을 막고 완료 후 버튼을 복원한다', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     const firstRequest = deferredCompletion();
-    const secondRequest = deferredCompletion();
+    const closeRequest = deferredCompletion();
     const fullscreenDocument = installFullscreenDocument();
     const container = document.createElement('div');
     document.body.append(container);
@@ -761,16 +761,10 @@ describe('VideoTile browser behavior', () => {
       );
       expect(video).not.toBeNull();
       expect(fullscreenButton).not.toBeNull();
-      const requestFullscreen = vi
-        .fn<() => Promise<void>>()
-        .mockImplementationOnce(async function (this: HTMLVideoElement) {
-          await firstRequest.promise;
-          fullscreenDocument.enter(this);
-        })
-        .mockImplementationOnce(async function (this: HTMLVideoElement) {
-          await secondRequest.promise;
-          fullscreenDocument.enter(this);
-        });
+      const requestFullscreen = vi.fn(async function (this: HTMLVideoElement) {
+        await firstRequest.promise;
+        fullscreenDocument.enter(this);
+      });
       Object.defineProperty(video, 'requestFullscreen', {
         configurable: true,
         value: requestFullscreen,
@@ -780,22 +774,69 @@ describe('VideoTile browser behavior', () => {
         fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
-      await act(async () => {
-        secondRequest.resolve();
-      });
-
-      expect(requestFullscreen).toHaveBeenCalledTimes(2);
-      expect(fullscreenDocument.exitFullscreen).not.toHaveBeenCalled();
-
+      expect(requestFullscreen).toHaveBeenCalledOnce();
+      expect(fullscreenButton?.disabled).toBe(true);
+      expect(fullscreenButton?.textContent).toContain('전환 중');
       await act(async () => {
         firstRequest.resolve();
       });
 
+      expect(fullscreenButton?.disabled).toBe(false);
+      expect(fullscreenButton?.textContent).toContain('전체 화면 닫기');
       expect(fullscreenDocument.exitFullscreen).not.toHaveBeenCalled();
+
+      fullscreenDocument.exitFullscreen.mockImplementationOnce(async () => {
+        await closeRequest.promise;
+        fullscreenDocument.enter(null);
+      });
+      act(() => {
+        fullscreenButton?.click();
+        fullscreenButton?.click();
+      });
+      expect(fullscreenDocument.exitFullscreen).toHaveBeenCalledOnce();
+      expect(fullscreenButton?.disabled).toBe(true);
+      await act(async () => {
+        closeRequest.resolve();
+      });
+
+      expect(document.fullscreenElement).toBeNull();
+      expect(fullscreenButton?.disabled).toBe(false);
+      expect(fullscreenButton?.textContent).toBe('전체 화면');
+      expect(video?.srcObject).toBe(stream);
     } finally {
       act(() => {
         root.unmount();
       });
+    }
+  });
+
+  it('전체 화면 전환이 실패해도 버튼을 복원해 다시 시도할 수 있다', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const fullscreen = installFullscreenDocument();
+    const root = createRoot(document.body);
+    try {
+      await act(async () =>
+        root.render(<VideoTile participant={remoteParticipant({} as MediaStream, 'screen')} />),
+      );
+      const video = document.querySelector('video')!;
+      const requestFullscreen = vi
+        .fn(async () => fullscreen.enter(video))
+        .mockRejectedValueOnce(new Error('denied'));
+      Object.defineProperty(video, 'requestFullscreen', { value: requestFullscreen });
+      const button = document.querySelector<HTMLButtonElement>('[aria-label*="전체 화면"]')!;
+
+      await act(async () => button.click());
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+        '전체 화면으로 열지 못했습니다.',
+      );
+      expect(button.disabled).toBe(false);
+      await act(async () => button.click());
+      expect(requestFullscreen).toHaveBeenCalledTimes(2);
+      expect(document.fullscreenElement).toBe(video);
+      expect(button.disabled).toBe(false);
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+    } finally {
+      act(() => root.unmount());
     }
   });
 
