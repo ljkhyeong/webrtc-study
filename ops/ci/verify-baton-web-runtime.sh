@@ -47,8 +47,11 @@ request() {
 
   metadata=$(
     curl \
+      --disable \
       --silent \
       --show-error \
+      --connect-timeout 5 \
+      --max-time 15 \
       --output "$fixture_dir/$name.body" \
       --write-out $'%{http_code}\n%header{cache-control}' \
       "$base_url$path"
