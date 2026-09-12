@@ -95,13 +95,19 @@ Origin·헤더 값, Cloudflare API 토큰, 발급한 TURN 자격 증명은 로�
 전송 로그에는 고정된 메시지와 예외 클래스만 포함합니다. 참여권 만료에 따른 종료 지표에도
 참가자·방·참여권 식별자를 태그로 남기지 않습니다.
 
-## Cloudflare TURN 자격 증명
+## TURN 자격 증명
 
-운영에서는 `TURN_PROVIDER=cloudflare`, `TURN_CLOUDFLARE_KEY_ID`,
-`TURN_CLOUDFLARE_API_TOKEN`을 함께 설정합니다. 로컬 STUN 전용 개발은
-`TURN_PROVIDER=disabled`를 사용하고 두 Cloudflare 값을 비워 둡니다. 구성이 맞지 않으면
-자격 증명을 출력하지 않고 시작에 실패합니다. `TURN_CREDENTIAL_TTL_SECONDS`의 기본값은
-600초(10분)입니다.
+`TURN_PROVIDER`로 `coturn`, `cloudflare`, `disabled`를 선택합니다.
+
+- `coturn`: `TURN_COTURN_URLS`(쉼표 구분)와 `TURN_COTURN_SECRET`(32자 이상)을 설정합니다.
+  공유키는 coturn의 `static-auth-secret`과 같아야 합니다. Cloudflare 설정은 비웁니다.
+- `cloudflare`: `TURN_CLOUDFLARE_KEY_ID`와 `TURN_CLOUDFLARE_API_TOKEN`을 설정하고 coturn 설정은 비웁니다.
+- `disabled`: 두 공급자의 설정을 모두 비웁니다. 로컬 STUN 전용 개발의 기본값입니다.
+
+구성이 맞지 않으면 자격 증명을 출력하지 않고 시작에 실패합니다. `TURN_CREDENTIAL_TTL_SECONDS`의
+기본값은 600초(10분)입니다. coturn은 TURN REST 규격의 HMAC-SHA1 임시 자격 증명을 발급하며
+외부 API를 호출하지 않습니다. 공유키는 브라우저 응답에 포함하지 않습니다.
+추가 과금 없는 홈서버의 도메인·포트·인증서 연결은 [연동 설정](../../docs/home-server-integrations.md)을 따릅니다.
 
 자격 증명 발급 횟수는 다음 설정으로 제한합니다.
 

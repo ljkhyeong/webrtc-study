@@ -51,6 +51,10 @@ docker run --rm -it caddy:2.11.4-alpine \
 Cloudflare API 토큰과 Caddy 비밀번호 해시를 담은 환경 파일은 일반 파일로 만들고,
 소유자만 읽고 쓸 수 있도록 권한을 0600으로 설정합니다. 심볼릭 링크는 배포 도구가 거부합니다.
 
+홈서버의 coturn 중계를 선택하면 `TURN_PROVIDER=coturn`, `TURN_COTURN_URLS`,
+`TURN_COTURN_SECRET`을 설정하고 Cloudflare 두 값은 비웁니다. 공급자별 필수값은 서버 시작 때
+검증합니다. [홈서버 연동 설정](home-server-integrations.md)을 참고하세요.
+
 ## Cloudflare TURN 계약
 
 시그널링 서버는 인증·Origin·Fetch Metadata 검사와 발급 한도 검사를 통과한 요청에만

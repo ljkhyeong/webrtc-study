@@ -9,7 +9,7 @@ BATON에서는 로그인·방 참여 권한을 먼저 확인하고, ROUND의 입
 
 ROUND는 최대 6명이 서로 연결하는 메시(mesh) 구조입니다. 시그널링 서버는 참가자와 연결
 정보를 관리하고 현재 방의 타이머·주제를 임시 보관합니다. 시그널링 서버는 영상·음성을
-저장하거나 중계하지 않습니다. 브라우저 간 직접 연결이 어려우면 Cloudflare TURN이 중계합니다.
+저장하거나 중계하지 않습니다. 브라우저 간 직접 연결이 어려우면 설정한 TURN 서버가 중계합니다.
 
 ## 주요 기능
 
@@ -164,9 +164,11 @@ GITHUB_RUN_ID=local GITHUB_RUN_ATTEMPT=1 npm run test:e2e:ios-safari
 | `VITE_STUN_URLS`                                      | Cloudflare 공개 STUN    | 쉼표로 구분한 STUN 주소         |
 | `VITE_TURN_CREDENTIALS_URL`                           | `/api/turn-credentials` | 독립 실행 시 TURN API 주소      |
 | `VITE_ICE_TRANSPORT_POLICY`                           | `all`                   | `relay`이면 TURN만 강제         |
-| `TURN_PROVIDER`                                       | `disabled`              | `disabled` 또는 `cloudflare`    |
+| `TURN_PROVIDER`                                       | `disabled`              | TURN 제공자                     |
 | `TURN_CLOUDFLARE_KEY_ID`                              | 없음                    | Cloudflare TURN 키 ID           |
 | `TURN_CLOUDFLARE_API_TOKEN`                           | 없음                    | Cloudflare TURN API 토큰        |
+| `TURN_COTURN_URLS`                                    | 없음                    | 쉼표로 구분한 coturn 주소       |
+| `TURN_COTURN_SECRET`                                  | 없음                    | coturn 공유키(서버 전용)        |
 | `TURN_CREDENTIAL_TTL_SECONDS`                         | `600`                   | TURN 자격 증명 수명(초)         |
 | `TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS`           | `600`                   | IP별 발급 제한 구간(초)         |
 | `TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS`             | `12`                    | 구간당 IP별 최대 발급 시도 수   |
@@ -231,18 +233,21 @@ packages/
 사용하려면 웹은 HTTPS, 시그널링은 WSS로 배포해야 합니다.
 
 기본 STUN 설정만으로는 회사·학교망이나 제한적인 NAT 환경에서 연결을 보장할 수 없습니다.
-실사용 배포에는 TURN 서비스가 필요합니다. ROUND의 Java 서버는 Cloudflare API에서 짧은
-수명의 자격 증명을 받아 브라우저에 전달하며 API 토큰을 브라우저 번들에 넣지 않습니다.
+실사용 배포에는 TURN 서비스가 필요합니다. ROUND는 coturn의 임시 자격 증명을 발급하거나
+Cloudflare API에서 받아 브라우저에 전달합니다. 공유키와 API 토큰은 브라우저 번들에 넣지 않습니다.
 메시 방식은 참가자마다
 업로드 스트림 수가 늘어나므로 영상은 기본 640×360, 최대 15fps이며 첫 버전은 6명으로
 제한합니다.
 
 운영 배포에는 Caddy와 Java 시그널링 서버 1대를 포함한 Compose 구성이 준비되어
-있습니다. TURN 중계는 Cloudflare가 운영합니다. 웹 앱·WebSocket·TURN 자격 증명 API는
+있습니다. TURN은 자체 coturn 또는 Cloudflare를 선택합니다. 웹 앱·WebSocket·TURN 자격 증명 API는
 Caddy의 HTTPS 공유 인증 뒤에 두고, `/healthz`만 공개합니다. 서버 준비, 접근 비밀번호 해시, DNS,
 방화벽, Cloudflare 키, TURN 중계 전용 검증과 롤백 절차는 [배포 가이드](docs/deployment.md)를
 따르세요. 스터디 그룹에 공개하기 전에는 [파일럿 체크리스트](docs/pilot-checklist.md)를
 모두 통과해야 합니다.
+
+추가 과금 없는 홈서버 연동과 `b4ton.com` 서브도메인 관련 조건은
+[홈서버 연동 검토](docs/home-server-integrations.md)에 정리했습니다.
 
 ## BATON 연동과 역할
 

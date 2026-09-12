@@ -1,0 +1,101 @@
+# 추가 과금 없는 연동 검토
+
+검토일: 2026-09-12. 대상은 ROUND 코드와 연동 설정이다. 홈서버 설치나 DNS 변경은 포함하지 않는다.
+Ubuntu 홈서버의 k3s, `b4ton.com`과 서비스별 서브도메인, 기존 Let’s Encrypt 자동 갱신을 전제로 한다.
+
+## 적용 결과
+
+| 대상               | 선택                          | 줄어드는 작업                                     | 이번 변경                                            |
+| ------------------ | ----------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
+| 통화 중계          | 홈서버 coturn                 | NAT 중계 서버·인증 프로토콜을 직접 만들 필요 없음 | `TURN_PROVIDER=coturn` 지원, 설정 예시 추가          |
+| 서버 지표·경보     | 로컬 Prometheus               | 지표 저장·조회·경보 판단을 직접 구현하지 않음     | 기존 Actuator와 경보 6개를 재사용하는 수집 설정 추가 |
+| 유동 IP의 DNS 갱신 | ddclient → Cloudflare DNS API | IP 확인·변경 감지·DNS API 호출 스크립트 불필요    | 선택적인 설정 예시 추가. 고정 IP면 사용하지 않음     |
+| 인증서             | 기존 Let’s Encrypt 자동 갱신  | 발급·갱신 작업 중복 방지                          | 기존 체계 사용, 새 갱신 프로그램 추가 없음           |
+| 초대 공유·QR       | Web Share API·qrcode          | 외부 링크·QR 생성 API 불필요                      | 기존 연동 유지                                       |
+| 브라우저 오류      | 기존 Faro 연동                | 별도 오류 수집 API·조회 화면 불필요               | 기본 비활성 유지, 사용 시 기존 무료 플랜 조건 확인   |
+
+coturn과 Prometheus는 외부 유료 API 대신 표준 오픈소스를 연동하는 선택이다. 사용량 과금은 없지만
+홈서버의 전력·저장 공간·회선 자원을 사용한다. 로컬 Prometheus만으로 홈서버 전원·회선 장애를
+외부에서 감지할 수는 없다. 외부 장애 감시는 기존 [모니터링 연동](external-monitoring.md)을 참고한다.
+
+## 통화 중계
+
+Cloudflare TURN은 월 1,000GB 무료 구간 이후 송신량에 따라 과금된다. 따라서 추가 과금을 피하는
+홈서버 구성에는 coturn을 선택한다. 기존 Cloudflare 연동은 선택지로 유지하며 자동 전환하지 않는다.
+[Cloudflare 요금](https://developers.cloudflare.com/realtime/), [coturn](https://github.com/coturn/coturn).
+
+ROUND 시그널링 설정:
+
+```dotenv
+TURN_PROVIDER=coturn
+TURN_COTURN_URLS=turn:turn.b4ton.com:3478?transport=udp,turn:turn.b4ton.com:3478?transport=tcp,turns:turn.b4ton.com:5349?transport=tcp
+TURN_COTURN_SECRET=
+TURN_CLOUDFLARE_KEY_ID=
+TURN_CLOUDFLARE_API_TOKEN=
+```
+
+공유키는 32자 이상의 무작위 값으로 생성해 Kubernetes Secret 등 Git 밖에 보관한다. coturn의
+`static-auth-secret`에도 같은 값을 넣는다. 브라우저에는 공유키 대신 만료 시각과 무작위 식별자로
+만든 사용자명, HMAC-SHA1 서명을 전달한다. 이는 coturn의 TURN REST 인증 규격이며 외부 HTTP 호출은 없다.
+기존 참여권 만료·요청 제한·갱신 주기·브라우저 응답 형식을 그대로 사용한다.
+[인증 규격](https://github.com/coturn/coturn/blob/master/examples/etc/turnserver.conf).
+
+[coturn 설정 예시](../ops/coturn/turnserver.conf.example)의 IP와 인증서 경로를 실제 값으로 바꾼다.
+
+- `turn.b4ton.com`은 공인 IPv4를 가리키는 **DNS only A 레코드**를 사용한다. Cloudflare HTTP 프록시로 TURN을 전달하지 않는다.
+- 공유기와 호스트 방화벽에 TCP·UDP 3478, TCP 5349, UDP 49160–49259를 같은 포트 번호로 전달한다.
+- k3s에서 coturn은 `hostNetwork`로 실행하고 `listening-ip`·`relay-ip`에는 노드의 LAN IP를 사용한다. `external-ip`에는 공인 IP/LAN IP를 지정한다. 일반 HTTP Ingress를 통과시키지 않는다.
+- 인증서는 `turn.b4ton.com`을 포함해야 한다. 기존 갱신 도구가 갱신한 인증서를 coturn에 연결하고, 기존 갱신 후 처리에서 coturn이 새 인증서를 읽도록 재시작한다. 진행 중인 중계 통화에 영향이 있으므로 통화가 없는 시간에 적용한다.
+- 443만 허용하는 제한망까지 이 구성으로 보장할 수는 없다. 443은 웹 서비스가 사용하므로 TURN TLS는 5349를 사용한다.
+- 예시의 총 allocation 한도는 120개다. 참가자 수와 같은 값이 아니며 여러 피어 연결·전송 방식이 각각 allocation을 사용할 수 있다.
+
+공유키 교체·중계 서버 재시작·공인 IP 변경은 진행 중인 통화에 영향을 줄 수 있다. DNS 갱신만으로
+coturn의 `external-ip` 설정까지 바뀌지는 않는다. 실제 운영 전에는 서로 다른 외부망의 두 참가자로
+`iceTransportPolicy=relay`에서 영상·음성·채팅을 확인한다. 로컬 통과와 외부망 통과는 구분한다.
+
+## DNS와 서비스 주소
+
+기본 주소는 `b4ton.com`, 서비스 주소는 `round.b4ton.com`, `cal.b4ton.com`으로 정한다.
+`b4ton.com`과 `turn.b4ton.com`의 A 레코드를 공인 IP로 지정하고, 웹 서비스 서브도메인은
+`b4ton.com`을 가리키는 CNAME으로 둘 수 있다. TURN은 프록시된 웹 호스트의 CNAME 대신 별도 DNS only A를 유지한다.
+IPv6 경로를 준비하지 않았다면 AAAA 레코드를 추가하지 않는다.
+
+유동 IP라면 [ddclient 설정 예시](../ops/dns/ddclient.conf.example)로 두 A 레코드를 갱신한다.
+토큰은 `b4ton.com`의 DNS 편집·Zone 읽기 권한으로 제한한다. 새 DDNS 서비스를 구독하거나
+ROUND에 DNS 관리 API를 추가할 필요는 없다. 고정 IP라면 이 구성도 불필요하다.
+[Cloudflare 안내](https://developers.cloudflare.com/dns/manage-dns-records/how-to/managing-dynamic-ip-addresses/),
+[ddclient 공식 설정](https://github.com/ddclient/ddclient/blob/main/ddclient.conf.in).
+
+**ROUND의 공개 주소 전환에는 BATON 측 인증 연동이 필요하다.** 현재 브라우저는 같은 출처의
+`/api/v1/auth/session`과 방별 참여권 갱신 API를 호출하고, 참여권 쿠키는 host-only다.
+DNS만 `round.b4ton.com`으로 바꾸면 로그인이 전달되지 않는다. 쿠키 Domain을 `.b4ton.com`으로
+넓혀 해결하지 않는다. 현재 계약을 유지하려면 공유 링크를 BATON의 `/room/{roomId}`로 연결하고,
+`round.b4ton.com`에서도 해당 BATON 경로로 연결한다. 주소창까지 ROUND 도메인으로 분리하려면
+BATON에서 일회용 입장 코드 교환 등 서브도메인 로그인 계약을 먼저 구현해야 한다.
+이번 변경은 해당 인증·라우팅을 변경하지 않았다. [현재 계약](adr/0001-round-independent-service.md).
+
+## 로컬 지표 수집
+
+[prometheus-local.yml](../ops/observability/prometheus-local.yml)과 기존
+[round-alerts.yml](../ops/observability/round-alerts.yml)을 Prometheus의 `/etc/prometheus`에 연결한다.
+수집 주소는 실제 k3s Service·namespace에 맞춘다. `/actuator/prometheus`와 Prometheus 관리 화면은
+외부 Ingress로 공개하지 않는다. Grafana는 이 Prometheus를 데이터 소스로 사용할 수 있다.
+
+초기 보관 한도는 실행 옵션 `--storage.tsdb.retention.time=7d`, `--storage.tsdb.retention.size=512MB`로
+줄일 수 있다. WAL·현재 수집 데이터는 별도 공간을 사용한다. 같은 지표를 Alloy와 Prometheus에서
+불필요하게 이중 수집하지 않는다. 알림 전송은 별도 Alertmanager 수신처가 필요하며, 이 설정은
+지표 수집과 경보 평가까지만 제공한다. [Prometheus 설정](https://prometheus.io/docs/prometheus/latest/configuration/configuration/).
+
+## 추가하지 않은 기능
+
+- 일정·공휴일·캘린더 API는 BATON/CAL의 책임이다. ROUND의 집중·휴식 타이머에는 외부 일정 데이터가 필요하지 않다.
+- 회의 SDK·녹화·자막 API는 사용량 과금 또는 별도 연산 자원이 필요하다. 현재 통화 코드를 교체할 만큼의 필요는 확인되지 않았다.
+- 외부 단축 URL·QR API는 이미 동작하는 초대 기능과 중복된다.
+- 결제·배송·주소 조회처럼 현재 ROUND에 없는 업무를 위한 API는 추가하지 않았다.
+
+## 확인 범위
+
+코드와 설정을 준비했으며 홈서버 설치·DNS 변경·실제 인증서 연결은 하지 않았다.
+관련 Java 테스트와 아키텍처 검사, coturn을 통한 로컬 두 참가자의 영상·음성·채팅,
+Prometheus 설정과 기존 경보 6개를 통과했다. coturn 설정은 테스트 인증서로 시작을 확인했다.
+외부망 중계, 실제 DNS 갱신, 인증서 갱신 후 반영은 운영 환경에서 확인할 항목이다.
