@@ -417,7 +417,7 @@ describe('RoomSession', () => {
     ]);
   });
 
-  it('최근 구간의 손실만 계산하고 참가자·네트워크 주소를 진단에서 제외한다', async () => {
+  it('최근 구간의 손실만 계산하고 참가자 ID·네트워크 주소를 진단에서 제외한다', async () => {
     const harness = createHarness();
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
     const peer = harness.peerConnections[0];
@@ -525,6 +525,7 @@ describe('RoomSession', () => {
       connections: [
         {
           connectionNumber: 1,
+          participantName: 'Ara',
           connectionState: 'connected',
           localCandidateType: 'relay',
           remoteCandidateType: 'srflx',
