@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { RoomSessionOptions } from '@round/rtc-core';
 import { ActiveRoom } from './components/ActiveRoom';
 import { LandingScreen } from './components/LandingScreen';
@@ -78,17 +78,15 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
   const [batonEntryGeneration, setBatonEntryGeneration] = useState(0);
   const preparedMediaStreamRef = useRef<MediaStream | null>(null);
 
-  const stopUnclaimedPreparedMedia = useCallback(() => {
-    const stream = preparedMediaStreamRef.current;
-    preparedMediaStreamRef.current = null;
-    stopMediaStreamTracks(stream);
-  }, []);
-
   const takePreparedMediaStream = useCallback(() => {
     const stream = preparedMediaStreamRef.current;
     preparedMediaStreamRef.current = null;
     return stream;
   }, []);
+
+  const stopUnclaimedPreparedMedia = useCallback(() => {
+    stopMediaStreamTracks(takePreparedMediaStream());
+  }, [takePreparedMediaStream]);
 
   useEffect(() => {
     if (activeRoomKey === null) {
@@ -201,20 +199,18 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
     );
   };
 
-  if (authMode !== 'baton') {
-    return (
-      <>
-        <ClientReleaseNotice
-          status={release.status}
-          inRoom={activeRoomKey !== null}
-          onRetry={() => void release.check()}
-        />
-        {renderRoomEntry()}
-      </>
+  let roomEntry: ReactNode;
+  if (authMode === 'baton') {
+    if (roomId === null) {
+      return <BatonRuntimeRoot />;
+    }
+    roomEntry = (
+      <BatonRoomEntryBoundary key={`${roomId}:${batonEntryGeneration}`} roomId={roomId}>
+        {renderRoomEntry}
+      </BatonRoomEntryBoundary>
     );
-  }
-  if (roomId === null) {
-    return <BatonRuntimeRoot />;
+  } else {
+    roomEntry = renderRoomEntry();
   }
   return (
     <>
@@ -223,9 +219,7 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
         inRoom={activeRoomKey !== null}
         onRetry={() => void release.check()}
       />
-      <BatonRoomEntryBoundary key={`${roomId}:${batonEntryGeneration}`} roomId={roomId}>
-        {renderRoomEntry}
-      </BatonRoomEntryBoundary>
+      {roomEntry}
     </>
   );
 }
