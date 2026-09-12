@@ -1,0 +1,13 @@
+# 유동 IPv4일 때만 사용합니다. ddclient 4.x 공식 Cloudflare 설정 기준입니다.
+# 실제 토큰이 담긴 설정은 Git 밖에서 관리합니다.
+daemon=300
+ssl=yes
+usev4=webv4, webv4=ipify-ipv4
+usev6=disabled
+
+protocol=cloudflare
+zone=b4ton.com
+ttl=300
+# b4ton.com에만 Zone:DNS:Edit, Zone:Zone:Read 권한을 부여한 API 토큰
+password=''
+b4ton.com,turn.b4ton.com

@@ -9,7 +9,7 @@ groups:
           severity: critical
         annotations:
           summary: ROUND signaling 지표 수집 중단
-          description: signaling 또는 Alloy에서 2분 동안 지표를 수집하지 못했습니다.
+          description: signaling 지표를 2분 동안 수집하지 못했습니다.
 
       - alert: RoundTurnCredentialProviderError
         expr: increase(round_turn_credentials_provider_errors_total{job="round-signaling"}[5m]) > 0

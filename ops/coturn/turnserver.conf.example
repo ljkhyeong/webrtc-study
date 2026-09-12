@@ -1,0 +1,44 @@
+# 연동 예시입니다. 실제 값이 담긴 파일은 Git 밖에서 관리합니다.
+# k3s에서는 hostNetwork로 실행하여 공유기의 동일 포트 매핑을 유지합니다.
+listening-port=3478
+tls-listening-port=5349
+listening-ip=192.168.0.10
+relay-ip=192.168.0.10
+external-ip=203.0.113.10/192.168.0.10
+min-port=49160
+max-port=49259
+
+realm=turn.b4ton.com
+server-name=turn.b4ton.com
+fingerprint
+use-auth-secret
+# ROUND의 TURN_COTURN_SECRET과 같은 값. 빈 값으로는 자격 증명을 발급하지 못합니다.
+static-auth-secret=
+stale-nonce=600
+user-quota=12
+total-quota=120
+
+# 기존 Let's Encrypt 갱신 도구가 관리하는 인증서를 읽기 전용으로 연결합니다.
+cert=/etc/coturn/tls/fullchain.pem
+pkey=/etc/coturn/tls/privkey.pem
+no-dtls
+# 브라우저 → TURN의 TCP/TLS 접속은 유지하고 TCP relay allocation만 끕니다.
+no-tcp-relay
+no-multicast-peers
+no-software-attribute
+pidfile=/tmp/turnserver.pid
+
+# 홈 LAN·k3s 내부 주소로의 중계를 막습니다. loopback은 coturn 기본 차단을 유지합니다.
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=::1
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+
+log-file=stdout
+simple-log
