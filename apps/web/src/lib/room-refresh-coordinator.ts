@@ -4,7 +4,7 @@ import {
 } from './participation-grant';
 import { RoomRefreshLifetime } from './room-refresh-lifetime';
 import { loadRtcConfiguration } from './rtc-configuration';
-import { turnCredentialRefreshDelayMs } from './turn';
+import { turnCredentialRefreshDelayMs, TurnCredentialRateLimitError } from './turn';
 
 const REFRESH_RETRY_DELAY_MS = 30_000;
 const PARTICIPATION_GRANT_WARNING =
@@ -125,14 +125,16 @@ export class RoomRefreshCoordinator {
     }
   }
 
-  #scheduleTurnRefreshRetry(): void {
+  #scheduleTurnRefreshRetry(error?: unknown): void {
     if (!this.#canRefresh()) return;
     this.#lifetime.schedule(
       'turn',
       () => {
         void this.#refreshTurnConfiguration();
       },
-      REFRESH_RETRY_DELAY_MS,
+      error instanceof TurnCredentialRateLimitError
+        ? Math.max(REFRESH_RETRY_DELAY_MS, error.retryAfterMs)
+        : REFRESH_RETRY_DELAY_MS,
     );
   }
 
@@ -161,10 +163,10 @@ export class RoomRefreshCoordinator {
       if (loaded.turnRefreshDueAtMs !== null) {
         this.scheduleTurnRefresh(loaded.turnRefreshDueAtMs);
       }
-    } catch {
+    } catch (error) {
       if (!this.#canRefresh()) return;
       this.#options.onTurnWarning(TURN_WARNING);
-      this.#scheduleTurnRefreshRetry();
+      this.#scheduleTurnRefreshRetry(error);
     }
   }
 }

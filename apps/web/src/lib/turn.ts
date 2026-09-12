@@ -26,6 +26,13 @@ const DEFAULT_TIMEOUT_MS = 5_000;
 const MAXIMUM_REFRESH_AFTER_SECONDS = 7 * 24 * 60 * 60;
 const MAX_TURN_URLS = 8;
 
+export class TurnCredentialRateLimitError extends Error {
+  constructor(readonly retryAfterMs: number) {
+    super('통화 중계 요청이 많습니다. 잠시 후 다시 시도해 주세요.');
+    this.name = 'TurnCredentialRateLimitError';
+  }
+}
+
 export function turnCredentialRefreshDelayMs(
   refreshDueAtMs: number,
   nowMs = globalThis.performance.now(),
@@ -53,6 +60,13 @@ export async function loadTurnCredentials(
 
     if (response.status === 204 || response.status === 404) {
       return null;
+    }
+    if (response.status === 429) {
+      // ROUND는 Retry-After를 초 단위로 반환한다. 브라우저 타이머의 최대 지연을 넘기지 않는다.
+      const value = response.headers.get('Retry-After') ?? '';
+      const seconds = /^\d+$/.test(value) ? Number(value) : 0;
+      const retryAfterMs = Number.isFinite(seconds) ? Math.min(seconds * 1_000, 2_147_483_647) : 0;
+      throw new TurnCredentialRateLimitError(retryAfterMs);
     }
     if (!response.ok) {
       throw new Error(`TURN credential request failed with status ${response.status}`);

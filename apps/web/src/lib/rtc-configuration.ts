@@ -1,4 +1,4 @@
-import { loadTurnCredentials } from './turn';
+import { loadTurnCredentials, TurnCredentialRateLimitError } from './turn';
 
 export interface LoadedRtcConfiguration {
   readonly configuration: RTCConfiguration;
@@ -27,6 +27,7 @@ export async function loadRtcConfiguration(
       ...(signal === undefined ? {} : { signal }),
     });
   } catch (error) {
+    if (error instanceof TurnCredentialRateLimitError) throw error;
     throw new Error('통화 중계 정보를 받지 못했습니다. 잠시 후 다시 시도해 주세요.', {
       cause: error,
     });
