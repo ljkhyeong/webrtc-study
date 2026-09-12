@@ -32,7 +32,6 @@ export class SignalingRecoveryLifecycle {
   readonly #options: SignalingRecoveryLifecycleOptions;
 
   #joinWait: JoinWait | null = null;
-  #reconnectDelayTimer: TimerHandle | null = null;
   #cancelReconnectDelay: (() => void) | null = null;
   #reconnectPromise: Promise<void> | null = null;
 
@@ -162,15 +161,12 @@ export class SignalingRecoveryLifecycle {
 
     return new Promise((resolve) => {
       const finish = () => {
-        if (this.#reconnectDelayTimer !== null) {
-          globalThis.clearTimeout(this.#reconnectDelayTimer);
-          this.#reconnectDelayTimer = null;
-        }
+        globalThis.clearTimeout(timer);
         this.#cancelReconnectDelay = null;
         resolve();
       };
       this.#cancelReconnectDelay = finish;
-      this.#reconnectDelayTimer = globalThis.setTimeout(finish, delayMs);
+      const timer = globalThis.setTimeout(finish, delayMs);
     });
   }
 

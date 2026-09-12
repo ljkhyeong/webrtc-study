@@ -121,10 +121,6 @@ export function countNewLocalDeliveryIssues(
   ).length;
 }
 
-function chatMessageIdentity(message: ChatMessage | undefined): ChatMessageIdentity | null {
-  return message === undefined ? null : { id: message.id, senderId: message.senderId };
-}
-
 export function RoomChatPanel({
   open,
   messages,
@@ -221,11 +217,10 @@ export function RoomChatPanel({
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [unseenDeliveryIssueCount, setUnseenDeliveryIssueCount] = useState(0);
   const [followingChat, setFollowingChat] = useState(true);
-  const previousLastMessage = useRef<ChatMessageIdentity | null>(
-    chatMessageIdentity(messages.at(-1)),
-  );
-  const previousLocalDeliveryStates = useRef(collectLocalDeliveryStates(messages));
-  const hasObservedMessages = useRef(false);
+  const previousMessages = useRef<{
+    lastMessage: ChatMessageIdentity | null;
+    localDeliveryStates: ReadonlyMap<string, ChatDeliveryState>;
+  } | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const followingChatRef = useRef(true);
   const chatCompositionActive = useRef(false);
@@ -251,16 +246,16 @@ export function RoomChatPanel({
 
   // 자동 스크롤 이벤트보다 먼저 새 메시지 높이에 맞춰 스크롤 위치를 갱신한다.
   useLayoutEffect(() => {
-    const currentLocalDeliveryStates = collectLocalDeliveryStates(messages);
-    if (!hasObservedMessages.current) {
-      hasObservedMessages.current = true;
-      previousLastMessage.current = chatMessageIdentity(messages.at(-1));
-      previousLocalDeliveryStates.current = currentLocalDeliveryStates;
-      return;
-    }
+    const previous = previousMessages.current;
+    const lastMessage = messages.at(-1) ?? null;
+    previousMessages.current = {
+      lastMessage,
+      localDeliveryStates: collectLocalDeliveryStates(messages),
+    };
+    if (!previous) return;
     if (!open || document.hidden || !document.hasFocus() || query || !followingChatRef.current) {
-      const newMessages = countNewRemoteMessages(messages, previousLastMessage.current);
-      const newIssues = countNewLocalDeliveryIssues(messages, previousLocalDeliveryStates.current);
+      const newMessages = countNewRemoteMessages(messages, previous.lastMessage);
+      const newIssues = countNewLocalDeliveryIssues(messages, previous.localDeliveryStates);
       setUnreadMessageCount((count) => count + newMessages);
       setUnseenDeliveryIssueCount((count) => count + newIssues);
       if (open && (newMessages > 0 || newIssues > 0)) {
@@ -268,14 +263,12 @@ export function RoomChatPanel({
         setFollowingChat(false);
       }
     } else if (
-      messages.at(-1)?.id !== previousLastMessage.current?.id ||
-      messages.at(-1)?.senderId !== previousLastMessage.current?.senderId
+      lastMessage?.id !== previous.lastMessage?.id ||
+      lastMessage?.senderId !== previous.lastMessage?.senderId
     ) {
       const list = messagesRef.current;
       if (list !== null) list.scrollTop = list.scrollHeight;
     }
-    previousLastMessage.current = chatMessageIdentity(messages.at(-1));
-    previousLocalDeliveryStates.current = currentLocalDeliveryStates;
   }, [open, messages, query]);
 
   useEffect(() => {
