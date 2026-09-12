@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
 import com.personal.round.turn.CloudflareTurnClient;
+import com.personal.round.turn.TurnCredentialMaterial;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -39,7 +40,7 @@ class TurnCredentialUntrustedForwardingIntegrationTest {
 	@BeforeEach
 	void stubCloudflareCredentials() {
 		when(cloudflareTurnClient.issue(anyLong())).thenReturn(
-				new CloudflareTurnClient.Credentials(
+				new TurnCredentialMaterial(
 						List.of("turn:turn.cloudflare.com:3478?transport=udp"),
 						"provider-user",
 						"provider-credential"));

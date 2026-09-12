@@ -4,7 +4,9 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import java.time.Duration;
+import java.util.List;
 import org.hibernate.validator.constraints.time.DurationMax;
 import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -16,6 +18,8 @@ public record TurnProperties(
 		@NotNull(message = "round.turn.provider must be configured") Provider provider,
 		String cloudflareKeyId,
 		String cloudflareApiToken,
+		List<@Pattern(regexp = "turns?:[^\\s]+", message = "coturn URL must use turn: or turns:") String> coturnUrls,
+		String coturnSecret,
 		@NotNull(message = "round.turn.credential-ttl must be configured")
 		@DurationMin(
 				minutes = 5,
@@ -70,17 +74,19 @@ public record TurnProperties(
 	public TurnProperties {
 		cloudflareKeyId = cloudflareKeyId == null ? "" : cloudflareKeyId.strip();
 		cloudflareApiToken = cloudflareApiToken == null ? "" : cloudflareApiToken;
+		coturnUrls = coturnUrls == null ? List.of() : List.copyOf(coturnUrls);
+		coturnSecret = coturnSecret == null ? "" : coturnSecret;
 	}
 
 	public boolean enabled() {
-		return provider == Provider.CLOUDFLARE;
+		return provider == Provider.CLOUDFLARE || provider == Provider.COTURN;
 	}
 
 	@Override
 	public String toString() {
 		return "TurnProperties[provider="
 				+ provider
-				+ ", cloudflareKeyId=<redacted>, cloudflareApiToken=<redacted>, credentialTtl="
+				+ ", cloudflareKeyId=<redacted>, cloudflareApiToken=<redacted>, coturnSecret=<redacted>, credentialTtl="
 				+ credentialTtl
 				+ ", rateLimitWindow="
 				+ rateLimitWindow
@@ -109,6 +115,13 @@ public record TurnProperties(
 				: cloudflareKeyId.isEmpty() && cloudflareApiToken.isEmpty();
 	}
 
+	@AssertTrue(message = "coturn requires TURN URLs and a secret of at least 32 characters; other providers must leave both empty")
+	public boolean isCoturnConfigurationComplete() {
+		return provider == Provider.COTURN
+				? !coturnUrls.isEmpty() && !coturnSecret.isBlank() && coturnSecret.length() >= 32
+				: coturnUrls.isEmpty() && coturnSecret.isEmpty();
+	}
+
 	@AssertTrue(
 			message =
 					"round.turn.rate-limit-global-max-requests must be at least twice "
@@ -119,6 +132,7 @@ public record TurnProperties(
 
 	public enum Provider {
 		DISABLED,
-		CLOUDFLARE
+		CLOUDFLARE,
+		COTURN
 	}
 }

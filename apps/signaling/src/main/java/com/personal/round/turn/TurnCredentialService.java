@@ -79,9 +79,11 @@ public class TurnCredentialService {
 			return new RateLimited(rejected.retryAfterSeconds());
 		}
 
-		CloudflareTurnClient.Credentials providerCredentials;
+		TurnCredentialMaterial providerCredentials;
 		try {
-			providerCredentials = cloudflareTurnClient.issue(expiresAt - nowEpochSecond);
+			providerCredentials = properties.provider() == TurnProperties.Provider.COTURN
+					? CoturnCredentials.issue(properties, expiresAt)
+					: cloudflareTurnClient.issue(expiresAt - nowEpochSecond);
 		}
 		catch (CloudflareTurnClient.ProviderUnavailableException exception) {
 			metrics.recordProviderError();

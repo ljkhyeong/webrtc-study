@@ -68,6 +68,8 @@ round:
     provider: ${TURN_PROVIDER:disabled}
     cloudflare-key-id: ${TURN_CLOUDFLARE_KEY_ID:}
     cloudflare-api-token: ${TURN_CLOUDFLARE_API_TOKEN:}
+    coturn-urls: ${TURN_COTURN_URLS:}
+    coturn-secret: ${TURN_COTURN_SECRET:}
     credential-ttl: ${TURN_CREDENTIAL_TTL_SECONDS:600}s
     rate-limit-window: ${TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS:600}s
     rate-limit-max-requests: ${TURN_CREDENTIAL_RATE_LIMIT_MAX_REQUESTS:12}

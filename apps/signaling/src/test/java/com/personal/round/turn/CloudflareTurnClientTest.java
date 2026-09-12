@@ -57,7 +57,7 @@ class CloudflareTurnClientTest {
 				builder,
 				TestProperties.turn("test-key", "test-token"));
 
-		CloudflareTurnClient.Credentials credentials = client.issue(600);
+		TurnCredentialMaterial credentials = client.issue(600);
 
 		assertThat(credentials.urls()).containsExactly(
 				"turn:turn.cloudflare.com:3478?transport=udp",

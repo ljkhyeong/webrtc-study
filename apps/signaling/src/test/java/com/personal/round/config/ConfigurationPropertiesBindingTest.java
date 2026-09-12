@@ -129,6 +129,8 @@ class ConfigurationPropertiesBindingTest {
 				TurnProperties.Provider.CLOUDFLARE,
 				"cloudflare-key-id",
 				"cloudflare-api-token",
+				List.of(),
+				"",
 				turnDefaults.credentialTtl(),
 				turnDefaults.rateLimitWindow(),
 				turnDefaults.rateLimitMaxRequests(),
@@ -391,6 +393,19 @@ class ConfigurationPropertiesBindingTest {
 		StringWriter output = new StringWriter();
 		failure.printStackTrace(new PrintWriter(output));
 		return output.toString();
+	}
+
+	@Test
+	void rejectsIncompleteCoturnConfigurationWithoutExposingSecret() {
+		contextRunner.withPropertyValues(
+				"round.turn.provider=coturn",
+				"round.turn.coturn-secret=short-secret")
+				.run(context -> {
+					assertThat(context).hasFailed();
+					assertThat(stackTrace(context.getStartupFailure()))
+							.contains("coturn requires TURN URLs")
+							.doesNotContain("short-secret");
+				});
 	}
 
 	@Configuration(proxyBeanMethods = false)

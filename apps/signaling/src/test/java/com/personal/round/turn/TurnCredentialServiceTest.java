@@ -600,7 +600,7 @@ class TurnCredentialServiceTest {
 		AtomicLong sequence = new AtomicLong();
 		when(client.issue(anyLong())).thenAnswer(ignored -> {
 			long value = sequence.incrementAndGet();
-			return new CloudflareTurnClient.Credentials(
+			return new TurnCredentialMaterial(
 					TURN_URLS,
 					"provider-user-" + value,
 					"provider-credential-" + value);

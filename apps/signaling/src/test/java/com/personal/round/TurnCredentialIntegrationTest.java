@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
 import com.personal.round.turn.CloudflareTurnClient;
+import com.personal.round.turn.TurnCredentialMaterial;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -46,7 +47,7 @@ class TurnCredentialIntegrationTest {
 	void stubCloudflareCredentials() {
 		when(cloudflareTurnClient.issue(anyLong())).thenAnswer(ignored -> {
 			long sequence = credentialSequence.incrementAndGet();
-			return new CloudflareTurnClient.Credentials(
+			return new TurnCredentialMaterial(
 					List.of(
 							"turn:turn.cloudflare.com:3478?transport=udp",
 							"turns:turn.cloudflare.com:443?transport=tcp"),

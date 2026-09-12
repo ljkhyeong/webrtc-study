@@ -232,6 +232,8 @@ public final class TestProperties {
 						: TurnProperties.Provider.CLOUDFLARE,
 				cloudflareKeyId,
 				cloudflareApiToken,
+				List.of(),
+				"",
 				DEFAULT_TURN_CREDENTIAL_TTL,
 				DEFAULT_TURN_RATE_LIMIT_WINDOW,
 				rateLimitMaxRequests,

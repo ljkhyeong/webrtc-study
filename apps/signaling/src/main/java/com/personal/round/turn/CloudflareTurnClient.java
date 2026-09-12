@@ -23,7 +23,7 @@ public class CloudflareTurnClient {
 		this.properties = properties;
 	}
 
-	public Credentials issue(long ttlSeconds) {
+	public TurnCredentialMaterial issue(long ttlSeconds) {
 		try {
 			CredentialResponse response = restClient.post()
 					.uri(
@@ -43,7 +43,7 @@ public class CloudflareTurnClient {
 		}
 	}
 
-	private static Credentials credentialsFrom(CredentialResponse response) {
+	private static TurnCredentialMaterial credentialsFrom(CredentialResponse response) {
 		if (response == null || response.iceServers() == null) {
 			throw new ProviderUnavailableException(
 					"Cloudflare TURN credential response is empty");
@@ -53,7 +53,7 @@ public class CloudflareTurnClient {
 				.filter(Objects::nonNull)
 				.filter(server -> server.username() != null && !server.username().isBlank())
 				.filter(server -> server.credential() != null && !server.credential().isBlank())
-				.map(server -> new Credentials(
+				.map(server -> new TurnCredentialMaterial(
 						turnUrls(server.urls()),
 						server.username(),
 						server.credential()))
@@ -72,22 +72,6 @@ public class CloudflareTurnClient {
 						&& (url.startsWith("turn:") || url.startsWith("turns:")))
 				.filter(url -> !url.contains(":53?"))
 				.toList();
-	}
-
-	public record Credentials(
-			List<String> urls,
-			String username,
-			String credential) {
-
-		public Credentials {
-			urls = List.copyOf(urls);
-		}
-
-		@Override
-		public String toString() {
-			return "Credentials[urls=%s, username=[redacted], credential=[redacted]]"
-					.formatted(urls);
-		}
 	}
 
 	private record CredentialRequest(long ttl) {

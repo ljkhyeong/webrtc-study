@@ -19,6 +19,7 @@ import com.nimbusds.jwt.SignedJWT;
 import com.personal.round.signaling.SignalingWebSocketHandler;
 import com.personal.round.signaling.SignalingService;
 import com.personal.round.turn.CloudflareTurnClient;
+import com.personal.round.turn.TurnCredentialMaterial;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -129,7 +130,7 @@ class BatonAuthBoundaryIntegrationTest {
 	@BeforeEach
 	void stubCloudflareCredentials() {
 		when(cloudflareTurnClient.issue(anyLong())).thenReturn(
-				new CloudflareTurnClient.Credentials(
+				new TurnCredentialMaterial(
 						List.of("turn:turn.cloudflare.com:3478?transport=udp"),
 						"provider-user",
 						"provider-credential"));

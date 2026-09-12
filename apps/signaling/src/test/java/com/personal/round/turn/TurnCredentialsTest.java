@@ -13,8 +13,8 @@ class TurnCredentialsTest {
 	@Test
 	void redactsSecretsFromDiagnosticStrings() {
 		TurnCredentials credentials = new TurnCredentials(URLS, "provider-user", "provider-secret", 100, 80);
-		CloudflareTurnClient.Credentials providerCredentials =
-				new CloudflareTurnClient.Credentials(URLS, "provider-user", "provider-secret");
+		TurnCredentialMaterial providerCredentials =
+				new TurnCredentialMaterial(URLS, "provider-user", "provider-secret");
 
 		assertThat(credentials.toString())
 				.contains("[redacted]")
