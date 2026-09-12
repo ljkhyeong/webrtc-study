@@ -16,7 +16,7 @@ Options:
 
 Read-only production-host gate for ROUND. It validates Linux/Docker readiness,
 the private env file, immutable image references, Compose interpolation, clock
-synchronization, free disk, and the Cloudflare TURN provider boundary.
+synchronization, free disk, and the selected TURN provider configuration.
 EOF
 }
 
@@ -114,9 +114,6 @@ done
 round_domain=$(round_ops_read_env_value "$env_file" ROUND_DOMAIN)
 allowed_origins=$(round_ops_read_env_value "$env_file" ALLOWED_ORIGINS)
 ice_transport_policy=$(round_ops_read_env_value "$env_file" VITE_ICE_TRANSPORT_POLICY)
-turn_provider=$(round_ops_read_env_value "$env_file" TURN_PROVIDER)
-turn_key_id=$(round_ops_read_env_value "$env_file" TURN_CLOUDFLARE_KEY_ID)
-turn_api_token=$(round_ops_read_env_value "$env_file" TURN_CLOUDFLARE_API_TOKEN)
 compose_profiles=$(round_ops_read_env_value "$env_file" COMPOSE_PROFILES)
 access_password_hash=$(round_ops_read_env_value "$env_file" ROUND_ACCESS_PASSWORD_HASH)
 [[ "$allowed_origins" == "https://$round_domain" ]] ||
@@ -127,10 +124,6 @@ access_password_hash=$(round_ops_read_env_value "$env_file" ROUND_ACCESS_PASSWOR
    "$round_domain" == *.* && "$round_domain" != *..* && \
    "$round_domain" != *.-* && "$round_domain" != *-.* ]] ||
   round_ops_die "invalid deployment hostname: $round_domain"
-[[ "$turn_provider" == cloudflare ]] ||
-  round_ops_die "TURN_PROVIDER must be cloudflare in production"
-[[ -n "$turn_key_id" && -n "$turn_api_token" ]] ||
-  round_ops_die "Cloudflare TURN key ID and API token must be configured"
 case "$compose_profiles" in
   none) ;;
   observability)
@@ -154,6 +147,7 @@ compose_config=$(
 )
 replicas=$(jq -er '.services.signaling.deploy.replicas' <<<"$compose_config")
 [[ "$replicas" == '1' ]] || round_ops_die "signaling must remain a single replica"
+round_ops_validate_turn_configuration <<<"$compose_config"
 if [[ "$compose_profiles" == observability ]]; then
   jq -e '.services.alloy.image
     | test("^grafana/alloy:[^@[:space:]]+@sha256:[0-9a-f]{64}$")' \
@@ -161,4 +155,4 @@ if [[ "$compose_profiles" == observability ]]; then
     round_ops_die "Alloy 이미지는 grafana/alloy의 태그와 SHA-256 digest로 고정해야 합니다"
 fi
 
-printf 'ROUND Linux preflight passed for immutable images, host clock, disk, Compose, Cloudflare TURN, and optional Grafana Cloud.\n'
+printf 'ROUND Linux preflight passed for immutable images, host clock, disk, Compose, TURN, and optional Grafana Cloud.\n'

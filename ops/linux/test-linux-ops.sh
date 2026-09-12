@@ -22,6 +22,9 @@ digest_a=$(printf 'a%.0s' {1..64})
 digest_b=$(printf 'b%.0s' {1..64})
 digest_d=$(printf 'd%.0s' {1..64})
 digest_e=$(printf 'e%.0s' {1..64})
+cloudflare_environment='{"TURN_PROVIDER":"cloudflare","TURN_CLOUDFLARE_KEY_ID":"test-key-id","TURN_CLOUDFLARE_API_TOKEN":"test-api-token"}'
+coturn_environment='{"TURN_PROVIDER":"coturn","TURN_COTURN_URLS":"turn:turn.example.invalid:3478?transport=udp","TURN_COTURN_SECRET":"round-coturn-test-secret-not-for-production"}'
+printf '%s\n' "$cloudflare_environment" >"$fixture_dir/turn-environment.json"
 
 write_env() {
   local destination=$1
@@ -31,6 +34,13 @@ write_env() {
   local image_namespace=${5:-ghcr.io/ljkhyeong}
   local turn_provider=${6:-cloudflare}
   local compose_profiles=${7:-none}
+  local cloudflare_key_id=test-key-id cloudflare_api_token=test-api-token
+  local coturn_urls= coturn_secret=
+  if [[ "$turn_provider" == coturn ]]; then
+    cloudflare_key_id= cloudflare_api_token=
+    coturn_urls='turn:turn.example.invalid:3478?transport=udp'
+    coturn_secret='round-coturn-test-secret-not-for-production'
+  fi
   cat >"$destination" <<EOF
 COMPOSE_PROJECT_NAME=round-linux-test
 COMPOSE_PROFILES=$compose_profiles
@@ -44,8 +54,10 @@ ROUND_DOMAIN=round.round.invalid
 ALLOWED_ORIGINS=https://round.round.invalid
 VITE_ICE_TRANSPORT_POLICY=$ice_transport_policy
 TURN_PROVIDER=$turn_provider
-TURN_CLOUDFLARE_KEY_ID=test-key-id
-TURN_CLOUDFLARE_API_TOKEN=test-api-token
+TURN_CLOUDFLARE_KEY_ID=$cloudflare_key_id
+TURN_CLOUDFLARE_API_TOKEN=$cloudflare_api_token
+TURN_COTURN_URLS=$coturn_urls
+TURN_COTURN_SECRET=$coturn_secret
 ROUND_ACCESS_PASSWORD_HASH='\$2a\$12\$RJKd/exBEqUGjd.mtH9URu8H/TGJgwahZV8tA.xhPCM/4rdHfpmYS'
 EOF
   chmod 0600 "$destination"
@@ -296,7 +308,8 @@ case "$command_line" in
       alloy_image=$(cat "$fake_root/alloy-image")
     fi
     jq -n --arg alloy_image "$alloy_image" \
-      '{name:"round-linux-test",services:{signaling:{deploy:{replicas:1}},alloy:{image:$alloy_image}},volumes:{caddy_data:{name:"round-linux-test_caddy_data"},caddy_config:{name:"round-linux-test_caddy_config"}}}'
+      --slurpfile turn_environment "$fake_root/turn-environment.json" \
+      '{name:"round-linux-test",services:{signaling:{deploy:{replicas:1},environment:$turn_environment[0]},alloy:{image:$alloy_image}},volumes:{caddy_data:{name:"round-linux-test_caddy_data"},caddy_config:{name:"round-linux-test_caddy_config"}}}'
     ;;
   *' config --quiet '*)
     log_compose "$@"
@@ -443,10 +456,26 @@ grep -Fq 'compose_file=unset compose_project=unset node_image=unset docker_host=
 if grep -Fq 'attacker.invalid' "$fixture_dir/docker.log"; then
   fail 'ambient attacker image reached Compose rendering'
 fi
+jq '.TURN_PROVIDER = "disabled"' <<<"$cloudflare_environment" >"$fixture_dir/turn-environment.json"
 if PATH="$fake_bin:$PATH" \
   ops/linux/preflight.sh --state-dir "$state_dir" "$env_bad_provider" >/dev/null 2>&1; then
   fail 'disabled TURN provider was accepted for production'
 fi
+printf '%s\n' "$cloudflare_environment" >"$fixture_dir/turn-environment.json"
+
+for turn_environment in "$cloudflare_environment" "$coturn_environment"; do
+  for change in \
+    '.TURN_PROVIDER = "unknown"' \
+    '.TURN_CLOUDFLARE_API_TOKEN = "" | .TURN_COTURN_SECRET = ""' \
+    '.TURN_COTURN_URLS = "" | .TURN_CLOUDFLARE_KEY_ID = ""' \
+    '.TURN_COTURN_SECRET = "                                "' \
+    '.TURN_CLOUDFLARE_KEY_ID = "mixed-key" | .TURN_COTURN_SECRET = "round-coturn-test-secret-not-for-production"'; do
+    invalid_config=$(jq "$change | {services: {signaling: {environment: .}}}" <<<"$turn_environment")
+    if (round_ops_validate_turn_configuration <<<"$invalid_config" 2>/dev/null); then
+      fail 'incomplete or mixed TURN credentials were accepted'
+    fi
+  done
+done
 
 unsigned_state_dir="$fixture_dir/unsigned-releases"
 mkdir "$unsigned_state_dir"
@@ -524,6 +553,17 @@ fi
 if grep -Fq 'pull alloy' "$fixture_dir/docker.log"; then
   fail 'disabled observability profile pulled Alloy'
 fi
+
+coturn_env="$fixture_dir/production-coturn.env"
+write_env "$coturn_env" "$digest_a" "$digest_b" all ghcr.io/ljkhyeong coturn
+coturn_state_dir="$fixture_dir/coturn-releases"
+mkdir "$coturn_state_dir"
+chmod 0700 "$coturn_state_dir"
+printf '%s\n' "$coturn_environment" >"$fixture_dir/turn-environment.json"
+PATH="$fake_bin:$PATH" \
+  ops/linux/deploy.sh --state-dir "$coturn_state_dir" "$coturn_env" >/dev/null
+round_ops_validate_release_file "$coturn_state_dir/current.env"
+printf '%s\n' "$cloudflare_environment" >"$fixture_dir/turn-environment.json"
 
 observability_env="$fixture_dir/production-observability.env"
 write_env \

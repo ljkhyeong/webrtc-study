@@ -48,6 +48,9 @@ require_command docker
 require_command jq
 require_command node
 
+# shellcheck source=ops/linux/common.sh
+source ops/linux/common.sh
+
 printf 'Verifying local pilot secrets are excluded from the Docker build context...\n'
 grep -Fxq 'ops/macos-pilot.env' .dockerignore || {
   printf 'deployment validation: ops/macos-pilot.env must be listed in .dockerignore\n' >&2
@@ -77,6 +80,7 @@ cleanup() {
 trap cleanup EXIT
 umask 077
 
+TURN_PROVIDER=cloudflare
 TURN_CLOUDFLARE_KEY_ID=ci-key
 TURN_CLOUDFLARE_API_TOKEN=ci-token
 GRAFANA_CLOUD_PROMETHEUS_URL=https://prometheus.example.invalid/api/prom/push
@@ -84,13 +88,21 @@ GRAFANA_CLOUD_PROMETHEUS_USER=12345
 GRAFANA_CLOUD_API_TOKEN=ci-token
 ROUND_ACCESS_USER=round-ci
 ROUND_ACCESS_PASSWORD_HASH='$2a$12$RJKd/exBEqUGjd.mtH9URu8H/TGJgwahZV8tA.xhPCM/4rdHfpmYS'
-export TURN_CLOUDFLARE_KEY_ID TURN_CLOUDFLARE_API_TOKEN
+export TURN_PROVIDER TURN_CLOUDFLARE_KEY_ID TURN_CLOUDFLARE_API_TOKEN
 export GRAFANA_CLOUD_PROMETHEUS_URL GRAFANA_CLOUD_PROMETHEUS_USER
 export GRAFANA_CLOUD_API_TOKEN
 export ROUND_ACCESS_USER ROUND_ACCESS_PASSWORD_HASH
 
 printf 'Validating Compose interpolation with temporary dummy fixtures...\n'
 production_config=$(docker compose --env-file ops/production.env.example config --format json)
+round_ops_validate_turn_configuration <<<"$production_config"
+coturn_config=$(
+  TURN_PROVIDER=coturn TURN_CLOUDFLARE_KEY_ID= TURN_CLOUDFLARE_API_TOKEN= \
+    TURN_COTURN_URLS='turn:turn.example.invalid:3478?transport=udp' \
+    TURN_COTURN_SECRET='round-ci-coturn-secret-not-for-production' \
+    docker compose --env-file ops/production.env.example config --format json
+)
+round_ops_validate_turn_configuration <<<"$coturn_config"
 jq -e '
   ((.services.signaling.networks | keys | sort) == ["backend", "egress"])
   and ((.services.edge.networks | keys | sort) == ["backend", "edge"])

@@ -167,6 +167,27 @@ round_ops_validate_digest_ref() {
     round_ops_die "$label must be an immutable image digest reference"
 }
 
+# Compose가 해석한 필수값을 검사합니다. URL 형식·공유키 길이는 서버에서 검증합니다.
+round_ops_validate_turn_configuration() {
+  jq -e '
+    def configured: (. // "") | test("\\S");
+    def unused: (. // "") == "";
+    .services.signaling.environment
+    | if .TURN_PROVIDER == "cloudflare" then
+        (.TURN_CLOUDFLARE_KEY_ID | configured)
+        and (.TURN_CLOUDFLARE_API_TOKEN | configured)
+        and (.TURN_COTURN_URLS | unused)
+        and (.TURN_COTURN_SECRET | unused)
+      elif .TURN_PROVIDER == "coturn" then
+        (.TURN_COTURN_URLS | configured)
+        and (.TURN_COTURN_SECRET | configured)
+        and (.TURN_CLOUDFLARE_KEY_ID | unused)
+        and (.TURN_CLOUDFLARE_API_TOKEN | unused)
+      else false end
+  ' >/dev/null ||
+    round_ops_die "TURN_PROVIDER는 coturn 또는 cloudflare로 설정하고 해당 공급자의 필수값만 채워야 합니다"
+}
+
 round_ops_require_image_repository() {
   local label=$1
   local image_ref=$2
