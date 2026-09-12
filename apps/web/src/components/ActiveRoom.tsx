@@ -560,42 +560,41 @@ export function ActiveRoom({
         onLeave={handleLeave}
         registerLeaveGuard={registerLeaveGuard}
       />
-      {deviceSettingsOpen ? (
-        <MediaDeviceDialog
-          screenSharePending={snapshot?.screenSharePending ?? null}
-          screenShareQuality={snapshot?.screenShareQuality}
-          onSelectScreenShareQuality={(mode) =>
-            sessionRef.current?.setScreenShareQuality(mode) ?? false
-          }
-          videoQualityMode={snapshot?.videoQualityMode ?? 'standard'}
-          onSelectVideoQuality={async (mode) =>
-            sessionRef.current?.setVideoQualityMode(mode) ?? false
-          }
-          outputDeviceId={outputDeviceId}
-          onSelectOutput={(deviceId) => {
-            setAudioOutput({ deviceId });
-            setOutputWarning('');
-          }}
-          audioDeviceId={localAudioTrack?.getSettings().deviceId ?? ''}
-          audioTrack={localAudioTrack}
-          audioEnabled={localMedia.audioEnabled}
-          videoDeviceId={
-            subscribedSession?.getLocalStream()?.getVideoTracks()[0]?.getSettings().deviceId ?? ''
-          }
-          screenSharing={snapshot?.screenSharing ?? false}
-          screenWakeLock={screenWakeLock}
-          active={status === 'active'}
-          onSelect={async (kind, deviceId) => {
-            const session = sessionRef.current;
-            const lifecycle = lifecycleRef.current;
-            if (session === null) return false;
-            await ensureFreshParticipationGrantRef.current();
-            if (sessionRef.current !== session || lifecycleRef.current !== lifecycle) return false;
-            return session.selectInputDevice(kind, deviceId);
-          }}
-          onClose={() => setDeviceSettingsOpen(false)}
-        />
-      ) : null}
+      <MediaDeviceDialog
+        open={deviceSettingsOpen}
+        screenSharePending={snapshot?.screenSharePending ?? null}
+        screenShareQuality={snapshot?.screenShareQuality}
+        onSelectScreenShareQuality={(mode) =>
+          sessionRef.current?.setScreenShareQuality(mode) ?? false
+        }
+        videoQualityMode={snapshot?.videoQualityMode ?? 'standard'}
+        onSelectVideoQuality={async (mode) =>
+          sessionRef.current?.setVideoQualityMode(mode) ?? false
+        }
+        outputDeviceId={outputDeviceId}
+        onSelectOutput={(deviceId) => {
+          setAudioOutput({ deviceId });
+          setOutputWarning('');
+        }}
+        audioDeviceId={localAudioTrack?.getSettings().deviceId ?? ''}
+        audioTrack={localAudioTrack}
+        audioEnabled={localMedia.audioEnabled}
+        videoDeviceId={
+          subscribedSession?.getLocalStream()?.getVideoTracks()[0]?.getSettings().deviceId ?? ''
+        }
+        screenSharing={snapshot?.screenSharing ?? false}
+        screenWakeLock={screenWakeLock}
+        active={status === 'active'}
+        onSelect={async (kind, deviceId) => {
+          const session = sessionRef.current;
+          const lifecycle = lifecycleRef.current;
+          if (session === null) return false;
+          await ensureFreshParticipationGrantRef.current();
+          if (sessionRef.current !== session || lifecycleRef.current !== lifecycle) return false;
+          return session.selectInputDevice(kind, deviceId);
+        }}
+        onClose={() => setDeviceSettingsOpen(false)}
+      />
     </>
   );
 }

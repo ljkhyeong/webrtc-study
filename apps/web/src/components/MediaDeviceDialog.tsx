@@ -5,6 +5,7 @@ import { MicrophoneLevel } from './MicrophoneLevel';
 import type { ScreenWakeLockControl } from '../lib/use-screen-wake-lock';
 
 interface MediaDeviceDialogProps {
+  open?: boolean;
   audioDeviceId: string;
   audioTrack: MediaStreamTrack | null;
   audioEnabled: boolean;
@@ -24,6 +25,7 @@ interface MediaDeviceDialogProps {
 }
 
 export function MediaDeviceDialog({
+  open = true,
   audioDeviceId,
   audioTrack,
   audioEnabled,
@@ -59,15 +61,27 @@ export function MediaDeviceDialog({
 
   useEffect(() => {
     mounted.current = true;
-    const dialog = dialogRef.current!;
-    dialog.showModal();
     return () => {
       mounted.current = false;
-      dialog.close();
     };
   }, []);
 
   useEffect(() => {
+    if (!open) {
+      setAudio(null);
+      setVideo(null);
+      setQuality(null);
+      setNotice('');
+      setError('');
+      return;
+    }
+    const dialog = dialogRef.current!;
+    dialog.showModal();
+    return () => dialog.close();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     const mediaDevices = navigator.mediaDevices;
     let disposed = false;
     let request = 0;
@@ -92,7 +106,7 @@ export function MediaDeviceDialog({
       disposed = true;
       mediaDevices?.removeEventListener('devicechange', load);
     };
-  }, [refresh]);
+  }, [open, refresh]);
 
   const apply = async (kind: 'audio' | 'video') => {
     setPending(kind);
@@ -139,6 +153,8 @@ export function MediaDeviceDialog({
   };
 
   const inputOptions = (kind: MediaDeviceKind) => devices.filter((device) => device.kind === kind);
+
+  if (!open) return null;
 
   return (
     <dialog

@@ -172,6 +172,84 @@ describe('통화 장치 설정', () => {
     expect(input.onClose).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { kind: 'audio', changed: true, completeClosed: false },
+    { kind: 'video', changed: false, completeClosed: true },
+    { kind: 'quality', changed: true, completeClosed: false },
+  ] as const)('$kind 적용 중 닫기·재열기에도 진행 상태와 결과를 유지한다', async (state) => {
+    const input = props();
+    let finish!: (changed: boolean) => void;
+    const result = new Promise<boolean>((resolve) => {
+      finish = resolve;
+    });
+    const action = state.kind === 'quality' ? input.onSelectVideoQuality : input.onSelect;
+    action.mockReturnValueOnce(result);
+    const render = (open: boolean) => root.render(<MediaDeviceDialog {...input} open={open} />);
+    await act(async () => render(true));
+    const index = state.kind === 'audio' ? 0 : state.kind === 'video' ? 1 : 2;
+    act(() =>
+      container
+        .querySelectorAll<HTMLButtonElement>('.media-device-dialog__input button')
+        [index]!.click(),
+    );
+    expect(action).toHaveBeenCalledTimes(1);
+    await act(async () => render(false));
+    expect(container.querySelector('dialog')).toBeNull();
+    expect(HTMLDialogElement.prototype.close).toHaveBeenCalledTimes(1);
+    const queries = mediaDevices.enumerateDevices.mock.calls.length;
+    await act(async () => mediaDevices.dispatchEvent(new Event('devicechange')));
+    expect(mediaDevices.enumerateDevices).toHaveBeenCalledTimes(queries);
+
+    await act(async () => render(true));
+    const buttons = container.querySelectorAll<HTMLButtonElement>(
+      '.media-device-dialog__input button',
+    );
+    for (const button of buttons) {
+      expect(button.disabled).toBe(true);
+      act(() => button.click());
+    }
+    expect(action).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain(
+      state.kind === 'quality' ? '품질을 적용하고 있습니다' : '장치를 변경하고 있습니다',
+    );
+    if (state.completeClosed) await act(async () => render(false));
+    await act(async () => finish(state.changed));
+    if (state.completeClosed) {
+      expect(container.querySelector('dialog')).toBeNull();
+      const queriesAfter = mediaDevices.enumerateDevices.mock.calls.length;
+      await act(async () => mediaDevices.dispatchEvent(new Event('devicechange')));
+      expect(mediaDevices.enumerateDevices).toHaveBeenCalledTimes(queriesAfter);
+      await act(async () => render(true));
+    }
+    expect(
+      container.querySelector<HTMLButtonElement>('.media-device-dialog__input button')!.disabled,
+    ).toBe(false);
+    expect(container.textContent).toContain(
+      state.changed
+        ? state.kind === 'quality'
+          ? '카메라 전송 품질을 적용했습니다.'
+          : '마이크를 변경했습니다.'
+        : '장치를 변경하지 못했습니다.',
+    );
+  });
+
+  it('적용하지 않은 선택은 닫을 때 버리고 닫힌 동안 목록을 조회하지 않는다', async () => {
+    const input = props();
+    await act(async () => root.render(<MediaDeviceDialog {...input} open={false} />));
+    expect(mediaDevices.enumerateDevices).not.toHaveBeenCalled();
+    expect(HTMLDialogElement.prototype.showModal).not.toHaveBeenCalled();
+    await act(async () => root.render(<MediaDeviceDialog {...input} open />));
+    const select = container.querySelector('select')!;
+    act(() => {
+      select.value = 'mic-2';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => root.render(<MediaDeviceDialog {...input} open={false} />));
+    await act(async () => root.render(<MediaDeviceDialog {...input} open />));
+    expect(container.querySelector('select')!.value).toBe('mic-1');
+    expect(input.onSelect).not.toHaveBeenCalled();
+  });
+
   it.each(['audio', 'video'] as const)(
     '%s 실제 장치 변경을 표시하되 적용 전 선택과 실패 후 재시도 값은 유지한다',
     async (kind) => {
