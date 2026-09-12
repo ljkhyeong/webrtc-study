@@ -5,6 +5,7 @@ ROUND 소스·배포 설정과 제공사의 공식 문서를 대조했다. 실�
 
 2026-09-12 갱신: coturn 발급, 로컬 지표·중계 상태 검사·장애 알림, Cloudflare DDNS 설정과
 브라우저 Picture-in-Picture API를 통한 공유 화면 작은 창 보기를 추가했다.
+Media Session API로 작은 창의 통화 제어를 연결하고, Notifications API로 선택형 타이머 종료 알림을 추가했다.
 최신 선택과 `b4ton.com` 인증 조건은 [홈서버 연동 검토](home-server-integrations.md)를 따른다.
 아래 SDK 비교와 무료 플랜 수치는 최초 확인일의 기록이다.
 
@@ -98,6 +99,23 @@ Google Calendar API로 BATON 일정과 ROUND 입장 링크를 개인 캘린더�
 음성·영상 스트림은 기존 통화 세션이 관리한다. 작은 창에는 영상 원본이 표시되며 ROUND의
 확대·이동 도구는 포함되지 않는다. 미지원 브라우저에서는 기존 화면 고정·전체 화면을 사용한다.
 [표준의 영상 표시 규칙](https://w3c.github.io/picture-in-picture/#picture-in-picture).
+
+작은 창의 마이크·카메라 버튼은 Media Session API로 기존 통화 제어에 연결했다.
+지원되는 액션만 사용하며 내 장치가 없거나 다시 연결 중이면 해제한다. 내 화면을 공유하는 동안에는
+카메라 버튼을 해제한다. 웹 화면에서 바꾼 장치 상태도 작은 창에 반영한다.
+[Chrome 공식 통화 제어 예제](https://googlechrome.github.io/samples/media-session/video-conferencing.html).
+
+## 5. 타이머 종료: 데스크톱 알림 적용
+
+타이머에서 **종료 데스크톱 알림**을 켜면 브라우저 알림 권한을 요청한다. 설정은 현재 입장에만
+적용하며, 다른 창을 사용하는 동안 서버가 타이머 종료를 확정하면 한 번 알린다.
+ROUND로 돌아오거나 타이머를 다시 시작하거나 퇴장하면 알림을 닫는다.
+
+브라우저의 Notifications API를 사용하므로 별도 계정·서버·사용료가 없다.
+HTTPS 또는 localhost에서 데스크톱 알림을 지원하는 브라우저가 대상이다. 실제 표시는 브라우저·OS의
+알림 설정을 따른다. 모바일 푸시와 탭을 닫은 뒤의 알림은 제공하지 않으며, 권한 거절·미지원 시에도
+기존 화면·탭 제목 안내는 유지한다.
+[Notifications API 안내](https://developer.mozilla.org/en-US/docs/Web/API/Notifications_API/Using_the_Notifications_API).
 
 ## 이미 외부 서비스를 사용하도록 구현된 부분
 
