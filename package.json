@@ -29,6 +29,7 @@
     "check:web": "npm run typecheck -w @round/web && npm run test -w @round/web --",
     "check:typescript": "npm run build:packages && npm run typecheck -w @round/protocol && npm run typecheck -w @round/rtc-core && npm run test -w @round/protocol && npm run test -w @round/rtc-core && npm run build -w @round/web && npm run test -w @round/web",
     "check:java": "./gradlew --no-daemon :apps:signaling:test :apps:signaling:bootJar",
+    "check:architecture": "./gradlew --no-daemon :apps:signaling:test --tests 'com.personal.round.ArchitectureTest'",
     "format": "prettier --write --ignore-unknown .",
     "format:check": "prettier --check --ignore-unknown ."
   },
