@@ -578,6 +578,78 @@ describe('RoomView 브라우저 동작', () => {
     expect(document.activeElement).toBe(toggle);
   });
 
+  it('오른쪽 패널의 탭을 바꿔도 채팅 초안을 유지하고 손들기 순서와 참가자 상태를 보여 준다', async () => {
+    const participants = ['a', 'b'].map((peerId) => ({
+      peerId,
+      displayName: peerId === 'a' ? '가온' : '나래',
+      role: peerId === 'a' ? ('host' as const) : ('participant' as const),
+      isLocal: peerId === 'a',
+      connectionState: 'connected' as const,
+      audioEnabled: peerId === 'a',
+      videoEnabled: false,
+      videoSource: 'camera' as const,
+      handRaised: peerId === 'b',
+    }));
+    act(() =>
+      root.render(
+        <RoomView
+          {...roomViewProps()}
+          participants={participants}
+          handQueue={{ revision: 1, peerIds: ['b'], supportedPeerIds: ['a', 'b'] }}
+        />,
+      ),
+    );
+    const shell = container.querySelector('.room-shell')!;
+    const tab = (name: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((element) =>
+        element.textContent?.startsWith(name),
+      )!;
+    const handSection = container.querySelector<HTMLElement>(
+      '[aria-labelledby="hand-queue-title"]',
+    )!;
+    expect(shell.classList.contains('room-shell--panel-open')).toBe(false);
+    expect(tab('손들기').textContent).toBe('손들기1');
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="채팅 열기"]')!.click(),
+    );
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+        textarea,
+        '탭 이동 중 초안',
+      );
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(shell.classList.contains('room-shell--panel-open')).toBe(true);
+    expect(handSection.hidden).toBe(true);
+
+    act(() => tab('손들기').click());
+    expect(tab('손들기').getAttribute('aria-selected')).toBe('true');
+    expect(container.querySelector('aside.chat-panel')?.getAttribute('aria-hidden')).toBe('true');
+    expect(handSection.hidden).toBe(false);
+    expect([...handSection.querySelectorAll('li')].map((item) => item.textContent)).toEqual([
+      '나래',
+    ]);
+
+    act(() => tab('참가자').click());
+    expect(container.querySelector('.participant-list')?.textContent).toContain(
+      '가온 (나)방장 · 카메라 꺼짐',
+    );
+    expect(container.querySelector('.participant-list')?.textContent).toContain(
+      '나래손들기 1번째 · 마이크 꺼짐 · 카메라 꺼짐',
+    );
+
+    act(() => tab('채팅').click());
+    expect(container.querySelector('textarea')).toBe(textarea);
+    expect(textarea.value).toBe('탭 이동 중 초안');
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="채팅 닫기"]')!.click(),
+    );
+    expect(shell.classList.contains('room-shell--panel-open')).toBe(false);
+  });
+
   it('이전 대화를 읽을 때 위치를 유지하고 최신 대화로 이동한 뒤에만 새 메시지를 따라간다', () => {
     const props = roomViewProps();
     const message = {
