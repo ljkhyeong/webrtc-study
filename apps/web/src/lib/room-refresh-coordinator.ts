@@ -28,13 +28,12 @@ export class RoomRefreshCoordinator {
   readonly #turnRequestController = new AbortController();
 
   #participationGrantLeaseManager: ParticipationGrantLeaseManager | null;
-  #ownsParticipationGrantLeaseManager: boolean;
+  #ownsParticipationGrantLeaseManager = false;
   #turnCredentialsUrl: string | null = null;
 
   constructor(options: RoomRefreshCoordinatorOptions) {
     this.#options = options;
     this.#participationGrantLeaseManager = options.participationGrantLeaseManager ?? null;
-    this.#ownsParticipationGrantLeaseManager = false;
   }
 
   get turnRequestSignal(): AbortSignal {
@@ -145,9 +144,7 @@ export class RoomRefreshCoordinator {
     try {
       await this.ensureFreshParticipationGrant();
     } catch {
-      if (this.#canRefresh()) {
-        this.#scheduleTurnRefreshRetry();
-      }
+      this.#scheduleTurnRefreshRetry();
       return;
     }
     if (!this.#canRefresh()) return;

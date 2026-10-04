@@ -47,6 +47,7 @@ select,
 textarea {
   color: inherit;
   font: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button {
@@ -55,13 +56,6 @@ button {
 
 button:disabled {
   cursor: not-allowed;
-}
-
-button,
-input,
-select,
-textarea {
-  -webkit-tap-highlight-color: transparent;
 }
 
 button:focus-visible,
@@ -1713,7 +1707,9 @@ textarea:focus-visible {
   right: 13px;
   z-index: 5;
   display: flex;
+  max-width: calc(100% - 24px);
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .video-tile__badges span {
@@ -3605,10 +3601,6 @@ textarea:focus-visible {
 .video-tile__badges .video-tile__quality--unstable {
   color: #ffe7b0;
   background: #634c24;
-}
-.video-tile__badges {
-  flex-wrap: wrap;
-  max-width: calc(100% - 24px);
 }
 .video-tile__signal:not(.video-tile__signal--speaking) i {
   height: 3px;

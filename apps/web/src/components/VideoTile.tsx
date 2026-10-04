@@ -173,8 +173,7 @@ export function VideoTile({
     if (video === null) {
       return;
     }
-    const attempt = playbackAttemptRef.current + 1;
-    playbackAttemptRef.current = attempt;
+    const attempt = ++playbackAttemptRef.current;
     void playVideo(video, attempt);
   }
 
@@ -214,11 +213,12 @@ export function VideoTile({
       return;
     }
     const shareGeneration = fullscreenShareGenerationRef.current;
-    if (isVideoFullscreen(video, tileRef.current ?? undefined)) {
-      setFullscreenError(null);
-      const exited = await exitVideoFullscreen(video, undefined, tileRef.current ?? undefined);
+    const container = tileRef.current ?? undefined;
+    setFullscreenError(null);
+    if (isVideoFullscreen(video, container)) {
+      const exited = await exitVideoFullscreen(video, undefined, container);
       if (fullscreenShareGenerationRef.current !== shareGeneration) return;
-      setFullscreen(isVideoFullscreen(video, tileRef.current ?? undefined));
+      setFullscreen(isVideoFullscreen(video, container));
       if (!exited)
         setFullscreenError(
           '전체 화면을 닫지 못했습니다. Esc 또는 브라우저의 뒤로가기를 사용해 주세요.',
@@ -226,8 +226,6 @@ export function VideoTile({
       return;
     }
 
-    setFullscreenError(null);
-    const container = tileRef.current ?? undefined;
     const entered = await enterVideoFullscreen(video, container);
     if (fullscreenShareGenerationRef.current !== shareGeneration) {
       if (entered) await exitVideoFullscreen(video, undefined, container);
