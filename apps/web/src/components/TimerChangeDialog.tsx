@@ -36,7 +36,7 @@ export function TimerChangeDialog({
         <button type="button" autoFocus onClick={onCancel}>
           기존 타이머 유지
         </button>
-        <button type="button" onClick={onConfirm}>
+        <button className="dialog-button--primary" type="button" onClick={onConfirm}>
           타이머 변경
         </button>
       </div>

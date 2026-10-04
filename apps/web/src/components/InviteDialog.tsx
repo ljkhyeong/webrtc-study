@@ -90,6 +90,7 @@ export function InviteDialog({
       />
       <div className="invite-dialog__actions">
         <button
+          className="dialog-button--primary"
           type="button"
           disabled={copyStatus === 'copying' || shareState === 'sharing'}
           onClick={() => {

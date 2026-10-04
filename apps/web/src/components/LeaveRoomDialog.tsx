@@ -42,7 +42,11 @@ export function LeaveRoomDialog({
         <button type="button" autoFocus onClick={onCancel}>
           {action === 'reconnect' ? '취소' : '계속 참여하기'}
         </button>
-        <button type="button" onClick={onConfirm}>
+        <button
+          className={action === 'reconnect' ? 'dialog-button--primary' : 'dialog-button--danger'}
+          type="button"
+          onClick={onConfirm}
+        >
           {action === 'reconnect' ? '방 다시 입장' : '방에서 나가기'}
         </button>
       </div>

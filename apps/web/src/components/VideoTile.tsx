@@ -455,6 +455,7 @@ export function VideoTile({
             type="button"
             disabled={!participant.audioEnabled}
             aria-label={`${participant.displayName} 마이크 끄기`}
+            title="마이크 끄기"
             onClick={() => onDisableAudio?.(participant.peerId)}
           >
             <MicOffIcon />
@@ -463,6 +464,7 @@ export function VideoTile({
             type="button"
             disabled={!participant.videoEnabled}
             aria-label={`${participant.displayName} 영상 끄기`}
+            title="영상 끄기"
             onClick={() => onDisableVideo?.(participant.peerId)}
           >
             <CameraOffIcon />
