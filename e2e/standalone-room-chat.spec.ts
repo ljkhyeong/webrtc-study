@@ -39,6 +39,19 @@ test('한글 조합 입력과 양방향 채팅 전송 상태를 처리한다', a
     await firstChatComposer.fill('오늘 목표는 3장까지');
     await first.getByRole('button', { name: '메시지 보내기' }).click();
 
+    // 채팅을 연 중간 폭 화면에서도 하단 조작부가 메시지 입력 영역을 가리지 않는다.
+    await first.setViewportSize({ width: 960, height: 720 });
+    await expect
+      .poll(() =>
+        first.evaluate(() => {
+          const dock = document.querySelector('.control-dock')!.getBoundingClientRect();
+          const composer = document.querySelector('.chat-composer')!.getBoundingClientRect();
+          return dock.right <= composer.left + 1 || dock.bottom <= composer.top + 1;
+        }),
+      )
+      .toBe(true);
+    await first.setViewportSize({ width: 1280, height: 720 });
+
     await second.getByRole('button', { name: '채팅 열기' }).click();
     await expect(second.getByText('오늘 목표는 3장까지', { exact: true })).toHaveCount(1);
     const firstOutgoingMessage = first.locator('article.chat-message', {
