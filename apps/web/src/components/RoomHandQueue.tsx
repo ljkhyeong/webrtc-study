@@ -18,27 +18,24 @@ export function RoomHandQueue({
       )
     : [];
   return (
-    <details className="room-hand-queue">
-      <summary>손들기 · {state && active ? `대기 ${queue.length}명` : '순서 확인 중'}</summary>
-      <div className="room-hand-queue__body">
-        {!active ? <p role="status">다시 연결되면 대기 순서를 불러옵니다.</p> : null}
-        <ol aria-label="손들기 대기 순서" aria-live="polite" aria-relevant="all">
-          {queue.map((peer) => (
-            <li key={peer.peerId}>
-              {peer.displayName}
-              {peer.isLocal ? ' (나)' : ''}
-            </li>
-          ))}
-        </ol>
-        {active && state && !queue.length ? <p>대기 중인 참가자가 없습니다.</p> : null}
-        {unsupported.length ? (
-          <p>
-            {unsupported.map((peer) => peer.displayName).join(', ')}님의 손들기 순서를 표시할 수
-            없습니다. 해당 참가자는 새로고침 후 다시 입장해 주세요.
-          </p>
-        ) : null}
-        <small>서버에 도착한 순서입니다. 손을 내렸다 다시 들면 맨 뒤로 이동합니다.</small>
-      </div>
-    </details>
+    <div className="room-hand-queue">
+      {!active ? <p role="status">다시 연결되면 대기 순서를 불러옵니다.</p> : null}
+      <ol aria-label="손들기 대기 순서" aria-live="polite" aria-relevant="all">
+        {queue.map((peer) => (
+          <li key={peer.peerId}>
+            {peer.displayName}
+            {peer.isLocal ? ' (나)' : ''}
+          </li>
+        ))}
+      </ol>
+      {active && state && !queue.length ? <p>대기 중인 참가자가 없습니다.</p> : null}
+      {unsupported.length ? (
+        <p>
+          {unsupported.map((peer) => peer.displayName).join(', ')}님의 손들기 순서를 표시할 수
+          없습니다. 해당 참가자는 새로고침 후 다시 입장해 주세요.
+        </p>
+      ) : null}
+      <small>서버에 도착한 순서입니다. 손을 내렸다 다시 들면 맨 뒤로 이동합니다.</small>
+    </div>
   );
 }

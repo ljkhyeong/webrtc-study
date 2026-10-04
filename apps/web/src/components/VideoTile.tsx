@@ -34,7 +34,7 @@ function initials(name: string) {
   return Array.from(name.trim()).slice(0, 2).join('').toUpperCase() || '?';
 }
 
-function connectionLabel(connectionState: PeerConnectionStatus) {
+export function connectionLabel(connectionState: PeerConnectionStatus) {
   switch (connectionState) {
     case 'disconnected':
       return '재연결 중';

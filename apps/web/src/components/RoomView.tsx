@@ -1,5 +1,6 @@
 import { RoomStudyPanel } from './RoomStudyPanel';
 import { RoomHandQueue } from './RoomHandQueue';
+import { RoomParticipantList } from './RoomParticipantList';
 import { LeaveRoomDialog } from './LeaveRoomDialog';
 import { InviteDialog } from './InviteDialog';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -18,6 +19,7 @@ import {
   CloseIcon,
   CopyIcon,
   HandIcon,
+  LinkIcon,
   MessageIcon,
   MicIcon,
   MicOffIcon,
@@ -140,7 +142,8 @@ export function RoomView({
   onLeave,
   registerLeaveGuard,
 }: RoomViewProps) {
-  const [chatOpen, setChatOpen] = useState(false);
+  const [panel, setPanel] = useState<'chat' | 'hands' | 'people' | null>(null);
+  const chatOpen = panel === 'chat';
   const [hasDraft, setHasDraft] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'leave' | 'reconnect' | null>(null);
   const leaveConfirmed = useRef(false);
@@ -242,11 +245,11 @@ export function RoomView({
   );
 
   useEffect(() => {
-    if (!chatOpen && restoreChatFocus.current) {
+    if (panel === null && restoreChatFocus.current) {
       restoreChatFocus.current = false;
       chatButtonRef.current?.focus();
     }
-  }, [chatOpen]);
+  }, [panel]);
 
   const handleCopy = async () => {
     if (inviteCopyRequest.current) return;
@@ -276,12 +279,12 @@ export function RoomView({
   const openInvite = () => setInviteUrl(canonicalRoomUrl(roomId, window.location.href));
 
   const toggleChat = () => {
-    setChatOpen((open) => !open);
+    setPanel((current) => (current === 'chat' ? null : 'chat'));
   };
 
-  const closeChat = () => {
+  const closePanel = () => {
     restoreChatFocus.current = true;
-    setChatOpen(false);
+    setPanel(null);
   };
 
   const isActive = status === 'active';
@@ -311,6 +314,9 @@ export function RoomView({
   const terminalConnectionError = !isActive && Boolean(errorMessage);
   const partialPeerFailure = isActive && Boolean(peerRecoveryMessage);
   const gridSize = Math.min(Math.max(participants.length, 1), 6);
+  const handCount = handQueue
+    ? handQueue.peerIds.length
+    : participants.filter((participant) => participant.handRaised).length;
   const { unreadMessageCount, unseenDeliveryIssueCount } = chatNotifications;
   const chatNotificationCount = unreadMessageCount + unseenDeliveryIssueCount;
   const connectionDiagnosticsKey = participants
@@ -323,9 +329,7 @@ export function RoomView({
         unseenDeliveryIssueCount > 0 ? `, 수신 미확인 메시지 ${unseenDeliveryIssueCount}개` : ''
       }`;
   return (
-    <div
-      className={`room-shell${(onStudyCommand && onSyncStudy) || handQueue ? ' room-shell--study' : ''}${chatOpen ? ' room-shell--chat-open' : ''}`}
-    >
+    <div className={`room-shell${panel ? ' room-shell--panel-open' : ''}`}>
       <header className="room-header">
         <div className="room-header__brand">
           <span className="wordmark">
@@ -348,19 +352,22 @@ export function RoomView({
           </button>
         </div>
 
+        {onStudyCommand && onSyncStudy ? (
+          <RoomStudyPanel
+            state={study}
+            canControl={canModerateMedia}
+            hostPresent={
+              canModerateMedia || participants.some((participant) => participant.role === 'host')
+            }
+            active={status === 'active'}
+            pending={studyPending}
+            notice={studyNotice}
+            onCommand={onStudyCommand}
+            onSync={onSyncStudy}
+          />
+        ) : null}
+
         <div className="room-header__status">
-          <button className="room-invite-button" type="button" onClick={openInvite}>
-            초대
-          </button>
-          <button
-            className="room-devices-button"
-            type="button"
-            disabled={!isActive}
-            aria-label="통화 장치 설정"
-            onClick={onSelectDevices}
-          >
-            장치
-          </button>
           <span
             className={`connection-state connection-state--${
               partialPeerFailure ? 'partial-failure' : status
@@ -374,12 +381,25 @@ export function RoomView({
             {participants.length}
           </span>
 
+          <button
+            className="room-devices-button"
+            type="button"
+            disabled={!isActive}
+            aria-label="통화 장치 설정"
+            onClick={onSelectDevices}
+          >
+            장치
+          </button>
           <ConnectionDiagnosticsPanel
             connectionContextKey={connectionDiagnosticsKey}
             onCollect={onCollectConnectionDiagnostics}
             qualityVisible={qualityVisible}
             onSetQualityVisible={onSetQualityVisible}
           />
+          <button className="room-invite-button" type="button" onClick={openInvite}>
+            <LinkIcon />
+            초대
+          </button>
         </div>
       </header>
 
@@ -409,25 +429,6 @@ export function RoomView({
         </div>
       ) : null}
 
-      {(onStudyCommand && onSyncStudy) || handQueue ? (
-        <div className="room-tools">
-          {onStudyCommand && onSyncStudy ? (
-            <RoomStudyPanel
-              state={study}
-              canControl={canModerateMedia}
-              hostPresent={
-                canModerateMedia || participants.some((participant) => participant.role === 'host')
-              }
-              active={status === 'active'}
-              pending={studyPending}
-              notice={studyNotice}
-              onCommand={onStudyCommand}
-              onSync={onSyncStudy}
-            />
-          ) : null}
-          <RoomHandQueue state={handQueue} participants={participants} active={isActive} />
-        </div>
-      ) : null}
       <main className="room-workspace">
         <p className="sr-only" aria-live="polite" aria-atomic="true">
           {raisedHandNames.length > 0
@@ -554,15 +555,71 @@ export function RoomView({
           ) : null}
         </section>
 
-        <RoomChatPanel
-          onRetryMessage={onRetryMessage}
-          open={chatOpen}
-          messages={messages}
-          onSendMessage={onSendMessage}
-          onClose={closeChat}
-          onNotificationChange={setChatNotifications}
-          onDraftChange={setHasDraft}
-        />
+        <div className="side-panel" inert={panel === null}>
+          <div className="side-panel__tabs" role="tablist" aria-label="통화 패널">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={panel === 'chat'}
+              onClick={() => setPanel('chat')}
+            >
+              채팅
+              {panel !== 'chat' && chatNotificationCount > 0 ? (
+                <b>{Math.min(chatNotificationCount, 9)}</b>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={panel === 'hands'}
+              onClick={() => setPanel('hands')}
+            >
+              손들기
+              {handCount > 0 ? <b>{Math.min(handCount, 9)}</b> : null}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={panel === 'people'}
+              onClick={() => setPanel('people')}
+            >
+              참가자 {participants.length}
+            </button>
+          </div>
+          <RoomChatPanel
+            onRetryMessage={onRetryMessage}
+            open={chatOpen}
+            messages={messages}
+            onSendMessage={onSendMessage}
+            onClose={closePanel}
+            onNotificationChange={setChatNotifications}
+            onDraftChange={setHasDraft}
+          />
+          <section
+            className="side-panel__section"
+            aria-labelledby="hand-queue-title"
+            hidden={panel !== 'hands'}
+          >
+            <header className="side-panel__header">
+              <strong id="hand-queue-title">손들기 대기</strong>
+              <button type="button" aria-label="손들기 목록 닫기" onClick={closePanel}>
+                <CloseIcon />
+              </button>
+            </header>
+            <RoomHandQueue state={handQueue} participants={participants} active={isActive} />
+          </section>
+          {panel === 'people' ? (
+            <section className="side-panel__section" aria-labelledby="participant-list-title">
+              <header className="side-panel__header">
+                <strong id="participant-list-title">참가자 목록</strong>
+                <button type="button" aria-label="참가자 목록 닫기" onClick={closePanel}>
+                  <CloseIcon />
+                </button>
+              </header>
+              <RoomParticipantList participants={participants} handQueue={handQueue} />
+            </section>
+          ) : null}
+        </div>
       </main>
       {confirmAction ? (
         <LeaveRoomDialog
@@ -638,6 +695,7 @@ export function RoomView({
           }
           aria-pressed={screenSharing}
           onClick={onToggleScreenShare}
+          title={screenSharing ? '화면 공유 중지' : '화면 공유'}
         >
           <ScreenShareIcon />
           <span>
@@ -662,6 +720,7 @@ export function RoomView({
         >
           <HandIcon />
           <span>{handRaised ? '손 내리기' : '손들기'}</span>
+          {handCount > 0 ? <b>{Math.min(handCount, 9)}</b> : null}
         </button>
         <button
           ref={chatButtonRef}
@@ -670,16 +729,17 @@ export function RoomView({
           aria-label={chatButtonLabel}
           aria-expanded={chatOpen}
           onClick={toggleChat}
+          title="채팅"
         >
           <MessageIcon />
           <span>채팅</span>
           {chatNotificationCount > 0 ? <b>{Math.min(chatNotificationCount, 9)}</b> : null}
         </button>
-        <span className="control-dock__divider" />
         <button
           className="control-button control-button--leave"
           type="button"
           onClick={() => requestExit('leave')}
+          title="나가기"
         >
           <PhoneOffIcon />
           <span>나가기</span>

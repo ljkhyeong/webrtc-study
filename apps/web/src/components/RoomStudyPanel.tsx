@@ -93,6 +93,10 @@ export function RoomStudyPanel({
     ? Math.max(0, state.remainingMs - (state.running ? Math.max(0, now - state.sampledAt) : 0))
     : 0;
   const seconds = Math.ceil(remaining / 1000);
+  const progress =
+    state && state.durationSeconds > 0
+      ? Math.min(100, Math.max(0, 100 - remaining / (state.durationSeconds * 10)))
+      : 0;
   useEffect(() => {
     if (!state) {
       armed.current = false;
@@ -210,18 +214,23 @@ export function RoomStudyPanel({
   };
   return (
     <div className="room-study-region">
-      <details className="room-study">
+      <details className="room-study" data-mode={state?.mode ?? 'focus'}>
         <summary>
-          <span>{state?.mode === 'break' ? '휴식' : '집중'} 타이머</span>
+          <span className="room-study__mode">
+            {state?.mode === 'break' ? '휴식' : '집중'}
+            <span className="sr-only"> 타이머</span> · {label}
+          </span>
           <time>
             {String(Math.floor(seconds / 60)).padStart(2, '0')}:
             {String(seconds % 60).padStart(2, '0')}
           </time>
-          <span>{label}</span>
           {active && !hostPresent ? (
             <span className="room-study__host-absent">방장 없음</span>
           ) : null}
           <strong>{state?.topic || '주제 없음'}</strong>
+          <span className="room-study__progress" aria-hidden="true">
+            <i style={{ width: `${progress}%` }} />
+          </span>
         </summary>
         <div className="room-study__body">
           {active && !hostPresent ? (
