@@ -1143,7 +1143,8 @@ export class RoomSession {
     this.#peerRetryRequests.delete(peerId);
   }
 
-  #acceptPeerEpoch(peerId: string, negotiationId: string | undefined): boolean {
+  #acceptPeerSignal(peerId: string, negotiationId: string | undefined): boolean {
+    if (this.#staleSelfIds.has(peerId) || this.#exhaustedPeerIds.has(peerId)) return false;
     const epoch = this.#peerConnectionEpochs.get(peerId);
     return epoch === undefined || negotiationId?.startsWith(`${epoch}.`) === true;
   }
@@ -1273,12 +1274,10 @@ export class RoomSession {
     const mediaDevices = this.#getMediaDevices();
 
     if (mediaDevices === undefined) {
-      this.#warning = {
-        code: 'media-unavailable',
-        message: 'Camera and microphone APIs are unavailable; joined without media.',
-      };
-      this.#warningPeerId = null;
-      this.#emit();
+      this.#setWarning(
+        'media-unavailable',
+        'Camera and microphone APIs are unavailable; joined without media.',
+      );
       return;
     }
 
@@ -1483,25 +1482,18 @@ export class RoomSession {
           this.#peerConnectionEpochs.set(peerId, connectionId);
           this.#clearPeerWarning(peerId);
           try {
-            const peer = this.#ensurePeer(peerId);
+            this.#ensurePeer(peerId);
             this.#setPeerConnectionStatus(peerId, 'connecting');
             if (initiator) {
               await this.#peerNegotiation.createOffer(peerId);
             }
-            if (!this.#isCurrentPeer(peer)) return;
           } catch (error) {
             this.#failPeer(peerId, error);
           }
           return;
         }
         case 'rtc.offer':
-          if (
-            this.#staleSelfIds.has(message.from) ||
-            this.#exhaustedPeerIds.has(message.from) ||
-            !this.#acceptPeerEpoch(message.from, message.payload.negotiationId)
-          ) {
-            return;
-          }
+          if (!this.#acceptPeerSignal(message.from, message.payload.negotiationId)) return;
           await this.#peerNegotiation.handleOffer(
             message.from,
             message.payload.description,
@@ -1509,13 +1501,7 @@ export class RoomSession {
           );
           return;
         case 'rtc.answer':
-          if (
-            this.#staleSelfIds.has(message.from) ||
-            this.#exhaustedPeerIds.has(message.from) ||
-            !this.#acceptPeerEpoch(message.from, message.payload.negotiationId)
-          ) {
-            return;
-          }
+          if (!this.#acceptPeerSignal(message.from, message.payload.negotiationId)) return;
           await this.#peerNegotiation.handleAnswer(
             message.from,
             message.payload.description,
@@ -1523,13 +1509,7 @@ export class RoomSession {
           );
           return;
         case 'rtc.ice':
-          if (
-            this.#staleSelfIds.has(message.from) ||
-            this.#exhaustedPeerIds.has(message.from) ||
-            !this.#acceptPeerEpoch(message.from, message.payload.negotiationId)
-          ) {
-            return;
-          }
+          if (!this.#acceptPeerSignal(message.from, message.payload.negotiationId)) return;
           await this.#peerNegotiation.handleIce(
             message.from,
             message.payload.candidate,
@@ -1584,24 +1564,20 @@ export class RoomSession {
     );
     this.#syncLocalParticipantMedia();
 
-    for (const participant of participants) {
-      if (participant.peerId !== peerId && !this.#staleSelfIds.has(participant.peerId)) {
-        this.#upsertParticipant(participant, false);
-      }
+    const remoteParticipants = participants.filter(
+      (participant) => participant.peerId !== peerId && !this.#staleSelfIds.has(participant.peerId),
+    );
+    for (const participant of remoteParticipants) {
+      this.#upsertParticipant(participant, false);
     }
 
-    const offerPromises = participants
-      .filter(
-        (participant) =>
-          participant.peerId !== peerId && !this.#staleSelfIds.has(participant.peerId),
-      )
-      .map(async (participant) => {
-        try {
-          await this.#peerNegotiation.createOffer(participant.peerId);
-        } catch (error) {
-          this.#scheduleInitialOfferRetry(participant.peerId, error);
-        }
-      });
+    const offerPromises = remoteParticipants.map(async (participant) => {
+      try {
+        await this.#peerNegotiation.createOffer(participant.peerId);
+      } catch (error) {
+        this.#scheduleInitialOfferRetry(participant.peerId, error);
+      }
+    });
 
     if (this.#warning?.code === 'signaling-reconnecting') {
       this.#warning = null;
@@ -1632,28 +1608,17 @@ export class RoomSession {
     };
     this.#localInput.setDesiredEnabled(kind, false);
 
-    if (kind === 'video') {
-      if (this.#screenShare.cancelPendingStart(true)) {
-        this.#syncLocalParticipantMedia();
-        this.#broadcastMediaState();
-        this.#emit();
-        return;
-      }
-      if (this.#screenShare.isSharingOrStopping()) {
-        const stopPromise = this.#screenShare.stop(true);
-        this.#syncLocalParticipantMedia();
-        this.#broadcastMediaState();
-        this.#emit();
-        await stopPromise;
-        return;
-      }
-      this.#screenShare.disableCameraTracks();
-    } else {
+    let stopPromise: Promise<boolean> | null = null;
+    if (kind === 'audio') {
       this.#localInput.disableTracks('audio');
+    } else if (!this.#screenShare.cancelPendingStart(true)) {
+      if (this.#screenShare.isSharingOrStopping()) stopPromise = this.#screenShare.stop(true);
+      else this.#screenShare.disableCameraTracks();
     }
     this.#syncLocalParticipantMedia();
     this.#broadcastMediaState();
     this.#emit();
+    if (stopPromise !== null) await stopPromise;
   }
 
   #createPeerDataChannel(peerId: string): PeerDataChannel {
@@ -2061,9 +2026,7 @@ export class RoomSession {
     const shouldFlush = peer.hasRecoveryActivity();
     const participant = this.#participants.get(peer.peerId);
     const restoredConnectedState =
-      peer.connection.connectionState === 'connected' &&
-      participant !== undefined &&
-      participant.connectionState !== 'connected';
+      participant !== undefined && participant.connectionState !== 'connected';
     if (restoredConnectedState) {
       participant.connectionState = 'connected';
     }

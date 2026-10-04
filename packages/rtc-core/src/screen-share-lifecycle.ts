@@ -248,13 +248,11 @@ export class ScreenShareLifecycle {
         track.stop();
       }
     }
-    if (screenTrack !== undefined) {
-      preferDetailedScreenContent(screenTrack, this.#quality);
-      this.#pendingTrack = screenTrack;
-    }
     if (screenTrack === undefined) {
       return 'failed';
     }
+    preferDetailedScreenContent(screenTrack, this.#quality);
+    this.#pendingTrack = screenTrack;
     if (!this.#ownsStart(operation, screenTrack)) {
       screenTrack.stop();
       if (this.#pendingTrack === screenTrack) {
