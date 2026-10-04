@@ -70,7 +70,6 @@ public class SignalingService implements SmartLifecycle {
 	private static final long UNSET_NANOS = Long.MIN_VALUE;
 	private static final BytesKeyGenerator HEARTBEAT_CHALLENGE_GENERATOR =
 			KeyGenerators.secureRandom(2 * Long.BYTES);
-	static final int MAX_OUTBOUND_QUEUE_SIZE = SignalingOutboundDispatcher.MAX_QUEUE_SIZE;
 
 	private final Object monitor = new Object();
 	private final Object lifecycleMonitor = new Object();
@@ -212,16 +211,8 @@ public class SignalingService implements SmartLifecycle {
 			long nowMillis = clock.millis();
 			long nowNanos = monotonicTicker.getAsLong();
 			Peer peer = connectedPeers.get(session.getId());
-			if (peer != null) {
-				if (closeForExpiredAuthorizationLocked(
-						peer,
-						nowMillis,
-						nowNanos,
-						workPlan)) {
-					peer = null;
-				}
-			}
-			if (peer != null) {
+			if (peer != null
+					&& !closeForExpiredAuthorizationLocked(peer, nowMillis, nowNanos, workPlan)) {
 				SignalingInboundLimiter.Decision decision =
 						inboundLimiter.tryAcquire(peer.inboundLimit, nowNanos, payloadBytes);
 				switch (decision) {
@@ -358,18 +349,14 @@ public class SignalingService implements SmartLifecycle {
 								nowNanos,
 								peer.heartbeatPhaseStartedAtNanos,
 								heartbeatIntervalNanos)) {
-							closeForHeartbeatTimeoutLocked(peer, workPlan);
+							metrics.recordHeartbeatClose();
+							disconnectAndCloseLocked(peer, HEARTBEAT_TIMEOUT, workPlan);
 						}
 					}
 				}
 			}
 		}
 		execute(workPlan);
-	}
-
-	private void closeForHeartbeatTimeoutLocked(Peer peer, WorkPlan workPlan) {
-		metrics.recordHeartbeatClose();
-		disconnectAndCloseLocked(peer, HEARTBEAT_TIMEOUT, workPlan);
 	}
 
 	@Scheduled(fixedDelayString = "${round.signaling.unjoined-sweep-interval}")
@@ -389,9 +376,6 @@ public class SignalingService implements SmartLifecycle {
 						workPlan)) {
 					continue;
 				}
-				if (peer.unjoinedSinceNanos == UNSET_NANOS) {
-					continue;
-				}
 				if (elapsedAtLeast(
 						nowNanos,
 						peer.unjoinedSinceNanos,
@@ -407,7 +391,7 @@ public class SignalingService implements SmartLifecycle {
 	public void disconnect(WebSocketSession session) {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
-			disconnectLocked(session.getId(), workPlan);
+			disconnectLocked(session.getId(), workPlan, true, null);
 		}
 		execute(workPlan);
 	}
@@ -802,10 +786,6 @@ public class SignalingService implements SmartLifecycle {
 		return true;
 	}
 
-	private boolean disconnectLocked(String sessionId, WorkPlan workPlan) {
-		return disconnectLocked(sessionId, workPlan, true, null);
-	}
-
 	private boolean disconnectLocked(
 			String sessionId,
 			WorkPlan workPlan,
@@ -815,7 +795,7 @@ public class SignalingService implements SmartLifecycle {
 		if (peer != null) {
 			peer.connected = false;
 			if (releaseReservation) {
-				peer.releaseReservation();
+				peer.reservation.close();
 			}
 			else {
 				pendingTerminalCleanup.put(sessionId, peer);
@@ -1068,7 +1048,7 @@ public class SignalingService implements SmartLifecycle {
 			Peer pendingPeer = pendingTerminalCleanup.remove(
 					closeAction.session().getId());
 			if (pendingPeer != null) {
-				pendingPeer.releaseReservation();
+				pendingPeer.reservation.close();
 			}
 			monitor.notifyAll();
 		}
@@ -1126,7 +1106,7 @@ public class SignalingService implements SmartLifecycle {
 						.toList();
 				connectedPeers.values().forEach(peer -> {
 					peer.connected = false;
-					peer.releaseReservation();
+					peer.reservation.close();
 					outboundDispatcher.clearLocked(peer);
 				});
 				connectedPeers.clear();
@@ -1233,10 +1213,6 @@ public class SignalingService implements SmartLifecycle {
 			this.accessLease = accessLease;
 			this.closeDecision = closeDecision;
 			this.inboundLimit = inboundLimit;
-		}
-
-		private void releaseReservation() {
-			reservation.close();
 		}
 
 		@Override

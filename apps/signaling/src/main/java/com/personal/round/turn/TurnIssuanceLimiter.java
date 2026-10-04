@@ -82,20 +82,14 @@ final class TurnIssuanceLimiter {
 			return rejection;
 		}
 
-		clientWindow = clientWindows.computeIfAbsent(
-				clientKey,
-				ignored -> new IssuanceWindow(nowNanos));
+		clientWindows.computeIfAbsent(clientKey, ignored -> new IssuanceWindow(nowNanos)).attempts++;
 		if (participantKey != null) {
-			participantWindow = participantWindows.computeIfAbsent(
+			participantWindows.computeIfAbsent(
 					participantKey,
-					ignored -> new IssuanceWindow(nowNanos));
+					ignored -> new IssuanceWindow(nowNanos)).attempts++;
 		}
 		if (globalWindow == null) {
 			globalWindow = new IssuanceWindow(nowNanos);
-		}
-		clientWindow.attempts++;
-		if (participantWindow != null) {
-			participantWindow.attempts++;
 		}
 		globalWindow.attempts++;
 		return Acquired.INSTANCE;

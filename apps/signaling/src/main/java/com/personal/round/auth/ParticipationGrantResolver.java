@@ -34,10 +34,8 @@ public final class ParticipationGrantResolver {
 			Instant expiresAt = jwt.getExpiresAt();
 			if (!RoomIdFormat.isCanonical(roomId)
 					|| issuedAt == null
-					|| expiresAt == null) {
-				return Optional.empty();
-			}
-			if (!expiresAt.isAfter(issuedAt)) {
+					|| expiresAt == null
+					|| !expiresAt.isAfter(issuedAt)) {
 				return Optional.empty();
 			}
 			ParticipationGrant.Role role = switch (rawRole) {

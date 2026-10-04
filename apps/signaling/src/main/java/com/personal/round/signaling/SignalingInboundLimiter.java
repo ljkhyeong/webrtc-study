@@ -173,8 +173,7 @@ final class SignalingInboundLimiter {
 				int maximumFrames,
 				long maximumBytes,
 				int nextPayloadBytes) {
-			if (startedAtNanos == UNSET_NANOS
-					|| nowNanos - startedAtNanos >= durationNanos) {
+			if (isExpired(nowNanos, durationNanos)) {
 				startedAtNanos = nowNanos;
 				frameCount = 0;
 				payloadBytes = 0;

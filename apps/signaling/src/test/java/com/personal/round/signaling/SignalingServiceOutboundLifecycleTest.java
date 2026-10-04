@@ -189,7 +189,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 		try {
 			service.handle(slow.session(), join("Slow peer"));
 			assertThat(firstSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
-			for (int index = 0; index <= SignalingService.MAX_OUTBOUND_QUEUE_SIZE; index++) {
+			for (int index = 0; index <= SignalingOutboundDispatcher.MAX_QUEUE_SIZE; index++) {
 				service.sendInvalidMessage(slow.session(), "queued-" + index);
 			}
 
