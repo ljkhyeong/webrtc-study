@@ -8,11 +8,12 @@ import {
   PROTOCOL_VERSION,
   ProtocolValidationError,
   parseClientMessage,
-  parseServerMessage,
   parseServerMessageText,
   serializeClientMessage,
   utf8ByteLength,
 } from '../src/index.js';
+
+const parseServer = (message: unknown) => parseServerMessageText(JSON.stringify(message));
 
 const MAX_NEGOTIATION_ID_LENGTH = 128;
 const MAX_PEER_ID_LENGTH = 128;
@@ -445,7 +446,7 @@ describe('server message validation', () => {
       payload: { code: 'FORBIDDEN', message: 'Only the host can moderate media.' },
     },
   ])('accepts $type', (message) => {
-    expect(parseServerMessage(message)).toEqual(message);
+    expect(parseServer(message)).toEqual(message);
   });
 
   it.each(RELAY_PAYLOAD_CASES)(
@@ -462,7 +463,7 @@ describe('server message validation', () => {
         },
       };
 
-      expect(parseServerMessage(message)).toEqual(message);
+      expect(parseServer(message)).toEqual(message);
     },
   );
 
@@ -483,7 +484,7 @@ describe('server message validation', () => {
       payload: { ...contents, negotiationId },
     };
 
-    expect(() => parseServerMessage(message)).toThrow('$.payload.negotiationId');
+    expect(() => parseServer(message)).toThrow('$.payload.negotiationId');
   });
 
   it.each([
@@ -499,7 +500,7 @@ describe('server message validation', () => {
       },
     };
 
-    expect(() => parseServerMessage(message)).toThrow('$.payload.participant.role');
+    expect(() => parseServer(message)).toThrow('$.payload.participant.role');
   });
 
   it.each([
@@ -535,7 +536,7 @@ describe('server message validation', () => {
       '$.payload.participant.peerId',
     ],
   ])('rejects an overlong %s peer id', (_case, message, path) => {
-    expect(() => parseServerMessage(message)).toThrow(path);
+    expect(() => parseServer(message)).toThrow(path);
   });
 
   it.each([
@@ -554,7 +555,7 @@ describe('server message validation', () => {
       },
     };
 
-    expect(() => parseServerMessage(message)).toThrow('$.payload.selfRole');
+    expect(() => parseServer(message)).toThrow('$.payload.selfRole');
   });
 
   it.each([
@@ -579,7 +580,7 @@ describe('server message validation', () => {
       },
     };
 
-    expect(() => parseServerMessage(message)).toThrow(path);
+    expect(() => parseServer(message)).toThrow(path);
   });
 
   it.each([
@@ -617,7 +618,7 @@ describe('server message validation', () => {
       '$.payload.participant.canModerateMedia',
     ],
   ])('rejects an unsupported %s field', (_case, message, path) => {
-    expect(() => parseServerMessage(message)).toThrow(path);
+    expect(() => parseServer(message)).toThrow(path);
   });
 
   it.each([
@@ -634,7 +635,7 @@ describe('server message validation', () => {
       payload: { targetPeerId: 'peer-b', kind },
     };
 
-    expect(() => parseServerMessage(message)).toThrow('$.payload.kind');
+    expect(() => parseServer(message)).toThrow('$.payload.kind');
   });
 
   it.each([
@@ -651,7 +652,7 @@ describe('server message validation', () => {
       payload: { targetPeerId, kind: 'audio' },
     };
 
-    expect(() => parseServerMessage(message)).toThrow(path);
+    expect(() => parseServer(message)).toThrow(path);
   });
 
   it.each([
@@ -679,7 +680,7 @@ describe('server message validation', () => {
       '$.payload.enabled',
     ],
   ])('rejects an unsupported disabled-media %s field', (_case, message, path) => {
-    expect(() => parseServerMessage(message)).toThrow(path);
+    expect(() => parseServer(message)).toThrow(path);
   });
 
   it('rejects an unsupported media-enabled event', () => {
@@ -691,40 +692,17 @@ describe('server message validation', () => {
       payload: { targetPeerId: 'peer-b', kind: 'audio' },
     };
 
-    expect(() => parseServerMessage(message)).toThrow('$.type');
+    expect(() => parseServer(message)).toThrow('$.type');
   });
 
   it('rejects an unknown signaling error code', () => {
     expect(() =>
-      parseServerMessage({
+      parseServer({
         v: PROTOCOL_VERSION,
         type: 'error',
         payload: { code: 'SURPRISE', message: 'Nope' },
       }),
     ).toThrow('$.payload.code');
-  });
-
-  it('rejects a server message whose serialized UTF-8 frame exceeds 64 KiB', () => {
-    const message = {
-      v: PROTOCOL_VERSION,
-      type: 'room.joined',
-      roomId: 'abcd-efgh-jkmp',
-      payload: {
-        peerId: 'peer-a',
-        selfRole: 'participant',
-        capabilities: { canModerateMedia: false },
-        participants: Array.from({ length: 400 }, (_, index) => ({
-          peerId: `peer-${index}`,
-          displayName: '가'.repeat(64),
-          role: 'participant',
-        })),
-      },
-    };
-
-    expect(utf8ByteLength(JSON.stringify(message))).toBeGreaterThan(MAX_SIGNALING_FRAME_BYTES);
-    expect(() => parseServerMessage(message)).toThrow(
-      `serialized message must contain at most ${MAX_SIGNALING_FRAME_BYTES} UTF-8 bytes`,
-    );
   });
 
   it('rejects an oversized raw server frame before parsing JSON', () => {

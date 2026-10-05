@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { parseClientMessage, parseServerMessage } from '../src/index.js';
+import { parseClientMessage, parseServerMessageText } from '../src/index.js';
+
+const parseServer = (message: unknown) => parseServerMessageText(JSON.stringify(message));
 
 const envelope = { v: 3, roomId: 'abcd-efgh-jkmp' };
 describe('손들기 대기열 계약', () => {
@@ -17,14 +19,14 @@ describe('손들기 대기열 계약', () => {
       type: 'room.hand.state',
       payload: { revision: 2, peerIds: ['b', 'a'] },
     };
-    expect(parseServerMessage(message)).toEqual(message);
+    expect(parseServer(message)).toEqual(message);
     for (const changes of [
       { revision: -1 },
       { peerIds: ['a', 'a'] },
       { supportedPeerIds: ['a', 'b'] },
     ]) {
       expect(() =>
-        parseServerMessage({ ...message, payload: { ...message.payload, ...changes } }),
+        parseServer({ ...message, payload: { ...message.payload, ...changes } }),
       ).toThrow();
     }
   });

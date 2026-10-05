@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { parseClientMessage, parseServerMessage, PROTOCOL_VERSION } from '../src/index.js';
+import { parseClientMessage, parseServerMessageText, PROTOCOL_VERSION } from '../src/index.js';
+
+const parseServer = (message: unknown) => parseServerMessageText(JSON.stringify(message));
 const base = { v: PROTOCOL_VERSION, roomId: 'abcd-efgh-jkmp' };
 describe('재연결·스터디 메시지 계약', () => {
   it('재연결 대상과 서버가 정한 연결 번호를 검증한다', () => {
@@ -15,14 +17,14 @@ describe('재연결·스터디 메시지 계약', () => {
       }),
     ).toThrow();
     expect(
-      parseServerMessage({
+      parseServer({
         ...base,
         type: 'peer.reconnect',
         payload: { peerId: 'peer', connectionId: 'reset', initiator: true },
       }).type,
     ).toBe('peer.reconnect');
     expect(() =>
-      parseServerMessage({
+      parseServer({
         ...base,
         type: 'peer.reconnect',
         payload: { peerId: 'peer', connectionId: '', initiator: true },
