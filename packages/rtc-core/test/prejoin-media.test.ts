@@ -144,7 +144,7 @@ describe('PrejoinMedia', () => {
     });
     try {
       await controller.checkDevices();
-      controller.toggleAudio();
+      controller.toggle('audio');
       const before = controller.getSnapshot();
       mediaDevices.enumerateDevices.mockRejectedValueOnce(namedError('NotReadableError'));
       mediaDevices.dispatchEvent(new Event('devicechange'));
@@ -206,8 +206,8 @@ describe('PrejoinMedia', () => {
       let harness: Harness | undefined;
       try {
         await controller.checkDevices();
-        if (kind === 'audio') controller.toggleAudio();
-        else controller.toggleVideo();
+        if (kind === 'audio') controller.toggle('audio');
+        else controller.toggle('video');
         (kind === 'audio' ? audio : video).end();
         const replacement = new FakeTrack(kind, 'replacement');
         harness = createHarness({
@@ -245,7 +245,9 @@ describe('PrejoinMedia', () => {
         mediaStreamFactory: () => new FakeMediaStream() as unknown as MediaStream,
       });
       const select = (id: string) =>
-        kind === 'audio' ? controller.selectAudioInput(id) : controller.selectVideoInput(id);
+        kind === 'audio'
+          ? controller.selectInput('audio', id)
+          : controller.selectInput('video', id);
       try {
         await controller.checkDevices();
         track.end();
@@ -306,7 +308,7 @@ describe('PrejoinMedia', () => {
       videoAvailable: false,
       videoEnabled: false,
     });
-    expect(snapshot.videoIssue).toEqual({ code: 'device-busy' });
+    expect(snapshot.videoIssue).toBe('device-busy');
     expect(controller.getStream()?.getAudioTracks()).toEqual([audioTrack]);
   });
 
@@ -328,8 +330,8 @@ describe('PrejoinMedia', () => {
 
     const snapshot = await controller.checkDevices();
 
-    expect(snapshot.audioIssue).toEqual({ code: 'permission-denied' });
-    expect(snapshot.videoIssue).toEqual({ code: 'device-not-found' });
+    expect(snapshot.audioIssue).toBe('permission-denied');
+    expect(snapshot.videoIssue).toBe('device-not-found');
     expect(controller.getStream()).toBeNull();
   });
 
@@ -366,10 +368,10 @@ describe('PrejoinMedia', () => {
     });
 
     await controller.checkDevices();
-    expect(controller.toggleAudio()).toBe(false);
+    expect(controller.toggle('audio')).toBe(false);
     const previousAudioTrack = tracks[0];
 
-    const switched = await controller.selectAudioInput('mic-usb');
+    const switched = await controller.selectInput('audio', 'mic-usb');
 
     expect(previousAudioTrack?.stopped).toBe(true);
     expect(switched.selectedAudioInputId).toBe('mic-usb');
@@ -410,7 +412,7 @@ describe('PrejoinMedia', () => {
     });
 
     await controller.checkDevices();
-    expect(controller.toggleAudio()).toBe(false);
+    expect(controller.toggle('audio')).toBe(false);
     firstAudio.end();
 
     expect(controller.getSnapshot()).toMatchObject({
@@ -420,9 +422,7 @@ describe('PrejoinMedia', () => {
         videoAvailable: true,
         videoEnabled: true,
       },
-      audioIssue: {
-        code: 'track-ended',
-      },
+      audioIssue: 'track-ended',
     });
     expect(controller.getStream()?.getAudioTracks()).toEqual([]);
 

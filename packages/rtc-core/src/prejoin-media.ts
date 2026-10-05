@@ -3,10 +3,6 @@ export type PrejoinMediaStatus = 'idle' | 'checking' | 'ready';
 export type PrejoinMediaIssueCode =
   'permission-denied' | 'device-not-found' | 'device-busy' | 'media-unavailable' | 'track-ended';
 
-export interface PrejoinMediaIssue {
-  readonly code: PrejoinMediaIssueCode;
-}
-
 export interface PrejoinMediaDevice {
   readonly deviceId: string;
   readonly label: string;
@@ -26,8 +22,8 @@ export interface PrejoinMediaSnapshot {
   readonly selectedAudioInputId: string | null;
   readonly selectedVideoInputId: string | null;
   readonly localMedia: PrejoinLocalMediaSnapshot;
-  readonly audioIssue: PrejoinMediaIssue | null;
-  readonly videoIssue: PrejoinMediaIssue | null;
+  readonly audioIssue: PrejoinMediaIssueCode | null;
+  readonly videoIssue: PrejoinMediaIssueCode | null;
 }
 
 export type PrejoinMediaListener = (snapshot: PrejoinMediaSnapshot) => void;
@@ -45,37 +41,31 @@ export interface PrejoinMediaOptions {
 }
 
 type InputKind = 'audio' | 'video';
+type PerKind<T> = Record<InputKind, T>;
+
+const INPUT_KINDS: readonly InputKind[] = ['audio', 'video'];
+const INPUT_LABELS: PerKind<string> = { audio: '마이크', video: '카메라' };
 
 interface MediaRequest {
   readonly kind: InputKind;
   readonly deviceId: string | null;
 }
 
-function getErrorName(error: unknown): string {
-  if (typeof error === 'object' && error !== null && 'name' in error) {
-    const name = (error as { readonly name?: unknown }).name;
-    if (typeof name === 'string') {
-      return name;
-    }
-  }
-  return '';
-}
-
-function issueFor(error: unknown): PrejoinMediaIssue {
-  switch (getErrorName(error)) {
+function issueFor(error: unknown): PrejoinMediaIssueCode {
+  switch ((error as { readonly name?: unknown } | null | undefined)?.name) {
     case 'NotAllowedError':
     case 'SecurityError':
-      return { code: 'permission-denied' };
+      return 'permission-denied';
     case 'NotFoundError':
     case 'DevicesNotFoundError':
     case 'OverconstrainedError':
-      return { code: 'device-not-found' };
+      return 'device-not-found';
     case 'AbortError':
     case 'NotReadableError':
     case 'TrackStartError':
-      return { code: 'device-busy' };
+      return 'device-busy';
     default:
-      return { code: 'media-unavailable' };
+      return 'media-unavailable';
   }
 }
 
@@ -113,8 +103,7 @@ function hasEnded(track: MediaStreamTrack): boolean {
  * `takeStream()`은 트랙 관리를 `RoomSession`에 넘긴다.
  */
 export class PrejoinMedia {
-  readonly #audioConstraints: MediaTrackConstraints;
-  readonly #videoConstraints: MediaTrackConstraints;
+  readonly #constraints: PerKind<MediaTrackConstraints>;
   readonly #mediaDevices: PrejoinMediaDevices | undefined;
   readonly #mediaStreamFactory: () => MediaStream;
   readonly #listeners = new Set<PrejoinMediaListener>();
@@ -126,17 +115,14 @@ export class PrejoinMedia {
     readonly generation: number;
     readonly resolve: () => void;
   }[] = [];
+  readonly #desiredEnabled: PerKind<boolean> = { audio: true, video: true };
 
   #stream: MediaStream | null = null;
   #status: PrejoinMediaStatus = 'idle';
-  #audioInputs: PrejoinMediaDevice[] = [];
-  #videoInputs: PrejoinMediaDevice[] = [];
-  #selectedAudioInputId: string | null = null;
-  #selectedVideoInputId: string | null = null;
-  #audioIssue: PrejoinMediaIssue | null = null;
-  #videoIssue: PrejoinMediaIssue | null = null;
-  #desiredAudioEnabled = true;
-  #desiredVideoEnabled = true;
+  // 목록은 조회할 때마다 새 배열로 바꾸고 고치지 않으므로 스냅샷이 그대로 공유한다.
+  #inputs: PerKind<readonly PrejoinMediaDevice[]> = { audio: [], video: [] };
+  #selected: PerKind<string | null> = { audio: null, video: null };
+  #issues: PerKind<PrejoinMediaIssueCode | null> = { audio: null, video: null };
   #snapshot: PrejoinMediaSnapshot;
   #disposed = false;
   #deviceRefreshRequestedGeneration = 0;
@@ -145,8 +131,10 @@ export class PrejoinMedia {
   #deviceRefreshShouldEmit = false;
 
   constructor(options: PrejoinMediaOptions = {}) {
-    this.#audioConstraints = options.audioConstraints ?? {};
-    this.#videoConstraints = options.videoConstraints ?? {};
+    this.#constraints = {
+      audio: options.audioConstraints ?? {},
+      video: options.videoConstraints ?? {},
+    };
     this.#mediaDevices =
       options.mediaDevices ??
       (typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined);
@@ -163,8 +151,8 @@ export class PrejoinMedia {
     return this.#stream;
   }
 
-  getInputEnabled(): Readonly<Record<'audio' | 'video', boolean>> {
-    return { audio: this.#desiredAudioEnabled, video: this.#desiredVideoEnabled };
+  getInputEnabled(): Readonly<PerKind<boolean>> {
+    return { ...this.#desiredEnabled };
   }
 
   subscribe(listener: PrejoinMediaListener): () => void {
@@ -175,57 +163,38 @@ export class PrejoinMedia {
   }
 
   checkDevices(): Promise<PrejoinMediaSnapshot> {
-    return this.#runRequests([
-      { kind: 'audio', deviceId: this.#selectedAudioInputId },
-      { kind: 'video', deviceId: this.#selectedVideoInputId },
-    ]);
+    return this.#runRequests(INPUT_KINDS);
   }
 
   retryUnavailable(): Promise<PrejoinMediaSnapshot> {
-    const requests: MediaRequest[] = [];
-    if (this.#liveTracks(this.#audioTracks()).length === 0 || this.#audioIssue !== null) {
-      requests.push({ kind: 'audio', deviceId: this.#selectedAudioInputId });
-    }
-    if (this.#liveTracks(this.#videoTracks()).length === 0 || this.#videoIssue !== null) {
-      requests.push({ kind: 'video', deviceId: this.#selectedVideoInputId });
-    }
-
-    return this.#runRequests(
-      requests.length > 0
-        ? requests
-        : [
-            { kind: 'audio', deviceId: this.#selectedAudioInputId },
-            { kind: 'video', deviceId: this.#selectedVideoInputId },
-          ],
+    const kinds = INPUT_KINDS.filter(
+      (kind) => this.#liveTracks(kind).length === 0 || this.#issues[kind] !== null,
     );
+    return this.#runRequests(kinds.length > 0 ? kinds : INPUT_KINDS);
   }
 
-  selectAudioInput(deviceId: string): Promise<PrejoinMediaSnapshot> {
+  selectInput(kind: InputKind, deviceId: string): Promise<PrejoinMediaSnapshot> {
     if (
       deviceId.length === 0 ||
-      this.#liveTracks(this.#audioTracks()).some((track) => this.#trackDeviceId(track) === deviceId)
+      this.#liveTracks(kind).some((track) => this.#trackDeviceId(track) === deviceId)
     ) {
       return Promise.resolve(this.#snapshot);
     }
-    return this.#runRequests([{ kind: 'audio', deviceId }]);
+    return this.#runRequests([kind], deviceId);
   }
 
-  selectVideoInput(deviceId: string): Promise<PrejoinMediaSnapshot> {
-    if (
-      deviceId.length === 0 ||
-      this.#liveTracks(this.#videoTracks()).some((track) => this.#trackDeviceId(track) === deviceId)
-    ) {
-      return Promise.resolve(this.#snapshot);
+  toggle(kind: InputKind): boolean {
+    const tracks = this.#liveTracks(kind);
+    if (this.#disposed || tracks.length === 0) {
+      return false;
     }
-    return this.#runRequests([{ kind: 'video', deviceId }]);
-  }
-
-  toggleAudio(): boolean {
-    return this.#toggleTracks('audio', this.#liveTracks(this.#audioTracks()));
-  }
-
-  toggleVideo(): boolean {
-    return this.#toggleTracks('video', this.#liveTracks(this.#videoTracks()));
+    const enabled = !tracks.some((track) => track.enabled);
+    this.#desiredEnabled[kind] = enabled;
+    for (const track of tracks) {
+      track.enabled = enabled;
+    }
+    this.#emit();
+    return enabled;
   }
 
   /**
@@ -241,12 +210,8 @@ export class PrejoinMedia {
     }
 
     const stream = this.#stream;
-    this.#disposed = true;
-    this.#detachAllTrackEndedListeners();
-    this.#mediaDevices?.removeEventListener('devicechange', this.#deviceChangeListener);
     this.#stream = null;
-    this.#listeners.clear();
-    this.#resolveDeviceRefreshWaiters(true);
+    this.#shutdown();
     return stream !== null && stream.getTracks().length > 0 ? stream : null;
   }
 
@@ -255,23 +220,34 @@ export class PrejoinMedia {
       return;
     }
 
-    this.#disposed = true;
-    this.#detachAllTrackEndedListeners();
-    this.#mediaDevices?.removeEventListener('devicechange', this.#deviceChangeListener);
+    this.#shutdown();
     if (this.#stream !== null) {
       stopTracks(this.#stream);
       this.#stream = null;
     }
-    this.#listeners.clear();
-    this.#resolveDeviceRefreshWaiters(true);
     this.#snapshot = this.#buildSnapshot();
   }
 
-  async #runRequests(requests: readonly MediaRequest[]): Promise<PrejoinMediaSnapshot> {
+  #shutdown(): void {
+    this.#disposed = true;
+    for (const track of [...this.#trackEndedListeners.keys()]) {
+      this.#detachTrackEndedListener(track);
+    }
+    this.#mediaDevices?.removeEventListener('devicechange', this.#deviceChangeListener);
+    this.#listeners.clear();
+    this.#resolveDeviceRefreshWaiters(true);
+  }
+
+  // 선택한 장치가 없으면 요청 시점의 선택값을 쓴다.
+  async #runRequests(
+    kinds: readonly InputKind[],
+    deviceId?: string,
+  ): Promise<PrejoinMediaSnapshot> {
     if (this.#disposed || this.#status === 'checking') {
       return this.#snapshot;
     }
 
+    const requests = kinds.map((kind) => ({ kind, deviceId: deviceId ?? this.#selected[kind] }));
     this.#status = 'checking';
     this.#emit();
 
@@ -290,38 +266,28 @@ export class PrejoinMedia {
     return this.#snapshot;
   }
 
-  async #acquire(request: MediaRequest): Promise<void> {
+  async #acquire({ kind, deviceId }: MediaRequest): Promise<void> {
     let acquiredStream: MediaStream | null = null;
     try {
       if (this.#mediaDevices === undefined) {
         throw new Error('Browser media APIs are unavailable');
       }
 
-      const constraints =
-        request.kind === 'audio'
-          ? {
-              audio: withSelectedDevice(this.#audioConstraints, request.deviceId),
-              video: false,
-            }
-          : {
-              audio: false,
-              video: withSelectedDevice(this.#videoConstraints, request.deviceId),
-            };
-      acquiredStream = await this.#mediaDevices.getUserMedia(constraints);
+      acquiredStream = await this.#mediaDevices.getUserMedia({
+        audio: false,
+        video: false,
+        [kind]: withSelectedDevice(this.#constraints[kind], deviceId),
+      });
 
       if (this.#disposed) {
         stopTracks(acquiredStream);
         return;
       }
 
-      const requestedTracks =
-        request.kind === 'audio'
-          ? acquiredStream.getAudioTracks()
-          : acquiredStream.getVideoTracks();
-      const track = requestedTracks[0];
+      const track = (
+        kind === 'audio' ? acquiredStream.getAudioTracks() : acquiredStream.getVideoTracks()
+      )[0];
       if (track === undefined || hasEnded(track)) {
-        stopTracks(acquiredStream);
-        acquiredStream = null;
         throw missingTrackError();
       }
 
@@ -331,38 +297,22 @@ export class PrejoinMedia {
         }
       }
 
-      this.#replaceTrack(request.kind, track);
-      if (hasEnded(track)) {
-        throw missingTrackError();
-      }
-      const actualDeviceId = this.#trackDeviceId(track) ?? request.deviceId;
-      if (request.kind === 'audio') {
-        this.#selectedAudioInputId = actualDeviceId;
-        this.#audioIssue = null;
-      } else {
-        this.#selectedVideoInputId = actualDeviceId;
-        this.#videoIssue = null;
-      }
+      this.#replaceTrack(kind, track);
+      this.#selected[kind] = this.#trackDeviceId(track) ?? deviceId;
+      this.#issues[kind] = null;
     } catch (error) {
       if (acquiredStream !== null) {
         stopTracks(acquiredStream);
       }
-      const issue = issueFor(error);
-      if (request.kind === 'audio') {
-        this.#audioIssue = issue;
-      } else {
-        this.#videoIssue = issue;
-      }
+      this.#issues[kind] = issueFor(error);
     }
   }
 
+  // 새 트랙은 바로 앞에서 live임을 확인했고 그 뒤로는 동기 처리만 한다.
   #replaceTrack(kind: InputKind, track: MediaStreamTrack): void {
-    const previousTracks = kind === 'audio' ? this.#audioTracks() : this.#videoTracks();
-    track.enabled = kind === 'audio' ? this.#desiredAudioEnabled : this.#desiredVideoEnabled;
-
-    if (this.#stream === null) {
-      this.#stream = this.#mediaStreamFactory();
-    }
+    const previousTracks = this.#tracks(kind);
+    track.enabled = this.#desiredEnabled[kind];
+    this.#stream ??= this.#mediaStreamFactory();
 
     for (const previousTrack of previousTracks) {
       this.#detachTrackEndedListener(previousTrack);
@@ -370,36 +320,20 @@ export class PrejoinMedia {
       previousTrack.stop();
     }
     this.#stream.addTrack(track);
-    this.#attachTrackEndedListener(kind, track);
-  }
-
-  #attachTrackEndedListener(kind: InputKind, track: MediaStreamTrack): void {
-    this.#detachTrackEndedListener(track);
     const listener: EventListener = () => {
       this.#handleTrackEnded(kind, track);
     };
     this.#trackEndedListeners.set(track, listener);
     track.addEventListener('ended', listener);
-    if (hasEnded(track)) {
-      this.#handleTrackEnded(kind, track);
-    }
   }
 
   #handleTrackEnded(kind: InputKind, track: MediaStreamTrack): void {
-    const stream = this.#stream;
-    if (this.#disposed || stream === null || !this.#trackEndedListeners.has(track)) {
-      this.#detachTrackEndedListener(track);
+    if (!this.#trackEndedListeners.has(track)) {
       return;
     }
-
     this.#detachTrackEndedListener(track);
-    stream.removeTrack(track);
-    const issue: PrejoinMediaIssue = { code: 'track-ended' };
-    if (kind === 'audio') {
-      this.#audioIssue = issue;
-    } else {
-      this.#videoIssue = issue;
-    }
+    this.#stream?.removeTrack(track);
+    this.#issues[kind] = 'track-ended';
     this.#emit();
   }
 
@@ -410,12 +344,6 @@ export class PrejoinMedia {
     }
     track.removeEventListener('ended', listener);
     this.#trackEndedListeners.delete(track);
-  }
-
-  #detachAllTrackEndedListeners(): void {
-    for (const track of [...this.#trackEndedListeners.keys()]) {
-      this.#detachTrackEndedListener(track);
-    }
   }
 
   #requestDeviceRefresh(emitSnapshot: boolean): Promise<void> {
@@ -493,29 +421,19 @@ export class PrejoinMedia {
   }
 
   #applyDevices(devices: readonly MediaDeviceInfo[]): void {
-    this.#audioInputs = devices
-      .filter((device) => device.kind === 'audioinput')
-      .map((device, index) => ({
-        deviceId: device.deviceId,
-        label: device.label || `마이크 ${index + 1}`,
-      }));
-    this.#videoInputs = devices
-      .filter((device) => device.kind === 'videoinput')
-      .map((device, index) => ({
-        deviceId: device.deviceId,
-        label: device.label || `카메라 ${index + 1}`,
-      }));
-
-    this.#selectedAudioInputId = this.#normalizeSelection(
-      this.#selectedAudioInputId,
-      this.#audioInputs,
-      this.#audioTracks()[0],
-    );
-    this.#selectedVideoInputId = this.#normalizeSelection(
-      this.#selectedVideoInputId,
-      this.#videoInputs,
-      this.#videoTracks()[0],
-    );
+    for (const kind of INPUT_KINDS) {
+      this.#inputs[kind] = devices
+        .filter((device) => device.kind === `${kind}input`)
+        .map((device, index) => ({
+          deviceId: device.deviceId,
+          label: device.label || `${INPUT_LABELS[kind]} ${index + 1}`,
+        }));
+      this.#selected[kind] = this.#normalizeSelection(
+        this.#selected[kind],
+        this.#inputs[kind],
+        this.#tracks(kind)[0],
+      );
+    }
   }
 
   #resolveDeviceRefreshWaiters(force: boolean): void {
@@ -547,61 +465,36 @@ export class PrejoinMedia {
   }
 
   #trackDeviceId(track: MediaStreamTrack): string | null {
-    try {
-      const deviceId = track.getSettings().deviceId;
-      return typeof deviceId === 'string' && deviceId.length > 0 ? deviceId : null;
-    } catch {
-      return null;
-    }
+    return track.getSettings().deviceId || null;
   }
 
-  #toggleTracks(kind: InputKind, tracks: readonly MediaStreamTrack[]): boolean {
-    if (this.#disposed || tracks.length === 0) {
-      return false;
-    }
-
-    const enabled = !tracks.some((track) => track.enabled);
-    if (kind === 'audio') {
-      this.#desiredAudioEnabled = enabled;
-    } else {
-      this.#desiredVideoEnabled = enabled;
-    }
-    for (const track of tracks) {
-      track.enabled = enabled;
-    }
-    this.#emit();
-    return enabled;
+  #tracks(kind: InputKind): MediaStreamTrack[] {
+    return (
+      (kind === 'audio' ? this.#stream?.getAudioTracks() : this.#stream?.getVideoTracks()) ?? []
+    );
   }
 
-  #audioTracks(): MediaStreamTrack[] {
-    return this.#stream?.getAudioTracks() ?? [];
-  }
-
-  #videoTracks(): MediaStreamTrack[] {
-    return this.#stream?.getVideoTracks() ?? [];
-  }
-
-  #liveTracks(tracks: readonly MediaStreamTrack[]): MediaStreamTrack[] {
-    return tracks.filter((track) => track.readyState === 'live');
+  #liveTracks(kind: InputKind): MediaStreamTrack[] {
+    return this.#tracks(kind).filter((track) => track.readyState === 'live');
   }
 
   #buildSnapshot(): PrejoinMediaSnapshot {
-    const audioTracks = this.#liveTracks(this.#audioTracks());
-    const videoTracks = this.#liveTracks(this.#videoTracks());
+    const audioTracks = this.#liveTracks('audio');
+    const videoTracks = this.#liveTracks('video');
     return {
       status: this.#status,
-      audioInputs: this.#audioInputs.map((device) => ({ ...device })),
-      videoInputs: this.#videoInputs.map((device) => ({ ...device })),
-      selectedAudioInputId: this.#selectedAudioInputId,
-      selectedVideoInputId: this.#selectedVideoInputId,
+      audioInputs: this.#inputs.audio,
+      videoInputs: this.#inputs.video,
+      selectedAudioInputId: this.#selected.audio,
+      selectedVideoInputId: this.#selected.video,
       localMedia: {
         audioAvailable: audioTracks.length > 0,
         audioEnabled: audioTracks.some((track) => track.enabled),
         videoAvailable: videoTracks.length > 0,
         videoEnabled: videoTracks.some((track) => track.enabled),
       },
-      audioIssue: this.#audioIssue === null ? null : { ...this.#audioIssue },
-      videoIssue: this.#videoIssue === null ? null : { ...this.#videoIssue },
+      audioIssue: this.#issues.audio,
+      videoIssue: this.#issues.video,
     };
   }
 

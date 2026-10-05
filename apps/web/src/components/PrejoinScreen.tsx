@@ -226,7 +226,7 @@ export function PrejoinScreen({
                 }
                 aria-pressed={snapshot.localMedia.audioEnabled}
                 onClick={() => {
-                  controllerRef.current?.toggleAudio();
+                  controllerRef.current?.toggle('audio');
                 }}
               >
                 {snapshot.localMedia.audioEnabled ? <MicIcon /> : <MicOffIcon />}
@@ -241,7 +241,7 @@ export function PrejoinScreen({
                 }
                 aria-pressed={snapshot.localMedia.videoEnabled}
                 onClick={() => {
-                  controllerRef.current?.toggleVideo();
+                  controllerRef.current?.toggle('video');
                 }}
               >
                 {snapshot.localMedia.videoEnabled ? <CameraIcon /> : <CameraOffIcon />}
@@ -365,11 +365,7 @@ export function PrejoinScreen({
                           const deviceId = event.currentTarget.value;
                           const controller = controllerRef.current;
                           if (controller !== null) {
-                            runAuthorized(() =>
-                              kind === 'audio'
-                                ? controller.selectAudioInput(deviceId)
-                                : controller.selectVideoInput(deviceId),
-                            );
+                            runAuthorized(() => controller.selectInput(kind, deviceId));
                           }
                         }}
                       >
@@ -402,13 +398,13 @@ export function PrejoinScreen({
                 {snapshot.audioIssue ? (
                   <p role="alert">
                     <MicOffIcon />
-                    <span>{prejoinMediaIssueMessage('audio', snapshot.audioIssue.code)}</span>
+                    <span>{prejoinMediaIssueMessage('audio', snapshot.audioIssue)}</span>
                   </p>
                 ) : null}
                 {snapshot.videoIssue ? (
                   <p role="alert">
                     <CameraOffIcon />
-                    <span>{prejoinMediaIssueMessage('video', snapshot.videoIssue.code)}</span>
+                    <span>{prejoinMediaIssueMessage('video', snapshot.videoIssue)}</span>
                   </p>
                 ) : null}
               </div>
