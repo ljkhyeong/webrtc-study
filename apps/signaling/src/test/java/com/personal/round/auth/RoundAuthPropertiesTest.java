@@ -3,6 +3,7 @@ package com.personal.round.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import jakarta.validation.Validation;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -127,11 +128,11 @@ class RoundAuthPropertiesTest {
 				Duration.ofMinutes(16));
 
 		assertThat(validator.validate(tooShort))
-				.extracting(violation -> violation.getMessage())
-				.contains("round.auth.max-grant-lifetime must be at least 30s");
+				.extracting(RoundAuthPropertiesTest::constraint)
+				.containsExactly("DurationMin.maxGrantLifetime");
 		assertThat(validator.validate(tooLong))
-				.extracting(violation -> violation.getMessage())
-				.contains("round.auth.max-grant-lifetime must be at most 15m");
+				.extracting(RoundAuthPropertiesTest::constraint)
+				.containsExactly("DurationMax.maxGrantLifetime");
 	}
 
 	@Test
@@ -171,5 +172,10 @@ class RoundAuthPropertiesTest {
 		assertThat(validator.validate(mixedBaton))
 				.extracting(violation -> violation.getMessage())
 				.contains("BATON auth mode must not configure a standalone host token");
+	}
+
+	private static String constraint(ConstraintViolation<?> violation) {
+		return violation.getConstraintDescriptor().getAnnotation().annotationType().getSimpleName()
+				+ "." + violation.getPropertyPath();
 	}
 }

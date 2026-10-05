@@ -201,9 +201,9 @@ class ConfigurationPropertiesBindingTest {
 					assertThat(failure).isNotNull();
 					assertThat(failure)
 							.hasStackTraceContaining(
-									"round.signaling.max-connections must be at most 5000")
+									"Max.round.signaling.maxConnections")
 							.hasStackTraceContaining(
-									"round.signaling.max-connections-per-client must be at most 5000");
+									"Max.round.signaling.maxConnectionsPerClient");
 				});
 	}
 
@@ -213,7 +213,7 @@ class ConfigurationPropertiesBindingTest {
 				.withPropertyValues("round.signaling.max-room-size=7")
 				.run(context -> assertThat(context.getStartupFailure())
 						.hasStackTraceContaining(
-								"round.signaling.max-room-size must be at most 6"));
+								"Max.round.signaling.maxRoomSize"));
 	}
 
 	@Test
@@ -222,8 +222,7 @@ class ConfigurationPropertiesBindingTest {
 				.withPropertyValues("round.signaling.unjoined-sweep-interval=1001ms")
 				.run(context -> assertThat(context.getStartupFailure())
 						.hasStackTraceContaining(
-								"round.signaling.unjoined-sweep-interval must be at most 1s "
-										+ "for authorization expiry enforcement"));
+								"DurationMax.round.signaling.unjoinedSweepInterval"));
 	}
 
 	@Test
@@ -281,8 +280,7 @@ class ConfigurationPropertiesBindingTest {
 									"round.signaling.max-bytes-global-window must be at least twice "
 											+ "max-bytes-per-client-window")
 							.hasStackTraceContaining(
-									"round.signaling.max-outbound-queue-bytes는 시그널링 프레임 한도인 "
-											+ "65536바이트 이상이어야 합니다")
+									"Min.round.signaling.maxOutboundQueueBytes")
 							.hasStackTraceContaining(
 									"round.signaling.max-outbound-queue-bytes-global must not be lower "
 											+ "than max-outbound-queue-bytes");
@@ -312,10 +310,9 @@ class ConfigurationPropertiesBindingTest {
 					assertThat(failure).isNotNull();
 					assertThat(failure)
 							.hasStackTraceContaining(
-									"round.signaling.max-outbound-queue-bytes must be at most 16777216")
+									"Max.round.signaling.maxOutboundQueueBytes")
 							.hasStackTraceContaining(
-									"round.signaling.max-outbound-queue-bytes-global must be at most "
-											+ "134217728");
+									"Max.round.signaling.maxOutboundQueueBytesGlobal");
 				});
 	}
 
@@ -329,7 +326,7 @@ class ConfigurationPropertiesBindingTest {
 					assertThat(failure).isNotNull();
 					assertThat(failure)
 							.hasStackTraceContaining(
-									"round.signaling.unjoined-timeout must be at least 1s");
+									"DurationMin.round.signaling.unjoinedTimeout");
 				});
 	}
 
@@ -339,7 +336,7 @@ class ConfigurationPropertiesBindingTest {
 				.withPropertyValues("round.signaling.shutdown-close-timeout=10s")
 				.run(context -> assertThat(context.getStartupFailure())
 						.hasStackTraceContaining(
-								"round.signaling.shutdown-close-timeout must be at most 9s"));
+								"DurationMax.round.signaling.shutdownCloseTimeout"));
 	}
 
 	@Test

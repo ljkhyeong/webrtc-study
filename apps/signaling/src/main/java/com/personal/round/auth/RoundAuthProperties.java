@@ -16,31 +16,21 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties(prefix = "round.auth")
 public record RoundAuthProperties(
-		@NotNull(message = "round.auth.mode must be configured")
-		Mode mode,
-		@NotBlank(message = "round.auth.cookie-name must not be blank")
-		@Size(max = 128, message = "round.auth.cookie-name must contain at most 128 characters")
+		@NotNull Mode mode,
+		@NotBlank
+		@Size(max = 128)
 		@Pattern(
 				regexp = "[!#$%&'*+.^_`|~0-9A-Za-z-]+",
 				message = "round.auth.cookie-name must be a valid cookie name")
 		String cookieName,
 		String issuer,
-		@NotBlank(message = "round.auth.audience must not be blank")
-		@Size(max = 256, message = "round.auth.audience must contain at most 256 characters")
-		String audience,
+		@NotBlank @Size(max = 256) String audience,
 		String jwkSetUri,
 		@Pattern(
 				regexp = "[0-9a-fA-F]{64}",
 				message = "round.auth.standalone-host-token-sha256 must contain exactly 64 hexadecimal characters")
 		String standaloneHostTokenSha256,
-		@NotNull(message = "round.auth.max-grant-lifetime must be configured")
-		@DurationMin(
-				seconds = 30,
-				message = "round.auth.max-grant-lifetime must be at least 30s")
-		@DurationMax(
-				minutes = 15,
-				message = "round.auth.max-grant-lifetime must be at most 15m")
-		Duration maxGrantLifetime) {
+		@NotNull @DurationMin(seconds = 30) @DurationMax(minutes = 15) Duration maxGrantLifetime) {
 
 	public RoundAuthProperties {
 		cookieName = normalize(cookieName);
