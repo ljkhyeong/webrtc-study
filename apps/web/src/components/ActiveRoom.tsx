@@ -31,6 +31,7 @@ import {
   roomStatusLabel,
   roomWarningMessage,
   screenShareStartNotice,
+  type RoomActionNotice,
   type RoomStartupErrorCode,
 } from '../lib/room-presentation';
 class RoomStartupFailure extends Error {
@@ -78,8 +79,7 @@ export function ActiveRoom({
   const ensureFreshParticipationGrantRef = useRef<() => Promise<void>>(async () => {});
   const [subscribedSession, setSubscribedSession] = useState<RoomSession | null>(null);
   const [startupError, setStartupError] = useState<RoomStartupErrorCode | null>(null);
-  const [actionWarning, setActionWarning] = useState('');
-  const [actionError, setActionError] = useState('');
+  const [actionNotice, setActionNotice] = useState<RoomActionNotice | null>(null);
   const [participationGrantRefreshWarning, setParticipationGrantRefreshWarning] = useState('');
   const [turnRefreshWarning, setTurnRefreshWarning] = useState('');
   const [qualityVisible, setQualityVisible] = useState(false);
@@ -227,8 +227,7 @@ export function ActiveRoom({
             }
             setSubscribedSession(session);
 
-            setActionWarning('');
-            setActionError('');
+            setActionNotice(null);
 
             await session.join();
             if (loaded.turnRefreshDueAtMs !== null) {
@@ -253,8 +252,7 @@ export function ActiveRoom({
     };
 
     setStartupError(null);
-    setActionWarning('');
-    setActionError('');
+    setActionNotice(null);
     setParticipationGrantRefreshWarning('');
     setTurnRefreshWarning('');
     void startSession();
@@ -390,19 +388,16 @@ export function ActiveRoom({
         throw new Error('Room session is unavailable');
       }
       session.sendChat(text);
-      setActionWarning('');
-      setActionError('');
+      setActionNotice(null);
       return true;
     } catch (error) {
-      setActionWarning('');
-      setActionError(chatErrorMessage(error));
+      setActionNotice({ tone: 'error', message: chatErrorMessage(error) });
       return false;
     }
   };
 
   const handleActionResult = (succeeded: boolean, failureMessage: string) => {
-    setActionWarning('');
-    setActionError(succeeded ? '' : failureMessage);
+    setActionNotice(succeeded ? null : { tone: 'error', message: failureMessage });
   };
 
   const sessionError = roomErrorMessage(snapshot?.error);
@@ -426,8 +421,7 @@ export function ActiveRoom({
   const systemNotices = buildRoomSystemNotices({
     status,
     sessionError,
-    actionWarning: actionWarning || undefined,
-    actionError: actionError || undefined,
+    actionNotice,
     participationGrantRefreshWarning: participationGrantRefreshWarning || undefined,
     turnRefreshWarning: turnRefreshWarning || undefined,
   });
@@ -505,8 +499,7 @@ export function ActiveRoom({
           if (session === null) {
             return;
           }
-          setActionWarning('');
-          setActionError('');
+          setActionNotice(null);
           const wasSharing = snapshot?.screenSharing === true;
           void (async () => {
             try {
@@ -516,21 +509,15 @@ export function ActiveRoom({
               }
               const notice = screenShareStartNotice(await session.startScreenShare());
               if (sessionRef.current !== session) return;
-              if (notice?.tone === 'warning') {
-                setActionError('');
-                setActionWarning(notice.message);
-              } else if (notice?.tone === 'error') {
-                setActionWarning('');
-                setActionError(notice.message);
-              }
+              if (notice) setActionNotice(notice);
             } catch {
               if (sessionRef.current === session) {
-                setActionWarning('');
-                setActionError(
-                  wasSharing
+                setActionNotice({
+                  tone: 'error',
+                  message: wasSharing
                     ? '화면 공유를 중지하지 못했습니다. 잠시 후 다시 시도해 주세요.'
                     : '화면 공유를 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.',
-                );
+                });
               }
             }
           })();

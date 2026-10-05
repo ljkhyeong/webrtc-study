@@ -230,16 +230,20 @@ describe('App pre-join boundary', () => {
     expect(
       buildRoomSystemNotices({
         status: 'active',
+        actionNotice: { tone: 'error', message: '작업 오류' },
+      }),
+    ).toEqual([{ id: 'action-error', tone: 'error', message: '작업 오류' }]);
+    expect(
+      buildRoomSystemNotices({
+        status: 'active',
         sessionError: '세션 오류',
-        actionWarning: '작업 안내',
-        actionError: '작업 오류',
+        actionNotice: { tone: 'warning', message: '작업 안내' },
         participationGrantRefreshWarning: '참여권 경고',
         turnRefreshWarning: 'TURN 경고',
       }),
     ).toEqual([
       { id: 'session-error', tone: 'error', message: '세션 오류' },
       { id: 'action-warning', tone: 'warning', message: '작업 안내' },
-      { id: 'action-error', tone: 'error', message: '작업 오류' },
       {
         id: 'participation-grant-refresh',
         tone: 'warning',
@@ -253,7 +257,7 @@ describe('App pre-join boundary', () => {
     expect(
       buildRoomSystemNotices({
         status: 'idle',
-        actionError: 'raw startup failure',
+        actionNotice: { tone: 'error', message: 'raw startup failure' },
         participationGrantRefreshWarning: 'stale participation warning',
         turnRefreshWarning: 'stale TURN warning',
       }),
@@ -290,7 +294,7 @@ describe('App pre-join boundary', () => {
       buildRoomSystemNotices({
         status: terminal.status,
         sessionError,
-        actionError: 'duplicate raw action error',
+        actionNotice: { tone: 'error', message: 'duplicate raw action error' },
       }),
     ).toEqual([]);
   });

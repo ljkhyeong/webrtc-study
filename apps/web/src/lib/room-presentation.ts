@@ -242,11 +242,13 @@ export function chatErrorMessage(error: unknown): string {
   return '메시지를 보내지 못했습니다. 잠시 후 다시 시도해 주세요.';
 }
 
+// 사용자가 실행한 통화 작업의 결과 안내. 새 작업을 시작하면 이전 안내를 교체한다.
+export type RoomActionNotice = Pick<RoomSystemNoticeView, 'tone' | 'message'>;
+
 interface RoomSystemNoticeMessages {
   readonly status: RoomSessionStatus;
   readonly sessionError?: string | undefined;
-  readonly actionWarning?: string | undefined;
-  readonly actionError?: string | undefined;
+  readonly actionNotice?: RoomActionNotice | null | undefined;
   readonly participationGrantRefreshWarning?: string | undefined;
   readonly turnRefreshWarning?: string | undefined;
 }
@@ -254,8 +256,7 @@ interface RoomSystemNoticeMessages {
 export function buildRoomSystemNotices({
   status,
   sessionError,
-  actionWarning,
-  actionError,
+  actionNotice,
   participationGrantRefreshWarning,
   turnRefreshWarning,
 }: RoomSystemNoticeMessages): RoomSystemNoticeView[] {
@@ -264,8 +265,16 @@ export function buildRoomSystemNotices({
   }
   const notices: RoomSystemNoticeView[] = [
     { id: 'session-error', tone: 'error', message: sessionError ?? '' },
-    { id: 'action-warning', tone: 'warning', message: actionWarning ?? '' },
-    { id: 'action-error', tone: 'error', message: actionError ?? '' },
+    {
+      id: 'action-warning',
+      tone: 'warning',
+      message: actionNotice?.tone === 'warning' ? actionNotice.message : '',
+    },
+    {
+      id: 'action-error',
+      tone: 'error',
+      message: actionNotice?.tone === 'error' ? actionNotice.message : '',
+    },
     {
       id: 'participation-grant-refresh',
       tone: 'warning',
@@ -309,7 +318,7 @@ export function resolveActiveRoomTerminalState({
 
 export function screenShareStartNotice(
   result: ScreenShareStartResult,
-): Pick<RoomSystemNoticeView, 'tone' | 'message'> | undefined {
+): RoomActionNotice | undefined {
   if (result === 'cancelled') {
     return {
       tone: 'warning',
