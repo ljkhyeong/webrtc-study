@@ -389,8 +389,8 @@ export class RoomSession {
   #canModerateMedia = false;
   #lastModerationNotice: ModerationNotice | null = null;
   #moderationNoticeSequence = 0;
-  #warning: RoomIssue | null = null;
-  #warningPeerId: string | null = null;
+  // peerId가 있으면 해당 참가자 연결에 대한 경고다.
+  #warning: (RoomIssue & { readonly peerId: string | null }) | null = null;
   #error: RoomIssue | null = null;
   #snapshot: RoomSessionSnapshot;
   #joinPromise: Promise<void> | null = null;
@@ -617,7 +617,6 @@ export class RoomSession {
       return false;
     }
     this.#warning = null;
-    this.#warningPeerId = null;
     return true;
   }
 
@@ -770,7 +769,6 @@ export class RoomSession {
     }
     if (this.#warning?.code === 'rtc-configuration-update-failed') {
       this.#warning = null;
-      this.#warningPeerId = null;
       this.#emit();
     }
   }
@@ -800,7 +798,6 @@ export class RoomSession {
     }
 
     this.#disposed = true;
-    this.#signalingRecovery.cancelReconnectWait();
 
     if (this.#signalingTransport.isOpen()) {
       try {
@@ -818,13 +815,7 @@ export class RoomSession {
       new Error('Room session ended before signaling connected'),
     );
     this.#signalingRecovery.rejectJoin(new Error('Room session ended before joining'));
-    this.#signalingTransport.close();
-    this.#cleanupAllResources();
-    this.#exhaustedPeerIds.clear();
-    this.#selfId = null;
-    this.#selfRole = null;
-    this.#canModerateMedia = false;
-    this.#participants.clear();
+    this.#terminate('client leave');
     this.#status = 'ended';
     this.#emit();
   }
@@ -990,26 +981,31 @@ export class RoomSession {
       if (!this.#isCurrentPeer(failedPeer)) {
         continue;
       }
-      const shouldOffer = this.#isPeerRecoveryInitiator(failedPeer.peerId);
-      let replacement: PeerContext;
-      try {
-        replacement = this.#replacePeer(failedPeer.peerId, false);
-      } catch (replacementError) {
-        this.#failPeer(failedPeer.peerId, replacementError);
-        continue;
-      }
-      this.#setPeerWarning(
+      this.#recreatePeer(
         failedPeer.peerId,
         warningCode,
         `Recreated the connection to ${failedPeer.peerId} after ${phase} failed: ${getErrorMessage(error)}`,
       );
-      if (shouldOffer) {
-        void this.#peerNegotiation.createOffer(replacement.peerId).catch((offerError: unknown) => {
-          if (this.#isCurrentPeer(replacement)) {
-            this.#failPeer(replacement.peerId, offerError);
-          }
-        });
-      }
+    }
+  }
+
+  // 실패한 연결을 새 연결로 바꾸고 경고를 남긴 뒤, 복구를 시작하는 쪽이면 새 offer를 보낸다.
+  #recreatePeer(peerId: string, warningCode: RoomIssueCode, message: string): void {
+    const shouldOffer = this.#isPeerRecoveryInitiator(peerId);
+    let replacement: PeerContext;
+    try {
+      replacement = this.#replacePeer(peerId, false);
+    } catch (error) {
+      this.#failPeer(peerId, error);
+      return;
+    }
+    this.#setPeerWarning(peerId, warningCode, message);
+    if (shouldOffer) {
+      void this.#peerNegotiation.createOffer(peerId).catch((error: unknown) => {
+        if (this.#isCurrentPeer(replacement)) {
+          this.#failPeer(peerId, error);
+        }
+      });
     }
   }
 
@@ -1207,9 +1203,7 @@ export class RoomSession {
       await this.#signalingRecovery.joinRoom();
     } catch (error) {
       if (!this.#disposed) {
-        this.#cleanupAllResources();
-        this.#signalingTransport.close();
-        this.#disposed = true;
+        this.#terminate('join failed');
         if (this.#status !== 'error') {
           const issue = this.#issueFromError(error, 'join-failed');
           this.#setFatalError(issue.code, issue.message);
@@ -1259,8 +1253,8 @@ export class RoomSession {
       this.#warning = {
         code: 'media-permission-denied',
         message: `Camera or microphone could not be opened; joined without media. ${getErrorMessage(error)}`,
+        peerId: null,
       };
-      this.#warningPeerId = null;
     }
     this.#emit();
   }
@@ -1288,8 +1282,11 @@ export class RoomSession {
   #handleReconnectAttemptFailure(error: unknown): RoomIssue {
     this.#signalingTransport.close('reconnect retry');
     this.#resetRoomMembershipForReconnect();
-    this.#warning = { code: 'signaling-reconnecting', message: getErrorMessage(error) };
-    this.#warningPeerId = null;
+    this.#warning = {
+      code: 'signaling-reconnecting',
+      message: getErrorMessage(error),
+      peerId: null,
+    };
     this.#setStatus('reconnecting');
     return this.#warning;
   }
@@ -1306,8 +1303,8 @@ export class RoomSession {
     this.#warning = {
       code: 'signaling-reconnecting',
       message: reason.message,
+      peerId: null,
     };
-    this.#warningPeerId = null;
     this.#setStatus('reconnecting');
     this.#signalingRecovery.startReconnect(reason);
   }
@@ -1321,17 +1318,9 @@ export class RoomSession {
     if (this.#disposed) {
       return;
     }
-    this.#disposed = true;
-    this.#signalingRecovery.cancelReconnectWait();
-    this.#signalingTransport.close('reconnect exhausted');
-    this.#cleanupAllResources();
-    this.#participants.clear();
-    this.#selfId = null;
-    this.#selfRole = null;
-    this.#canModerateMedia = false;
+    this.#terminate('reconnect exhausted');
     if (this.#warning?.code === 'signaling-reconnecting') {
       this.#warning = null;
-      this.#warningPeerId = null;
     }
     this.#setFatalError(issue.code, issue.message);
   }
@@ -1530,7 +1519,6 @@ export class RoomSession {
 
     if (this.#warning?.code === 'signaling-reconnecting') {
       this.#warning = null;
-      this.#warningPeerId = null;
     }
     this.#setStatus('active');
     this.#sendHandRequest(this.#handRaised ? true : undefined);
@@ -1922,26 +1910,11 @@ export class RoomSession {
         return;
       }
 
-      const shouldOffer = this.#isPeerRecoveryInitiator(peer.peerId);
-      let replacement: PeerContext;
-      try {
-        replacement = this.#replacePeer(peer.peerId, false);
-      } catch (replacementError) {
-        this.#failPeer(peer.peerId, replacementError);
-        return;
-      }
-      this.#setPeerWarning(
+      this.#recreatePeer(
         peer.peerId,
         'peer-connection-recreated',
         `Recreated the connection to ${peer.peerId} after ICE recovery timed out`,
       );
-      if (shouldOffer) {
-        void this.#peerNegotiation.createOffer(replacement.peerId).catch((error: unknown) => {
-          if (this.#isCurrentPeer(replacement)) {
-            this.#failPeer(replacement.peerId, error);
-          }
-        });
-      }
     });
 
     if (!this.#isPeerRecoveryInitiator(peer.peerId)) {
@@ -2173,30 +2146,27 @@ export class RoomSession {
     }
   }
 
-  #failPeer(peerId: string, error: unknown): void {
+  #failPeer(
+    peerId: string,
+    error: unknown,
+    code: RoomIssueCode = 'peer-negotiation-failed',
+    message = `Connection to ${peerId} failed: ${getErrorMessage(error)}`,
+  ): void {
     this.#exhaustedPeerIds.add(peerId);
     this.#setPeerConnectionStatus(peerId, 'failed');
     this.#cleanupPeer(peerId, false);
-    this.#setPeerWarning(
-      peerId,
-      'peer-negotiation-failed',
-      `Connection to ${peerId} failed: ${getErrorMessage(error)}`,
-    );
+    this.#setPeerWarning(peerId, code, message);
   }
 
   #failPeerConnectionTimeout(peer: PeerContext): void {
     if (!this.#isCurrentPeer(peer)) {
       return;
     }
-
-    const peerId = peer.peerId;
-    this.#exhaustedPeerIds.add(peerId);
-    this.#setPeerConnectionStatus(peerId, 'failed');
-    this.#cleanupPeer(peerId, false);
-    this.#setPeerWarning(
-      peerId,
+    this.#failPeer(
+      peer.peerId,
+      null,
       'peer-connection-timeout',
-      `Could not connect to ${peerId} after retrying. Check your network, then reconnect to the room or leave.`,
+      `Could not connect to ${peer.peerId} after retrying. Check your network, then reconnect to the room or leave.`,
     );
   }
 
@@ -2258,9 +2228,18 @@ export class RoomSession {
     this.#remoteStreams.clear();
   }
 
-  #cleanupAllResources(): void {
+  // 퇴장·입장 실패·재연결 소진·치명적 오류로 세션을 끝낼 때 연결·미디어·참가자 상태를 한 번에 정리한다.
+  #terminate(closeReason: string): void {
+    this.#disposed = true;
+    this.#signalingRecovery.cancelReconnectWait();
+    this.#signalingTransport.close(closeReason);
     this.#cleanupPeerResources();
     this.#remoteMediaStates.clear();
+    this.#exhaustedPeerIds.clear();
+    this.#participants.clear();
+    this.#selfId = null;
+    this.#selfRole = null;
+    this.#canModerateMedia = false;
 
     const ownedTracks = new Set([
       ...this.#localInput.takeOwnedTracks(),
@@ -2331,17 +2310,8 @@ export class RoomSession {
     if (this.#disposed) {
       return;
     }
-    this.#disposed = true;
-    this.#signalingRecovery.cancelReconnectWait();
-    this.#signalingTransport.close('fatal signaling error');
-    this.#cleanupAllResources();
-    this.#exhaustedPeerIds.clear();
-    this.#participants.clear();
-    this.#selfId = null;
-    this.#selfRole = null;
-    this.#canModerateMedia = false;
+    this.#terminate('fatal signaling error');
     this.#warning = null;
-    this.#warningPeerId = null;
     this.#setFatalError(error.code, error.message);
   }
 
@@ -2351,27 +2321,24 @@ export class RoomSession {
   }
 
   #setWarning(code: RoomIssueCode, message: string): void {
-    this.#warningPeerId = null;
-    this.#warning = { code, message };
+    this.#warning = { code, message, peerId: null };
     this.#emit();
   }
 
   #setPeerWarning(peerId: string, code: RoomIssueCode, message: string): void {
-    this.#warningPeerId = peerId;
-    this.#warning = { code, message };
+    this.#warning = { code, message, peerId };
     this.#emit();
   }
 
   #clearPeerWarning(peerId: string, codes?: readonly RoomIssueCode[]): boolean {
     if (
-      this.#warningPeerId !== peerId ||
+      this.#warning?.peerId !== peerId ||
       this.#warning === null ||
       (codes !== undefined && !codes.includes(this.#warning.code))
     ) {
       return false;
     }
     this.#warning = null;
-    this.#warningPeerId = null;
     return true;
   }
 
@@ -2448,7 +2415,7 @@ export class RoomSession {
         this.#lastModerationNotice === null ? null : { ...this.#lastModerationNotice },
       warning:
         this.#warning !== null
-          ? { ...this.#warning }
+          ? { code: this.#warning.code, message: this.#warning.message }
           : this.#localInput.hasEndedInput()
             ? {
                 code: 'local-media-ended',
