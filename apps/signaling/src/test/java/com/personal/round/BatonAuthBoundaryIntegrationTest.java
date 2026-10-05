@@ -347,7 +347,6 @@ class BatonAuthBoundaryIntegrationTest {
 		String matchingPath = "/rooms/" + ROOM_ID + "/signal";
 		assertWebSocketRejected(matchingPath, null, ALLOWED_ORIGIN, "401");
 		assertWebSocketRejected(matchingPath, INVALID_TOKEN, ALLOWED_ORIGIN, "401");
-		assertWebSocketRejected(matchingPath, MATCHING_TOKEN, null, "403");
 		assertWebSocketRejected(
 				matchingPath,
 				MATCHING_TOKEN,

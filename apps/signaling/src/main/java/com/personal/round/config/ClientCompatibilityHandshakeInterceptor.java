@@ -9,17 +9,19 @@ import org.springframework.http.MediaType;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.socket.WebSocketHandler;
+import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.util.WebUtils;
 import tools.jackson.databind.ObjectMapper;
 
 /** HTTP 지원 기능 조회만 응답하고 일반 WebSocket 연결은 다음 단계로 전달한다. */
 public final class ClientCompatibilityHandshakeInterceptor implements HandshakeInterceptor {
-	private final OriginPolicy originPolicy;
+	private final CorsConfiguration cors = new CorsConfiguration();
 	private final byte[] responseBody;
 
-	public ClientCompatibilityHandshakeInterceptor(OriginPolicy originPolicy, ObjectMapper mapper) {
-		this.originPolicy = originPolicy;
+	public ClientCompatibilityHandshakeInterceptor(List<String> allowedOrigins, ObjectMapper mapper) {
+		cors.setAllowedOrigins(allowedOrigins);
 		this.responseBody = mapper.writeValueAsBytes(Map.of(
 				"protocolVersion", ProtocolParser.PROTOCOL_VERSION,
 				"capabilities", List.of("peer.reconnect", "room.study", "room.hand")));
@@ -35,8 +37,8 @@ public final class ClientCompatibilityHandshakeInterceptor implements HandshakeI
 		}
 		response.getHeaders().setCacheControl("no-store");
 		String origin = request.getHeaders().getOrigin();
-		if (origin != null) {
-			if (!originPolicy.allows(origin)) {
+		if (origin != null && !WebUtils.isSameOrigin(request)) {
+			if (cors.checkOrigin(origin) == null) {
 				response.setStatusCode(HttpStatus.FORBIDDEN);
 				return false;
 			}

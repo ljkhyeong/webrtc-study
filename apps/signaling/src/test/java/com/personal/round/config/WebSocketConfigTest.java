@@ -64,7 +64,7 @@ class WebSocketConfigTest {
 				.thenReturn(registration);
 		when(registration.setHandshakeHandler(any(HandshakeHandler.class)))
 				.thenReturn(registration);
-		when(registration.setAllowedOriginPatterns(any(String[].class)))
+		when(registration.setAllowedOrigins(any(String[].class)))
 				.thenReturn(registration);
 		WebSocketConfig config = new WebSocketConfig(
 				webSocketHandler,
@@ -81,7 +81,8 @@ class WebSocketConfigTest {
 		verify(registration).addInterceptors(interceptors.capture());
 		assertThat(interceptors.getValue())
 				.extracting(Object::getClass)
-				.containsExactly(ClientCompatibilityHandshakeInterceptor.class, OriginHandshakeInterceptor.class);
+				.containsExactly(ClientCompatibilityHandshakeInterceptor.class);
+		verify(registration).setAllowedOrigins(TestProperties.signaling().allowedOrigins().toArray(String[]::new));
 		verify(registry).addHandler(same(webSocketHandler), eq(new String[] {"/signal"}));
 		verify(registration).setHandshakeHandler(
 				any(ConnectionAdmissionHandshakeHandler.class));
@@ -97,7 +98,7 @@ class WebSocketConfigTest {
 				.thenReturn(registration);
 		when(registration.setHandshakeHandler(any(HandshakeHandler.class)))
 				.thenReturn(registration);
-		when(registration.setAllowedOriginPatterns(any(String[].class)))
+		when(registration.setAllowedOrigins(any(String[].class)))
 				.thenReturn(registration);
 		WebSocketConfig config = new WebSocketConfig(
 				webSocketHandler,
@@ -116,8 +117,7 @@ class WebSocketConfigTest {
 				.extracting(Object::getClass)
 				.containsExactly(
 						ParticipationGrantHandshakeInterceptor.class,
-						ClientCompatibilityHandshakeInterceptor.class,
-						OriginHandshakeInterceptor.class);
+						ClientCompatibilityHandshakeInterceptor.class);
 		verify(registry).addHandler(
 				same(webSocketHandler),
 				eq(new String[] {"/rooms/{roomId}/signal"}));

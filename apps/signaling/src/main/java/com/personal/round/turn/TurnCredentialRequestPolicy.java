@@ -1,9 +1,10 @@
 package com.personal.round.turn;
 
-import com.personal.round.net.HttpOrigin;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.WebUtils;
 
 /**
  * 브라우저에서 시작된 교차 출처 자격 증명 발급 요청이 할당량을 사용하기 전에 거부한다.
@@ -23,15 +24,14 @@ final class TurnCredentialRequestPolicy {
 			return false;
 		}
 
-		String origin = request.getHeader(HttpHeaders.ORIGIN);
-		try {
-			return HttpOrigin.parse(origin)
-					.matches(
-							request.getScheme(),
-							request.getServerName(),
-							request.getServerPort());
+		// WebUtils.isSameOrigin은 Origin이 없으면 같은 출처로 보므로 브라우저 요청의 Origin을 먼저 요구한다.
+		if (request.getHeader(HttpHeaders.ORIGIN) == null) {
+			return false;
 		}
-		catch (IllegalArgumentException ignored) {
+		try {
+			return WebUtils.isSameOrigin(new ServletServerHttpRequest(request));
+		}
+		catch (IllegalArgumentException malformedOrigin) {
 			return false;
 		}
 	}
