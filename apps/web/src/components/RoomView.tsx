@@ -1,9 +1,9 @@
 import { RoomStudyPanel } from './RoomStudyPanel';
-import { RoomHandQueue } from './RoomHandQueue';
-import { RoomParticipantList } from './RoomParticipantList';
+import { RoomSidePanel, type RoomPanel } from './RoomSidePanel';
+import { RoomControlDock } from './RoomControlDock';
 import { LeaveRoomDialog } from './LeaveRoomDialog';
 import { InviteDialog } from './InviteDialog';
-import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   ChatMessage,
   RoomConnectionDiagnostics,
@@ -12,28 +12,15 @@ import type {
   StudyCommand,
   HandQueueState,
 } from '@round/rtc-core';
-import {
-  CameraIcon,
-  CameraOffIcon,
-  CheckIcon,
-  CloseIcon,
-  CopyIcon,
-  HandIcon,
-  LinkIcon,
-  MessageIcon,
-  MicIcon,
-  MicOffIcon,
-  PhoneOffIcon,
-  ScreenShareIcon,
-  UsersIcon,
-} from './Icons';
+import { CheckIcon, CloseIcon, CopyIcon, LinkIcon, UsersIcon } from './Icons';
 import { type AudioOutputSelection, type ParticipantView, VideoTile } from './VideoTile';
 import { canonicalRoomUrl } from '../lib/room';
-import { RoomChatPanel, type ChatNotificationSummary } from './RoomChatPanel';
+import type { ChatNotificationSummary } from './RoomChatPanel';
 import { ConnectionDiagnosticsPanel } from './ConnectionDiagnosticsPanel';
 import { useRoomShortcuts } from '../lib/use-room-shortcuts';
 import { useCallMediaSession } from '../lib/use-call-media-session';
 import { setDocumentTitleUnreadCount } from '../lib/document-title';
+import { useInviteCopy } from '../lib/use-invite-copy';
 import type { RegisterLeaveGuard } from '../lib/use-room-navigation';
 
 type RoomSystemNoticeId =
@@ -49,10 +36,6 @@ export interface RoomSystemNoticeView {
   readonly tone: 'warning' | 'error';
   readonly message: string;
 }
-
-type InviteCopyState =
-  | { readonly status: 'idle' | 'copying' | 'success' }
-  | { readonly status: 'error'; readonly inviteUrl: string };
 
 interface RoomViewProps {
   handQueue?: HandQueueState | null;
@@ -143,7 +126,7 @@ export function RoomView({
   onLeave,
   registerLeaveGuard,
 }: RoomViewProps) {
-  const [panel, setPanel] = useState<'chat' | 'hands' | 'people' | null>(null);
+  const [panel, setPanel] = useState<RoomPanel | null>(null);
   const chatOpen = panel === 'chat';
   const [hasDraft, setHasDraft] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'leave' | 'reconnect' | null>(null);
@@ -221,7 +204,7 @@ export function RoomView({
     }
   }, [activePinnedPeerId]);
 
-  const [inviteCopyState, setInviteCopyState] = useState<InviteCopyState>({ status: 'idle' });
+  const { state: inviteCopyState, copy: handleCopy } = useInviteCopy(roomId);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [chatNotifications, setChatNotifications] = useState<ChatNotificationSummary>({
     unreadMessageCount: 0,
@@ -229,21 +212,6 @@ export function RoomView({
   });
   const chatButtonRef = useRef<HTMLButtonElement>(null);
   const restoreChatFocus = useRef(false);
-  const inviteCopyResetTimer = useRef<number | null>(null);
-  const inviteCopyRequest = useRef<{ active: boolean } | null>(null);
-
-  useEffect(
-    () => () => {
-      if (inviteCopyRequest.current) {
-        inviteCopyRequest.current.active = false;
-        inviteCopyRequest.current = null;
-      }
-      if (inviteCopyResetTimer.current !== null) {
-        window.clearTimeout(inviteCopyResetTimer.current);
-      }
-    },
-    [],
-  );
 
   useEffect(() => {
     if (panel === null && restoreChatFocus.current) {
@@ -251,31 +219,6 @@ export function RoomView({
       chatButtonRef.current?.focus();
     }
   }, [panel]);
-
-  const handleCopy = async () => {
-    if (inviteCopyRequest.current) return;
-    const request = { active: true };
-    inviteCopyRequest.current = request;
-    setInviteCopyState({ status: 'copying' });
-    if (inviteCopyResetTimer.current !== null) {
-      window.clearTimeout(inviteCopyResetTimer.current);
-      inviteCopyResetTimer.current = null;
-    }
-    const inviteUrl = canonicalRoomUrl(roomId, window.location.href);
-    try {
-      await navigator.clipboard.writeText(inviteUrl);
-      if (!request.active) return;
-      setInviteCopyState({ status: 'success' });
-      inviteCopyResetTimer.current = window.setTimeout(() => {
-        setInviteCopyState({ status: 'idle' });
-        inviteCopyResetTimer.current = null;
-      }, 1800);
-    } catch {
-      if (request.active) setInviteCopyState({ status: 'error', inviteUrl });
-    } finally {
-      if (inviteCopyRequest.current === request) inviteCopyRequest.current = null;
-    }
-  };
 
   const openInvite = () => setInviteUrl(canonicalRoomUrl(roomId, window.location.href));
 
@@ -323,34 +266,11 @@ export function RoomView({
     setDocumentTitleUnreadCount(unreadMessageCount);
   }, [unreadMessageCount]);
   useEffect(() => () => setDocumentTitleUnreadCount(0), []);
-  const panelTabs = ['chat', 'hands', 'people'] as const;
-  const moveTab = (event: KeyboardEvent<HTMLDivElement>) => {
-    const current = panelTabs.indexOf(panel ?? 'chat');
-    const next =
-      event.key === 'ArrowRight'
-        ? (current + 1) % panelTabs.length
-        : event.key === 'ArrowLeft'
-          ? (current + panelTabs.length - 1) % panelTabs.length
-          : event.key === 'Home'
-            ? 0
-            : event.key === 'End'
-              ? panelTabs.length - 1
-              : null;
-    if (next === null) return;
-    event.preventDefault();
-    setPanel(panelTabs[next]!);
-    event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
-  };
   const chatNotificationCount = unreadMessageCount + unseenDeliveryIssueCount;
   const connectionDiagnosticsKey = participants
     .filter((participant) => !participant.isLocal)
     .map((participant) => `${participant.peerId}:${participant.connectionState}`)
     .join('|');
-  const chatButtonLabel = chatOpen
-    ? '채팅 닫기'
-    : `채팅 열기${unreadMessageCount > 0 ? `, 새 메시지 ${unreadMessageCount}개` : ''}${
-        unseenDeliveryIssueCount > 0 ? `, 수신 미확인 메시지 ${unseenDeliveryIssueCount}개` : ''
-      }`;
   return (
     <div className={`room-shell${panel ? ' room-shell--panel-open' : ''}`}>
       <header className="room-header">
@@ -578,93 +498,24 @@ export function RoomView({
           ) : null}
         </section>
 
-        <div className="side-panel" inert={panel === null}>
-          <div
-            className="side-panel__tabs"
-            role="tablist"
-            aria-label="통화 패널"
-            onKeyDown={moveTab}
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={panel === 'chat'}
-              aria-controls="room-chat-panel"
-              tabIndex={(panel ?? 'chat') === 'chat' ? 0 : -1}
-              onClick={() => setPanel('chat')}
-            >
-              채팅
-              {panel !== 'chat' && chatNotificationCount > 0 ? (
-                <b>{Math.min(chatNotificationCount, 9)}</b>
-              ) : null}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={panel === 'hands'}
-              aria-controls="room-hand-panel"
-              tabIndex={panel === 'hands' ? 0 : -1}
-              onClick={() => setPanel('hands')}
-            >
-              손들기
-              {handCount > 0 ? <b>{Math.min(handCount, 9)}</b> : null}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={panel === 'people'}
-              aria-controls={panel === 'people' ? 'room-people-panel' : undefined}
-              tabIndex={panel === 'people' ? 0 : -1}
-              onClick={() => setPanel('people')}
-            >
-              참가자 {participants.length}
-            </button>
-          </div>
-          <RoomChatPanel
-            onRetryMessage={onRetryMessage}
-            open={chatOpen}
-            messages={messages}
-            onSendMessage={onSendMessage}
-            onClose={closePanel}
-            onNotificationChange={setChatNotifications}
-            onDraftChange={setHasDraft}
-          />
-          <section
-            id="room-hand-panel"
-            className="side-panel__section"
-            aria-labelledby="hand-queue-title"
-            hidden={panel !== 'hands'}
-          >
-            <header className="side-panel__header">
-              <strong id="hand-queue-title">손들기 대기</strong>
-              <button type="button" aria-label="손들기 목록 닫기" onClick={closePanel}>
-                <CloseIcon />
-              </button>
-            </header>
-            <RoomHandQueue state={handQueue} participants={participants} active={isActive} />
-          </section>
-          {panel === 'people' ? (
-            <section
-              id="room-people-panel"
-              className="side-panel__section"
-              aria-labelledby="participant-list-title"
-            >
-              <header className="side-panel__header">
-                <strong id="participant-list-title">참가자 목록</strong>
-                <button type="button" aria-label="참가자 목록 닫기" onClick={closePanel}>
-                  <CloseIcon />
-                </button>
-              </header>
-              <RoomParticipantList
-                participants={participants}
-                handQueue={handQueue}
-                canModerateMedia={canModerateMedia}
-                onDisableAudio={onDisableParticipantAudio}
-                onDisableVideo={onDisableParticipantVideo}
-              />
-            </section>
-          ) : null}
-        </div>
+        <RoomSidePanel
+          panel={panel}
+          onSelectPanel={setPanel}
+          onClose={closePanel}
+          chatNotificationCount={chatNotificationCount}
+          handCount={handCount}
+          participants={participants}
+          handQueue={handQueue}
+          active={isActive}
+          canModerateMedia={canModerateMedia}
+          onDisableParticipantAudio={onDisableParticipantAudio}
+          onDisableParticipantVideo={onDisableParticipantVideo}
+          messages={messages}
+          onSendMessage={onSendMessage}
+          onRetryMessage={onRetryMessage}
+          onNotificationChange={setChatNotifications}
+          onDraftChange={setHasDraft}
+        />
       </main>
       {confirmAction ? (
         <LeaveRoomDialog
@@ -676,120 +527,29 @@ export function RoomView({
         />
       ) : null}
 
-      <footer className="control-dock" aria-label="통화 제어">
-        <button
-          className={`control-button${audioEnabled ? '' : ' control-button--off'}`}
-          type="button"
-          disabled={!audioAvailable && !isActive}
-          aria-label={
-            !audioAvailable
-              ? isActive
-                ? '마이크 장치 다시 선택'
-                : '사용 가능한 마이크 없음'
-              : audioEnabled
-                ? '마이크 끄기'
-                : '마이크 켜기'
-          }
-          onClick={audioAvailable ? onToggleAudio : onSelectDevices}
-          aria-keyshortcuts="Alt+Shift+M"
-          title="마이크 전환: Alt+Shift+M"
-        >
-          {audioEnabled ? <MicIcon /> : <MicOffIcon />}
-          <span>{!audioAvailable ? '마이크 연결' : audioEnabled ? '마이크' : '음소거'}</span>
-        </button>
-        <button
-          className={`control-button${videoEnabled ? '' : ' control-button--off'}`}
-          type="button"
-          disabled={screenSharePending !== null || screenSharing || (!videoAvailable && !isActive)}
-          aria-label={
-            screenSharePending === 'starting'
-              ? '화면 공유를 준비하는 동안 카메라를 변경할 수 없습니다.'
-              : screenSharePending === 'stopping'
-                ? '화면 공유를 중지하는 동안 카메라를 변경할 수 없습니다.'
-                : screenSharing
-                  ? '화면 공유 중에는 카메라를 변경할 수 없습니다.'
-                  : !videoAvailable
-                    ? isActive
-                      ? '카메라 장치 다시 선택'
-                      : '사용 가능한 카메라 없음'
-                    : videoEnabled
-                      ? '카메라 끄기'
-                      : '카메라 켜기'
-          }
-          onClick={videoAvailable ? onToggleVideo : onSelectDevices}
-          aria-keyshortcuts="Alt+Shift+C"
-          title="카메라 전환: Alt+Shift+C"
-        >
-          {videoEnabled ? <CameraIcon /> : <CameraOffIcon />}
-          <span>{!videoAvailable ? '카메라 선택' : videoEnabled ? '카메라' : '카메라 꺼짐'}</span>
-        </button>
-        <button
-          className={`control-button${screenSharing ? ' control-button--active' : ''}`}
-          type="button"
-          disabled={screenSharePending !== null || !screenShareAvailable || !isActive}
-          aria-label={
-            screenSharePending === 'starting'
-              ? '화면 공유 준비 중'
-              : screenSharePending === 'stopping'
-                ? '화면 공유 중지 중'
-                : !screenShareAvailable
-                  ? '이 브라우저는 화면 공유를 지원하지 않습니다.'
-                  : screenSharing
-                    ? '화면 공유 중지'
-                    : '화면 공유 시작'
-          }
-          aria-pressed={screenSharing}
-          onClick={onToggleScreenShare}
-          title={screenSharing ? '화면 공유 중지' : '화면 공유'}
-        >
-          <ScreenShareIcon />
-          <span>
-            {screenSharePending === 'starting'
-              ? '준비 중'
-              : screenSharePending === 'stopping'
-                ? '중지 중'
-                : screenSharing
-                  ? '공유 중지'
-                  : '화면 공유'}
-          </span>
-        </button>
-        <button
-          className={`control-button${handRaised ? ' control-button--active' : ''}`}
-          type="button"
-          disabled={!isActive}
-          aria-label={handRaised ? '손 내리기' : '손들기'}
-          aria-pressed={handRaised}
-          onClick={() => onSetHandRaised(!handRaised)}
-          aria-keyshortcuts="Alt+Shift+H"
-          title="손들기 전환: Alt+Shift+H"
-        >
-          <HandIcon />
-          <span>{handRaised ? '손 내리기' : '손들기'}</span>
-          {handCount > 0 ? <b>{Math.min(handCount, 9)}</b> : null}
-        </button>
-        <button
-          ref={chatButtonRef}
-          className={`control-button${chatOpen ? ' control-button--active' : ''}`}
-          type="button"
-          aria-label={chatButtonLabel}
-          aria-expanded={chatOpen}
-          onClick={toggleChat}
-          title="채팅"
-        >
-          <MessageIcon />
-          <span>채팅</span>
-          {chatNotificationCount > 0 ? <b>{Math.min(chatNotificationCount, 9)}</b> : null}
-        </button>
-        <button
-          className="control-button control-button--leave"
-          type="button"
-          onClick={() => requestExit('leave')}
-          title="나가기"
-        >
-          <PhoneOffIcon />
-          <span>나가기</span>
-        </button>
-      </footer>
+      <RoomControlDock
+        active={isActive}
+        audioAvailable={audioAvailable}
+        audioEnabled={audioEnabled}
+        videoAvailable={videoAvailable}
+        videoEnabled={videoEnabled}
+        screenShareAvailable={screenShareAvailable}
+        screenSharing={screenSharing}
+        screenSharePending={screenSharePending}
+        handRaised={handRaised}
+        handCount={handCount}
+        chatOpen={chatOpen}
+        unreadMessageCount={unreadMessageCount}
+        unseenDeliveryIssueCount={unseenDeliveryIssueCount}
+        chatButtonRef={chatButtonRef}
+        onToggleAudio={onToggleAudio}
+        onToggleVideo={onToggleVideo}
+        onToggleScreenShare={onToggleScreenShare}
+        onSetHandRaised={onSetHandRaised}
+        onSelectDevices={onSelectDevices}
+        onToggleChat={toggleChat}
+        onLeave={() => requestExit('leave')}
+      />
     </div>
   );
 }
