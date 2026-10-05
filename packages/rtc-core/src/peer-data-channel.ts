@@ -19,7 +19,7 @@ const CHAT_ACK_TIMEOUT_MS = 45_000;
 const MAX_BUFFERED_BYTES = 256 * 1024;
 const BUFFERED_AMOUNT_LOW_BYTES = 64 * 1024;
 const CONTROL_RESERVE_BYTES = 32 * 1024;
-const ERROR_GRACE_MS = 250;
+const RECOVERY_GRACE_MS = 250;
 const RECOVERY_WARNING_CODES = [
   'data-channel-closed',
   'data-channel-error',
@@ -71,7 +71,7 @@ export class PeerDataChannel {
   #inboundMessagesInWindow = 0;
   #inboundRateLimitExceeded = false;
   #inboundWindowExpiryTimer: TimerHandle | null = null;
-  #errorTimer: TimerHandle | null = null;
+  #recoveryTimer: TimerHandle | null = null;
 
   constructor(options: PeerDataChannelOptions) {
     this.#options = options;
@@ -93,7 +93,7 @@ export class PeerDataChannel {
     if (this.#channel !== null && this.#channel !== channel) {
       this.#detachAndClose(this.#channel);
     }
-    this.#clearErrorTimer();
+    this.#clearRecoveryTimer();
     this.#channel = channel;
     for (const pendingChat of this.#pendingChatMessages) {
       pendingChat.sentOnCurrentChannel = false;
@@ -104,22 +104,28 @@ export class PeerDataChannel {
     channel.onmessage = (event) => this.#handleMessage(channel, event.data);
     channel.onbufferedamountlow = () => this.flush();
     channel.onclose = () => {
-      this.#recover(
-        channel,
-        'data-channel-closed',
-        `Chat channel to ${this.#options.peerId} closed and is being recovered`,
+      if (!this.#isCurrentChannel(channel)) {
+        return;
+      }
+      // 퇴장하는 참가자가 닫은 채널이면 뒤따르는 peer.left 정리가 대기 중인 복구를 취소한다.
+      // 바로 복구하면 끊기는 연결에 새 채널을 만들고, 열린 직후 보낸 상태 메시지의 실패가
+      // 예외 없이 WebKit 콘솔 오류로만 남는다.
+      this.detach();
+      this.#scheduleRecovery(() =>
+        this.#options.onRecoveryRequired(
+          'data-channel-closed',
+          `Chat channel to ${this.#options.peerId} closed and is being recovered`,
+        ),
       );
     };
     channel.onerror = () => {
-      this.#clearErrorTimer();
-      this.#errorTimer = globalThis.setTimeout(() => {
-        this.#errorTimer = null;
+      this.#scheduleRecovery(() =>
         this.#recover(
           channel,
           'data-channel-error',
           `Chat channel to ${this.#options.peerId} encountered an error and is being recovered`,
-        );
-      }, ERROR_GRACE_MS);
+        ),
+      );
     };
 
     if (channel.readyState === 'open' && !this.#options.isRecovering()) {
@@ -128,7 +134,7 @@ export class PeerDataChannel {
   }
 
   detach(): void {
-    this.#clearErrorTimer();
+    this.#clearRecoveryTimer();
     const channel = this.#channel;
     this.#channel = null;
     if (channel !== null) {
@@ -426,10 +432,18 @@ export class PeerDataChannel {
     return this.#options.isCurrent() && this.#channel === channel;
   }
 
-  #clearErrorTimer(): void {
-    if (this.#errorTimer !== null) {
-      globalThis.clearTimeout(this.#errorTimer);
-      this.#errorTimer = null;
+  #scheduleRecovery(recover: () => void): void {
+    this.#clearRecoveryTimer();
+    this.#recoveryTimer = globalThis.setTimeout(() => {
+      this.#recoveryTimer = null;
+      recover();
+    }, RECOVERY_GRACE_MS);
+  }
+
+  #clearRecoveryTimer(): void {
+    if (this.#recoveryTimer !== null) {
+      globalThis.clearTimeout(this.#recoveryTimer);
+      this.#recoveryTimer = null;
     }
   }
 
