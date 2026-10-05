@@ -830,6 +830,39 @@ describe('RoomSession', () => {
     }
   });
 
+  it('does not recreate a data channel closed by a departing peer', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness();
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
+      await answerPeer(harness, 'z-peer');
+      const peer = harness.peerConnections[0];
+      const channel = peer?.channels[0];
+      peer?.setConnectionState('connected');
+      if (peer === undefined || channel === undefined) {
+        throw new Error('Expected an initial peer and DataChannel');
+      }
+
+      channel.remoteClose();
+      await vi.advanceTimersByTimeAsync(50);
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'peer.left',
+        roomId: ROOM_ID,
+        payload: { peerId: 'z-peer' },
+      });
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(251);
+
+      expect(peer.channels).toHaveLength(1);
+      expect(peer.offerOptions).toEqual([undefined]);
+      expect(harness.session.getSnapshot().warning).toBeNull();
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('suppresses a data channel error that races a normal peer departure', async () => {
     vi.useFakeTimers();
     try {
