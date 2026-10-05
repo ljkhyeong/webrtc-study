@@ -7,6 +7,7 @@ import {
   type ParticipantMediaDataMessage,
   type PeerDataMessage,
 } from '@round/protocol';
+import { getErrorMessage } from './errors.js';
 
 export const PEER_DATA_CHANNEL_LABEL = 'round-room';
 
@@ -453,8 +454,4 @@ export class PeerDataChannel {
     channel.onbufferedamountlow = null;
     channel.close();
   }
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -8,6 +8,7 @@ import {
 import type { PeerConnectionLifecycle } from './peer-connection-lifecycle.js';
 import { PEER_DATA_CHANNEL_LABEL } from './peer-data-channel.js';
 import type { SignalingTransport } from './signaling-transport.js';
+import { getErrorMessage } from './errors.js';
 
 type RelayClientMessage = Extract<ClientMessage, { to: string }>;
 type PeerNegotiationStatus = RTCPeerConnectionState | 'negotiating';
@@ -331,8 +332,4 @@ export class PeerNegotiationLifecycle {
   #isCurrentNegotiation(peer: PeerConnectionLifecycle, negotiationId: string | null): boolean {
     return this.#options.isCurrentPeer(peer) && peer.negotiationId === negotiationId;
   }
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

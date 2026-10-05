@@ -4,6 +4,7 @@ import {
   type ClientMessage,
   type ServerMessage,
 } from '@round/protocol';
+import { getErrorMessage } from './errors.js';
 
 type RelayClientMessage = Extract<ClientMessage, { to: string }>;
 type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
@@ -228,7 +229,7 @@ export class SignalingTransport {
     try {
       message = parseServerMessageText(event.data);
     } catch (error) {
-      this.#options.onInvalidMessage(error instanceof Error ? error.message : String(error));
+      this.#options.onInvalidMessage(getErrorMessage(error));
       return;
     }
     if (message.type !== 'error' && message.roomId !== this.#options.roomId) return;

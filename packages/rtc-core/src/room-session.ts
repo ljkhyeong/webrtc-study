@@ -39,6 +39,7 @@ import {
 } from './screen-share-lifecycle.js';
 import { SignalingRecoveryLifecycle } from './signaling-recovery-lifecycle.js';
 import { SignalingTransport, SignalingTransportError } from './signaling-transport.js';
+import { getErrorMessage } from './errors.js';
 export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
 
 export type RoomSessionStatus =
@@ -239,35 +240,8 @@ class RoomSessionFailure extends Error {
   }
 }
 
-function snapshotRtcConfiguration(
-  configuration: RTCConfiguration | undefined,
-): RTCConfiguration | undefined {
-  if (configuration === undefined) {
-    return undefined;
-  }
-
-  return {
-    ...configuration,
-    ...(configuration.certificates === undefined
-      ? {}
-      : { certificates: [...configuration.certificates] }),
-    ...(configuration.iceServers === undefined
-      ? {}
-      : {
-          iceServers: configuration.iceServers.map((server) => ({
-            ...server,
-            urls: Array.isArray(server.urls) ? [...server.urls] : server.urls,
-          })),
-        }),
-  };
-}
-
 function defaultCreateId(): string {
   return globalThis.crypto.randomUUID();
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -460,7 +434,7 @@ export class RoomSession {
         this.#finishReconnectFailure(this.#issueFromError(error, 'reconnect-exhausted'));
       },
     });
-    this.#rtcConfiguration = snapshotRtcConfiguration(options.rtcConfiguration);
+    this.#rtcConfiguration = structuredClone(options.rtcConfiguration);
     this.#localInput.adoptStream(options.preparedMediaStream);
     this.#snapshot = this.#buildSnapshot();
   }
@@ -655,7 +629,7 @@ export class RoomSession {
       return;
     }
 
-    this.#rtcConfiguration = snapshotRtcConfiguration(configuration);
+    this.#rtcConfiguration = structuredClone(configuration);
 
     let failedPeerCount = 0;
     const restartPeers: PeerContext[] = [];
@@ -665,7 +639,7 @@ export class RoomSession {
       }
       try {
         peer.connection.setConfiguration(
-          snapshotRtcConfiguration(this.#rtcConfiguration) as RTCConfiguration,
+          structuredClone(this.#rtcConfiguration) as RTCConfiguration,
         );
         if (
           options.restartIce === true &&
@@ -1522,7 +1496,7 @@ export class RoomSession {
     const factory =
       this.#options.peerConnectionFactory ??
       ((configuration: RTCConfiguration | undefined) => new RTCPeerConnection(configuration));
-    const connection = factory(snapshotRtcConfiguration(this.#rtcConfiguration));
+    const connection = factory(structuredClone(this.#rtcConfiguration));
     const peer = new PeerConnectionLifecycle(
       peerId,
       connection,
