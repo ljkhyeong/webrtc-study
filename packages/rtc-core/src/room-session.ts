@@ -63,7 +63,6 @@ export type RoomIssueCode =
   | 'room-join-timeout'
   | 'signaling-reconnecting'
   | 'reconnect-exhausted'
-  | 'reconnect-attempt-failed'
   | 'signaling-connect-failed'
   | 'signaling-connect-timeout'
   | 'signaling-closed'
@@ -346,29 +345,6 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function safeSignalingErrorMessage(code: SignalingErrorCode): string {
-  switch (code) {
-    case 'INVALID_MESSAGE':
-      return 'The signaling server rejected an incompatible message.';
-    case 'ALREADY_JOINED':
-      return 'The signaling room membership state is inconsistent.';
-    case 'ROOM_FULL':
-      return 'The signaling room is full.';
-    case 'NOT_IN_ROOM':
-      return 'The signaling server no longer considers this browser joined.';
-    case 'ROOM_MISMATCH':
-      return 'The signaling server room does not match this session.';
-    case 'TARGET_NOT_FOUND':
-      return 'The signaling target is no longer in the room.';
-    case 'TARGET_SELF':
-      return 'The signaling target was invalid.';
-    case 'FORBIDDEN':
-      return 'The signaling server rejected an unauthorized request.';
-    case 'INTERNAL_ERROR':
-      return 'The signaling server could not process a request.';
-  }
-}
-
 /**
  * 프레임워크와 무관하게 방 하나의 브라우저 WebRTC 자원을 관리한다.
  *
@@ -419,7 +395,6 @@ export class RoomSession {
   #error: RoomIssue | null = null;
   #snapshot: RoomSessionSnapshot;
   #joinPromise: Promise<void> | null = null;
-  #leaving = false;
   #disposed = false;
 
   constructor(options: RoomSessionOptions) {
@@ -484,13 +459,9 @@ export class RoomSession {
       url: this.#options.signalingUrl,
       roomId,
       connectTimeoutMs: this.#recoveryOptions.signalingConnectTimeoutMs,
-      ...(options.beforeSignalingConnect === undefined
-        ? {}
-        : { beforeConnect: options.beforeSignalingConnect }),
-      ...(options.webSocketFactory === undefined
-        ? {}
-        : { webSocketFactory: options.webSocketFactory }),
-      canConnect: () => !this.#leaving && !this.#disposed,
+      beforeConnect: options.beforeSignalingConnect,
+      webSocketFactory: options.webSocketFactory,
+      canConnect: () => !this.#disposed,
       onMessage: (message, socket, generation) => {
         void this.#routeServerMessage(message, socket, generation);
       },
@@ -537,7 +508,7 @@ export class RoomSession {
       roomJoinTimeoutMs: this.#recoveryOptions.roomJoinTimeoutMs,
       maxReconnectAttempts: this.#recoveryOptions.maxReconnectAttempts,
       reconnectDelay: (attempt) => this.#reconnectDelay(attempt),
-      isCancelled: () => this.#leaving || this.#disposed,
+      isCancelled: () => this.#disposed,
       isRoomActive: () => this.#status === 'active',
       createJoinTimeoutError: () =>
         new RoomSessionFailure(
@@ -830,7 +801,6 @@ export class RoomSession {
       return;
     }
 
-    this.#leaving = true;
     this.#disposed = true;
     this.#signalingRecovery.cancelReconnectWait();
 
@@ -1238,7 +1208,7 @@ export class RoomSession {
       this.#setStatus('joining');
       await this.#signalingRecovery.joinRoom();
     } catch (error) {
-      if (!this.#leaving) {
+      if (!this.#disposed) {
         this.#cleanupAllResources();
         this.#signalingTransport.close();
         this.#disposed = true;
@@ -1318,20 +1288,16 @@ export class RoomSession {
   }
 
   #handleReconnectAttemptFailure(error: unknown): RoomIssue {
-    const issue = this.#issueFromError(error, 'reconnect-attempt-failed');
-    this.#signalingTransport.close(1000, 'reconnect retry');
+    this.#signalingTransport.close('reconnect retry');
     this.#resetRoomMembershipForReconnect();
-    this.#warning = {
-      code: 'signaling-reconnecting',
-      message: issue.message,
-    };
+    this.#warning = { code: 'signaling-reconnecting', message: getErrorMessage(error) };
     this.#warningPeerId = null;
     this.#setStatus('reconnecting');
-    return issue;
+    return this.#warning;
   }
 
   #beginReconnect(reason: RoomIssue): void {
-    if (this.#leaving || this.#disposed) {
+    if (this.#disposed) {
       return;
     }
 
@@ -1354,12 +1320,12 @@ export class RoomSession {
   }
 
   #finishReconnectFailure(issue: RoomIssue): void {
-    if (this.#leaving || this.#disposed) {
+    if (this.#disposed) {
       return;
     }
     this.#disposed = true;
     this.#signalingRecovery.cancelReconnectWait();
-    this.#signalingTransport.close(1000, 'reconnect exhausted');
+    this.#signalingTransport.close('reconnect exhausted');
     this.#cleanupAllResources();
     this.#participants.clear();
     this.#selfId = null;
@@ -1375,7 +1341,7 @@ export class RoomSession {
   #handleSocketClose(error: SignalingTransportError, event: CloseEvent): void {
     this.#signalingRecovery.rejectJoin(error);
 
-    if (this.#leaving || this.#disposed) {
+    if (this.#disposed) {
       return;
     }
     if (event.code === SIGNALING_SESSION_SUPERSEDED_CLOSE_CODE) {
@@ -2304,7 +2270,6 @@ export class RoomSession {
   }
 
   #cleanupAllResources(): void {
-    this.#signalingTransport.clearPendingRequests();
     this.#cleanupPeerResources();
     this.#remoteMediaStates.clear();
 
@@ -2324,7 +2289,10 @@ export class RoomSession {
       this.#studyNotice = '타이머와 주제 변경 요청을 처리하지 못했습니다.';
       this.#emit();
     }
-    const error = new RoomSessionFailure(code, safeSignalingErrorMessage(code));
+    const error = new RoomSessionFailure(
+      code,
+      `The signaling server rejected the request (${code}).`,
+    );
     if (this.#signalingRecovery.rejectJoin(error)) {
       return;
     }
@@ -2345,14 +2313,14 @@ export class RoomSession {
       }
       case 'TARGET_SELF': {
         if (requestedPeerId !== null) {
-          this.#signalingTransport.close(1000, 'signaling identity mismatch');
+          this.#signalingTransport.close('signaling identity mismatch');
           this.#beginReconnect(error);
         }
         return;
       }
       case 'NOT_IN_ROOM':
       case 'ROOM_MISMATCH':
-        this.#signalingTransport.close(1000, 'signaling state mismatch');
+        this.#signalingTransport.close('signaling state mismatch');
         this.#beginReconnect(error);
         return;
       case 'ALREADY_JOINED':
@@ -2371,12 +2339,12 @@ export class RoomSession {
   }
 
   #finishFatalSignalingError(error: RoomSessionFailure): void {
-    if (this.#leaving || this.#disposed) {
+    if (this.#disposed) {
       return;
     }
     this.#disposed = true;
     this.#signalingRecovery.cancelReconnectWait();
-    this.#signalingTransport.close(1000, 'fatal signaling error');
+    this.#signalingTransport.close('fatal signaling error');
     this.#cleanupAllResources();
     this.#exhaustedPeerIds.clear();
     this.#participants.clear();

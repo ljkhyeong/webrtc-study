@@ -1,7 +1,5 @@
 import type { SignalingTransport } from './signaling-transport.js';
 
-type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
-
 interface SignalingRecoveryFailure {
   readonly message: string;
 }
@@ -9,7 +7,6 @@ interface SignalingRecoveryFailure {
 interface JoinWait {
   readonly resolve: () => void;
   readonly reject: (error: unknown) => void;
-  timeout: TimerHandle | null;
 }
 
 interface SignalingRecoveryLifecycleOptions {
@@ -41,23 +38,18 @@ export class SignalingRecoveryLifecycle {
 
   joinRoom(): Promise<void> {
     return new Promise((resolve, reject) => {
-      let settled = false;
-      let wait!: JoinWait;
+      // Promise 완료와 타이머 해제는 여러 번 불러도 결과가 같다.
       const finish = (settle: () => void) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        this.#clearJoinWait(wait);
+        globalThis.clearTimeout(timeout);
+        if (this.#joinWait === wait) this.#joinWait = null;
         settle();
       };
-      wait = {
+      const wait: JoinWait = {
         resolve: () => finish(resolve),
         reject: (error) => finish(() => reject(error)),
-        timeout: null,
       };
       this.#joinWait = wait;
-      wait.timeout = globalThis.setTimeout(() => {
+      const timeout = globalThis.setTimeout(() => {
         wait.reject(this.#options.createJoinTimeoutError());
       }, this.#options.roomJoinTimeoutMs);
 
@@ -168,15 +160,5 @@ export class SignalingRecoveryLifecycle {
       this.#cancelReconnectDelay = finish;
       const timer = globalThis.setTimeout(finish, delayMs);
     });
-  }
-
-  #clearJoinWait(wait: JoinWait): void {
-    if (wait.timeout !== null) {
-      globalThis.clearTimeout(wait.timeout);
-      wait.timeout = null;
-    }
-    if (this.#joinWait === wait) {
-      this.#joinWait = null;
-    }
   }
 }

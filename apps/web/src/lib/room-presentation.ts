@@ -100,10 +100,6 @@ const INTERNAL_ROOM_ISSUE_MESSAGES = {
     error: '서버와의 연결을 복구하지 못했습니다. 네트워크를 확인한 뒤 방에 다시 입장해 주세요.',
     warning: '서버와의 연결을 복구하지 못했습니다. 방에 다시 입장해 주세요.',
   },
-  'reconnect-attempt-failed': {
-    error: '서버 재연결을 완료하지 못했습니다. 네트워크를 확인한 뒤 방에 다시 입장해 주세요.',
-    warning: '서버 재연결을 다시 시도하고 있습니다.',
-  },
   'signaling-connect-failed': {
     error: '스터디 서버에 연결할 수 없습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
     warning: '스터디 서버 연결에 실패했습니다. 다시 연결하고 있습니다.',

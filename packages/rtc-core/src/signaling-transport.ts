@@ -47,7 +47,6 @@ export class SignalingTransport {
   readonly #options: SignalingTransportOptions;
   readonly #pendingRequests = new Map<string, string>();
 
-  #socket: WebSocket | null = null;
   #binding: SocketBinding | null = null;
   #generation = 0;
   #requestSequence = 0;
@@ -58,11 +57,12 @@ export class SignalingTransport {
   }
 
   get socket(): WebSocket | null {
-    return this.#socket;
+    return this.#binding?.socket ?? null;
   }
 
   isOpen(): boolean {
-    return this.#socket !== null && this.#socket.readyState === this.#socket.OPEN;
+    const socket = this.socket;
+    return socket !== null && socket.readyState === socket.OPEN;
   }
 
   async connect(): Promise<void> {
@@ -82,7 +82,6 @@ export class SignalingTransport {
       }
 
       this.#pendingRequests.clear();
-      this.#socket = socket;
       const generation = ++this.#generation;
       this.#bind(socket, generation);
 
@@ -141,7 +140,7 @@ export class SignalingTransport {
         );
         settleError(error);
         if (this.isCurrent(socket, generation)) {
-          this.close(1000, 'signaling connect timeout');
+          this.close('signaling connect timeout');
         }
       }, this.#options.connectTimeoutMs);
 
@@ -155,7 +154,6 @@ export class SignalingTransport {
 
   cancelConnect(reason: unknown): void {
     this.#rejectConnecting?.(reason);
-    this.#rejectConnecting = null;
   }
 
   send(message: ClientMessage): void {
@@ -195,25 +193,16 @@ export class SignalingTransport {
     }
   }
 
-  clearPendingRequests(): void {
+  close(reason = 'client leave'): void {
     this.#pendingRequests.clear();
-  }
-
-  close(code = 1000, reason = 'client leave'): void {
-    this.#pendingRequests.clear();
-    const socket = this.#socket;
+    const socket = this.socket;
     if (socket === null) return;
     this.#detach(socket);
-    socket.close(code, reason);
-    this.#socket = null;
+    socket.close(1000, reason);
   }
 
   isCurrent(socket: WebSocket, generation: number): boolean {
-    return (
-      this.#socket === socket &&
-      this.#binding?.socket === socket &&
-      this.#binding.generation === generation
-    );
+    return this.#binding?.socket === socket && this.#binding.generation === generation;
   }
 
   #bind(socket: WebSocket, generation: number): void {
@@ -249,7 +238,6 @@ export class SignalingTransport {
   #handleClose(socket: WebSocket, generation: number, event: CloseEvent): void {
     if (!this.isCurrent(socket, generation)) return;
     this.#detach(socket);
-    this.#socket = null;
     this.#pendingRequests.clear();
     const reason = event.reason || `close code ${event.code}`;
     const error = new SignalingTransportError(
@@ -269,7 +257,7 @@ export class SignalingTransport {
   }
 
   #requireOpenSocket(): WebSocket {
-    const socket = this.#socket;
+    const socket = this.socket;
     if (socket === null || socket.readyState !== socket.OPEN) {
       throw new Error('Signaling socket is not open');
     }
