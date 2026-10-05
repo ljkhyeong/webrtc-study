@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { canonicalRoomUrl } from './room';
 
-export type InviteCopyState =
+type InviteCopyState =
   | { readonly status: 'idle' | 'copying' | 'success' }
   | { readonly status: 'error'; readonly inviteUrl: string };
 

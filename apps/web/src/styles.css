@@ -1139,7 +1139,9 @@ textarea:focus-visible {
   color: #91a2a6;
 }
 
+/* 진단 패널은 버튼 위치와 관계없이 상단 오른쪽 묶음의 오른쪽 끝에 맞춘다. */
 .room-header__status {
+  position: relative;
   grid-area: status;
   justify-self: end;
   gap: 8px;
@@ -1157,11 +1159,6 @@ textarea:focus-visible {
   color: var(--call-soft);
   font-size: 0.72rem;
   font-weight: 650;
-}
-
-/* 진단 패널은 버튼 위치와 관계없이 상단 오른쪽 묶음의 오른쪽 끝에 맞춘다. */
-.room-header__status {
-  position: relative;
 }
 
 .room-invite-button,
@@ -1238,10 +1235,6 @@ textarea:focus-visible {
 
   .room-study summary strong {
     display: none;
-  }
-
-  .room-study > summary {
-    min-width: 260px;
   }
 }
 
