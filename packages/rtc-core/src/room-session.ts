@@ -5,7 +5,6 @@ import {
   serializePeerDataMessage,
   type ChatDataMessage,
   type StudyCommand,
-  type StudyState,
   type HandQueueState,
   type ModeratedMediaKind,
   type Participant,
@@ -40,7 +39,9 @@ import {
 import { SignalingRecoveryLifecycle } from './signaling-recovery-lifecycle.js';
 import { SignalingTransport, SignalingTransportError } from './signaling-transport.js';
 import { getErrorMessage } from './errors.js';
+import { RoomStudy, type RoomStudySnapshot } from './room-study.js';
 export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
+export type { RoomStudySnapshot } from './room-study.js';
 
 export type RoomSessionStatus =
   'idle' | 'connecting-signal' | 'joining' | 'active' | 'reconnecting' | 'ended' | 'error';
@@ -114,10 +115,6 @@ export interface RoomConnectionDiagnostics {
 
 export interface ModerationNotice {
   readonly kind: ModeratedMediaKind;
-}
-
-export interface RoomStudySnapshot extends StudyState {
-  readonly sampledAt: number;
 }
 
 export interface RoomSessionSnapshot {
@@ -262,16 +259,12 @@ export class RoomSession {
   readonly #exhaustedPeerIds = new Set<string>();
   readonly #participantMonitors = new Map<string, ParticipantMonitor>();
   readonly #participantActivity = new Map<string, ParticipantActivity>();
-  #study: RoomStudySnapshot | null = null;
-  #studyNotice: string | null = null;
-  #studyCommandId: string | null = null;
-  #studyCommandTimer: ReturnType<typeof setTimeout> | null = null;
-  #studySyncRequest: { id: string; sentAt: number } | null = null;
   #monitorGeneration = 0;
   #monitorPending = false;
   readonly #peerConnectionEpochs = new Map<string, string>();
   readonly #peerRetryRequests = new Map<string, ReturnType<typeof setTimeout>>();
   readonly #signalingTransport: SignalingTransport;
+  readonly #study: RoomStudy;
   readonly #peerNegotiation: PeerNegotiationLifecycle;
   readonly #signalingRecovery: SignalingRecoveryLifecycle;
   readonly #chat: RoomChatLedger;
@@ -353,6 +346,15 @@ export class RoomSession {
       },
       options.initialInputEnabled,
     );
+    this.#study = new RoomStudy({
+      roomId,
+      send: (message) => this.#signalingTransport.send(message),
+      createId: defaultCreateId,
+      monotonicNow: () => this.#monotonicNow(),
+      isActive: () => this.#status === 'active',
+      isHost: () => this.#selfRole === 'host',
+      onChanged: () => this.#emit(),
+    });
     this.#signalingTransport = new SignalingTransport({
       url: this.#options.signalingUrl,
       roomId,
@@ -907,61 +909,11 @@ export class RoomSession {
   }
 
   syncStudy(): boolean {
-    if (this.#status !== 'active') return false;
-    const sentAt = this.#monotonicNow();
-    if (this.#studySyncRequest && sentAt - this.#studySyncRequest.sentAt < 10_000) return false;
-    const id = `study-sync-${defaultCreateId()}`;
-    try {
-      this.#signalingTransport.send({
-        v: PROTOCOL_VERSION,
-        type: 'room.study.sync',
-        roomId: this.#options.roomId,
-        requestId: id,
-      });
-      this.#studySyncRequest = { id, sentAt };
-      return true;
-    } catch {
-      return false;
-    }
+    return this.#study.sync();
   }
 
-  updateStudy(command: StudyCommand, expectedRevision = this.#study?.revision): boolean {
-    if (
-      this.#status !== 'active' ||
-      this.#selfRole !== 'host' ||
-      !this.#study ||
-      this.#studyCommandId ||
-      expectedRevision !== this.#study.revision
-    )
-      return false;
-    const id = `study-update-${defaultCreateId()}`;
-    try {
-      this.#signalingTransport.send({
-        v: PROTOCOL_VERSION,
-        type: 'room.study.update',
-        roomId: this.#options.roomId,
-        requestId: id,
-        payload: { ...command, expectedRevision },
-      });
-      this.#studyCommandId = id;
-      this.#studyNotice = null;
-      this.#studyCommandTimer = globalThis.setTimeout(() => {
-        this.#clearStudyCommand();
-        this.#studyNotice = '변경 결과를 확인하지 못했습니다. 최신 상태를 불러옵니다.';
-        this.syncStudy();
-        this.#emit();
-      }, 10_000);
-      this.#emit();
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  #clearStudyCommand(): void {
-    if (this.#studyCommandTimer !== null) globalThis.clearTimeout(this.#studyCommandTimer);
-    this.#studyCommandTimer = null;
-    this.#studyCommandId = null;
+  updateStudy(command: StudyCommand, expectedRevision?: number): boolean {
+    return this.#study.update(command, expectedRevision);
   }
 
   retryPeer(peerId: string): boolean {
@@ -1235,30 +1187,11 @@ export class RoomSession {
           }
           this.#emit();
           return;
-        case 'room.study.state': {
+        case 'room.study.state':
           if (this.#status !== 'active') return;
-          if (message.requestId === this.#studyCommandId) this.#clearStudyCommand();
-          const { conflict, ...state } = message.payload;
-          if (conflict)
-            this.#studyNotice =
-              '다른 방장이 먼저 변경했습니다. 최신 상태를 확인한 뒤 다시 조작해 주세요.';
-          if (!this.#study || state.revision >= this.#study.revision) {
-            const now = this.#monotonicNow();
-            const request = this.#studySyncRequest;
-            const transitMs =
-              request !== null && request.id === message.requestId
-                ? Math.max(0, now - request.sentAt) / 2
-                : 0;
-            this.#study = {
-              ...state,
-              remainingMs: Math.max(0, state.remainingMs - (state.running ? transitMs : 0)),
-              sampledAt: now,
-            };
-          }
-          if (message.requestId === this.#studySyncRequest?.id) this.#studySyncRequest = null;
+          this.#study.applyState(message.requestId, message.payload);
           this.#emit();
           return;
-        }
         case 'peer.reconnect': {
           const { peerId, connectionId, initiator } = message.payload;
           if (
@@ -2057,10 +1990,7 @@ export class RoomSession {
 
   #cleanupPeerResources(): void {
     this.#handQueue = null;
-    this.#clearStudyCommand();
-    this.#study = null;
-    this.#studyNotice = null;
-    this.#studySyncRequest = null;
+    this.#study.reset();
     this.#monitorGeneration += 1;
     this.#participantMonitors.clear();
     this.#participantActivity.clear();
@@ -2097,9 +2027,7 @@ export class RoomSession {
 
   #handleServerError(code: SignalingErrorCode, requestId: string | undefined): void {
     if (requestId?.startsWith('hand-update-') && this.#status === 'active') this.#sendHandRequest();
-    if (requestId === this.#studyCommandId) {
-      this.#clearStudyCommand();
-      this.#studyNotice = '타이머와 주제 변경 요청을 처리하지 못했습니다.';
+    if (this.#study.rejectCommand(requestId)) {
       this.#emit();
     }
     const error = new RoomSessionFailure(
@@ -2215,13 +2143,11 @@ export class RoomSession {
 
   #buildSnapshot(): RoomSessionSnapshot {
     return {
-      study: this.#study === null ? null : { ...this.#study },
+      ...this.#study.snapshot(),
       handQueue:
         this.#handQueue === null
           ? null
           : { ...this.#handQueue, peerIds: [...this.#handQueue.peerIds] },
-      studyPending: this.#studyCommandId !== null,
-      studyNotice: this.#studyNotice,
       status: this.#status,
       selfId: this.#selfId,
       canModerateMedia: this.#canModerateMedia,
