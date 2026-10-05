@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseClientMessage, parseServerMessage } from './validation.js';
+import { parseClientMessage, parseServerMessage } from '../src/index.js';
 
 const envelope = { v: 3, roomId: 'abcd-efgh-jkmp' };
 describe('손들기 대기열 계약', () => {
