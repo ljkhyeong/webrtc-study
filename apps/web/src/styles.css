@@ -3602,16 +3602,76 @@ textarea:focus-visible {
   flex-shrink: 0;
   padding: 3px 6px;
   border-radius: 5px;
-  background: #fff0ca;
-  color: #754d10;
+  background: #4a3a1c;
+  color: #ffd98f;
   font-size: 0.68rem;
 }
 
 .room-study__host-notice {
-  padding: 10px;
-  border-left: 3px solid #c49635;
-  background: #fff8e7;
-  color: #754d10;
+  padding: 10px 12px;
+  border-left: 3px solid var(--amber);
+  border-radius: 4px;
+  background: rgb(240 184 74 / 10%);
+  color: #ffd98f;
+  line-height: 1.5;
+}
+
+/* 현재 상태 → 방장 조작 → 내 알림 → 다시 불러오기 순서로 나눠 보여 준다. */
+.room-study__status {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--call-line);
+}
+
+.room-study__status p[role='status'] {
+  color: #f1f3f4;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.room-study__body .room-study__primary {
+  border-color: transparent;
+  color: var(--amber-ink);
+  background: var(--amber);
+  font-weight: 750;
+}
+
+.room-study__alerts {
+  display: grid;
+  margin: 0;
+  padding: 14px 0 0;
+  gap: 10px;
+  border: 0;
+  border-top: 1px solid var(--call-line);
+}
+
+.room-study__alerts legend {
+  float: left;
+  width: 100%;
+  margin-bottom: 2px;
+  padding: 0;
+  color: #afc0c7;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.room-study__footer {
+  display: grid;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--call-line);
+}
+
+.room-study__body .room-study__sync {
+  justify-self: start;
+  min-height: 0;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  border-radius: 0;
+  color: var(--call-soft);
+  background: transparent;
 }
 .room-study__body {
   position: absolute;

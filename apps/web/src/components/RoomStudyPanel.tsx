@@ -197,31 +197,16 @@ export function RoomStudyPanel({
               현재 방장이 없어 타이머와 주제를 변경할 수 없습니다. 진행 중인 타이머는 계속됩니다.
             </p>
           ) : null}
-          <p className="room-study__topic">
-            현재 주제: {state?.topic || '설정된 주제가 없습니다.'}
-          </p>
-          <label className="room-study__sound">
-            <input type="checkbox" checked={chime.enabled} onChange={chime.toggle} />
-            종료 알림음 · 기기 기본 스피커
-          </label>
-          {chime.notice ? <p role="status">{chime.notice}</p> : null}
-          {desktopNotification.supported ? (
-            <label className="room-study__sound">
-              <input
-                type="checkbox"
-                checked={desktopNotification.enabled}
-                disabled={desktopNotification.pending}
-                onChange={() => void desktopNotification.toggle()}
-              />
-              종료 데스크톱 알림 · 다른 창 사용 중
-            </label>
-          ) : null}
-          {desktopNotification.notice ? <p role="status">{desktopNotification.notice}</p> : null}
-          <p role="status">
-            {active
-              ? `${state?.mode === 'break' ? '휴식' : '집중'} ${label}`
-              : '다시 연결되면 타이머와 주제를 불러옵니다.'}
-          </p>
+          <div className="room-study__status">
+            <p role="status">
+              {active
+                ? `${state?.mode === 'break' ? '휴식' : '집중'} ${label}`
+                : '다시 연결되면 타이머와 주제를 불러옵니다.'}
+            </p>
+            <p className="room-study__topic">
+              현재 주제: {state?.topic || '설정된 주제가 없습니다.'}
+            </p>
+          </div>
           {canControl ? (
             <>
               <form
@@ -278,7 +263,9 @@ export function RoomStudyPanel({
                     onChange={(event) => setMinutes(event.target.value)}
                   />
                 </label>
-                <button disabled={disabled}>{state?.running ? '새 타이머 시작' : '시작'}</button>
+                <button className="room-study__primary" disabled={disabled}>
+                  {state?.running ? '새 타이머 시작' : '시작'}
+                </button>
               </form>
               <div className="room-study__actions">
                 <button
@@ -295,12 +282,34 @@ export function RoomStudyPanel({
           ) : (
             <p>타이머와 주제는 방장이 변경할 수 있습니다.</p>
           )}
-          <button type="button" disabled={!active} onClick={onSync}>
-            타이머·주제 다시 불러오기
-          </button>
-          <small>
-            방장이 나가도 계속 진행됩니다. 모두 퇴장하거나 서버가 재시작되면 초기화됩니다.
-          </small>
+          <fieldset className="room-study__alerts">
+            <legend>내 종료 알림</legend>
+            <label className="room-study__sound">
+              <input type="checkbox" checked={chime.enabled} onChange={chime.toggle} />
+              종료 알림음 · 기기 기본 스피커
+            </label>
+            {chime.notice ? <p role="status">{chime.notice}</p> : null}
+            {desktopNotification.supported ? (
+              <label className="room-study__sound">
+                <input
+                  type="checkbox"
+                  checked={desktopNotification.enabled}
+                  disabled={desktopNotification.pending}
+                  onChange={() => void desktopNotification.toggle()}
+                />
+                종료 데스크톱 알림 · 다른 창 사용 중
+              </label>
+            ) : null}
+            {desktopNotification.notice ? <p role="status">{desktopNotification.notice}</p> : null}
+          </fieldset>
+          <div className="room-study__footer">
+            <button className="room-study__sync" type="button" disabled={!active} onClick={onSync}>
+              타이머·주제 다시 불러오기
+            </button>
+            <small>
+              방장이 나가도 계속 진행됩니다. 모두 퇴장하거나 서버가 재시작되면 초기화됩니다.
+            </small>
+          </div>
           {notice || error ? <p role="alert">{notice || error}</p> : null}
         </div>
       </details>
