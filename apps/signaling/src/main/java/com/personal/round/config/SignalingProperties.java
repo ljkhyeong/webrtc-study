@@ -12,12 +12,13 @@ import java.util.List;
 import org.hibernate.validator.constraints.time.DurationMin;
 import org.hibernate.validator.constraints.time.DurationMax;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
 
 @Validated
 @ConfigurationProperties(prefix = "round.signaling")
 public record SignalingProperties(
-		@NotEmpty List<@NotBlank String> allowedOrigins,
+		@DefaultValue @NotEmpty List<@NotBlank String> allowedOrigins,
 		@Min(1) @Max(MAX_SUPPORTED_ROOM_SIZE) int maxRoomSize,
 		@Min(1) @Max(5_000) int maxConnections,
 		@Min(1) @Max(5_000) int maxConnectionsPerClient,
@@ -41,7 +42,7 @@ public record SignalingProperties(
 	public static final int MAX_SUPPORTED_ROOM_SIZE = 6;
 
 	public SignalingProperties {
-		allowedOrigins = allowedOrigins == null ? List.of() : List.copyOf(allowedOrigins);
+		allowedOrigins = List.copyOf(allowedOrigins);
 	}
 
 	@AssertTrue(

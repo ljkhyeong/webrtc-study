@@ -10,16 +10,18 @@ import java.util.List;
 import org.hibernate.validator.constraints.time.DurationMax;
 import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
 
 @Validated
 @ConfigurationProperties(prefix = "round.turn")
 public record TurnProperties(
 		@NotNull Provider provider,
-		String cloudflareKeyId,
-		String cloudflareApiToken,
+		@DefaultValue("") String cloudflareKeyId,
+		@DefaultValue("") String cloudflareApiToken,
+		@DefaultValue
 		List<@Pattern(regexp = "turns?:[^\\s]+", message = "coturn URL must use turn: or turns:") String> coturnUrls,
-		String coturnSecret,
+		@DefaultValue("") String coturnSecret,
 		@NotNull @DurationMin(minutes = 5) @DurationMax(days = 2) Duration credentialTtl,
 		@NotNull @DurationMin(seconds = 1) @DurationMax(hours = 1) Duration rateLimitWindow,
 		@Min(1) @Max(10_000) int rateLimitMaxRequests,
@@ -29,10 +31,8 @@ public record TurnProperties(
 		@Min(1) @Max(1_000_000) int rateLimitMaxParticipants) {
 
 	public TurnProperties {
-		cloudflareKeyId = cloudflareKeyId == null ? "" : cloudflareKeyId.strip();
-		cloudflareApiToken = cloudflareApiToken == null ? "" : cloudflareApiToken;
-		coturnUrls = coturnUrls == null ? List.of() : List.copyOf(coturnUrls);
-		coturnSecret = coturnSecret == null ? "" : coturnSecret;
+		cloudflareKeyId = cloudflareKeyId.strip();
+		coturnUrls = List.copyOf(coturnUrls);
 	}
 
 	public boolean enabled() {
