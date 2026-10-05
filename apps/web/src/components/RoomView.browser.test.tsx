@@ -650,6 +650,89 @@ describe('RoomView 브라우저 동작', () => {
     expect(shell.classList.contains('room-shell--panel-open')).toBe(false);
   });
 
+  it('패널 탭을 방향키로 옮기고 방장은 참가자 탭에서 참가자의 마이크와 영상을 끈다', async () => {
+    const props = roomViewProps();
+    const participants = [
+      {
+        peerId: 'self',
+        displayName: '가온',
+        role: 'host' as const,
+        isLocal: true,
+        connectionState: 'connected' as const,
+        audioEnabled: true,
+        videoEnabled: true,
+        videoSource: 'camera' as const,
+        handRaised: false,
+      },
+      {
+        peerId: 'peer',
+        displayName: '나래',
+        role: 'participant' as const,
+        isLocal: false,
+        connectionState: 'connected' as const,
+        audioEnabled: true,
+        videoEnabled: false,
+        videoSource: 'camera' as const,
+        handRaised: false,
+      },
+    ];
+    act(() => root.render(<RoomView {...props} canModerateMedia participants={participants} />));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="채팅 열기"]')!.click(),
+    );
+    const tablist = container.querySelector<HTMLElement>('[role="tablist"]')!;
+    const tabs = () => [...tablist.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
+
+    tabs()[0]!.focus();
+    act(() => {
+      tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+    expect(tabs()[1]!.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tabs()[1]);
+
+    act(() => {
+      tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    });
+    expect(document.activeElement).toBe(tabs()[2]);
+    expect(tabs()[2]!.getAttribute('aria-controls')).toBe('room-people-panel');
+
+    const list = container.querySelector('#room-people-panel .participant-list')!;
+    expect(list.querySelectorAll('button')).toHaveLength(2);
+    act(() => list.querySelector<HTMLButtonElement>('[aria-label="나래 마이크 끄기"]')!.click());
+    expect(props.onDisableParticipantAudio).toHaveBeenCalledWith('peer');
+    expect(list.querySelector<HTMLButtonElement>('[aria-label="나래 영상 끄기"]')!.disabled).toBe(
+      true,
+    );
+
+    act(() => {
+      tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    });
+    expect(tabs()[0]!.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('채팅을 닫은 동안 받은 새 메시지 수를 탭 제목에 표시하고 읽으면 원래 제목으로 되돌린다', async () => {
+    document.title = 'ROUND — study room';
+    const props = roomViewProps();
+    const message = {
+      id: 'first',
+      senderId: 'peer',
+      senderName: '나래',
+      text: '자료 올렸어요',
+      sentAt: 1,
+      isLocal: false,
+      deliveryState: 'received' as const,
+    };
+    act(() => root.render(<RoomView {...props} messages={[]} />));
+    act(() => root.render(<RoomView {...props} messages={[message]} />));
+    expect(document.title).toBe('(1) ROUND — study room');
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label^="채팅 열기"]')!.click(),
+    );
+    expect(document.title).toBe('ROUND — study room');
+  });
+
   it('이전 대화를 읽을 때 위치를 유지하고 최신 대화로 이동한 뒤에만 새 메시지를 따라간다', () => {
     const props = roomViewProps();
     const message = {
