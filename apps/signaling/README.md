@@ -21,6 +21,10 @@
 않습니다. BATON 모드는 해당 프로필이 없어도 와일드카드, `null`, 로컬 주소가 아닌 HTTP
 출처를 별도로 거부합니다.
 
+요청의 Origin 비교는 Spring WebSocket의 허용 출처 설정과 `CorsConfiguration`을 사용합니다.
+브라우저가 보낸 Origin이 목록에 없으면 403으로 거부합니다. Origin이 없거나 서버와 같은 출처인
+WebSocket 요청은 허용합니다. 비브라우저 클라이언트는 Origin을 임의로 정할 수 있어 거부해도 방어 효과가 없습니다.
+
 ## 연결·요청 제한과 만료 처리
 
 `server.shutdown=graceful`과 시그널링 종료 처리를 함께 사용합니다. 서버 종료가 시작되면
