@@ -27,8 +27,8 @@ Spring·Java 표준 API로 대신할 수 있는 직접 구현과 과한 검증�
 | `ClientCompatibilityHandshakeInterceptor` | `@GetMapping(params = "compatibility")` MVC 컨트롤러    | `/signal`을 WebSocket과 공유한다. 먼저 검사되는 MVC 매핑의 `params` 조건이 맞지 않으면 `RequestMappingInfoHandlerMapping.handleNoMatch`가 업그레이드 요청을 400으로 끝낼 수 있어, 핸들러 매핑 순서까지 바꿔야 한다.            |
 | `ConnectionAdmissionHandshakeHandler`     | `DefaultHandshakeHandler` 상속과 `determineUser` 재정의 | Spring WebSocket 7.0.8의 `AbstractHandshakeHandler.doHandshake`가 `final`이라 연결 예약과 헤더 정제를 업그레이드 앞뒤에 넣을 수 없다. 위임 이유와 주체 교체 이유(JWT를 담은 인증 객체를 세션에 남기지 않음)를 주석으로 남겼다. |
 
-손들기 대기열의 구버전 클라이언트 구분(`supportedPeerIds`, 서버 `RoomHandQueue`의 구독자, DataChannel `participant.hand`)도 배포 이력이 없어 정리 대상이다.
-다만 RTC 코어의 손들기 전송을 고치는 다른 작업과 겹치므로 그 작업이 끝난 뒤 프로토콜·서버·RTC 코어·웹을 함께 바꾼다.
+손들기 대기열의 구버전 클라이언트 구분(`supportedPeerIds`, 서버 `RoomHandQueue`의 구독자, DataChannel `participant.hand`)은
+배포 이력이 없어 같은 날 프로토콜·서버·RTC 코어·웹에서 함께 제거했다. 서버 대기열이 손들기 표시의 유일한 기준이다.
 
 ### 유지
 
