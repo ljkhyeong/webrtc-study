@@ -11,6 +11,8 @@ import java.util.Set;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.ServletServerHttpRequest;
 
+// 업그레이드된 Spring·Tomcat WebSocket 세션은 요청 헤더와 사용자 주체를 연결 내내 보관한다.
+// 쿠키·인증 헤더를 숨기고, JWT를 담은 인증 객체 대신 참여권 사용자만 담은 주체를 넘긴다.
 final class SensitiveHeaderRedactingServletServerHttpRequest
 		extends ServletServerHttpRequest {
 

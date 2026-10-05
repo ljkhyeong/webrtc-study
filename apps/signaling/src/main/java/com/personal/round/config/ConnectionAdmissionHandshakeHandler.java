@@ -20,6 +20,8 @@ import org.springframework.web.socket.server.HandshakeFailureException;
 import org.springframework.web.socket.server.HandshakeHandler;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 
+// AbstractHandshakeHandler.doHandshake는 final이라 상속으로 감쌀 수 없다. 연결 예약과 헤더 정제를
+// 업그레이드 앞뒤에 넣기 위해 DefaultHandshakeHandler에 위임하고 수명 주기 호출을 전달한다.
 public final class ConnectionAdmissionHandshakeHandler
 		implements HandshakeHandler, Lifecycle, ServletContextAware {
 
