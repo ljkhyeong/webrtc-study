@@ -151,3 +151,39 @@ export function UsersIcon(props: IconProps) {
     </IconFrame>
   );
 }
+
+export function SpeakerIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+    </IconFrame>
+  );
+}
+
+export function SpeakerOffIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+      <path d="m22 9-6 6M16 9l6 6" />
+    </IconFrame>
+  );
+}
+
+export function EyeIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M2.5 12C3.5 9.5 7 5 12 5s8.5 4.5 9.5 7c-1 2.5-4.5 7-9.5 7s-8.5-4.5-9.5-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </IconFrame>
+  );
+}
+
+export function EyeOffIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+      <path d="M9.9 5.2A9.8 9.8 0 0 1 12 5c5 0 8.5 4.5 9.5 7a13 13 0 0 1-2.4 3.5M6.6 6.6C4.6 8 3.2 10 2.5 12c1 2.5 4.5 7 9.5 7a9.7 9.7 0 0 0 5.4-1.6" />
+    </IconFrame>
+  );
+}

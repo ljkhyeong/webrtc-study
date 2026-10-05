@@ -1641,17 +1641,6 @@ textarea:focus-visible {
   container: video-tile / inline-size;
 }
 
-.video-tile--connected::after {
-  position: absolute;
-  inset: -1px;
-  z-index: 3;
-  border: 1px solid rgb(73 181 142 / 38%);
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px rgb(73 181 142 / 6%);
-  content: '';
-  pointer-events: none;
-}
-
 .video-tile video,
 .video-tile__fallback,
 .video-tile__shade {
@@ -1993,7 +1982,13 @@ textarea:focus-visible {
 }
 
 .participant-audio summary {
-  padding: 8px;
+  display: flex;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 7px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   border: 1px solid rgb(255 255 255 / 28%);
   border-radius: 8px;
   color: #f2f6f6;
@@ -2001,6 +1996,37 @@ textarea:focus-visible {
   font-size: 0.7rem;
   cursor: pointer;
   list-style: none;
+}
+
+.participant-audio summary svg,
+.video-tile__meta > .video-tile__local-mute svg {
+  width: 16px;
+  height: 16px;
+}
+
+.video-tile__meta > .video-tile__local-mute {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  place-items: center;
+}
+
+/* 마우스 환경에서는 바꾼 적 없는 개인 설정 버튼을 타일에 올리거나 키보드로 이동할 때만 보인다. */
+@media (hover: hover) and (pointer: fine) {
+  .video-tile__meta > .video-tile__local-mute[aria-pressed='false'],
+  .participant-audio:not([open], .participant-audio--adjusted) {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .video-tile:hover .video-tile__meta > .video-tile__local-mute,
+  .video-tile:hover .participant-audio,
+  .video-tile__meta:focus-within > .video-tile__local-mute,
+  .video-tile__meta:focus-within .participant-audio {
+    opacity: 1;
+  }
 }
 
 .participant-audio summary::-webkit-details-marker {
@@ -3791,20 +3817,24 @@ textarea:focus-visible {
 .chat-message__recipients small {
   line-height: 1.5;
 }
+/* 연결된 타일은 테두리를 두지 않고 발언 중일 때만 민트색 테두리로 표시한다. */
 .video-tile--speaking::after {
+  position: absolute;
+  inset: -1px;
+  z-index: 3;
   border: 3px solid #6fd1a8;
-}
-.video-tile__badges .video-tile__speaking {
-  color: #c5f6de;
-  background: #26523f;
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
 }
 .video-tile__badges .video-tile__quality--unstable {
   color: #ffe7b0;
   background: #634c24;
 }
+/* 말하지 않을 때도 막대 모양을 유지해 더보기 메뉴(…)처럼 보이지 않게 한다. */
 .video-tile__signal:not(.video-tile__signal--speaking) i {
-  height: 3px;
   background: #94a8ad;
+  opacity: 0.75;
   animation: none;
 }
 @media (max-width: 760px) {
@@ -3858,10 +3888,6 @@ textarea:focus-visible {
     font-size: 0.6rem;
   }
 
-  .video-tile__badges .video-tile__speaking {
-    display: none;
-  }
-
   .video-tile__moderation {
     top: 38px;
     right: 8px;
@@ -3885,15 +3911,12 @@ textarea:focus-visible {
     font-size: 0.7rem;
   }
 
-  .video-tile__local-mute {
-    min-height: 28px;
-    padding: 3px 6px;
-    font-size: 0.64rem;
-  }
-
-  /* summary는 min-height로 글자를 세로 가운데에 두지 않으므로 여백으로 높이를 맞춘다. */
+  .video-tile__meta > .video-tile__local-mute,
   .participant-audio summary {
-    padding: 6px 7px;
+    min-width: 28px;
+    width: auto;
+    height: 28px;
+    padding: 0 5px;
     font-size: 0.64rem;
   }
 

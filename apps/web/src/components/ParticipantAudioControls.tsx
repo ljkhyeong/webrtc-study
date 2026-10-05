@@ -1,4 +1,5 @@
 import { useEffect, useState, type RefObject } from 'react';
+import { SpeakerIcon, SpeakerOffIcon } from './Icons';
 
 interface ParticipantAudioControlsProps {
   name: string;
@@ -48,15 +49,16 @@ export function ParticipantAudioControls({
 
   return (
     <details
-      className="participant-audio"
+      className={`participant-audio${muted || volume !== 100 ? ' participant-audio--adjusted' : ''}`}
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return;
         event.currentTarget.open = false;
         event.currentTarget.querySelector('summary')?.focus();
       }}
     >
-      <summary aria-label={`내가 듣는 ${name}의 소리 설정`}>
-        {muted ? '음소거' : supported ? `음량 ${volume}%` : '음량'}
+      <summary aria-label={`내가 듣는 ${name}의 소리 설정`} title="내가 듣는 소리 설정">
+        {muted ? <SpeakerOffIcon /> : <SpeakerIcon />}
+        {!muted && supported && volume !== 100 ? <span>{volume}%</span> : null}
       </summary>
       <div className="participant-audio__panel" style={{ maxHeight: panelHeight }}>
         <label>

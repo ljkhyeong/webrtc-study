@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { ParticipantSnapshot, PeerConnectionStatus } from '@round/rtc-core';
 import { useVideoFullscreen } from '../lib/use-video-fullscreen';
 import { useVideoPictureInPicture } from '../lib/use-video-picture-in-picture';
-import { CameraOffIcon, FullscreenIcon, HandIcon, MicOffIcon } from './Icons';
+import { CameraOffIcon, EyeIcon, EyeOffIcon, FullscreenIcon, HandIcon, MicOffIcon } from './Icons';
 import { ParticipantAudioControls } from './ParticipantAudioControls';
 import { useScreenShareView } from './useScreenShareView';
 
@@ -160,7 +160,7 @@ export function VideoTile({
   return (
     <article
       ref={tileRef}
-      className={`video-tile${isConnected ? ' video-tile--connected' : ''}${pinned ? ' video-tile--pinned' : ''}${participant.audioEnabled && participant.activity?.speaking ? ' video-tile--speaking' : ''}`}
+      className={`video-tile${pinned ? ' video-tile--pinned' : ''}${participant.audioEnabled && participant.activity?.speaking ? ' video-tile--speaking' : ''}`}
       data-peer-id={participant.peerId}
       aria-label={`${participant.displayName}${participant.isLocal ? ' (나)' : ''} 참가자`}
     >
@@ -238,9 +238,6 @@ export function VideoTile({
       ) : null}
 
       <div className="video-tile__badges">
-        {participant.audioEnabled && participant.activity?.speaking ? (
-          <span className="video-tile__speaking">발언 중</span>
-        ) : null}
         {qualityVisible && !participant.isLocal && isConnected ? (
           <span
             className={`video-tile__quality video-tile__quality--${participant.activity?.receptionQuality ?? 'unavailable'}`}
@@ -420,10 +417,12 @@ export function VideoTile({
           <button
             type="button"
             className="video-tile__local-mute"
+            aria-label={previewHidden ? '내 영상 다시 보기' : '내 영상 숨기기'}
+            title={previewHidden ? '내 영상 다시 보기' : '내 영상 숨기기'}
             aria-pressed={previewHidden}
             onClick={() => setPreviewHidden((hidden) => !hidden)}
           >
-            {previewHidden ? '내 영상 다시 보기' : '내 영상 숨기기'}
+            {previewHidden ? <EyeIcon /> : <EyeOffIcon />}
           </button>
         ) : null}
         {!participant.audioEnabled ? (
