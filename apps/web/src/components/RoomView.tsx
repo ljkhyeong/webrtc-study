@@ -3,7 +3,7 @@ import { RoomHandQueue } from './RoomHandQueue';
 import { RoomParticipantList } from './RoomParticipantList';
 import { LeaveRoomDialog } from './LeaveRoomDialog';
 import { InviteDialog } from './InviteDialog';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   ChatMessage,
   RoomConnectionDiagnostics,
@@ -318,6 +318,24 @@ export function RoomView({
     ? handQueue.peerIds.length
     : participants.filter((participant) => participant.handRaised).length;
   const { unreadMessageCount, unseenDeliveryIssueCount } = chatNotifications;
+  const panelTabs = ['chat', 'hands', 'people'] as const;
+  const moveTab = (event: KeyboardEvent<HTMLDivElement>) => {
+    const current = panelTabs.indexOf(panel ?? 'chat');
+    const next =
+      event.key === 'ArrowRight'
+        ? (current + 1) % panelTabs.length
+        : event.key === 'ArrowLeft'
+          ? (current + panelTabs.length - 1) % panelTabs.length
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? panelTabs.length - 1
+              : null;
+    if (next === null) return;
+    event.preventDefault();
+    setPanel(panelTabs[next]!);
+    event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+  };
   const chatNotificationCount = unreadMessageCount + unseenDeliveryIssueCount;
   const connectionDiagnosticsKey = participants
     .filter((participant) => !participant.isLocal)
@@ -556,11 +574,18 @@ export function RoomView({
         </section>
 
         <div className="side-panel" inert={panel === null}>
-          <div className="side-panel__tabs" role="tablist" aria-label="통화 패널">
+          <div
+            className="side-panel__tabs"
+            role="tablist"
+            aria-label="통화 패널"
+            onKeyDown={moveTab}
+          >
             <button
               type="button"
               role="tab"
               aria-selected={panel === 'chat'}
+              aria-controls="room-chat-panel"
+              tabIndex={(panel ?? 'chat') === 'chat' ? 0 : -1}
               onClick={() => setPanel('chat')}
             >
               채팅
@@ -572,6 +597,8 @@ export function RoomView({
               type="button"
               role="tab"
               aria-selected={panel === 'hands'}
+              aria-controls="room-hand-panel"
+              tabIndex={panel === 'hands' ? 0 : -1}
               onClick={() => setPanel('hands')}
             >
               손들기
@@ -581,6 +608,8 @@ export function RoomView({
               type="button"
               role="tab"
               aria-selected={panel === 'people'}
+              aria-controls={panel === 'people' ? 'room-people-panel' : undefined}
+              tabIndex={panel === 'people' ? 0 : -1}
               onClick={() => setPanel('people')}
             >
               참가자 {participants.length}
@@ -596,6 +625,7 @@ export function RoomView({
             onDraftChange={setHasDraft}
           />
           <section
+            id="room-hand-panel"
             className="side-panel__section"
             aria-labelledby="hand-queue-title"
             hidden={panel !== 'hands'}
@@ -609,14 +639,24 @@ export function RoomView({
             <RoomHandQueue state={handQueue} participants={participants} active={isActive} />
           </section>
           {panel === 'people' ? (
-            <section className="side-panel__section" aria-labelledby="participant-list-title">
+            <section
+              id="room-people-panel"
+              className="side-panel__section"
+              aria-labelledby="participant-list-title"
+            >
               <header className="side-panel__header">
                 <strong id="participant-list-title">참가자 목록</strong>
                 <button type="button" aria-label="참가자 목록 닫기" onClick={closePanel}>
                   <CloseIcon />
                 </button>
               </header>
-              <RoomParticipantList participants={participants} handQueue={handQueue} />
+              <RoomParticipantList
+                participants={participants}
+                handQueue={handQueue}
+                canModerateMedia={canModerateMedia}
+                onDisableAudio={onDisableParticipantAudio}
+                onDisableVideo={onDisableParticipantVideo}
+              />
             </section>
           ) : null}
         </div>

@@ -322,7 +322,7 @@ export function RoomChatPanel({
 
   return (
     <>
-      <aside className="chat-panel" aria-hidden={!open} inert={!open}>
+      <aside id="room-chat-panel" className="chat-panel" aria-hidden={!open} inert={!open}>
         <div>
           <header className="chat-panel__header">
             <strong>스터디 대화</strong>

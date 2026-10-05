@@ -2492,6 +2492,34 @@ textarea:focus-visible {
   font-size: 0.7rem;
 }
 
+.participant-list__actions {
+  display: flex;
+  margin-top: 6px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.participant-list__actions button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--call-line);
+  border-radius: 8px;
+  color: #e6efed;
+  background: var(--call-raised);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.participant-list__actions button:hover:not(:disabled) {
+  border-color: #c2432f;
+  color: white;
+  background: #c2432f;
+}
+
+.participant-list__actions button:disabled {
+  opacity: 0.45;
+}
+
 .participant-list__media {
   display: flex;
   gap: 6px;
