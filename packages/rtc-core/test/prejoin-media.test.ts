@@ -547,4 +547,31 @@ describe('PrejoinMedia', () => {
     await flushMicrotasks();
     expect(enumerateDevices).toHaveBeenCalledTimes(enumerationCountAfterDispose);
   });
+  it('폐기하면 끝나지 않은 장치 목록 조회를 기다리지 않는다', async () => {
+    const audioTrack = new FakeTrack('audio', 'mic-default');
+    const enumeration = deferred<MediaDeviceInfo[]>();
+    const enumerateDevices = vi.fn(() => enumeration.promise);
+    const controller = new PrejoinMedia({
+      mediaDevices: {
+        ...mediaDeviceEventTarget(),
+        getUserMedia: vi.fn(async (constraints: MediaStreamConstraints) => {
+          if (constraints.audio !== false) {
+            return new FakeMediaStream([audioTrack]) as unknown as MediaStream;
+          }
+          throw namedError('NotFoundError');
+        }),
+        enumerateDevices,
+      },
+      mediaStreamFactory: () => new FakeMediaStream() as unknown as MediaStream,
+    });
+
+    const checking = controller.checkDevices();
+    await vi.waitFor(() => {
+      expect(enumerateDevices).toHaveBeenCalledTimes(1);
+    });
+    controller.dispose();
+
+    await expect(checking).resolves.toBe(controller.getSnapshot());
+    expect(audioTrack.stopped).toBe(true);
+  });
 });
