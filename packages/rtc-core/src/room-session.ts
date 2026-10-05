@@ -319,7 +319,7 @@ export class RoomSession {
       rollbackSenderUpdates: (updates) => this.#rollbackSenderUpdates(updates),
       recoverPeersAfterSenderFailure: (failures, phase) =>
         this.#peerRecovery.recoverAfterSenderFailure(failures, phase),
-      requestLocalRenegotiation: (peer) => this.#requestLocalRenegotiation(peer),
+      requestLocalRenegotiation: (peer) => this.#peerNegotiation.requestRenegotiation(peer),
       onStateChanged: () => {
         this.#syncLocalParticipantMedia();
         this.#broadcastMediaState();
@@ -398,13 +398,15 @@ export class RoomSession {
       replacePeer: (peerId, preservePendingCandidates) =>
         this.#replacePeer(peerId, preservePendingCandidates),
       isCurrentPeer: (peer) => this.#isCurrentPeer(peer),
+      isRoomActive: () => !this.#disposed && this.#status === 'active',
       isRoomReconnecting: () => this.#status === 'reconnecting',
       setPeerConnectionStatus: (peerId, status) => this.#setPeerConnectionStatus(peerId, status),
       setPeerWarning: (peerId, code, message) => this.#setPeerWarning(peerId, code, message),
       failPeerConnectionTimeout: (peer) => this.#failPeerConnectionTimeout(peer),
       finishPeerRecovery: (peer) => this.#peerRecovery.finish(peer),
       updateVideoQuality: (peer) => this.#updateVideoQuality(peer),
-      onNegotiationSettled: (peer) => this.#drainPendingLocalRenegotiation(peer),
+      onRenegotiationFailed: (peerId, error) =>
+        this.#peerRecovery.scheduleInitialOfferRetry(peerId, error),
     });
     this.#peerRecovery = new PeerRecoveryLifecycle({
       maxReconnectAttempts: this.#recoveryOptions.maxReconnectAttempts,
@@ -1420,9 +1422,7 @@ export class RoomSession {
     };
 
     connection.onsignalingstatechange = () => {
-      if (this.#isCurrentPeer(peer)) {
-        this.#drainPendingLocalRenegotiation(peer);
-      }
+      this.#peerNegotiation.drainRenegotiation(peer);
     };
 
     connection.onconnectionstatechange = () => {
@@ -1455,43 +1455,6 @@ export class RoomSession {
 
   #isCurrentPeer(peer: PeerContext): boolean {
     return !peer.closed && this.#peers.get(peer.peerId) === peer;
-  }
-
-  #requestLocalRenegotiation(peer: PeerContext): void {
-    if (!this.#isCurrentPeer(peer)) {
-      return;
-    }
-    peer.pendingLocalRenegotiation = true;
-    this.#drainPendingLocalRenegotiation(peer);
-  }
-
-  #drainPendingLocalRenegotiation(peer: PeerContext): void {
-    if (
-      !this.#isCurrentPeer(peer) ||
-      !peer.pendingLocalRenegotiation ||
-      this.#disposed ||
-      this.#status !== 'active' ||
-      !this.#signalingTransport.isOpen() ||
-      peer.makingOffer ||
-      peer.hasRemoteOffersInProgress() ||
-      peer.connection.signalingState !== 'stable'
-    ) {
-      return;
-    }
-
-    peer.pendingLocalRenegotiation = false;
-    void this.#peerNegotiation
-      .createOffer(peer.peerId)
-      .then((published) => {
-        if (!published && this.#isCurrentPeer(peer)) {
-          peer.pendingLocalRenegotiation = true;
-        }
-      })
-      .catch((error: unknown) => {
-        if (this.#isCurrentPeer(peer)) {
-          this.#peerRecovery.scheduleInitialOfferRetry(peer.peerId, error);
-        }
-      });
   }
 
   // 호출하는 쪽은 맵에 있는 현재 피어를 교체한다. 시도 횟수는 그 피어에서 하나 늘린다.

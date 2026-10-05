@@ -26,6 +26,7 @@ interface PeerNegotiationLifecycleOptions {
     preservePendingCandidates: boolean,
   ) => PeerConnectionLifecycle;
   readonly isCurrentPeer: (peer: PeerConnectionLifecycle) => boolean;
+  readonly isRoomActive: () => boolean;
   readonly isRoomReconnecting: () => boolean;
   readonly setPeerConnectionStatus: (peerId: string, status: PeerNegotiationStatus) => void;
   readonly setPeerWarning: (
@@ -36,7 +37,7 @@ interface PeerNegotiationLifecycleOptions {
   readonly failPeerConnectionTimeout: (peer: PeerConnectionLifecycle) => void;
   readonly finishPeerRecovery: (peer: PeerConnectionLifecycle) => void;
   readonly updateVideoQuality: (peer: PeerConnectionLifecycle) => Promise<boolean>;
-  readonly onNegotiationSettled: (peer: PeerConnectionLifecycle) => void;
+  readonly onRenegotiationFailed: (peerId: string, error: unknown) => void;
 }
 
 /** 단일 방의 offer·answer·ICE 협상 순서와 협상 세대 확인을 맡는다. */
@@ -116,8 +117,44 @@ export class PeerNegotiationLifecycle {
       throw error;
     } finally {
       peer.makingOffer = false;
-      this.#options.onNegotiationSettled(peer);
+      this.drainRenegotiation(peer);
     }
+  }
+
+  /** 송신 트랙을 추가한 연결은 신호 상태가 안정되면 새 offer를 보낸다. */
+  requestRenegotiation(peer: PeerConnectionLifecycle): void {
+    if (!this.#options.isCurrentPeer(peer)) {
+      return;
+    }
+    peer.pendingLocalRenegotiation = true;
+    this.drainRenegotiation(peer);
+  }
+
+  drainRenegotiation(peer: PeerConnectionLifecycle): void {
+    if (
+      !this.#options.isCurrentPeer(peer) ||
+      !peer.pendingLocalRenegotiation ||
+      !this.#options.isRoomActive() ||
+      !this.#options.transport.isOpen() ||
+      peer.makingOffer ||
+      peer.hasRemoteOffersInProgress() ||
+      peer.connection.signalingState !== 'stable'
+    ) {
+      return;
+    }
+
+    peer.pendingLocalRenegotiation = false;
+    void this.createOffer(peer.peerId)
+      .then((published) => {
+        if (!published && this.#options.isCurrentPeer(peer)) {
+          peer.pendingLocalRenegotiation = true;
+        }
+      })
+      .catch((error: unknown) => {
+        if (this.#options.isCurrentPeer(peer)) {
+          this.#options.onRenegotiationFailed(peer.peerId, error);
+        }
+      });
   }
 
   async handleOffer(
@@ -187,7 +224,7 @@ export class PeerNegotiationLifecycle {
       throw error;
     } finally {
       peer.endRemoteOffer(negotiationId);
-      this.#options.onNegotiationSettled(peer);
+      this.drainRenegotiation(peer);
     }
   }
 
@@ -219,7 +256,7 @@ export class PeerNegotiationLifecycle {
         this.#options.finishPeerRecovery(peer);
       }
       void this.#options.updateVideoQuality(peer);
-      this.#options.onNegotiationSettled(peer);
+      this.drainRenegotiation(peer);
     } catch (error) {
       if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return;
