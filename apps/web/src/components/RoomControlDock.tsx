@@ -34,6 +34,9 @@ interface RoomControlDockProps {
   readonly onLeave: () => void;
 }
 
+// 작은 배지는 두 글자까지만 보여 주므로 10 이상은 9+로 줄인다.
+export const badgeCount = (count: number) => (count > 9 ? '9+' : String(count));
+
 // 하단 조작부. 버튼 이름은 화면 낭독기용 aria-label과 설명 풍선으로 제공하고 상태에 따라 바꾼다.
 export function RoomControlDock({
   active,
@@ -154,7 +157,7 @@ export function RoomControlDock({
       >
         <HandIcon />
         <span>{handRaised ? '손 내리기' : '손들기'}</span>
-        {handCount > 0 ? <b>{Math.min(handCount, 9)}</b> : null}
+        {handCount > 0 ? <b>{badgeCount(handCount)}</b> : null}
       </button>
       <button
         ref={chatButtonRef}
@@ -167,7 +170,7 @@ export function RoomControlDock({
       >
         <MessageIcon />
         <span>채팅</span>
-        {chatNotificationCount > 0 ? <b>{Math.min(chatNotificationCount, 9)}</b> : null}
+        {chatNotificationCount > 0 ? <b>{badgeCount(chatNotificationCount)}</b> : null}
       </button>
       <button
         className="control-button control-button--leave"

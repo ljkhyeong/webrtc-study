@@ -211,23 +211,27 @@ export function RoomView({
     unseenDeliveryIssueCount: 0,
   });
   const chatButtonRef = useRef<HTMLButtonElement>(null);
-  const restoreChatFocus = useRef(false);
+  const peopleButtonRef = useRef<HTMLButtonElement>(null);
+  // 패널 안에서 닫으면 마지막으로 패널을 연 버튼으로 초점을 돌려준다.
+  const panelOpener = useRef<HTMLButtonElement | null>(null);
+  const restorePanelFocus = useRef(false);
 
   useEffect(() => {
-    if (panel === null && restoreChatFocus.current) {
-      restoreChatFocus.current = false;
-      chatButtonRef.current?.focus();
+    if (panel === null && restorePanelFocus.current) {
+      restorePanelFocus.current = false;
+      panelOpener.current?.focus();
     }
   }, [panel]);
 
   const openInvite = () => setInviteUrl(canonicalRoomUrl(roomId, window.location.href));
 
-  const toggleChat = () => {
-    setPanel((current) => (current === 'chat' ? null : 'chat'));
+  const togglePanel = (next: RoomPanel, opener: HTMLButtonElement | null) => {
+    panelOpener.current = opener;
+    setPanel((current) => (current === next ? null : next));
   };
 
   const closePanel = () => {
-    restoreChatFocus.current = true;
+    restorePanelFocus.current = true;
     setPanel(null);
   };
 
@@ -319,10 +323,17 @@ export function RoomView({
             <i />
             {statusLabel}
           </span>
-          <span className="participant-count" aria-label={`참가자 ${participants.length}명`}>
+          <button
+            ref={peopleButtonRef}
+            className="participant-count"
+            type="button"
+            aria-label={`참가자 목록 ${panel === 'people' ? '닫기' : '열기'}, 참가자 ${participants.length}명`}
+            aria-expanded={panel === 'people'}
+            onClick={() => togglePanel('people', peopleButtonRef.current)}
+          >
             <UsersIcon />
             {participants.length}
-          </span>
+          </button>
 
           <button
             className="room-devices-button"
@@ -547,7 +558,7 @@ export function RoomView({
         onToggleScreenShare={onToggleScreenShare}
         onSetHandRaised={onSetHandRaised}
         onSelectDevices={onSelectDevices}
-        onToggleChat={toggleChat}
+        onToggleChat={() => togglePanel('chat', chatButtonRef.current)}
         onLeave={() => requestExit('leave')}
       />
     </div>

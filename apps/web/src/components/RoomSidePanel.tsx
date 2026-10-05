@@ -1,6 +1,7 @@
 import type { KeyboardEvent } from 'react';
 import type { ChatMessage, HandQueueState } from '@round/rtc-core';
 import { CloseIcon } from './Icons';
+import { badgeCount } from './RoomControlDock';
 import { RoomChatPanel, type ChatNotificationSummary } from './RoomChatPanel';
 import { RoomHandQueue } from './RoomHandQueue';
 import { RoomParticipantList } from './RoomParticipantList';
@@ -66,8 +67,21 @@ export function RoomSidePanel({
     event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   };
 
+  // 채팅 검색이 먼저 처리한 Esc와 한글 조합 중 Esc는 패널을 닫지 않는다.
+  const closeOnEscape = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (
+      event.key !== 'Escape' ||
+      event.defaultPrevented ||
+      event.nativeEvent.isComposing ||
+      event.keyCode === 229
+    )
+      return;
+    event.preventDefault();
+    onClose();
+  };
+
   return (
-    <div className="side-panel" inert={panel === null}>
+    <div className="side-panel" inert={panel === null} onKeyDown={closeOnEscape}>
       <div className="side-panel__tabs" role="tablist" aria-label="통화 패널" onKeyDown={moveTab}>
         <button
           type="button"
@@ -79,7 +93,7 @@ export function RoomSidePanel({
         >
           채팅
           {panel !== 'chat' && chatNotificationCount > 0 ? (
-            <b>{Math.min(chatNotificationCount, 9)}</b>
+            <b>{badgeCount(chatNotificationCount)}</b>
           ) : null}
         </button>
         <button
@@ -91,7 +105,7 @@ export function RoomSidePanel({
           onClick={() => onSelectPanel('hands')}
         >
           손들기
-          {handCount > 0 ? <b>{Math.min(handCount, 9)}</b> : null}
+          {handCount > 0 ? <b>{badgeCount(handCount)}</b> : null}
         </button>
         <button
           type="button"

@@ -1183,10 +1183,13 @@ textarea:focus-visible {
     background 160ms ease;
 }
 
+.participant-count,
 .room-devices-button {
   background: transparent;
 }
 
+.participant-count:hover,
+.participant-count[aria-expanded='true'],
 .room-devices-button:hover:not(:disabled),
 .connection-diagnostics > summary:hover {
   color: var(--paper);
