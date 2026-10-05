@@ -42,7 +42,6 @@ describe('RoomSession', () => {
     await joinSession(harness);
 
     expect(statuses.filter((status, index) => status !== statuses[index - 1])).toEqual([
-      'preparing-media',
       'connecting-signal',
       'joining',
       'active',
@@ -124,43 +123,6 @@ describe('RoomSession', () => {
     expect(harness.audioTrack.stopped).toBe(true);
     expect(harness.videoTrack.stopped).toBe(true);
     expect(harness.session.getSnapshot().status).toBe('ended');
-  });
-
-  it('joins without media when permission is denied', async () => {
-    const harness = createHarness({
-      getUserMedia: vi.fn(async () => {
-        throw new DOMException('Permission denied', 'NotAllowedError');
-      }),
-    });
-    const joining = harness.session.join();
-
-    await flushMicrotasks();
-    expect(harness.session.getSnapshot().status).toBe('connecting-signal');
-    harness.socket.open();
-    await flushMicrotasks();
-    expect(harness.socket.messagesOfType('room.join')).toHaveLength(1);
-
-    harness.socket.serverMessage({
-      v: PROTOCOL_VERSION,
-      type: 'room.joined',
-      roomId: 'abcd-efgh-jkmp',
-      payload: { peerId: 'self', participants: [] },
-    });
-    await joining;
-
-    expect(harness.session.getSnapshot()).toMatchObject({
-      status: 'active',
-      selfId: 'self',
-      localMedia: {
-        audioAvailable: false,
-        audioEnabled: false,
-        videoAvailable: false,
-        videoEnabled: false,
-      },
-      warning: { code: 'media-permission-denied' },
-      error: null,
-    });
-    expect(harness.session.getLocalStream()).toBeNull();
   });
 
   it('validates room entry before requesting media or opening a socket', () => {

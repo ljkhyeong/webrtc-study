@@ -535,9 +535,9 @@ export function createHarness(
     ...(overrides.rtcConfiguration === undefined
       ? {}
       : { rtcConfiguration: overrides.rtcConfiguration }),
-    ...(Object.hasOwn(overrides, 'preparedMediaStream')
-      ? { preparedMediaStream: overrides.preparedMediaStream ?? null }
-      : {}),
+    preparedMediaStream: Object.hasOwn(overrides, 'preparedMediaStream')
+      ? (overrides.preparedMediaStream ?? null)
+      : (localStream as unknown as MediaStream),
     ...(overrides.createId === undefined ? {} : { createId: overrides.createId }),
     ...(overrides.wallClockNow === undefined ? {} : { wallClockNow: overrides.wallClockNow }),
     ...(overrides.monotonicNow === undefined ? {} : { monotonicNow: overrides.monotonicNow }),

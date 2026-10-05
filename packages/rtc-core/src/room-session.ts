@@ -42,21 +42,12 @@ import { SignalingTransport, SignalingTransportError } from './signaling-transpo
 export type { PeerConnectionDiagnostics } from './connection-diagnostics.js';
 
 export type RoomSessionStatus =
-  | 'idle'
-  | 'preparing-media'
-  | 'connecting-signal'
-  | 'joining'
-  | 'active'
-  | 'reconnecting'
-  | 'ended'
-  | 'error';
+  'idle' | 'connecting-signal' | 'joining' | 'active' | 'reconnecting' | 'ended' | 'error';
 
 export type PeerConnectionStatus = RTCPeerConnectionState | 'negotiating';
 
 export type RoomIssueCode =
   | SignalingErrorCode
-  | 'media-unavailable'
-  | 'media-permission-denied'
   | 'video-quality-update-failed'
   | 'rtc-configuration-update-failed'
   | 'join-failed'
@@ -169,10 +160,10 @@ export interface RoomSessionOptions {
   /** 선택적 standalone 증명으로, `room.join`에만 전달한다. */
   readonly hostCapability?: string;
   /**
-   * 참여 전 단계에서 이전받은 스트림이다. `null`을 명시하면 브라우저 미디어를
-   * 요청하지 않고 참여하며, 옵션을 생략하면 기존 세션 내부 획득 방식을 유지한다.
+   * 입장 준비 단계에서 넘겨받은 스트림이다. `null`이면 카메라·마이크 없이 참여한다.
+   * 세션은 입장 중에 장치 권한을 따로 요청하지 않는다.
    */
-  readonly preparedMediaStream?: MediaStream | null;
+  readonly preparedMediaStream: MediaStream | null;
   /** 입장 전에 분리된 장치를 다시 선택할 때 적용할 마지막 켜기·끄기 상태다. */
   readonly initialInputEnabled?: Readonly<Record<'audio' | 'video', boolean>>;
   readonly mediaConstraints?: MediaStreamConstraints;
@@ -470,9 +461,7 @@ export class RoomSession {
       },
     });
     this.#rtcConfiguration = snapshotRtcConfiguration(options.rtcConfiguration);
-    if (options.preparedMediaStream !== undefined) {
-      this.#localInput.adoptStream(options.preparedMediaStream);
-    }
+    this.#localInput.adoptStream(options.preparedMediaStream);
     this.#snapshot = this.#buildSnapshot();
   }
 
@@ -1119,13 +1108,6 @@ export class RoomSession {
 
   async #performJoin(): Promise<void> {
     try {
-      this.#setStatus('preparing-media');
-      await this.#prepareMedia();
-
-      if (this.#disposed) {
-        throw new Error('Room session ended while preparing media');
-      }
-
       this.#setStatus('connecting-signal');
       await this.#signalingTransport.connect();
 
@@ -1154,43 +1136,6 @@ export class RoomSession {
       this.#options.mediaDevices ??
       (typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined)
     );
-  }
-
-  async #prepareMedia(): Promise<void> {
-    if (this.#options.preparedMediaStream !== undefined) {
-      this.#emit();
-      return;
-    }
-
-    const mediaDevices = this.#getMediaDevices();
-
-    if (mediaDevices === undefined) {
-      this.#setWarning(
-        'media-unavailable',
-        'Camera and microphone APIs are unavailable; joined without media.',
-      );
-      return;
-    }
-
-    try {
-      const stream = await mediaDevices.getUserMedia(
-        this.#options.mediaConstraints ?? { audio: true, video: true },
-      );
-      if (this.#disposed) {
-        for (const track of stream.getTracks()) {
-          track.stop();
-        }
-        return;
-      }
-      this.#localInput.adoptStream(stream);
-    } catch (error) {
-      this.#warning = {
-        code: 'media-permission-denied',
-        message: `Camera or microphone could not be opened; joined without media. ${getErrorMessage(error)}`,
-        peerId: null,
-      };
-    }
-    this.#emit();
   }
 
   #rememberStaleSelfId(): void {

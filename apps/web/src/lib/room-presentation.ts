@@ -65,15 +65,6 @@ const SIGNALING_ISSUE_MESSAGES = {
 } satisfies Record<SignalingErrorCode, RoomIssueMessages>;
 
 const INTERNAL_ROOM_ISSUE_MESSAGES = {
-  'media-unavailable': {
-    error:
-      '이 브라우저에서는 카메라와 마이크를 사용할 수 없습니다. 브라우저 설정을 확인한 뒤 다시 입장해 주세요.',
-    warning: '이 브라우저는 카메라·마이크를 사용할 수 없어 두 장치 없이 입장했습니다.',
-  },
-  'media-permission-denied': {
-    error: '카메라 또는 마이크를 열지 못했습니다. 브라우저 권한을 확인한 뒤 다시 입장해 주세요.',
-    warning: '장치를 켜지 못해 카메라·마이크 없이 입장했습니다. 장치를 다시 선택할 수 있습니다.',
-  },
   'video-quality-update-failed': {
     error: '카메라 전송 품질을 적용하지 못했습니다.',
     warning:
@@ -200,7 +191,6 @@ const ROOM_ISSUE_MESSAGES = {
 
 const statusLabels: Record<RoomSessionStatus, string> = {
   idle: '방 준비 중',
-  'preparing-media': '카메라와 마이크 확인 중',
   'connecting-signal': '서버에 연결 중',
   joining: '스터디룸 입장 중',
   active: '통화 연결됨',
