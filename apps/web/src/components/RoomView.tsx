@@ -23,6 +23,7 @@ import { setDocumentTitleUnreadCount } from '../lib/document-title';
 import { useInviteCopy } from '../lib/use-invite-copy';
 import type { RegisterLeaveGuard } from '../lib/use-room-navigation';
 import { useLeaveConfirmation } from '../lib/use-leave-confirmation';
+import { useGalleryLayout } from '../lib/gallery-layout';
 
 type RoomSystemNoticeId =
   | 'session-error'
@@ -217,7 +218,6 @@ export function RoomView({
     .map((participant) => `${participant.displayName}${participant.isLocal ? ' (나)' : ''}`);
   const terminalConnectionError = !isActive && Boolean(errorMessage);
   const partialPeerFailure = isActive && Boolean(peerRecoveryMessage);
-  const gridSize = Math.min(Math.max(participants.length, 1), 6);
   const handCount = handQueue
     ? handQueue.peerIds.length
     : participants.filter((participant) => participant.handRaised).length;
@@ -227,6 +227,7 @@ export function RoomView({
   }, [unreadMessageCount]);
   useEffect(() => () => setDocumentTitleUnreadCount(0), []);
   const chatNotificationCount = unreadMessageCount + unseenDeliveryIssueCount;
+  const galleryStyle = useGalleryLayout(stageRef, participants.length, activePinnedPeerId === null);
   const connectionDiagnosticsKey = participants
     .filter((participant) => !participant.isLocal)
     .map((participant) => `${participant.peerId}:${participant.connectionState}`)
@@ -347,7 +348,8 @@ export function RoomView({
         </p>
         <section
           ref={stageRef}
-          className={`video-stage video-stage--${gridSize}${activePinnedPeerId ? ' video-stage--pinned' : ''}`}
+          className={`video-stage${activePinnedPeerId ? ' video-stage--pinned' : ''}`}
+          style={galleryStyle}
           aria-label="스터디 참가자 영상"
         >
           {participants.map((participant) => (

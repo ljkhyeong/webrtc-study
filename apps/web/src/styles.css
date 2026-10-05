@@ -1018,6 +1018,7 @@ textarea:focus-visible {
   display: grid;
   width: 100%;
   height: 100svh;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 76px minmax(0, 1fr);
   overflow: hidden;
   color: var(--paper);
@@ -1605,6 +1606,7 @@ textarea:focus-visible {
 
 .room-workspace {
   display: grid;
+  min-width: 0;
   min-height: 0;
   grid-template-columns: minmax(0, 1fr) 0;
   transition: grid-template-columns 260ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -1614,41 +1616,19 @@ textarea:focus-visible {
   grid-template-columns: minmax(0, 1fr) 360px;
 }
 
+/* 열 수와 타일 크기는 영역 크기에 맞춰 useGalleryLayout이 계산한다. 계산 전에는 2열로 채운다. */
 .video-stage {
   position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
   padding: 4px 24px 112px;
+  grid-template-columns: repeat(var(--gallery-columns, 2), var(--tile-width, minmax(0, 1fr)));
+  grid-auto-rows: var(--tile-height, minmax(180px, 1fr));
+  place-content: center;
   gap: 14px;
   overflow: auto;
   background: var(--night);
-}
-
-.video-stage--1 {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.video-stage--2,
-.video-stage--3,
-.video-stage--4 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.video-stage--5,
-.video-stage--6 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.video-stage--1 .video-tile {
-  width: min(100%, 1180px);
-  max-height: calc(100svh - 196px);
-  margin: auto;
-  aspect-ratio: 16 / 9;
-}
-
-.video-stage--3 .video-tile:first-child {
-  grid-row: 1 / span 2;
 }
 
 .video-tile {
@@ -3032,11 +3012,6 @@ textarea:focus-visible {
   .room-shell--panel-open .control-dock {
     left: calc(50% - 165px);
   }
-
-  .video-stage--5,
-  .video-stage--6 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (min-width: 761px) and (max-width: 960px) {
@@ -3234,25 +3209,7 @@ textarea:focus-visible {
     gap: 8px;
   }
 
-  .video-stage--2,
-  .video-stage--3,
-  .video-stage--4,
-  .video-stage--5,
-  .video-stage--6 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(190px, 1fr);
-  }
-
-  .video-stage--3 .video-tile:first-child {
-    grid-row: auto;
-  }
-
-  .video-stage--1 .video-tile {
-    max-height: calc(100svh - 166px);
-  }
-
   .video-tile {
-    min-height: 190px;
     border-radius: 12px;
   }
 
@@ -3382,31 +3339,6 @@ textarea:focus-visible {
   .prejoin-preview__controls span {
     display: none;
   }
-
-  /* 2명은 위아래로 크게 보이고, 3명 이상은 2열로 한 화면에 최대한 모은다. */
-  .video-stage--2 {
-    grid-template-columns: 1fr;
-    grid-auto-rows: minmax(210px, 1fr);
-  }
-
-  .video-stage--3,
-  .video-stage--4,
-  .video-stage--5,
-  .video-stage--6 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(150px, 1fr);
-  }
-
-  .video-stage--3:not(.video-stage--pinned) .video-tile:first-child {
-    grid-column: 1 / -1;
-  }
-
-  .video-stage--3 .video-tile,
-  .video-stage--4 .video-tile,
-  .video-stage--5 .video-tile,
-  .video-stage--6 .video-tile {
-    min-height: 150px;
-  }
 }
 
 @media (max-width: 480px) {
@@ -3438,10 +3370,7 @@ textarea:focus-visible {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-template-rows: minmax(300px, 1fr);
   grid-auto-rows: 150px;
-}
-
-.video-stage--pinned .video-tile:first-child {
-  grid-row: auto;
+  place-content: normal;
 }
 
 .video-stage--pinned .video-tile.video-tile--pinned {
