@@ -5,13 +5,12 @@ import static com.personal.round.config.RoundRoutes.STANDALONE_TURN_CREDENTIALS;
 import static org.springframework.http.HttpStatus.TOO_MANY_REQUESTS;
 
 import com.personal.round.auth.ParticipationGrant;
-import com.personal.round.auth.ParticipationGrantResolver;
 import jakarta.servlet.http.HttpServletRequest;
-import java.security.Principal;
 import java.util.function.Supplier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,15 +20,12 @@ public class TurnCredentialController {
 
 	private final TurnCredentialService credentialService;
 	private final TurnCredentialRequestPolicy requestPolicy;
-	private final ParticipationGrantResolver grantResolver;
 
 	public TurnCredentialController(
 			TurnCredentialService credentialService,
-			TurnCredentialRequestPolicy requestPolicy,
-			ParticipationGrantResolver grantResolver) {
+			TurnCredentialRequestPolicy requestPolicy) {
 		this.credentialService = credentialService;
 		this.requestPolicy = requestPolicy;
-		this.grantResolver = grantResolver;
 	}
 
 	@PostMapping(STANDALONE_TURN_CREDENTIALS)
@@ -42,12 +38,9 @@ public class TurnCredentialController {
 	@PostMapping(BATON_TURN_CREDENTIALS_TEMPLATE)
 	public ResponseEntity<TurnCredentials> credentials(
 			@PathVariable String roomId,
-			Principal principal,
+			@AuthenticationPrincipal ParticipationGrant grant,
 			HttpServletRequest request) {
-		ParticipationGrant grant = grantResolver.resolve(principal)
-				.filter(candidate -> candidate.allows(roomId))
-				.orElse(null);
-		if (grant == null) {
+		if (grant == null || !grant.allows(roomId)) {
 			return forbidden();
 		}
 		return issueCredentials(

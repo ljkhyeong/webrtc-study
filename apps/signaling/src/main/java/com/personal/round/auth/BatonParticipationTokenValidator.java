@@ -26,21 +26,19 @@ final class BatonParticipationTokenValidator implements OAuth2TokenValidator<Jwt
 		this.clock = clock;
 	}
 
+	// 클레임 형식은 ParticipationGrantAuthenticationConverter가 확인하고, 여기서는 시간 정책만 검사한다.
 	@Override
 	public OAuth2TokenValidatorResult validate(Jwt token) {
-		ParticipationGrant grant = ParticipationGrantResolver.resolve(token).orElse(null);
+		Instant issuedAt = token.getIssuedAt();
+		Instant expiresAt = token.getExpiresAt();
 		Instant now = clock.instant();
-		if (grant == null
-				|| !grant.expiresAt().isAfter(now)
-				|| grant.issuedAt().isAfter(now.plus(ALLOWED_CLOCK_SKEW))
-				|| exceedsMaximumLifetime(grant)) {
+		if (issuedAt == null
+				|| expiresAt == null
+				|| !expiresAt.isAfter(now)
+				|| issuedAt.isAfter(now.plus(ALLOWED_CLOCK_SKEW))
+				|| Duration.between(issuedAt, expiresAt).compareTo(maxGrantLifetime) > 0) {
 			return OAuth2TokenValidatorResult.failure(INVALID_GRANT);
 		}
 		return OAuth2TokenValidatorResult.success();
-	}
-
-	private boolean exceedsMaximumLifetime(ParticipationGrant grant) {
-		return Duration.between(grant.issuedAt(), grant.expiresAt())
-				.compareTo(maxGrantLifetime) > 0;
 	}
 }

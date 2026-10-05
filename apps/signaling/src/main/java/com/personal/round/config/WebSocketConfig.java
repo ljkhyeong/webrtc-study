@@ -4,7 +4,6 @@ import static com.personal.round.config.RoundRoutes.BATON_SIGNAL_TEMPLATE;
 import static com.personal.round.config.RoundRoutes.STANDALONE_SIGNAL;
 
 import com.personal.round.auth.ParticipationGrantHandshakeInterceptor;
-import com.personal.round.auth.ParticipationGrantResolver;
 import com.personal.round.auth.RoundAuthProperties;
 import com.personal.round.protocol.ProtocolParser;
 import com.personal.round.signaling.ConnectionAdmissionPolicy;
@@ -39,7 +38,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
 			ConnectionAdmissionPolicy admissionPolicy,
 			SignalingProperties properties,
 			RoundAuthProperties authProperties,
-			ParticipationGrantResolver grantResolver,
 			Environment environment,
 			ObjectMapper objectMapper) {
 		this.handler = handler;
@@ -49,7 +47,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 				OriginPolicy.SecurityMode.from(production, batonMode));
 		this.originInterceptor = new OriginHandshakeInterceptor(originPolicy);
 		this.compatibilityInterceptor = new ClientCompatibilityHandshakeInterceptor(originPolicy, objectMapper);
-		this.grantInterceptor = new ParticipationGrantHandshakeInterceptor(grantResolver);
+		this.grantInterceptor = new ParticipationGrantHandshakeInterceptor();
 		this.admissionHandler =
 				new ConnectionAdmissionHandshakeHandler(
 						signalingService,

@@ -22,7 +22,7 @@ import org.springframework.web.socket.WebSocketHandler;
 class ParticipationGrantHandshakeInterceptorTest {
 
 	private final ParticipationGrantHandshakeInterceptor interceptor =
-			new ParticipationGrantHandshakeInterceptor(new ParticipationGrantResolver());
+			new ParticipationGrantHandshakeInterceptor();
 
 	@Test
 	void carriesTheVerifiedGrantIntoTheMatchingRoomSession() {
@@ -49,6 +49,17 @@ class ParticipationGrantHandshakeInterceptorTest {
 				attributes)).isFalse();
 		verify(response).setStatusCode(HttpStatus.FORBIDDEN);
 		assertThat(attributes).doesNotContainKey(ParticipationGrant.SESSION_ATTRIBUTE);
+	}
+
+	@Test
+	void rejectsAPrincipalThatIsNotAParticipationGrantAuthentication() {
+		ServerHttpResponse response = response();
+
+		assertThat(handshake(
+				request("/rooms/" + ROOM_ID + "/signal", () -> "member-42"),
+				response,
+				new HashMap<>())).isFalse();
+		verify(response).setStatusCode(HttpStatus.FORBIDDEN);
 	}
 
 	@Test

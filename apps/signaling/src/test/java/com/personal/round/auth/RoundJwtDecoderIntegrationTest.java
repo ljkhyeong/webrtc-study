@@ -35,6 +35,7 @@ import org.springframework.security.authentication.AuthenticationServiceExceptio
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
@@ -143,14 +144,20 @@ class RoundJwtDecoderIntegrationTest {
 
 	@Test
 	void rejectsSubjectsThatAreNotCanonicalBatonAccountUuids() throws Exception {
-		assertInvalid(token(
-				trustedKeyPair,
-				JWSAlgorithm.RS256,
-				claims -> claims.subject("member-42")));
-		assertInvalid(token(
-				trustedKeyPair,
-				JWSAlgorithm.RS256,
-				claims -> claims.subject("1-1-1-1-1")));
+		// 서명·시간은 디코더가, 참여권 클레임 형식은 인증 변환기가 확인한다. 운영 설정과 같은 순서로 인증한다.
+		JwtAuthenticationProvider provider = new JwtAuthenticationProvider(decoder);
+		provider.setJwtAuthenticationConverter(new ParticipationGrantAuthenticationConverter());
+		for (String subject : new String[] {"member-42", "1-1-1-1-1"}) {
+			String serialized = token(
+					trustedKeyPair,
+					JWSAlgorithm.RS256,
+					claims -> claims.subject(subject)).serialize();
+
+			assertThatThrownBy(() -> provider.authenticate(
+					new BearerTokenAuthenticationToken(serialized)))
+					.as(subject)
+					.isInstanceOf(InvalidBearerTokenException.class);
+		}
 	}
 
 	@Test

@@ -4,7 +4,6 @@ import static com.personal.round.config.RoundRoutes.BATON_SIGNAL_TEMPLATE;
 import static com.personal.round.config.RoundRoutes.BATON_TURN_CREDENTIALS_TEMPLATE;
 import static com.personal.round.config.RoundRoutes.STANDALONE_SIGNAL;
 import static com.personal.round.config.RoundRoutes.STANDALONE_TURN_CREDENTIALS;
-import static org.springframework.security.config.Customizer.withDefaults;
 import static org.springframework.security.config.http.SessionCreationPolicy.STATELESS;
 
 import com.nimbusds.jose.jwk.source.JWKSource;
@@ -71,7 +70,8 @@ public class RoundSecurityConfig {
 				.authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
 				.oauth2ResourceServer(oauth2 -> oauth2
 						.bearerTokenResolver(new CookieBearerTokenResolver(properties.cookieName()))
-						.jwt(withDefaults())
+						.jwt(jwt -> jwt.jwtAuthenticationConverter(
+								new ParticipationGrantAuthenticationConverter()))
 						.authenticationEntryPoint(authenticationEntryPoint)
 						.withObjectPostProcessor(
 								handleAuthenticationServiceFailures(

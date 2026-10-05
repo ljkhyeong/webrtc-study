@@ -33,6 +33,13 @@ class BatonParticipationTokenValidatorTest {
 	}
 
 	@Test
+	void rejectsTokensWithoutIssueOrExpiryTimes() {
+		assertThat(validator.validate(jwtWithLifetime(null, ISSUED_AT.plusSeconds(60))).hasErrors())
+				.isTrue();
+		assertThat(validator.validate(jwtWithLifetime(ISSUED_AT, null)).hasErrors()).isTrue();
+	}
+
+	@Test
 	void rejectsFutureIssueTimesAndGrantLifetimesAboveTheConfiguredMaximum() {
 		assertThat(validator.validate(jwtWithLifetime(
 				ISSUED_AT.plusSeconds(61),

@@ -10,7 +10,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.personal.round.auth.ParticipationGrantHandshakeInterceptor;
-import com.personal.round.auth.ParticipationGrantResolver;
 import com.personal.round.auth.RoundAuthProperties;
 import com.personal.round.signaling.ConnectionAdmissionPolicy;
 import com.personal.round.signaling.SignalingService;
@@ -31,14 +30,12 @@ class WebSocketConfigTest {
 	private SignalingWebSocketHandler webSocketHandler;
 	private SignalingService signalingService;
 	private ConnectionAdmissionPolicy admissionPolicy;
-	private ParticipationGrantResolver grantResolver;
 
 	@BeforeEach
 	void setUp() {
 		webSocketHandler = mock(SignalingWebSocketHandler.class);
 		signalingService = mock(SignalingService.class);
 		admissionPolicy = mock(ConnectionAdmissionPolicy.class);
-		grantResolver = new ParticipationGrantResolver();
 	}
 
 	@Test
@@ -52,7 +49,6 @@ class WebSocketConfigTest {
 				admissionPolicy,
 				TestProperties.signaling(),
 				standaloneAuth(),
-				grantResolver,
 				environment, new ObjectMapper()))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("HTTPS");
@@ -76,7 +72,6 @@ class WebSocketConfigTest {
 				admissionPolicy,
 				TestProperties.signaling(),
 				standaloneAuth(),
-				grantResolver,
 				new MockEnvironment(), new ObjectMapper());
 
 		config.registerWebSocketHandlers(registry);
@@ -110,7 +105,6 @@ class WebSocketConfigTest {
 				admissionPolicy,
 				TestProperties.signaling(),
 				batonAuth(),
-				grantResolver,
 				new MockEnvironment(), new ObjectMapper());
 
 		config.registerWebSocketHandlers(registry);

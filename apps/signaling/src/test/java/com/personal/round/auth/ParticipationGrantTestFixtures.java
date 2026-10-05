@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.core.Authentication;
 
 final class ParticipationGrantTestFixtures {
 
@@ -43,8 +43,8 @@ final class ParticipationGrantTestFixtures {
 				.build();
 	}
 
-	static JwtAuthenticationToken authentication() {
-		return new JwtAuthenticationToken(validJwt());
+	static Authentication authentication() {
+		return new ParticipationGrantAuthenticationConverter().convert(validJwt());
 	}
 
 	static Jwt jwtWithLifetime(Instant issuedAt, Instant expiresAt) {
