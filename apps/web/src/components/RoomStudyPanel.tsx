@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RoomStudySnapshot, StudyCommand, StudyMode } from '@round/rtc-core';
+import { setDocumentTitleNotice } from '../lib/document-title';
 import { createTimerChime } from '../lib/timer-chime';
 import { useTimerNotifications } from '../lib/use-timer-notifications';
 import { TimerChangeDialog } from './TimerChangeDialog';
@@ -64,12 +65,8 @@ export function RoomStudyPanel({
   );
   useEffect(() => {
     if (!completion) return;
-    const previous = document.title;
-    const title = `${completion} · ROUND`;
-    document.title = title;
-    return () => {
-      if (document.title === title) document.title = previous;
-    };
+    setDocumentTitleNotice(completion);
+    return () => setDocumentTitleNotice(null);
   }, [completion]);
   useEffect(() => {
     setTopic(state?.topic ?? '');

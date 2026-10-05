@@ -33,6 +33,7 @@ import { RoomChatPanel, type ChatNotificationSummary } from './RoomChatPanel';
 import { ConnectionDiagnosticsPanel } from './ConnectionDiagnosticsPanel';
 import { useRoomShortcuts } from '../lib/use-room-shortcuts';
 import { useCallMediaSession } from '../lib/use-call-media-session';
+import { setDocumentTitleUnreadCount } from '../lib/document-title';
 import type { RegisterLeaveGuard } from '../lib/use-room-navigation';
 
 type RoomSystemNoticeId =
@@ -318,6 +319,10 @@ export function RoomView({
     ? handQueue.peerIds.length
     : participants.filter((participant) => participant.handRaised).length;
   const { unreadMessageCount, unseenDeliveryIssueCount } = chatNotifications;
+  useEffect(() => {
+    setDocumentTitleUnreadCount(unreadMessageCount);
+  }, [unreadMessageCount]);
+  useEffect(() => () => setDocumentTitleUnreadCount(0), []);
   const panelTabs = ['chat', 'hands', 'people'] as const;
   const moveTab = (event: KeyboardEvent<HTMLDivElement>) => {
     const current = panelTabs.indexOf(panel ?? 'chat');
