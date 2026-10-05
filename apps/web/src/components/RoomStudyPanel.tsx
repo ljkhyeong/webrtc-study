@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RoomStudySnapshot, StudyCommand, StudyMode } from '@round/rtc-core';
 import { setDocumentTitleNotice } from '../lib/document-title';
-import { createTimerChime } from '../lib/timer-chime';
+import { useTimerChime } from '../lib/use-timer-chime';
 import { useTimerNotifications } from '../lib/use-timer-notifications';
 import { TimerChangeDialog } from './TimerChangeDialog';
 
@@ -32,8 +32,8 @@ export function RoomStudyPanel({
   const [minutes, setMinutes] = useState('25');
   const [error, setError] = useState('');
   const [completion, setCompletion] = useState('');
-  const [soundEnabled, setSoundEnabled] = useState(false);
-  const [soundNotice, setSoundNotice] = useState('');
+  const chime = useTimerChime();
+  const { play: playChime } = chime;
   const desktopNotification = useTimerNotifications();
   const { notify, close: closeNotification } = desktopNotification;
   useEffect(() => {
@@ -52,17 +52,9 @@ export function RoomStudyPanel({
       setError('타이머 상태가 변경되었습니다. 최신 시간을 확인한 뒤 다시 선택해 주세요.');
     }
   }, [active, canControl, pending, state?.revision, pendingChange]);
-  const chime = useRef<ReturnType<typeof createTimerChime> | null>(null);
   const armed = useRef(false);
   const completedRevision = useRef<number | null>(null);
   const confirmationRevision = useRef<number | null>(null);
-  useEffect(
-    () => () => {
-      chime.current?.close();
-      chime.current = null;
-    },
-    [],
-  );
   useEffect(() => {
     if (!completion) return;
     setDocumentTitleNotice(completion);
@@ -130,39 +122,9 @@ export function RoomStudyPanel({
       const message = `${state.mode === 'break' ? '휴식' : '집중'} 시간이 끝났습니다`;
       setCompletion(message);
       notify(message);
-      if (chime.current) {
-        try {
-          if (!chime.current.play())
-            setSoundNotice('브라우저에서 소리가 중단되었습니다. 알림음을 다시 켜 주세요.');
-        } catch {
-          setSoundNotice('알림음을 재생하지 못했습니다. 기기의 소리 설정을 확인해 주세요.');
-        }
-      }
+      playChime();
     }
-  }, [state, active, remaining, onSync, notify]);
-  const toggleSound = () => {
-    setSoundNotice('');
-    if (chime.current) {
-      chime.current.close();
-      chime.current = null;
-      setSoundEnabled(false);
-      return;
-    }
-    try {
-      const next = createTimerChime();
-      chime.current = next;
-      setSoundEnabled(true);
-      void next.ready.catch(() => {
-        if (chime.current !== next) return;
-        next.close();
-        chime.current = null;
-        setSoundEnabled(false);
-        setSoundNotice('알림음을 켜지 못했습니다. 브라우저의 소리 설정을 확인해 주세요.');
-      });
-    } catch {
-      setSoundNotice('이 브라우저에서는 알림음을 켤 수 없습니다.');
-    }
-  };
+  }, [state, active, remaining, onSync, notify, playChime]);
   const label = !state
     ? '불러오는 중'
     : remaining === 0
@@ -239,10 +201,10 @@ export function RoomStudyPanel({
             현재 주제: {state?.topic || '설정된 주제가 없습니다.'}
           </p>
           <label className="room-study__sound">
-            <input type="checkbox" checked={soundEnabled} onChange={toggleSound} />
+            <input type="checkbox" checked={chime.enabled} onChange={chime.toggle} />
             종료 알림음 · 기기 기본 스피커
           </label>
-          {soundNotice ? <p role="status">{soundNotice}</p> : null}
+          {chime.notice ? <p role="status">{chime.notice}</p> : null}
           {desktopNotification.supported ? (
             <label className="room-study__sound">
               <input
