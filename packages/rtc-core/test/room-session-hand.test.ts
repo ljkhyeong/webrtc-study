@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PROTOCOL_VERSION } from '@round/protocol';
 import {
   FakeDataChannel,
@@ -127,33 +127,39 @@ describe('손들기', () => {
   });
 
   it('송신 버퍼가 밀리면 마지막 상태만 보내고 채널 복구 뒤에도 다시 보낸다', async () => {
-    await joinSession(harness, [{ peerId: 'z-peer', displayName: '가온' }], 'a-self');
-    await answerPeer(harness, 'z-peer');
-    const peer = harness.peerConnections[0]!;
-    peer.setConnectionState('connected');
-    const channel = peer.channels[0]!;
-    channel.sent.length = 0;
-    channel.bufferedAmount = 256 * 1024;
-    harness.session.setHandRaised(true);
-    harness.session.setHandRaised(false);
-    harness.session.sendChat('질문이 있습니다.');
-    expect(channel.sent).toEqual([]);
-    channel.drainBufferedAmount();
-    expect(channel.sent.map((raw) => JSON.parse(raw))).toEqual([
-      { type: 'participant.hand', raised: false },
-      expect.objectContaining({ type: 'chat.message', text: '질문이 있습니다.' }),
-    ]);
-    harness.session.setHandRaised(true);
-    channel.remoteClose();
-    await flushMicrotasks();
-    await answerPeer(harness, 'z-peer');
-    peer.channels[1]!.open();
-    expect(peer.channels[1]!.sent.map((raw) => JSON.parse(raw))).toContainEqual({
-      type: 'participant.hand',
-      raised: true,
-    });
-    await harness.session.leave();
-    expect(harness.session.setHandRaised(false)).toBe(false);
-    expect(harness.session.getSnapshot().participants).toEqual([]);
+    vi.useFakeTimers();
+    try {
+      await joinSession(harness, [{ peerId: 'z-peer', displayName: '가온' }], 'a-self');
+      await answerPeer(harness, 'z-peer');
+      const peer = harness.peerConnections[0]!;
+      peer.setConnectionState('connected');
+      const channel = peer.channels[0]!;
+      channel.sent.length = 0;
+      channel.bufferedAmount = 256 * 1024;
+      harness.session.setHandRaised(true);
+      harness.session.setHandRaised(false);
+      harness.session.sendChat('질문이 있습니다.');
+      expect(channel.sent).toEqual([]);
+      channel.drainBufferedAmount();
+      expect(channel.sent.map((raw) => JSON.parse(raw))).toEqual([
+        { type: 'participant.hand', raised: false },
+        expect.objectContaining({ type: 'chat.message', text: '질문이 있습니다.' }),
+      ]);
+      harness.session.setHandRaised(true);
+      channel.remoteClose();
+      await vi.advanceTimersByTimeAsync(251);
+      await flushMicrotasks();
+      await answerPeer(harness, 'z-peer');
+      peer.channels[1]!.open();
+      expect(peer.channels[1]!.sent.map((raw) => JSON.parse(raw))).toContainEqual({
+        type: 'participant.hand',
+        raised: true,
+      });
+      await harness.session.leave();
+      expect(harness.session.setHandRaised(false)).toBe(false);
+      expect(harness.session.getSnapshot().participants).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

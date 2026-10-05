@@ -108,10 +108,18 @@ export class PeerDataChannel {
     channel.onmessage = (event) => this.#handleMessage(channel, event.data);
     channel.onbufferedamountlow = () => this.flush();
     channel.onclose = () => {
-      this.#recover(
-        channel,
-        'data-channel-closed',
-        `Chat channel to ${this.#options.peerId} closed and is being recovered`,
+      if (!this.#isCurrentChannel(channel)) {
+        return;
+      }
+      // 퇴장하는 참가자가 닫은 채널이면 뒤따르는 peer.left 정리가 대기 중인 복구를 취소한다.
+      // 바로 복구하면 끊기는 연결에 새 채널을 만들고, 열린 직후 보낸 상태 메시지의 실패가
+      // 예외 없이 WebKit 콘솔 오류로만 남는다.
+      this.detach();
+      this.#scheduleRecovery(() =>
+        this.#options.onRecoveryRequired(
+          'data-channel-closed',
+          `Chat channel to ${this.#options.peerId} closed and is being recovered`,
+        ),
       );
     };
     channel.onerror = () => {
