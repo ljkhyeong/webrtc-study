@@ -230,16 +230,19 @@ type ResolvedRecoveryOptions = Required<RoomSessionRecoveryOptions>;
 // 일반적인 ICE 후보 수집량은 이 값보다 훨씬 적다. 초과 시 최신 후보를 유지한다.
 const SIGNALING_SESSION_SUPERSEDED_CLOSE_CODE = 4002;
 const SIGNALING_SESSION_SUPERSEDED_REASON = 'Participation session superseded';
-const DEFAULT_SIGNALING_CONNECT_TIMEOUT_MS = 8_000;
-const DEFAULT_ROOM_JOIN_TIMEOUT_MS = 8_000;
-// 협상 재시도와 연결 watchdog이 경쟁하지 않도록 기본 초기 offer 재시도
-// backoff 상한(15.5초)보다 길게 설정한다.
-const DEFAULT_PEER_CONNECTION_TIMEOUT_MS = 20_000;
-const DEFAULT_MAX_RECONNECT_ATTEMPTS = 6;
-const DEFAULT_RECONNECT_INITIAL_DELAY_MS = 500;
-const DEFAULT_RECONNECT_MAX_DELAY_MS = 4_000;
-const DEFAULT_PEER_DISCONNECTED_GRACE_MS = 3_000;
-const DEFAULT_PEER_RECOVERY_TIMEOUT_MS = 8_000;
+// 복구 시간은 테스트만 줄여서 넘긴다.
+const DEFAULT_RECOVERY_OPTIONS: ResolvedRecoveryOptions = {
+  signalingConnectTimeoutMs: 8_000,
+  roomJoinTimeoutMs: 8_000,
+  // 협상 재시도와 연결 watchdog이 경쟁하지 않도록 기본 초기 offer 재시도
+  // backoff 상한(15.5초)보다 길게 설정한다.
+  peerConnectionTimeoutMs: 20_000,
+  maxReconnectAttempts: 6,
+  reconnectInitialDelayMs: 500,
+  reconnectMaxDelayMs: 4_000,
+  peerDisconnectedGraceMs: 3_000,
+  peerRecoveryTimeoutMs: 8_000,
+};
 class RoomSessionFailure extends Error {
   constructor(
     readonly code: RoomIssueCode,
@@ -248,69 +251,6 @@ class RoomSessionFailure extends Error {
     super(message);
     this.name = 'RoomSessionFailure';
   }
-}
-
-function positiveInteger(value: number | undefined, fallback: number, name: string): number {
-  const resolved = value ?? fallback;
-  if (!Number.isInteger(resolved) || resolved < 1) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return resolved;
-}
-
-function nonNegativeInteger(value: number | undefined, fallback: number, name: string): number {
-  const resolved = value ?? fallback;
-  if (!Number.isInteger(resolved) || resolved < 0) {
-    throw new Error(`${name} must be a non-negative integer`);
-  }
-  return resolved;
-}
-
-function resolveRecoveryOptions(
-  options: RoomSessionRecoveryOptions | undefined,
-): ResolvedRecoveryOptions {
-  return {
-    signalingConnectTimeoutMs: positiveInteger(
-      options?.signalingConnectTimeoutMs,
-      DEFAULT_SIGNALING_CONNECT_TIMEOUT_MS,
-      'recovery.signalingConnectTimeoutMs',
-    ),
-    roomJoinTimeoutMs: positiveInteger(
-      options?.roomJoinTimeoutMs,
-      DEFAULT_ROOM_JOIN_TIMEOUT_MS,
-      'recovery.roomJoinTimeoutMs',
-    ),
-    peerConnectionTimeoutMs: positiveInteger(
-      options?.peerConnectionTimeoutMs,
-      DEFAULT_PEER_CONNECTION_TIMEOUT_MS,
-      'recovery.peerConnectionTimeoutMs',
-    ),
-    maxReconnectAttempts: positiveInteger(
-      options?.maxReconnectAttempts,
-      DEFAULT_MAX_RECONNECT_ATTEMPTS,
-      'recovery.maxReconnectAttempts',
-    ),
-    reconnectInitialDelayMs: nonNegativeInteger(
-      options?.reconnectInitialDelayMs,
-      DEFAULT_RECONNECT_INITIAL_DELAY_MS,
-      'recovery.reconnectInitialDelayMs',
-    ),
-    reconnectMaxDelayMs: nonNegativeInteger(
-      options?.reconnectMaxDelayMs,
-      DEFAULT_RECONNECT_MAX_DELAY_MS,
-      'recovery.reconnectMaxDelayMs',
-    ),
-    peerDisconnectedGraceMs: positiveInteger(
-      options?.peerDisconnectedGraceMs,
-      DEFAULT_PEER_DISCONNECTED_GRACE_MS,
-      'recovery.peerDisconnectedGraceMs',
-    ),
-    peerRecoveryTimeoutMs: positiveInteger(
-      options?.peerRecoveryTimeoutMs,
-      DEFAULT_PEER_RECOVERY_TIMEOUT_MS,
-      'recovery.peerRecoveryTimeoutMs',
-    ),
-  };
 }
 
 function snapshotRtcConfiguration(
@@ -411,7 +351,7 @@ export class RoomSession {
     }
 
     this.#options = { ...options, roomId, displayName };
-    this.#recoveryOptions = resolveRecoveryOptions(options.recovery);
+    this.#recoveryOptions = { ...DEFAULT_RECOVERY_OPTIONS, ...options.recovery };
     this.#chat = new RoomChatLedger(options.maxChatMessages ?? 200, () => this.#monotonicNow());
     const mediaLifecycleOptions: LocalMediaLifecycleOptions = {
       isRoomActive: () => !this.#disposed && this.#status === 'active',

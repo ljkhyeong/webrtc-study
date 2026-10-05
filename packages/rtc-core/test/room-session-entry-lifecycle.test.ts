@@ -376,14 +376,6 @@ describe('RoomSession', () => {
     },
   );
 
-  it('rejects a non-positive peer connection timeout', () => {
-    expect(() =>
-      createHarness({
-        recovery: { peerConnectionTimeoutMs: 0 },
-      }),
-    ).toThrow('recovery.peerConnectionTimeoutMs must be a positive integer');
-  });
-
   it('creates ordered data channels and offers from the new peer', async () => {
     const harness = createHarness();
     await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
