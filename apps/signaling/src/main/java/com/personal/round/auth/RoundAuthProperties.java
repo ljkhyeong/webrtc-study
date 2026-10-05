@@ -82,30 +82,18 @@ public record RoundAuthProperties(
 		return StringUtils.hasText(normalized) ? normalized : null;
 	}
 
+	// 주소의 사용자 정보는 toString으로 기록될 수 있으므로 허용하지 않는다.
 	private static boolean isSecureServiceUri(String value) {
 		if (!StringUtils.hasText(value)) {
 			return true;
 		}
 		try {
 			URI uri = URI.create(value);
-			String scheme = uri.getScheme();
-			String host = uri.getHost();
-			int port = uri.getPort();
-			if (scheme == null
-					|| host == null
-					|| uri.getRawUserInfo() != null
-					|| uri.getRawQuery() != null
-					|| uri.getRawFragment() != null
-					|| (uri.getRawAuthority() != null
-							&& uri.getRawAuthority().endsWith(":"))
-					|| port == 0
-					|| port > 65_535) {
+			if (uri.getHost() == null || uri.getRawUserInfo() != null) {
 				return false;
 			}
-			if ("https".equalsIgnoreCase(scheme)) {
-				return true;
-			}
-			return "http".equalsIgnoreCase(scheme) && isLoopback(host);
+			return "https".equalsIgnoreCase(uri.getScheme())
+					|| ("http".equalsIgnoreCase(uri.getScheme()) && isLoopback(uri.getHost()));
 		}
 		catch (IllegalArgumentException exception) {
 			return false;
