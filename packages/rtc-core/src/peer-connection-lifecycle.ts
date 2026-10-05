@@ -1,6 +1,8 @@
 import type { SerializedIceCandidate } from '@round/protocol';
 import type { PeerDataChannel } from './peer-data-channel.js';
 
+const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
+
 type PeerTimer = 'connection' | 'offer-retry' | 'disconnected' | 'recovery';
 type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 
@@ -141,17 +143,15 @@ export class PeerConnectionLifecycle {
     return true;
   }
 
-  rememberCurrentNegotiation(): void {
+  /** 교체할 연결의 현재 협상까지 폐기 목록에 넣어 돌려준다. 새 연결의 생성자가 복사한다. */
+  retireNegotiations(): ReadonlySet<string> {
     this.#rememberRetiredNegotiation(this.#negotiationId);
+    return this.#retiredNegotiationIds;
   }
 
-  retiredNegotiationIdsSnapshot(): ReadonlySet<string> {
-    return new Set(this.#retiredNegotiationIds);
-  }
-
-  queueRemoteCandidate(candidate: SerializedIceCandidate | null, limit: number): boolean {
+  queueRemoteCandidate(candidate: SerializedIceCandidate | null): boolean {
     let shouldWarn = false;
-    if (this.#pendingRemoteCandidates.length >= limit) {
+    if (this.#pendingRemoteCandidates.length >= MAX_PENDING_REMOTE_ICE_CANDIDATES) {
       this.#pendingRemoteCandidates.shift();
       if (!this.#pendingCandidateOverflowWarned) {
         this.#pendingCandidateOverflowWarned = true;
@@ -160,12 +160,6 @@ export class PeerConnectionLifecycle {
     }
     this.#pendingRemoteCandidates.push(candidate);
     return shouldWarn;
-  }
-
-  takePendingRemoteCandidates(): (SerializedIceCandidate | null)[] {
-    const candidates = this.#pendingRemoteCandidates.splice(0);
-    this.#pendingCandidateOverflowWarned = false;
-    return candidates;
   }
 
   extractPendingRemoteCandidates(): PendingRemoteCandidates {

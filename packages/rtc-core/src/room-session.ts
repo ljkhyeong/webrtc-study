@@ -228,7 +228,6 @@ interface OutboundChatTargets {
 type ResolvedRecoveryOptions = Required<RoomSessionRecoveryOptions>;
 
 // 일반적인 ICE 후보 수집량은 이 값보다 훨씬 적다. 초과 시 최신 후보를 유지한다.
-const MAX_PENDING_REMOTE_ICE_CANDIDATES = 256;
 const SIGNALING_SESSION_SUPERSEDED_CLOSE_CODE = 4002;
 const SIGNALING_SESSION_SUPERSEDED_REASON = 'Participation session superseded';
 const DEFAULT_SIGNALING_CONNECT_TIMEOUT_MS = 8_000;
@@ -475,15 +474,14 @@ export class RoomSession {
     this.#peerNegotiation = new PeerNegotiationLifecycle({
       roomId,
       transport: this.#signalingTransport,
-      maxPendingRemoteCandidates: MAX_PENDING_REMOTE_ICE_CANDIDATES,
       createNegotiationId: (peerId) => {
         const epoch = this.#peerConnectionEpochs.get(peerId);
         return epoch === undefined ? defaultCreateId() : `${epoch}.${defaultCreateId()}`;
       },
       getPeer: (peerId) => this.#peers.get(peerId),
       ensurePeer: (peerId) => this.#ensurePeer(peerId),
-      replacePeer: (peerId, preservePendingCandidates, connectionAttempt) =>
-        this.#replacePeer(peerId, preservePendingCandidates, connectionAttempt),
+      replacePeer: (peerId, preservePendingCandidates) =>
+        this.#replacePeer(peerId, preservePendingCandidates),
       isCurrentPeer: (peer) => this.#isCurrentPeer(peer),
       isRoomReconnecting: () => this.#status === 'reconnecting',
       setPeerConnectionStatus: (peerId, status) => this.#setPeerConnectionStatus(peerId, status),
@@ -700,7 +698,7 @@ export class RoomSession {
    */
   async collectConnectionDiagnostics(): Promise<RoomConnectionDiagnostics> {
     const peers = [...this.#peers.values()].filter(
-      (peer) => !peer.closed && peer.connection.connectionState !== 'closed',
+      (peer) => peer.connection.connectionState !== 'closed',
     );
     const connections = await measurePeerConnections(
       peers.map((peer) => {
@@ -740,7 +738,7 @@ export class RoomSession {
     let failedPeerCount = 0;
     const restartPeers: PeerContext[] = [];
     for (const peer of this.#peers.values()) {
-      if (peer.closed || peer.connection.connectionState === 'closed') {
+      if (peer.connection.connectionState === 'closed') {
         continue;
       }
       try {
@@ -995,7 +993,7 @@ export class RoomSession {
       const shouldOffer = this.#isPeerRecoveryInitiator(failedPeer.peerId);
       let replacement: PeerContext;
       try {
-        replacement = this.#replacePeer(failedPeer.peerId, false, failedPeer.connectionAttempt + 1);
+        replacement = this.#replacePeer(failedPeer.peerId, false);
       } catch (replacementError) {
         this.#failPeer(failedPeer.peerId, replacementError);
         continue;
@@ -1830,7 +1828,7 @@ export class RoomSession {
       let retryPeer = peer;
       if (peer.connection.connectionState === 'failed') {
         try {
-          retryPeer = this.#replacePeer(peer.peerId, true, peer.connectionAttempt + 1);
+          retryPeer = this.#replacePeer(peer.peerId, true);
         } catch (replacementError) {
           this.#failPeer(peer.peerId, replacementError);
           return;
@@ -1927,7 +1925,7 @@ export class RoomSession {
       const shouldOffer = this.#isPeerRecoveryInitiator(peer.peerId);
       let replacement: PeerContext;
       try {
-        replacement = this.#replacePeer(peer.peerId, false, peer.connectionAttempt + 1);
+        replacement = this.#replacePeer(peer.peerId, false);
       } catch (replacementError) {
         this.#failPeer(peer.peerId, replacementError);
         return;
@@ -1997,22 +1995,17 @@ export class RoomSession {
     }
   }
 
-  #replacePeer(
-    peerId: string,
-    preservePendingCandidates: boolean,
-    connectionAttempt: number,
-  ): PeerContext {
+  // 호출하는 쪽은 맵에 있는 현재 피어를 교체한다. 시도 횟수는 그 피어에서 하나 늘린다.
+  #replacePeer(peerId: string, preservePendingCandidates: boolean): PeerContext {
     const existing = this.#peers.get(peerId);
+    const connectionAttempt = (existing?.connectionAttempt ?? 0) + 1;
     const dataChannel = existing?.data;
     const pendingCandidates =
       preservePendingCandidates && existing !== undefined
         ? existing.extractPendingRemoteCandidates()
         : { candidates: [], overflowWarned: false };
     const offerRetryAttempts = existing?.offerRetryAttempts ?? 0;
-    if (existing !== undefined) {
-      existing.rememberCurrentNegotiation();
-    }
-    const retiredNegotiationIds = existing?.retiredNegotiationIdsSnapshot() ?? new Set<string>();
+    const retiredNegotiationIds = existing?.retireNegotiations() ?? new Set<string>();
 
     if (existing !== undefined) {
       existing.data.detach();
@@ -2073,21 +2066,17 @@ export class RoomSession {
   #broadcastMediaState(): void {
     const message = this.#currentMediaDataMessage();
     for (const peer of this.#peers.values()) {
-      if (!this.#isCurrentPeer(peer)) {
-        continue;
-      }
       peer.data.publishMediaState(message);
     }
   }
 
   #enqueueOutboundChat(message: ChatDataMessage, serializedMessage: string): OutboundChatTargets {
-    const peers = [...this.#peers.values()].filter((peer) => this.#isCurrentPeer(peer));
-    const peersById = new Map(peers.map((peer) => [peer.peerId, peer]));
+    // 정리한 피어는 곧바로 맵에서 지우므로 맵에 있는 피어는 모두 현재 피어다.
     const recipientIds = [...this.#participants.values()]
       .filter((participant) => !participant.isLocal)
       .map((participant) => participant.peerId);
     const targetPeers = recipientIds.flatMap((peerId) => {
-      const peer = peersById.get(peerId);
+      const peer = this.#peers.get(peerId);
       return peer === undefined ? [] : [peer];
     });
     if (recipientIds.length > 0 && targetPeers.length === 0) {
@@ -2112,7 +2101,7 @@ export class RoomSession {
       recipientStates: new Map(
         recipientIds.map((peerId) => [
           peerId,
-          peersById.has(peerId) ? ('pending' as const) : ('failed' as const),
+          this.#peers.has(peerId) ? ('pending' as const) : ('failed' as const),
         ]),
       ),
     };

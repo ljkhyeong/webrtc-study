@@ -17,14 +17,12 @@ type PeerNegotiationWarningCode =
 interface PeerNegotiationLifecycleOptions {
   readonly roomId: string;
   readonly transport: SignalingTransport;
-  readonly maxPendingRemoteCandidates: number;
   readonly createNegotiationId: (peerId: string) => string;
   readonly getPeer: (peerId: string) => PeerConnectionLifecycle | undefined;
   readonly ensurePeer: (peerId: string) => PeerConnectionLifecycle;
   readonly replacePeer: (
     peerId: string,
     preservePendingCandidates: boolean,
-    connectionAttempt: number,
   ) => PeerConnectionLifecycle;
   readonly isCurrentPeer: (peer: PeerConnectionLifecycle) => boolean;
   readonly isRoomReconnecting: () => boolean;
@@ -136,7 +134,7 @@ export class PeerNegotiationLifecycle {
     }
     const peer =
       existing?.connection.connectionState === 'failed'
-        ? this.#options.replacePeer(peerId, true, existing.connectionAttempt + 1)
+        ? this.#options.replacePeer(peerId, true)
         : this.#options.ensurePeer(peerId);
     peer.replaceNegotiationId(negotiationId ?? null);
     const acceptedNegotiationId = peer.negotiationId;
@@ -242,7 +240,7 @@ export class PeerNegotiationLifecycle {
     }
     const acceptedNegotiationId = peer.negotiationId;
     if (peer.connection.connectionState === 'failed' || !peer.remoteDescriptionSet) {
-      if (peer.queueRemoteCandidate(candidate, this.#options.maxPendingRemoteCandidates)) {
+      if (peer.queueRemoteCandidate(candidate)) {
         this.#options.setPeerWarning(
           peer.peerId,
           'ice-candidate-queue-overflow',
@@ -272,7 +270,7 @@ export class PeerNegotiationLifecycle {
     peer: PeerConnectionLifecycle,
     negotiationId: string | null,
   ): Promise<void> {
-    const candidates = peer.takePendingRemoteCandidates();
+    const { candidates } = peer.extractPendingRemoteCandidates();
     for (const candidate of candidates) {
       if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return;
@@ -299,10 +297,8 @@ export class PeerNegotiationLifecycle {
     }
   }
 
+  // 호출 직전에 현재 협상인지 확인했다. sendRelay는 연결이 닫혀 있으면 예외를 던진다.
   #publishLocalDescription(peer: PeerConnectionLifecycle, message: RelayClientMessage): void {
-    if (!this.#options.isCurrentPeer(peer)) {
-      return;
-    }
     this.#options.transport.sendRelay(message);
     const candidates = peer.publishLocalDescription();
     for (const candidate of candidates) {
@@ -315,9 +311,7 @@ export class PeerNegotiationLifecycle {
     candidate: SerializedIceCandidate | null,
   ): void {
     if (
-      !this.#options.isCurrentPeer(peer) ||
       !peer.candidateMatchesCurrentLocalNegotiation(candidate) ||
-      !this.#options.transport.isOpen() ||
       this.#options.isRoomReconnecting()
     ) {
       return;

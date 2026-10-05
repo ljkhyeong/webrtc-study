@@ -344,10 +344,7 @@ export class ScreenShareLifecycle {
     this.#options.onStateChanged();
 
     for (const update of senderUpdates) {
-      if (!update.added || !this.#options.isCurrentPeer(update.peer)) {
-        continue;
-      }
-      this.#options.requestLocalRenegotiation(update.peer);
+      if (update.added) this.#options.requestLocalRenegotiation(update.peer);
     }
     this.#options.recoverPeersAfterSenderFailure(senderFailures, 'starting screen share');
 
@@ -372,9 +369,6 @@ export class ScreenShareLifecycle {
     }
     if (this.#createdLocalStream && localStream !== null && localStream.getTracks().length === 0) {
       this.#options.setLocalStream(null);
-    }
-    if (this.#stopDisablesCamera) {
-      this.disableCameraTracks();
     }
     this.#options.onStateChanged();
 

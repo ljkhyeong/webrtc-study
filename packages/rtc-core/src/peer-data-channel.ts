@@ -248,10 +248,8 @@ export class PeerDataChannel {
     }
   }
 
+  // 호출하는 쪽이 채널이 열려 있는지 먼저 확인한다.
   clearRecoveryWarning(): boolean {
-    if (!this.isOpen()) {
-      return false;
-    }
     return this.#options.clearWarning(RECOVERY_WARNING_CODES);
   }
 

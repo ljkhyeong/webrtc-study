@@ -175,9 +175,7 @@ export class LocalInputLifecycle {
       this.#attachTrackEndedListeners([next]);
       this.#options.onStateChanged();
       for (const update of updates) {
-        if (update.added && this.#options.isCurrentPeer(update.peer)) {
-          this.#options.requestLocalRenegotiation(update.peer);
-        }
+        if (update.added) this.#options.requestLocalRenegotiation(update.peer);
       }
       return true;
     } catch {
