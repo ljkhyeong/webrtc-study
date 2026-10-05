@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ChatDeliveryState, ChatMessage } from '@round/rtc-core';
-import { CloseIcon, MessageIcon, SendIcon } from './Icons';
+import { CopyIcon, MessageIcon, SendIcon } from './Icons';
 import { ChatMessageContent } from './ChatMessageContent';
 import { findChatSearchMatches, normalizeChatSearch } from '../lib/chat-search';
 
 const MAX_COMPOSER_LENGTH = 1000;
+// 글자 수는 한도에 가까워질 때만 보인다. 화면 낭독기는 입력창 설명으로 항상 읽는다.
+const COMPOSER_COUNT_VISIBLE_FROM = 800;
 const messageKey = (item: ChatMessage) => JSON.stringify([item.senderId, item.id]);
 
 interface ChatMessageIdentity {
@@ -22,7 +24,6 @@ interface RoomChatPanelProps {
   readonly messages: readonly ChatMessage[];
   readonly onRetryMessage?: ((messageId: string, peerId: string) => void) | undefined;
   readonly onSendMessage: (text: string) => boolean;
-  readonly onClose: () => void;
   readonly onNotificationChange: (summary: ChatNotificationSummary) => void;
   readonly onDraftChange?: (hasDraft: boolean) => void;
 }
@@ -126,7 +127,6 @@ export function RoomChatPanel({
   messages,
   onSendMessage,
   onRetryMessage,
-  onClose,
   onNotificationChange,
   onDraftChange,
 }: RoomChatPanelProps) {
@@ -322,63 +322,58 @@ export function RoomChatPanel({
 
   return (
     <>
-      <aside id="room-chat-panel" className="chat-panel" aria-hidden={!open} inert={!open}>
-        <div>
-          <header className="chat-panel__header">
-            <strong>스터디 대화</strong>
-            <button
-              className="chat-panel__copy"
-              type="button"
-              title="현재 남아 있는 대화를 이름·날짜·시간과 함께 복사"
-              disabled={copying || messages.length === 0}
-              onClick={() => void copyConversation()}
-            >
-              {copying ? '복사 중' : '대화 복사'}
-            </button>
-            <button type="button" aria-label="채팅 닫기" onClick={onClose}>
-              <CloseIcon />
-            </button>
-          </header>
-          {copyResult ? (
-            <p className="chat-panel__copy-notice" role={copyResult.error ? 'alert' : 'status'}>
-              {copyResult.message}
-            </p>
-          ) : null}
-        </div>
-
+      <section
+        id="room-chat-panel"
+        className="chat-panel"
+        aria-label="채팅"
+        aria-hidden={!open}
+        inert={!open}
+      >
         <section className="chat-search" aria-label="채팅 검색">
           <label className="sr-only" htmlFor="chat-search">
             대화 검색
           </label>
-          <input
-            id="chat-search"
-            type="search"
-            placeholder="이 방의 대화 검색"
-            value={search}
-            maxLength={1000}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setSelectedMatch(null);
-            }}
-            onCompositionStart={() => {
-              searchCompositionActive.current = true;
-            }}
-            onCompositionEnd={() => {
-              searchCompositionActive.current = false;
-            }}
-            onKeyDown={(event) => {
-              if (
-                searchCompositionActive.current ||
-                event.nativeEvent.isComposing ||
-                event.keyCode === 229
-              )
-                return;
-              if (event.key !== 'Enter' && event.key !== 'Escape') return;
-              event.preventDefault();
-              if (event.key === 'Escape') closeSearch();
-              else moveMatch(event.shiftKey ? -1 : 1);
-            }}
-          />
+          <div className="chat-search__row">
+            <input
+              id="chat-search"
+              type="search"
+              placeholder="이 방의 대화 검색"
+              value={search}
+              maxLength={1000}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setSelectedMatch(null);
+              }}
+              onCompositionStart={() => {
+                searchCompositionActive.current = true;
+              }}
+              onCompositionEnd={() => {
+                searchCompositionActive.current = false;
+              }}
+              onKeyDown={(event) => {
+                if (
+                  searchCompositionActive.current ||
+                  event.nativeEvent.isComposing ||
+                  event.keyCode === 229
+                )
+                  return;
+                if (event.key !== 'Enter' && event.key !== 'Escape') return;
+                event.preventDefault();
+                if (event.key === 'Escape') closeSearch();
+                else moveMatch(event.shiftKey ? -1 : 1);
+              }}
+            />
+            <button
+              className="chat-panel__copy"
+              type="button"
+              aria-label={copying ? '대화 복사 중' : '대화 복사'}
+              title="현재 남아 있는 대화를 이름·날짜·시간과 함께 복사"
+              disabled={copying || messages.length === 0}
+              onClick={() => void copyConversation()}
+            >
+              <CopyIcon />
+            </button>
+          </div>
           {query ? (
             <div className="chat-search__navigation">
               <span role="status">
@@ -404,6 +399,11 @@ export function RoomChatPanel({
                 검색 닫기
               </button>
             </div>
+          ) : null}
+          {copyResult ? (
+            <p className="chat-panel__copy-notice" role={copyResult.error ? 'alert' : 'status'}>
+              {copyResult.message}
+            </p>
           ) : null}
         </section>
 
@@ -536,7 +536,11 @@ export function RoomChatPanel({
           <button type="submit" aria-label="메시지 보내기" disabled={!message.trim()}>
             <SendIcon />
           </button>
-          <div className="chat-composer__help">
+          <div
+            className={`chat-composer__help${
+              message.length >= COMPOSER_COUNT_VISIBLE_FROM ? ' chat-composer__help--count' : ''
+            }`}
+          >
             <span id="chat-composer-help">Enter 전송 · Shift+Enter 줄바꿈</span>
             <span
               id="chat-composer-count"
@@ -550,7 +554,7 @@ export function RoomChatPanel({
               (message.length >= MAX_COMPOSER_LENGTH ? '입력 한도 1,000자에 도달했습니다.' : '')}
           </p>
         </form>
-      </aside>
+      </section>
 
       {!open && unseenDeliveryIssueCount > 0 ? (
         <p className="sr-only" role="status" aria-live="polite">

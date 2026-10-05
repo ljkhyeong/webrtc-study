@@ -28,7 +28,6 @@ describe('방 안의 채팅 입력과 검색', () => {
           open
           messages={messages}
           onSendMessage={sendMessage}
-          onClose={() => {}}
           onNotificationChange={notifications}
         />,
       ),

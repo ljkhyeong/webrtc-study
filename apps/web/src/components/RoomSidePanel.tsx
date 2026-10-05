@@ -80,42 +80,60 @@ export function RoomSidePanel({
     onClose();
   };
 
+  const closeLabel =
+    panel === 'hands' ? '손들기 목록 닫기' : panel === 'people' ? '참가자 목록 닫기' : '채팅 닫기';
+
   return (
-    <div className="side-panel" inert={panel === null} onKeyDown={closeOnEscape}>
-      <div className="side-panel__tabs" role="tablist" aria-label="통화 패널" onKeyDown={moveTab}>
+    <aside
+      className="side-panel"
+      aria-label="통화 패널"
+      inert={panel === null}
+      onKeyDown={closeOnEscape}
+    >
+      <div className="side-panel__bar">
+        <div className="side-panel__tabs" role="tablist" aria-label="통화 패널" onKeyDown={moveTab}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={panel === 'chat'}
+            aria-controls="room-chat-panel"
+            tabIndex={(panel ?? 'chat') === 'chat' ? 0 : -1}
+            onClick={() => onSelectPanel('chat')}
+          >
+            채팅
+            {panel !== 'chat' && chatNotificationCount > 0 ? (
+              <b>{badgeCount(chatNotificationCount)}</b>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={panel === 'hands'}
+            aria-controls="room-hand-panel"
+            tabIndex={panel === 'hands' ? 0 : -1}
+            onClick={() => onSelectPanel('hands')}
+          >
+            손들기
+            {handCount > 0 ? <b>{badgeCount(handCount)}</b> : null}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={panel === 'people'}
+            aria-controls={panel === 'people' ? 'room-people-panel' : undefined}
+            tabIndex={panel === 'people' ? 0 : -1}
+            onClick={() => onSelectPanel('people')}
+          >
+            참가자 {participants.length}
+          </button>
+        </div>
         <button
+          className="side-panel__close"
           type="button"
-          role="tab"
-          aria-selected={panel === 'chat'}
-          aria-controls="room-chat-panel"
-          tabIndex={(panel ?? 'chat') === 'chat' ? 0 : -1}
-          onClick={() => onSelectPanel('chat')}
+          aria-label={closeLabel}
+          onClick={onClose}
         >
-          채팅
-          {panel !== 'chat' && chatNotificationCount > 0 ? (
-            <b>{badgeCount(chatNotificationCount)}</b>
-          ) : null}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={panel === 'hands'}
-          aria-controls="room-hand-panel"
-          tabIndex={panel === 'hands' ? 0 : -1}
-          onClick={() => onSelectPanel('hands')}
-        >
-          손들기
-          {handCount > 0 ? <b>{badgeCount(handCount)}</b> : null}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={panel === 'people'}
-          aria-controls={panel === 'people' ? 'room-people-panel' : undefined}
-          tabIndex={panel === 'people' ? 0 : -1}
-          onClick={() => onSelectPanel('people')}
-        >
-          참가자 {participants.length}
+          <CloseIcon />
         </button>
       </div>
       <RoomChatPanel
@@ -123,7 +141,6 @@ export function RoomSidePanel({
         open={panel === 'chat'}
         messages={messages}
         onSendMessage={onSendMessage}
-        onClose={onClose}
         onNotificationChange={onNotificationChange}
         onDraftChange={onDraftChange}
       />
@@ -133,12 +150,9 @@ export function RoomSidePanel({
         aria-labelledby="hand-queue-title"
         hidden={panel !== 'hands'}
       >
-        <header className="side-panel__header">
-          <strong id="hand-queue-title">손들기 대기</strong>
-          <button type="button" aria-label="손들기 목록 닫기" onClick={onClose}>
-            <CloseIcon />
-          </button>
-        </header>
+        <h2 id="hand-queue-title" className="sr-only">
+          손들기 대기
+        </h2>
         <RoomHandQueue state={handQueue} participants={participants} active={active} />
       </section>
       {panel === 'people' ? (
@@ -147,12 +161,9 @@ export function RoomSidePanel({
           className="side-panel__section"
           aria-labelledby="participant-list-title"
         >
-          <header className="side-panel__header">
-            <strong id="participant-list-title">참가자 목록</strong>
-            <button type="button" aria-label="참가자 목록 닫기" onClick={onClose}>
-              <CloseIcon />
-            </button>
-          </header>
+          <h2 id="participant-list-title" className="sr-only">
+            참가자 목록
+          </h2>
           <RoomParticipantList
             participants={participants}
             handQueue={handQueue}
@@ -162,6 +173,6 @@ export function RoomSidePanel({
           />
         </section>
       ) : null}
-    </div>
+    </aside>
   );
 }

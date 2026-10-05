@@ -617,7 +617,7 @@ describe('RoomView 브라우저 동작', () => {
     expect(people.getAttribute('aria-label')).toBe('참가자 목록 닫기, 참가자 1명');
     expect(container.querySelector('#room-people-panel')?.textContent).toContain('가온 (나)');
     const close = container.querySelector<HTMLButtonElement>(
-      '#room-people-panel button[aria-label="참가자 목록 닫기"]',
+      '.side-panel__close[aria-label="참가자 목록 닫기"]',
     )!;
     close.focus();
     escape(close);
@@ -685,7 +685,7 @@ describe('RoomView 브라우저 동작', () => {
 
     act(() => tab('손들기').click());
     expect(tab('손들기').getAttribute('aria-selected')).toBe('true');
-    expect(container.querySelector('aside.chat-panel')?.getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector('.chat-panel')?.getAttribute('aria-hidden')).toBe('true');
     expect(handSection.hidden).toBe(false);
     expect([...handSection.querySelectorAll('li')].map((item) => item.textContent)).toEqual([
       '나래',
