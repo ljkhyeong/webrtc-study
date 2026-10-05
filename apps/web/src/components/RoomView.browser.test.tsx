@@ -578,6 +578,66 @@ describe('RoomView 브라우저 동작', () => {
     expect(document.activeElement).toBe(toggle);
   });
 
+  it('상단 참가자 수로 참가자 탭을 열고 Esc로 닫으면 연 버튼에 초점을 돌려준다', async () => {
+    const participant = {
+      peerId: 'self',
+      displayName: '가온',
+      role: 'participant' as const,
+      isLocal: true,
+      connectionState: 'connected' as const,
+      audioEnabled: false,
+      videoEnabled: false,
+      videoSource: 'camera' as const,
+      handRaised: false,
+    };
+    act(() =>
+      root.render(
+        <RoomView
+          {...roomViewProps()}
+          participants={[participant]}
+          handQueue={{
+            revision: 1,
+            peerIds: Array.from({ length: 12 }, (_, index) => `peer-${index}`),
+            supportedPeerIds: [],
+          }}
+        />,
+      ),
+    );
+    const shell = container.querySelector('.room-shell')!;
+    const escape = (target: Element) =>
+      act(() => {
+        target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      });
+    expect(container.querySelector('button[aria-label="손들기"] b')?.textContent).toBe('9+');
+
+    const people = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="참가자 목록 열기, 참가자 1명"]',
+    )!;
+    await act(async () => people.click());
+    expect(people.getAttribute('aria-expanded')).toBe('true');
+    expect(people.getAttribute('aria-label')).toBe('참가자 목록 닫기, 참가자 1명');
+    expect(container.querySelector('#room-people-panel')?.textContent).toContain('가온 (나)');
+    const close = container.querySelector<HTMLButtonElement>(
+      '#room-people-panel button[aria-label="참가자 목록 닫기"]',
+    )!;
+    close.focus();
+    escape(close);
+    expect(shell.classList.contains('room-shell--panel-open')).toBe(false);
+    expect(document.activeElement).toBe(people);
+
+    const chat = container.querySelector<HTMLButtonElement>('button[aria-label="채팅 열기"]')!;
+    await act(async () => chat.click());
+    const search = container.querySelector<HTMLInputElement>('#chat-search')!;
+    search.focus();
+    escape(search);
+    expect(shell.classList.contains('room-shell--panel-open')).toBe(true);
+    const textarea = container.querySelector('textarea')!;
+    expect(document.activeElement).toBe(textarea);
+    escape(textarea);
+    expect(shell.classList.contains('room-shell--panel-open')).toBe(false);
+    expect(document.activeElement).toBe(chat);
+  });
+
   it('오른쪽 패널의 탭을 바꿔도 채팅 초안을 유지하고 손들기 순서와 참가자 상태를 보여 준다', async () => {
     const participants = ['a', 'b'].map((peerId) => ({
       peerId,
