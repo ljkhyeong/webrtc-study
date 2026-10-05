@@ -199,64 +199,171 @@ export function PrejoinScreen({
       </header>
 
       <main className="prejoin-main">
-        <section className="prejoin-preview" aria-label="내 카메라 미리보기">
-          <video ref={previewRef} autoPlay muted playsInline />
-          {!snapshot.localMedia.videoEnabled ? (
-            <div className="prejoin-preview__placeholder">
-              <CameraOffIcon />
-              <strong>
-                {snapshot.localMedia.videoAvailable
-                  ? '카메라가 꺼져 있습니다.'
-                  : isIdle
-                    ? '장치를 확인하면 여기에 내 모습이 보입니다.'
-                    : '사용 가능한 카메라가 없습니다.'}
-              </strong>
-              <span>{displayName}</span>
-            </div>
-          ) : null}
+        <div className="prejoin-stage">
+          <section className="prejoin-preview" aria-label="내 카메라 미리보기">
+            <video ref={previewRef} autoPlay muted playsInline />
+            {!snapshot.localMedia.videoEnabled ? (
+              <div className="prejoin-preview__placeholder">
+                <CameraOffIcon />
+                <strong>
+                  {snapshot.localMedia.videoAvailable
+                    ? '카메라가 꺼져 있습니다.'
+                    : isIdle
+                      ? '장치를 확인하면 여기에 내 모습이 보입니다.'
+                      : '사용 가능한 카메라가 없습니다.'}
+                </strong>
+                <span>{displayName}</span>
+              </div>
+            ) : null}
 
-          {!isIdle ? (
-            <div className="prejoin-preview__controls" aria-label="입장 전 마이크·카메라 설정">
-              <button
-                className={snapshot.localMedia.audioEnabled ? '' : 'is-off'}
-                type="button"
-                disabled={!snapshot.localMedia.audioAvailable || isChecking || authorizationPending}
-                aria-label={
-                  snapshot.localMedia.audioEnabled ? '입장 전 마이크 끄기' : '입장 전 마이크 켜기'
-                }
-                aria-pressed={snapshot.localMedia.audioEnabled}
-                onClick={() => {
-                  controllerRef.current?.toggle('audio');
-                }}
-              >
-                {snapshot.localMedia.audioEnabled ? <MicIcon /> : <MicOffIcon />}
-                <span>{snapshot.localMedia.audioEnabled ? '마이크 켜짐' : '마이크 꺼짐'}</span>
-              </button>
-              <button
-                className={snapshot.localMedia.videoEnabled ? '' : 'is-off'}
-                type="button"
-                disabled={!snapshot.localMedia.videoAvailable || isChecking || authorizationPending}
-                aria-label={
-                  snapshot.localMedia.videoEnabled ? '입장 전 카메라 끄기' : '입장 전 카메라 켜기'
-                }
-                aria-pressed={snapshot.localMedia.videoEnabled}
-                onClick={() => {
-                  controllerRef.current?.toggle('video');
-                }}
-              >
-                {snapshot.localMedia.videoEnabled ? <CameraIcon /> : <CameraOffIcon />}
-                <span>{snapshot.localMedia.videoEnabled ? '카메라 켜짐' : '카메라 꺼짐'}</span>
-              </button>
-            </div>
-          ) : null}
+            {!isIdle ? (
+              <div className="prejoin-preview__controls" aria-label="입장 전 마이크·카메라 설정">
+                <button
+                  className={snapshot.localMedia.audioEnabled ? '' : 'is-off'}
+                  type="button"
+                  disabled={
+                    !snapshot.localMedia.audioAvailable || isChecking || authorizationPending
+                  }
+                  aria-label={
+                    snapshot.localMedia.audioEnabled ? '입장 전 마이크 끄기' : '입장 전 마이크 켜기'
+                  }
+                  aria-pressed={snapshot.localMedia.audioEnabled}
+                  onClick={() => {
+                    controllerRef.current?.toggle('audio');
+                  }}
+                >
+                  {snapshot.localMedia.audioEnabled ? <MicIcon /> : <MicOffIcon />}
+                  <span>{snapshot.localMedia.audioEnabled ? '마이크 켜짐' : '마이크 꺼짐'}</span>
+                </button>
+                <button
+                  className={snapshot.localMedia.videoEnabled ? '' : 'is-off'}
+                  type="button"
+                  disabled={
+                    !snapshot.localMedia.videoAvailable || isChecking || authorizationPending
+                  }
+                  aria-label={
+                    snapshot.localMedia.videoEnabled ? '입장 전 카메라 끄기' : '입장 전 카메라 켜기'
+                  }
+                  aria-pressed={snapshot.localMedia.videoEnabled}
+                  onClick={() => {
+                    controllerRef.current?.toggle('video');
+                  }}
+                >
+                  {snapshot.localMedia.videoEnabled ? <CameraIcon /> : <CameraOffIcon />}
+                  <span>{snapshot.localMedia.videoEnabled ? '카메라 켜짐' : '카메라 꺼짐'}</span>
+                </button>
+              </div>
+            ) : null}
 
-          {isChecking ? (
-            <div className="prejoin-preview__checking" role="status" aria-live="polite">
-              <span className="connecting-ring" />
-              <strong>마이크와 카메라를 확인하고 있습니다.</strong>
+            {isChecking ? (
+              <div className="prejoin-preview__checking" role="status" aria-live="polite">
+                <span className="connecting-ring" />
+                <strong>마이크와 카메라를 확인하고 있습니다.</strong>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="prejoin-devices" aria-label="마이크·카메라·스피커 확인">
+            {!isIdle ? (
+              <>
+                <div className="prejoin-device-fields">
+                  {(['audio', 'video'] as const).map((kind) => {
+                    const label = kind === 'audio' ? '마이크' : '카메라';
+                    const inputs = snapshot[`${kind}Inputs`];
+                    const available = snapshot.localMedia[`${kind}Available`];
+                    const selectedInputId =
+                      kind === 'audio'
+                        ? snapshot.selectedAudioInputId
+                        : snapshot.selectedVideoInputId;
+                    return (
+                      <label key={kind}>
+                        <span>{label}</span>
+                        <select
+                          value={available ? (selectedInputId ?? '') : ''}
+                          disabled={isChecking || authorizationPending || inputs.length === 0}
+                          onChange={(event) => {
+                            const deviceId = event.currentTarget.value;
+                            const controller = controllerRef.current;
+                            if (controller !== null) {
+                              runAuthorized(() => controller.selectInput(kind, deviceId));
+                            }
+                          }}
+                        >
+                          {!available ? (
+                            <option value="">
+                              {inputs.length > 0
+                                ? `${label}를 선택해 주세요`
+                                : `사용 가능한 ${label} 없음`}
+                            </option>
+                          ) : !inputs.some((device) => device.deviceId === selectedInputId) ? (
+                            <option value={selectedInputId ?? ''}>
+                              현재 {label} (목록에 없음)
+                            </option>
+                          ) : null}
+                          {inputs.map((device) => (
+                            <option key={device.deviceId} value={device.deviceId}>
+                              {device.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <MicrophoneLevel
+                  track={controllerRef.current?.getStream()?.getAudioTracks()[0] ?? null}
+                  enabled={snapshot.localMedia.audioEnabled}
+                />
+
+                <div className="prejoin-issues" aria-live="polite">
+                  {snapshot.audioIssue ? (
+                    <p role="alert">
+                      <MicOffIcon />
+                      <span>{prejoinMediaIssueMessage('audio', snapshot.audioIssue)}</span>
+                    </p>
+                  ) : null}
+                  {snapshot.videoIssue ? (
+                    <p role="alert">
+                      <CameraOffIcon />
+                      <span>{prejoinMediaIssueMessage('video', snapshot.videoIssue)}</span>
+                    </p>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+            <div className="prejoin-device-actions">
+              <section className="prejoin-speaker-test" aria-label="입장 전 스피커 확인">
+                <button
+                  className="prejoin-retry-action"
+                  type="button"
+                  disabled={speakerTest.testing || authorizationPending}
+                  onClick={() => void speakerTest.play()}
+                >
+                  {speakerTest.testing ? '확인음 재생 중' : '스피커 소리 확인'}
+                </button>
+                <small>시스템 기본 스피커로 짧은 확인음을 재생합니다.</small>
+                {speakerTest.notice ? <p role="status">{speakerTest.notice}</p> : null}
+                {speakerTest.error ? <p role="alert">{speakerTest.error}</p> : null}
+              </section>
+              {!isIdle ? (
+                <button
+                  className="prejoin-retry-action"
+                  type="button"
+                  disabled={isChecking || authorizationPending}
+                  onClick={() => {
+                    const controller = controllerRef.current;
+                    if (controller !== null) {
+                      runAuthorized(() => controller.retryUnavailable());
+                    }
+                  }}
+                >
+                  장치 다시 확인
+                </button>
+              ) : null}
             </div>
-          ) : null}
-        </section>
+          </section>
+        </div>
 
         <section className="prejoin-settings" aria-labelledby="prejoin-title">
           <h1 id="prejoin-title">입장 준비</h1>
@@ -310,20 +417,6 @@ export function PrejoinScreen({
             </label>
           ) : null}
 
-          <section className="prejoin-speaker-test" aria-label="입장 전 스피커 확인">
-            <button
-              className="prejoin-retry-action"
-              type="button"
-              disabled={speakerTest.testing || authorizationPending}
-              onClick={() => void speakerTest.play()}
-            >
-              {speakerTest.testing ? '확인음 재생 중' : '스피커 소리 확인'}
-            </button>
-            <small>시스템 기본 스피커로 짧은 확인음을 재생합니다.</small>
-            {speakerTest.notice ? <p role="status">{speakerTest.notice}</p> : null}
-            {speakerTest.error ? <p role="alert">{speakerTest.error}</p> : null}
-          </section>
-
           {isIdle ? (
             <div className="prejoin-idle-actions">
               <button
@@ -346,83 +439,6 @@ export function PrejoinScreen({
             </div>
           ) : (
             <>
-              <div className="prejoin-device-fields">
-                {(['audio', 'video'] as const).map((kind) => {
-                  const label = kind === 'audio' ? '마이크' : '카메라';
-                  const inputs = snapshot[`${kind}Inputs`];
-                  const available = snapshot.localMedia[`${kind}Available`];
-                  const selectedInputId =
-                    kind === 'audio'
-                      ? snapshot.selectedAudioInputId
-                      : snapshot.selectedVideoInputId;
-                  return (
-                    <label key={kind}>
-                      <span>{label}</span>
-                      <select
-                        value={available ? (selectedInputId ?? '') : ''}
-                        disabled={isChecking || authorizationPending || inputs.length === 0}
-                        onChange={(event) => {
-                          const deviceId = event.currentTarget.value;
-                          const controller = controllerRef.current;
-                          if (controller !== null) {
-                            runAuthorized(() => controller.selectInput(kind, deviceId));
-                          }
-                        }}
-                      >
-                        {!available ? (
-                          <option value="">
-                            {inputs.length > 0
-                              ? `${label}를 선택해 주세요`
-                              : `사용 가능한 ${label} 없음`}
-                          </option>
-                        ) : !inputs.some((device) => device.deviceId === selectedInputId) ? (
-                          <option value={selectedInputId ?? ''}>현재 {label} (목록에 없음)</option>
-                        ) : null}
-                        {inputs.map((device) => (
-                          <option key={device.deviceId} value={device.deviceId}>
-                            {device.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  );
-                })}
-              </div>
-
-              <MicrophoneLevel
-                track={controllerRef.current?.getStream()?.getAudioTracks()[0] ?? null}
-                enabled={snapshot.localMedia.audioEnabled}
-              />
-
-              <div className="prejoin-issues" aria-live="polite">
-                {snapshot.audioIssue ? (
-                  <p role="alert">
-                    <MicOffIcon />
-                    <span>{prejoinMediaIssueMessage('audio', snapshot.audioIssue)}</span>
-                  </p>
-                ) : null}
-                {snapshot.videoIssue ? (
-                  <p role="alert">
-                    <CameraOffIcon />
-                    <span>{prejoinMediaIssueMessage('video', snapshot.videoIssue)}</span>
-                  </p>
-                ) : null}
-              </div>
-
-              <button
-                className="prejoin-retry-action"
-                type="button"
-                disabled={isChecking || authorizationPending}
-                onClick={() => {
-                  const controller = controllerRef.current;
-                  if (controller !== null) {
-                    runAuthorized(() => controller.retryUnavailable());
-                  }
-                }}
-              >
-                장치 다시 확인
-              </button>
-
               <div className="prejoin-join-actions">
                 <button
                   className="prejoin-primary-action"

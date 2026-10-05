@@ -658,16 +658,53 @@ textarea:focus-visible {
   width: min(100% - 64px, 1320px);
   min-height: calc(100svh - 84px);
   margin-inline: auto;
-  padding: 48px 0 64px;
+  padding: 32px 0 64px;
   grid-template-columns: minmax(480px, 1.35fr) minmax(340px, 0.65fr);
   align-items: center;
   gap: clamp(36px, 5vw, 72px);
+}
+
+/* 왼쪽은 미리보기와 장치 확인, 오른쪽은 이름과 입장 버튼만 두어 입장 버튼이 첫 화면에 보이게 한다. */
+.prejoin-stage {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.prejoin-devices {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 16px;
+  background: var(--call-surface);
+}
+
+.prejoin-devices .prejoin-device-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.prejoin-devices .microphone-level,
+.prejoin-devices .prejoin-issues,
+.prejoin-devices .prejoin-retry-action,
+.prejoin-devices .prejoin-speaker-test {
+  margin: 0;
+}
+
+.prejoin-device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 20px;
 }
 
 .prejoin-preview {
   position: relative;
   overflow: hidden;
   width: 100%;
+  max-height: 50svh;
   aspect-ratio: 16 / 10;
   border: 1px solid rgb(255 255 255 / 9%);
   border-radius: 16px;
@@ -3368,6 +3405,10 @@ textarea:focus-visible {
 }
 
 @media (max-width: 480px) {
+  .prejoin-devices .prejoin-device-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .control-dock {
     gap: 6px;
   }
