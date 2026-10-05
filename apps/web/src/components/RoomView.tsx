@@ -22,6 +22,7 @@ import { useCallMediaSession } from '../lib/use-call-media-session';
 import { setDocumentTitleUnreadCount } from '../lib/document-title';
 import { useInviteCopy } from '../lib/use-invite-copy';
 import type { RegisterLeaveGuard } from '../lib/use-room-navigation';
+import { useLeaveConfirmation } from '../lib/use-leave-confirmation';
 
 type RoomSystemNoticeId =
   | 'session-error'
@@ -129,57 +130,12 @@ export function RoomView({
   const [panel, setPanel] = useState<RoomPanel | null>(null);
   const chatOpen = panel === 'chat';
   const [hasDraft, setHasDraft] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<'leave' | 'reconnect' | null>(null);
-  const leaveConfirmed = useRef(false);
-  const navigationDecision = useRef<((accepted: boolean) => void) | null>(null);
-  const needsLeaveConfirmation = hasDraft || screenSharing;
-  useLayoutEffect(() => {
-    registerLeaveGuard?.(() => {
-      if (!needsLeaveConfirmation || leaveConfirmed.current) return true;
-      if (navigationDecision.current || confirmAction) return false;
-      return new Promise<boolean>((resolve) => {
-        navigationDecision.current = resolve;
-        setConfirmAction('leave');
-      });
-    });
-    return () => registerLeaveGuard?.(null);
-  }, [registerLeaveGuard, needsLeaveConfirmation, confirmAction]);
-  useEffect(() => () => navigationDecision.current?.(false), []);
-  const cancelLeave = () => {
-    setConfirmAction(null);
-    navigationDecision.current?.(false);
-    navigationDecision.current = null;
-  };
-  useEffect(() => {
-    if (!needsLeaveConfirmation) return;
-    const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (leaveConfirmed.current) return;
-      event.preventDefault();
-      event.returnValue = 'true';
-    };
-    window.addEventListener('beforeunload', beforeUnload);
-    return () => window.removeEventListener('beforeunload', beforeUnload);
-  }, [needsLeaveConfirmation]);
-  const requestExit = (action: 'leave' | 'reconnect') => {
-    if (leaveConfirmed.current || confirmAction || navigationDecision.current) return;
-    if (needsLeaveConfirmation) setConfirmAction(action);
-    else {
-      leaveConfirmed.current = true;
-      if (action === 'reconnect') onReconnect();
-      else onLeave();
-    }
-  };
-  const leaveAfterConfirmation = () => {
-    if (leaveConfirmed.current || !confirmAction) return;
-    leaveConfirmed.current = true;
-    const navigate = navigationDecision.current;
-    navigationDecision.current = null;
-    setConfirmAction(null);
-    if (navigate) {
-      navigate(true);
-    } else if (confirmAction === 'reconnect') onReconnect();
-    else onLeave();
-  };
+  const { confirmAction, requestExit, cancelExit, confirmExit } = useLeaveConfirmation({
+    needsConfirmation: hasDraft || screenSharing,
+    registerLeaveGuard,
+    onLeave,
+    onReconnect,
+  });
   const [pinnedPeerId, setPinnedPeerId] = useState<string | null>(null);
   const stageRef = useRef<HTMLElement>(null);
   const activePinnedPeerId =
@@ -533,8 +489,8 @@ export function RoomView({
           action={confirmAction}
           hasDraft={hasDraft}
           screenSharing={screenSharing}
-          onCancel={cancelLeave}
-          onConfirm={leaveAfterConfirmation}
+          onCancel={cancelExit}
+          onConfirm={confirmExit}
         />
       ) : null}
 
