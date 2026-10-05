@@ -5,7 +5,7 @@ test('방장 제어와 참가자 퇴장 및 장치 종료를 복구한다', asyn
   await runConnectedRoom(browser, baseURL, async ({ first, second }) => {
     await expectRemoteMedia(first, '나래');
     const secondTileOnFirstPage = participantTile(first, '나래');
-    await first.getByRole('button', { name: '나래 마이크 끄기' }).click();
+    await secondTileOnFirstPage.getByRole('button', { name: '나래 마이크 끄기' }).click();
     await expect(second.getByRole('button', { name: '마이크 켜기', exact: true })).toBeVisible();
     await expect(secondTileOnFirstPage.getByLabel('마이크 꺼짐')).toBeVisible();
     await expect(
@@ -16,7 +16,7 @@ test('방장 제어와 참가자 퇴장 및 장치 종료를 복구한다', asyn
 
     await second.getByRole('button', { name: '화면 공유 시작' }).click();
     await expect(secondTileOnFirstPage.getByText('화면 공유 중')).toBeVisible();
-    await first.getByRole('button', { name: '나래 영상 끄기' }).click();
+    await secondTileOnFirstPage.getByRole('button', { name: '나래 영상 끄기' }).click();
     await expect(second.getByRole('button', { name: '카메라 켜기', exact: true })).toBeVisible();
     await expect(second.getByRole('button', { name: '화면 공유 시작' })).toBeVisible();
     await expect(secondTileOnFirstPage.getByText('화면 공유 중')).toHaveCount(0);

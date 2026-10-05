@@ -24,6 +24,9 @@ import { useInviteCopy } from '../lib/use-invite-copy';
 import type { RegisterLeaveGuard } from '../lib/use-room-navigation';
 import { useLeaveConfirmation } from '../lib/use-leave-confirmation';
 import { useGalleryLayout } from '../lib/gallery-layout';
+import { useMediaQuery } from '../lib/use-media-query';
+import { RoomHandQueue } from './RoomHandQueue';
+import { RoomParticipantList } from './RoomParticipantList';
 
 type RoomSystemNoticeId =
   | 'session-error'
@@ -84,6 +87,8 @@ interface RoomViewProps {
   registerLeaveGuard?: RegisterLeaveGuard | undefined;
 }
 
+const WIDE_LAYOUT_QUERY = '(min-width: 1100px)';
+
 export function RoomView({
   handQueue = null,
   study = null,
@@ -129,6 +134,11 @@ export function RoomView({
   registerLeaveGuard,
 }: RoomViewProps) {
   const [panel, setPanel] = useState<RoomPanel | null>(null);
+  // 넓은 화면은 왼쪽 진행 열에 손들기·참가자를 늘 보여 주고 오른쪽 패널은 채팅만 연다.
+  const wide = useMediaQuery(WIDE_LAYOUT_QUERY);
+  useEffect(() => {
+    if (wide && (panel === 'hands' || panel === 'people')) setPanel(null);
+  }, [wide, panel]);
   const chatOpen = panel === 'chat';
   const [hasDraft, setHasDraft] = useState(false);
   const { confirmAction, requestExit, cancelExit, confirmExit } = useLeaveConfirmation({
@@ -234,13 +244,12 @@ export function RoomView({
     .join('|');
   return (
     <div className={`room-shell${panel ? ' room-shell--panel-open' : ''}`}>
-      <header className="room-header">
-        <div className="room-header__brand">
+      <aside className="room-rail" aria-label="스터디 진행">
+        <div className="room-rail__brand">
           <span className="wordmark">
             ROUND
             <span>study room</span>
           </span>
-          <span className="room-header__rule" />
           <button
             className="room-code"
             type="button"
@@ -271,6 +280,27 @@ export function RoomView({
           />
         ) : null}
 
+        {wide ? (
+          <>
+            <section className="room-rail__section" aria-labelledby="room-rail-hands">
+              <h2 id="room-rail-hands">손들기 대기 {handCount}명</h2>
+              <RoomHandQueue state={handQueue} participants={participants} active={isActive} />
+            </section>
+            <section className="room-rail__section" aria-labelledby="room-rail-people">
+              <h2 id="room-rail-people">참가자 {participants.length}명</h2>
+              <RoomParticipantList
+                participants={participants}
+                handQueue={handQueue}
+                canModerateMedia={canModerateMedia}
+                onDisableAudio={onDisableParticipantAudio}
+                onDisableVideo={onDisableParticipantVideo}
+              />
+            </section>
+          </>
+        ) : null}
+      </aside>
+
+      <header className="room-header">
         <div className="room-header__status">
           <span
             className={`connection-state connection-state--${
@@ -280,17 +310,19 @@ export function RoomView({
             <i />
             {statusLabel}
           </span>
-          <button
-            ref={peopleButtonRef}
-            className="participant-count"
-            type="button"
-            aria-label={`참가자 목록 ${panel === 'people' ? '닫기' : '열기'}, 참가자 ${participants.length}명`}
-            aria-expanded={panel === 'people'}
-            onClick={() => togglePanel('people', peopleButtonRef.current)}
-          >
-            <UsersIcon />
-            {participants.length}
-          </button>
+          {wide ? null : (
+            <button
+              ref={peopleButtonRef}
+              className="participant-count"
+              type="button"
+              aria-label={`참가자 목록 ${panel === 'people' ? '닫기' : '열기'}, 참가자 ${participants.length}명`}
+              aria-expanded={panel === 'people'}
+              onClick={() => togglePanel('people', peopleButtonRef.current)}
+            >
+              <UsersIcon />
+              {participants.length}
+            </button>
+          )}
 
           <button
             className="room-devices-button"
@@ -468,6 +500,7 @@ export function RoomView({
         </section>
 
         <RoomSidePanel
+          chatOnly={wide}
           panel={panel}
           onSelectPanel={setPanel}
           onClose={closePanel}

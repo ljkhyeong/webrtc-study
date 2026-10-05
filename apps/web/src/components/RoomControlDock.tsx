@@ -146,7 +146,7 @@ export function RoomControlDock({
         </span>
       </button>
       <button
-        className={`control-button${handRaised ? ' control-button--active' : ''}`}
+        className={`control-button${handRaised ? ' control-button--active control-button--hand' : ''}`}
         type="button"
         disabled={!active}
         aria-label={handRaised ? '손 내리기' : '손들기'}
