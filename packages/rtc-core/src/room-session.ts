@@ -1,4 +1,5 @@
-import { ParticipantMonitor, type ParticipantActivity } from './participant-monitor.js';
+import { ParticipantActivityTracker } from './participant-activity.js';
+import type { ParticipantActivity } from './participant-monitor.js';
 import {
   PROTOCOL_VERSION,
   serializeClientMessage,
@@ -257,14 +258,11 @@ export class RoomSession {
   readonly #remoteMediaStates = new Map<string, ParticipantMediaDataMessage>();
   readonly #staleSelfIds = new Set<string>();
   readonly #exhaustedPeerIds = new Set<string>();
-  readonly #participantMonitors = new Map<string, ParticipantMonitor>();
-  readonly #participantActivity = new Map<string, ParticipantActivity>();
-  #monitorGeneration = 0;
-  #monitorPending = false;
   readonly #peerConnectionEpochs = new Map<string, string>();
   readonly #peerRetryRequests = new Map<string, ReturnType<typeof setTimeout>>();
   readonly #signalingTransport: SignalingTransport;
   readonly #study: RoomStudy;
+  readonly #participantActivity: ParticipantActivityTracker;
   readonly #peerNegotiation: PeerNegotiationLifecycle;
   readonly #signalingRecovery: SignalingRecoveryLifecycle;
   readonly #chat: RoomChatLedger;
@@ -353,6 +351,16 @@ export class RoomSession {
       monotonicNow: () => this.#monotonicNow(),
       isActive: () => this.#status === 'active',
       isHost: () => this.#selfRole === 'host',
+      onChanged: () => this.#emit(),
+    });
+    this.#participantActivity = new ParticipantActivityTracker({
+      monotonicNow: () => this.#monotonicNow(),
+      isActive: () => this.#status === 'active',
+      peers: () => this.#peers.values(),
+      isCurrentPeer: (peer) => this.#isCurrentPeer(peer),
+      participant: (peerId) => this.#participants.get(peerId),
+      localAudioEnabled: () => this.#getLocalMediaSnapshot().audioEnabled,
+      selfId: () => this.#selfId,
       onChanged: () => this.#emit(),
     });
     this.#signalingTransport = new SignalingTransport({
@@ -520,73 +528,12 @@ export class RoomSession {
   }
 
   resetParticipantActivity(): void {
-    this.#monitorGeneration += 1;
-    this.#participantMonitors.clear();
-    this.#participantActivity.clear();
+    this.#participantActivity.reset();
     this.#emit();
   }
 
-  async sampleParticipantActivity(qualityEnabled: boolean): Promise<void> {
-    if (this.#status !== 'active' || this.#monitorPending) return;
-    this.#monitorPending = true;
-    const generation = this.#monitorGeneration;
-    let localSpeaking = false;
-    try {
-      await Promise.all(
-        [...this.#peers.values()].map(async (peer) => {
-          if (peer.connection.connectionState !== 'connected') return;
-          const participant = this.#participants.get(peer.peerId);
-          if (!participant) return;
-          const localAudio = this.#getLocalMediaSnapshot().audioEnabled;
-          if (!qualityEnabled && !participant.audioEnabled && !localAudio) {
-            this.#participantActivity.delete(peer.peerId);
-            this.#participantMonitors.delete(peer.peerId);
-            return;
-          }
-          try {
-            const report = await peer.connection.getStats();
-            if (
-              generation !== this.#monitorGeneration ||
-              !this.#isCurrentPeer(peer) ||
-              peer.connection.connectionState !== 'connected'
-            )
-              return;
-            let monitor = this.#participantMonitors.get(peer.peerId);
-            if (!monitor) {
-              monitor = new ParticipantMonitor();
-              this.#participantMonitors.set(peer.peerId, monitor);
-            }
-            const activity = monitor.sample(
-              report,
-              this.#monotonicNow(),
-              participant.audioEnabled,
-              this.#getLocalMediaSnapshot().audioEnabled,
-              qualityEnabled,
-            );
-            this.#participantActivity.set(peer.peerId, {
-              speaking: activity.speaking,
-              receptionQuality: activity.receptionQuality,
-            });
-            localSpeaking ||= activity.localSpeaking;
-          } catch {
-            if (generation === this.#monitorGeneration && this.#isCurrentPeer(peer)) {
-              this.#participantActivity.delete(peer.peerId);
-              this.#participantMonitors.delete(peer.peerId);
-            }
-          }
-        }),
-      );
-      if (generation === this.#monitorGeneration && this.#status === 'active') {
-        if (this.#selfId)
-          this.#participantActivity.set(this.#selfId, {
-            speaking: localSpeaking,
-            receptionQuality: 'unavailable',
-          });
-        this.#emit();
-      }
-    } finally {
-      this.#monitorPending = false;
-    }
+  sampleParticipantActivity(qualityEnabled: boolean): Promise<void> {
+    return this.#participantActivity.sample(qualityEnabled);
   }
 
   /**
@@ -1912,10 +1859,7 @@ export class RoomSession {
   }
 
   #setPeerConnectionStatus(peerId: string, status: PeerConnectionStatus): void {
-    if (status !== 'connected') {
-      this.#participantActivity.delete(peerId);
-      this.#participantMonitors.delete(peerId);
-    }
+    if (status !== 'connected') this.#participantActivity.forget(peerId);
     const participant = this.#participants.get(peerId);
     if (participant !== undefined) {
       participant.connectionState = status;
@@ -1974,8 +1918,7 @@ export class RoomSession {
   }
 
   #disposePeerContext(peer: PeerContext): void {
-    this.#participantMonitors.delete(peer.peerId);
-    this.#participantActivity.delete(peer.peerId);
+    this.#participantActivity.forget(peer.peerId);
     peer.disposeConnection();
   }
 
@@ -1990,9 +1933,7 @@ export class RoomSession {
   #cleanupPeerResources(): void {
     this.#handQueue = null;
     this.#study.reset();
-    this.#monitorGeneration += 1;
-    this.#participantMonitors.clear();
-    this.#participantActivity.clear();
+    this.#participantActivity.reset();
     for (const peerId of this.#peerRetryRequests.keys()) this.#clearPeerRetry(peerId);
     this.#peerConnectionEpochs.clear();
     for (const peerId of [...this.#peers.keys()]) {
@@ -2155,12 +2096,10 @@ export class RoomSession {
       screenSharePending: this.#screenShare.getPending(),
       screenShareQuality: this.#screenShare.getQuality(),
       videoQualityMode: this.#videoQualityMode,
-      participants: [...this.#participants.values()].map((participant) => ({
-        ...participant,
-        ...(this.#participantActivity.has(participant.peerId)
-          ? { activity: { ...this.#participantActivity.get(participant.peerId)! } }
-          : {}),
-      })),
+      participants: [...this.#participants.values()].map((participant) => {
+        const activity = this.#participantActivity.get(participant.peerId);
+        return { ...participant, ...(activity === undefined ? {} : { activity: { ...activity } }) };
+      }),
       localMedia: this.#getLocalMediaSnapshot(),
       messages: this.#chat.snapshot().map((message) => ({
         ...message,
