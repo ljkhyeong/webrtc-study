@@ -169,8 +169,7 @@ public class ProtocolParser {
 		RelayEnvelope envelope = relayEnvelope(message);
 		ObjectNode payload = object(message.get("payload"), "$.payload");
 		exactKeys(payload, Set.of("description", "negotiationId"), "$.payload");
-		optionalNonBlankString(
-				payload, "negotiationId", MAX_REQUEST_ID_LENGTH, "$.payload.negotiationId");
+		nonBlankString(payload.get("negotiationId"), MAX_REQUEST_ID_LENGTH, "$.payload.negotiationId");
 		ObjectNode description = object(payload.get("description"), "$.payload.description");
 		exactKeys(description, Set.of("type", "sdp"), "$.payload.description");
 		textLiteral(description.get("type"), expectedType, "$.payload.description.type");
@@ -191,8 +190,7 @@ public class ProtocolParser {
 		RelayEnvelope envelope = relayEnvelope(message);
 		ObjectNode payload = object(message.get("payload"), "$.payload");
 		exactKeys(payload, Set.of("candidate", "negotiationId"), "$.payload");
-		optionalNonBlankString(
-				payload, "negotiationId", MAX_REQUEST_ID_LENGTH, "$.payload.negotiationId");
+		nonBlankString(payload.get("negotiationId"), MAX_REQUEST_ID_LENGTH, "$.payload.negotiationId");
 		JsonNode candidateNode = payload.get("candidate");
 		if (candidateNode == null) {
 			throw fail("$.payload.candidate", "is required");

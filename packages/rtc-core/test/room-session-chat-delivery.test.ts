@@ -170,6 +170,7 @@ describe('RoomSession', () => {
       roomId: ROOM_ID,
       from: 'peer-b',
       payload: {
+        negotiationId: 'rejoin.1',
         description: { type: 'offer', sdp: 'rejoin-offer' },
       },
     });

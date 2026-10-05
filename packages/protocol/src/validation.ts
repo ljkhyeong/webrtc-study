@@ -242,7 +242,7 @@ function validateDescriptionPayload(
 ): void {
   const payload = record(input, path);
   exactKeys(payload, ['description', 'negotiationId'], path);
-  optionalIdentifier(payload.negotiationId, `${path}.negotiationId`);
+  boundedNonBlankString(payload.negotiationId, MAX_IDENTIFIER_LENGTH, `${path}.negotiationId`);
   const description = record(payload.description, `${path}.description`);
   exactKeys(description, ['type', 'sdp'], `${path}.description`);
   literal(description.type, expectedType, `${path}.description.type`);
@@ -254,7 +254,7 @@ function validateDescriptionPayload(
 function validateIcePayload(input: unknown, path: string): void {
   const payload = record(input, path);
   exactKeys(payload, ['candidate', 'negotiationId'], path);
-  optionalIdentifier(payload.negotiationId, `${path}.negotiationId`);
+  boundedNonBlankString(payload.negotiationId, MAX_IDENTIFIER_LENGTH, `${path}.negotiationId`);
   if (payload.candidate === null) {
     return;
   }

@@ -616,28 +616,26 @@ export async function joinSession(
   await flushMicrotasks();
 }
 
-export function latestOutgoingNegotiationId(harness: Harness, peerId: string): string | undefined {
-  const offers = harness.socket.messagesOfType('rtc.offer');
-  for (let index = offers.length - 1; index >= 0; index -= 1) {
-    const offer = offers[index];
-    if (offer?.to !== peerId || typeof offer.payload !== 'object' || offer.payload === null) {
-      continue;
-    }
-    const negotiationId = (offer.payload as Record<string, unknown>).negotiationId;
-    return typeof negotiationId === 'string' ? negotiationId : undefined;
+export function latestOutgoingNegotiationId(harness: Harness, peerId: string): string {
+  const offer = harness.socket
+    .messagesOfType('rtc.offer')
+    .filter((message) => message.to === peerId)
+    .at(-1);
+  const negotiationId = (offer?.payload as { negotiationId?: unknown } | undefined)?.negotiationId;
+  if (typeof negotiationId !== 'string') {
+    throw new Error(`Expected an outgoing offer to ${peerId}`);
   }
-  return undefined;
+  return negotiationId;
 }
 
 export async function answerPeer(harness: Harness, peerId: string): Promise<void> {
-  const negotiationId = latestOutgoingNegotiationId(harness, peerId);
   harness.socket.serverMessage({
     v: PROTOCOL_VERSION,
     type: 'rtc.answer',
     roomId: ROOM_ID,
     from: peerId,
     payload: {
-      ...(negotiationId === undefined ? {} : { negotiationId }),
+      negotiationId: latestOutgoingNegotiationId(harness, peerId),
       description: { type: 'answer', sdp: 'remote-answer' },
     },
   });

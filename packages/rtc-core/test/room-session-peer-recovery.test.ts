@@ -110,6 +110,7 @@ describe('RoomSession', () => {
         roomId: ROOM_ID,
         from: 'z-stuck',
         payload: {
+          negotiationId: 'late.1',
           description: { type: 'offer', sdp: 'late-offer' },
         },
       });
@@ -119,6 +120,7 @@ describe('RoomSession', () => {
         roomId: ROOM_ID,
         from: 'z-stuck',
         payload: {
+          negotiationId: 'late.1',
           description: { type: 'answer', sdp: 'late-answer' },
         },
       });
@@ -127,7 +129,7 @@ describe('RoomSession', () => {
         type: 'rtc.ice',
         roomId: ROOM_ID,
         from: 'z-stuck',
-        payload: { candidate: null },
+        payload: { negotiationId: 'late.1', candidate: null },
       });
       await flushMicrotasks();
       await vi.advanceTimersByTimeAsync(1_000);
@@ -443,10 +445,6 @@ describe('RoomSession', () => {
       });
       await joinSession(harness, [{ peerId: 'z-peer', displayName: 'Zoe' }], 'a-self');
       const retiredNegotiationId = latestOutgoingNegotiationId(harness, 'z-peer');
-      expect(retiredNegotiationId).toBeDefined();
-      if (retiredNegotiationId === undefined) {
-        throw new Error('Expected the initial offer to carry a negotiation id');
-      }
 
       await vi.advanceTimersByTimeAsync(20);
       await vi.advanceTimersByTimeAsync(30);
@@ -455,11 +453,7 @@ describe('RoomSession', () => {
       const replacement = harness.peerConnections[1];
       const currentNegotiationId = latestOutgoingNegotiationId(harness, 'z-peer');
       expect(replacement).toBeDefined();
-      expect(currentNegotiationId).toBeDefined();
       expect(currentNegotiationId).not.toBe(retiredNegotiationId);
-      if (currentNegotiationId === undefined) {
-        throw new Error('Expected the replacement offer to carry a negotiation id');
-      }
 
       harness.socket.serverMessage({
         v: PROTOCOL_VERSION,
@@ -548,8 +542,7 @@ describe('RoomSession', () => {
       await joinSession(harness, [{ peerId: 'peer-a', displayName: 'Ara' }]);
       const peer = harness.peerConnections[0];
       const previousNegotiationId = latestOutgoingNegotiationId(harness, 'peer-a');
-      expect(previousNegotiationId).toBeDefined();
-      if (peer === undefined || previousNegotiationId === undefined) {
+      if (peer === undefined) {
         throw new Error('Expected an established outgoing negotiation');
       }
       peer.setRemoteDescriptionDelayMs = 20;
@@ -994,6 +987,7 @@ describe('RoomSession', () => {
         roomId: ROOM_ID,
         from: 'peer-a',
         payload: {
+          negotiationId: 'late.1',
           description: { type: 'offer', sdp: 'late-offer' },
         },
       });
@@ -1002,7 +996,7 @@ describe('RoomSession', () => {
         type: 'rtc.ice',
         roomId: ROOM_ID,
         from: 'peer-a',
-        payload: { candidate: null },
+        payload: { negotiationId: 'late.1', candidate: null },
       });
       await flushMicrotasks();
       await vi.runAllTimersAsync();

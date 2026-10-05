@@ -55,14 +55,14 @@ describe('client message validation', () => {
       type: 'rtc.offer',
       roomId: 'abcd-efgh-jkmp',
       to: 'peer-b',
-      payload: { description: { type: 'offer', sdp: 'v=0' } },
+      payload: { negotiationId: 'n-1', description: { type: 'offer', sdp: 'v=0' } },
     },
     {
       v: PROTOCOL_VERSION,
       type: 'rtc.answer',
       roomId: 'abcd-efgh-jkmp',
       to: 'peer-a',
-      payload: { description: { type: 'answer' } },
+      payload: { negotiationId: 'n-1', description: { type: 'answer' } },
     },
     {
       v: PROTOCOL_VERSION,
@@ -70,6 +70,7 @@ describe('client message validation', () => {
       roomId: 'abcd-efgh-jkmp',
       to: 'peer-a',
       payload: {
+        negotiationId: 'n-1',
         candidate: {
           candidate: 'candidate:1 1 UDP 1 192.0.2.1 5000 typ host',
           sdpMid: '0',
@@ -83,7 +84,7 @@ describe('client message validation', () => {
       type: 'rtc.ice',
       roomId: 'abcd-efgh-jkmp',
       to: 'peer-a',
-      payload: { candidate: null },
+      payload: { negotiationId: 'n-1', candidate: null },
     },
     {
       v: PROTOCOL_VERSION,
@@ -129,7 +130,7 @@ describe('client message validation', () => {
 
   it.each(
     RELAY_PAYLOAD_CASES.flatMap(({ type, contents }) =>
-      ['', ' ', 'n'.repeat(MAX_NEGOTIATION_ID_LENGTH + 1)].map((negotiationId) => ({
+      [undefined, '', ' ', 'n'.repeat(MAX_NEGOTIATION_ID_LENGTH + 1)].map((negotiationId) => ({
         type,
         contents,
         negotiationId,
@@ -141,7 +142,7 @@ describe('client message validation', () => {
       type,
       roomId: 'abcd-efgh-jkmp',
       to: 'peer-b',
-      payload: { ...contents, negotiationId },
+      payload: negotiationId === undefined ? contents : { ...contents, negotiationId },
     };
 
     expect(() => parseClientMessage(message)).toThrow('$.payload.negotiationId');
@@ -154,7 +155,7 @@ describe('client message validation', () => {
       roomId: 'abcd-efgh-jkmp',
       from: 'pretend-peer',
       to: 'peer-b',
-      payload: { description: { type: 'offer', sdp: 'v=0' } },
+      payload: { negotiationId: 'n-1', description: { type: 'offer', sdp: 'v=0' } },
     };
 
     expect(() => parseClientMessage(spoofed)).toThrow(ProtocolValidationError);
@@ -190,7 +191,7 @@ describe('client message validation', () => {
         type: 'rtc.offer',
         roomId: 'abcd-efgh-jkmp',
         to: 'peer-b',
-        payload: { description: { type: 'answer', sdp: 'v=0' } },
+        payload: { negotiationId: 'n-1', description: { type: 'answer', sdp: 'v=0' } },
       },
     ],
     [
@@ -199,7 +200,7 @@ describe('client message validation', () => {
         type: 'rtc.ice',
         roomId: 'abcd-efgh-jkmp',
         to: 'peer-b',
-        payload: { candidate: { candidate: 'candidate', sdpMLineIndex: -1 } },
+        payload: { negotiationId: 'n-1', candidate: { candidate: 'candidate', sdpMLineIndex: -1 } },
       },
     ],
   ])('rejects malformed messages', (message) => {
@@ -316,7 +317,10 @@ describe('client message validation', () => {
       roomId: 'abcd-efgh-jkmp',
       requestId: 'r'.repeat(128),
       to: 'p'.repeat(128),
-      payload: { description: { type: 'offer', sdp } },
+      payload: {
+        negotiationId: 'n'.repeat(MAX_NEGOTIATION_ID_LENGTH),
+        description: { type: 'offer', sdp },
+      },
     };
 
     expect(utf8ByteLength(sdp)).toBe(MAX_SDP_BYTES);
@@ -335,7 +339,7 @@ describe('client message validation', () => {
       type: 'rtc.offer',
       roomId: 'abcd-efgh-jkmp',
       to: 'peer-b',
-      payload: { description: { type: 'offer', sdp } },
+      payload: { negotiationId: 'n-1', description: { type: 'offer', sdp } },
     };
 
     expect(utf8ByteLength(sdp)).toBeGreaterThan(MAX_SDP_BYTES);
@@ -351,6 +355,7 @@ describe('client message validation', () => {
       roomId: 'abcd-efgh-jkmp',
       to: 'peer-b',
       payload: {
+        negotiationId: 'n-1',
         description: {
           type: 'offer',
           sdp: '\n'.repeat(MAX_SDP_BYTES),
@@ -410,7 +415,7 @@ describe('server message validation', () => {
       type: 'rtc.answer',
       roomId: 'abcd-efgh-jkmp',
       from: 'peer-b',
-      payload: { description: { type: 'answer', sdp: 'v=0' } },
+      payload: { negotiationId: 'n-1', description: { type: 'answer', sdp: 'v=0' } },
     },
     {
       v: PROTOCOL_VERSION,
@@ -469,7 +474,7 @@ describe('server message validation', () => {
 
   it.each(
     RELAY_PAYLOAD_CASES.flatMap(({ type, contents }) =>
-      ['', ' ', 'n'.repeat(MAX_NEGOTIATION_ID_LENGTH + 1)].map((negotiationId) => ({
+      [undefined, '', ' ', 'n'.repeat(MAX_NEGOTIATION_ID_LENGTH + 1)].map((negotiationId) => ({
         type,
         contents,
         negotiationId,
@@ -481,7 +486,7 @@ describe('server message validation', () => {
       type,
       roomId: 'abcd-efgh-jkmp',
       from: 'peer-b',
-      payload: { ...contents, negotiationId },
+      payload: negotiationId === undefined ? contents : { ...contents, negotiationId },
     };
 
     expect(() => parseServer(message)).toThrow('$.payload.negotiationId');

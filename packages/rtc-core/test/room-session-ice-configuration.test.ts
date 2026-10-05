@@ -280,6 +280,7 @@ describe('RoomSession', () => {
       roomId: 'abcd-efgh-jkmp',
       from: 'peer-a',
       payload: {
+        negotiationId: 'remote.1',
         candidate: {
           candidate: 'candidate:1',
           sdpMid: '0',
@@ -299,6 +300,7 @@ describe('RoomSession', () => {
       roomId: 'abcd-efgh-jkmp',
       from: 'peer-a',
       payload: {
+        negotiationId: 'remote.1',
         description: { type: 'offer', sdp: 'remote-offer' },
       },
     });
@@ -320,6 +322,7 @@ describe('RoomSession', () => {
         requestId: expect.any(String),
         to: 'peer-a',
         payload: {
+          negotiationId: 'remote.1',
           description: { type: 'answer', sdp: 'answer-sdp' },
         },
       },
@@ -345,6 +348,7 @@ describe('RoomSession', () => {
         roomId: ROOM_ID,
         from: 'peer-a',
         payload: {
+          negotiationId: 'remote.1',
           candidate: {
             candidate: `candidate:${index}`,
             sdpMid: '0',
@@ -362,6 +366,7 @@ describe('RoomSession', () => {
       roomId: ROOM_ID,
       from: 'peer-a',
       payload: {
+        negotiationId: 'remote.1',
         description: { type: 'offer', sdp: 'remote-offer' },
       },
     });

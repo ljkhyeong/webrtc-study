@@ -123,7 +123,7 @@ export class PeerNegotiationLifecycle {
   async handleOffer(
     peerId: string,
     description: OfferDescription,
-    negotiationId?: string,
+    negotiationId: string,
   ): Promise<void> {
     const existing = this.#options.getPeer(peerId);
     if (existing !== undefined && !existing.canAcceptRemoteOffer(negotiationId)) {
@@ -137,29 +137,28 @@ export class PeerNegotiationLifecycle {
       existing?.connection.connectionState === 'failed'
         ? this.#options.replacePeer(peerId, true)
         : this.#options.ensurePeer(peerId);
-    peer.replaceNegotiationId(negotiationId ?? null);
-    const acceptedNegotiationId = peer.negotiationId;
-    peer.beginRemoteOffer(acceptedNegotiationId);
+    peer.replaceNegotiationId(negotiationId);
+    peer.beginRemoteOffer(negotiationId);
     try {
       peer.remoteDescriptionSet = false;
       this.#options.setPeerConnectionStatus(peerId, 'negotiating');
       await peer.connection.setRemoteDescription(description);
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
+      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return;
       }
       peer.remoteDescriptionSet = true;
-      await this.#flushPendingCandidates(peer, acceptedNegotiationId);
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
+      await this.#flushPendingCandidates(peer, negotiationId);
+      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return;
       }
 
       peer.resetLocalDescription();
       const answer = await peer.connection.createAnswer();
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
+      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return;
       }
       await peer.connection.setLocalDescription(answer);
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
+      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return;
       }
       void this.#options.updateVideoQuality(peer);
@@ -171,7 +170,7 @@ export class PeerNegotiationLifecycle {
         roomId: this.#options.roomId,
         to: peerId,
         payload: {
-          ...(peer.negotiationId === null ? {} : { negotiationId: peer.negotiationId }),
+          negotiationId,
           description: {
             type: 'answer',
             ...(localDescription.sdp === undefined ? {} : { sdp: localDescription.sdp }),
@@ -182,12 +181,12 @@ export class PeerNegotiationLifecycle {
         this.#options.finishPeerRecovery(peer);
       }
     } catch (error) {
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
+      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return;
       }
       throw error;
     } finally {
-      peer.endRemoteOffer(acceptedNegotiationId);
+      peer.endRemoteOffer(negotiationId);
       this.#options.onNegotiationSettled(peer);
     }
   }
@@ -195,7 +194,7 @@ export class PeerNegotiationLifecycle {
   async handleAnswer(
     peerId: string,
     description: AnswerDescription,
-    negotiationId?: string,
+    negotiationId: string,
   ): Promise<void> {
     const peer = this.#options.getPeer(peerId);
     if (
@@ -206,15 +205,14 @@ export class PeerNegotiationLifecycle {
     ) {
       return;
     }
-    const acceptedNegotiationId = peer.negotiationId;
     try {
       await peer.connection.setRemoteDescription(description);
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
+      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return;
       }
       peer.remoteDescriptionSet = true;
-      await this.#flushPendingCandidates(peer, acceptedNegotiationId);
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
+      await this.#flushPendingCandidates(peer, negotiationId);
+      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return;
       }
       if (peer.connection.connectionState === 'connected') {
@@ -223,7 +221,7 @@ export class PeerNegotiationLifecycle {
       void this.#options.updateVideoQuality(peer);
       this.#options.onNegotiationSettled(peer);
     } catch (error) {
-      if (!this.#isCurrentNegotiation(peer, acceptedNegotiationId)) {
+      if (!this.#isCurrentNegotiation(peer, negotiationId)) {
         return;
       }
       throw error;
@@ -233,13 +231,12 @@ export class PeerNegotiationLifecycle {
   async handleIce(
     peerId: string,
     candidate: SerializedIceCandidate | null,
-    negotiationId?: string,
+    negotiationId: string,
   ): Promise<void> {
     const peer = this.#options.ensurePeer(peerId);
     if (!peer.adoptOrMatchCandidateNegotiation(negotiationId)) {
       return;
     }
-    const acceptedNegotiationId = peer.negotiationId;
     if (peer.connection.connectionState === 'failed' || !peer.remoteDescriptionSet) {
       if (peer.queueRemoteCandidate(candidate)) {
         this.#options.setPeerWarning(
@@ -251,7 +248,7 @@ export class PeerNegotiationLifecycle {
       return;
     }
 
-    await this.#addIceCandidate(peer, candidate, acceptedNegotiationId);
+    await this.#addIceCandidate(peer, candidate, negotiationId);
   }
 
   handleLocalIceCandidate(peer: PeerConnectionLifecycle, candidate: RTCIceCandidate | null): void {
@@ -269,7 +266,7 @@ export class PeerNegotiationLifecycle {
 
   async #flushPendingCandidates(
     peer: PeerConnectionLifecycle,
-    negotiationId: string | null,
+    negotiationId: string,
   ): Promise<void> {
     const { candidates } = peer.extractPendingRemoteCandidates();
     for (const candidate of candidates) {
@@ -283,7 +280,7 @@ export class PeerNegotiationLifecycle {
   async #addIceCandidate(
     peer: PeerConnectionLifecycle,
     candidate: SerializedIceCandidate | null,
-    negotiationId: string | null,
+    negotiationId: string,
   ): Promise<void> {
     try {
       await peer.connection.addIceCandidate(candidate);
@@ -311,7 +308,9 @@ export class PeerNegotiationLifecycle {
     peer: PeerConnectionLifecycle,
     candidate: SerializedIceCandidate | null,
   ): void {
+    const { negotiationId } = peer;
     if (
+      negotiationId === null ||
       !peer.candidateMatchesCurrentLocalNegotiation(candidate) ||
       this.#options.isRoomReconnecting()
     ) {
@@ -322,14 +321,11 @@ export class PeerNegotiationLifecycle {
       type: 'rtc.ice',
       roomId: this.#options.roomId,
       to: peer.peerId,
-      payload: {
-        ...(peer.negotiationId === null ? {} : { negotiationId: peer.negotiationId }),
-        candidate,
-      },
+      payload: { negotiationId, candidate },
     });
   }
 
-  #isCurrentNegotiation(peer: PeerConnectionLifecycle, negotiationId: string | null): boolean {
+  #isCurrentNegotiation(peer: PeerConnectionLifecycle, negotiationId: string): boolean {
     return this.#options.isCurrentPeer(peer) && peer.negotiationId === negotiationId;
   }
 }

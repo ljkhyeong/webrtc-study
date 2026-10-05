@@ -66,7 +66,7 @@ interface RtcOfferClientMessage extends ClientMessageBase {
   to: string;
   payload: {
     description: OfferDescription;
-    negotiationId?: string;
+    negotiationId: string;
   };
 }
 
@@ -75,7 +75,7 @@ interface RtcAnswerClientMessage extends ClientMessageBase {
   to: string;
   payload: {
     description: AnswerDescription;
-    negotiationId?: string;
+    negotiationId: string;
   };
 }
 
@@ -84,7 +84,7 @@ interface RtcIceClientMessage extends ClientMessageBase {
   to: string;
   payload: {
     candidate: SerializedIceCandidate | null;
-    negotiationId?: string;
+    negotiationId: string;
   };
 }
 
@@ -163,7 +163,7 @@ interface RtcOfferServerMessage extends ServerMessageBase {
   from: string;
   payload: {
     description: OfferDescription;
-    negotiationId?: string;
+    negotiationId: string;
   };
 }
 
@@ -172,7 +172,7 @@ interface RtcAnswerServerMessage extends ServerMessageBase {
   from: string;
   payload: {
     description: AnswerDescription;
-    negotiationId?: string;
+    negotiationId: string;
   };
 }
 
@@ -181,7 +181,7 @@ interface RtcIceServerMessage extends ServerMessageBase {
   from: string;
   payload: {
     candidate: SerializedIceCandidate | null;
-    negotiationId?: string;
+    negotiationId: string;
   };
 }
 

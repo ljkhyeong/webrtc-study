@@ -39,7 +39,7 @@ export class PeerConnectionLifecycle {
 
   #negotiationId: string | null = null;
   readonly #retiredNegotiationIds: Set<string>;
-  readonly #remoteOffersInProgress = new Set<string | null>();
+  readonly #remoteOffersInProgress = new Set<string>();
   readonly #pendingRemoteCandidates: (SerializedIceCandidate | null)[] = [];
   readonly #pendingLocalCandidates: (SerializedIceCandidate | null)[] = [];
   readonly #localIceUsernameFragments = new Set<string>();
@@ -65,11 +65,11 @@ export class PeerConnectionLifecycle {
     return this.#remoteOffersInProgress.size > 0;
   }
 
-  beginRemoteOffer(negotiationId: string | null): void {
+  beginRemoteOffer(negotiationId: string): void {
     this.#remoteOffersInProgress.add(negotiationId);
   }
 
-  endRemoteOffer(negotiationId: string | null): void {
+  endRemoteOffer(negotiationId: string): void {
     this.#remoteOffersInProgress.delete(negotiationId);
   }
 
@@ -85,7 +85,7 @@ export class PeerConnectionLifecycle {
     return negotiationId;
   }
 
-  replaceNegotiationId(negotiationId: string | null): void {
+  replaceNegotiationId(negotiationId: string): void {
     if (this.#negotiationId === negotiationId) {
       return;
     }
@@ -96,21 +96,11 @@ export class PeerConnectionLifecycle {
     this.#localIceUsernameFragments.clear();
   }
 
-  canAcceptRemoteOffer(negotiationId?: string): boolean {
-    const normalizedNegotiationId = negotiationId ?? null;
-    if (this.#remoteOffersInProgress.has(normalizedNegotiationId)) {
-      return false;
-    }
-    if (negotiationId === undefined) {
-      return (
-        this.#negotiationId === null &&
-        this.#retiredNegotiationIds.size === 0 &&
-        this.connectionAttempt === 0 &&
-        !this.remoteDescriptionSet &&
-        !this.localDescriptionPublished
-      );
-    }
-    if (this.#retiredNegotiationIds.has(negotiationId)) {
+  canAcceptRemoteOffer(negotiationId: string): boolean {
+    if (
+      this.#remoteOffersInProgress.has(negotiationId) ||
+      this.#retiredNegotiationIds.has(negotiationId)
+    ) {
       return false;
     }
     if (this.#negotiationId !== negotiationId) {
@@ -119,19 +109,15 @@ export class PeerConnectionLifecycle {
     return !this.remoteDescriptionSet && !this.localDescriptionPublished;
   }
 
-  matchesNegotiation(negotiationId?: string): boolean {
-    if (negotiationId === undefined) {
-      return this.#negotiationId === null && this.#retiredNegotiationIds.size === 0;
-    }
+  matchesNegotiation(negotiationId: string): boolean {
     return this.#negotiationId === negotiationId && !this.#retiredNegotiationIds.has(negotiationId);
   }
 
-  adoptOrMatchCandidateNegotiation(negotiationId?: string): boolean {
+  adoptOrMatchCandidateNegotiation(negotiationId: string): boolean {
     if (this.matchesNegotiation(negotiationId)) {
       return true;
     }
     if (
-      negotiationId === undefined ||
       this.#negotiationId !== null ||
       this.#retiredNegotiationIds.has(negotiationId) ||
       this.remoteDescriptionSet ||

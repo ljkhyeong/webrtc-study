@@ -951,10 +951,10 @@ export class RoomSession {
     this.#peerRetryRequests.delete(peerId);
   }
 
-  #acceptPeerSignal(peerId: string, negotiationId: string | undefined): boolean {
+  #acceptPeerSignal(peerId: string, negotiationId: string): boolean {
     if (this.#staleSelfIds.has(peerId) || this.#exhaustedPeerIds.has(peerId)) return false;
     const epoch = this.#peerConnectionEpochs.get(peerId);
-    return epoch === undefined || negotiationId?.startsWith(`${epoch}.`) === true;
+    return epoch === undefined || negotiationId.startsWith(`${epoch}.`);
   }
 
   sendChat(text: string): ChatMessage {
