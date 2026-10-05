@@ -1,7 +1,7 @@
 export interface PeerConnectionDiagnostics {
   readonly connectionNumber: number;
   readonly participantName?: string;
-  readonly connectionState: RTCPeerConnectionState | 'negotiating';
+  readonly connectionState: RTCPeerConnectionState;
   readonly localCandidateType: RTCIceCandidateType | null;
   readonly remoteCandidateType: RTCIceCandidateType | null;
   readonly roundTripTimeMs: number | null;
@@ -16,20 +16,28 @@ export interface ConnectionDiagnosticTarget {
   readonly isCurrent: () => boolean;
 }
 
+const SAMPLE_DURATION_MS = 3_000;
+
+type ConnectionMetrics = Omit<
+  PeerConnectionDiagnostics,
+  'connectionNumber' | 'participantName' | 'connectionState'
+>;
+
 export async function measurePeerConnections(
   targets: readonly ConnectionDiagnosticTarget[],
-  sampleDurationMs = 3_000,
 ): Promise<readonly PeerConnectionDiagnostics[]> {
   const connections = await Promise.all(
     targets.map(async (target, index): Promise<PeerConnectionDiagnostics | null> => {
       const before = await target.connection.getStats();
       if (target.signal.aborted) return null;
-      await waitForSample(target.signal, sampleDurationMs);
+      await waitForSample(target.signal, SAMPLE_DURATION_MS);
       if (!target.isCurrent()) return null;
       const report = await target.connection.getStats();
       if (!target.isCurrent()) return null;
       return {
-        ...summarizeConnection(index + 1, target.connection.connectionState, before, report),
+        connectionNumber: index + 1,
+        connectionState: target.connection.connectionState,
+        ...summarizeConnection(before, report),
         ...(target.participantName === undefined
           ? {}
           : { participantName: target.participantName }),
@@ -52,11 +60,9 @@ function waitForSample(signal: AbortSignal, durationMs: number): Promise<void> {
 }
 
 export function summarizeConnection(
-  connectionNumber: number,
-  connectionState: RTCPeerConnectionState,
   before: RTCStatsReport,
   report: RTCStatsReport,
-): PeerConnectionDiagnostics {
+): ConnectionMetrics {
   const entries = [...report.values()];
   const transport = entries.find((stats): stats is RTCTransportStats => stats.type === 'transport');
   const selectedCandidatePair =
@@ -115,8 +121,6 @@ export function summarizeConnection(
   const totalPackets = packetsReceived + packetsLost;
 
   return {
-    connectionNumber,
-    connectionState,
     localCandidateType: localCandidate?.candidateType ?? null,
     remoteCandidateType: remoteCandidate?.candidateType ?? null,
     roundTripTimeMs:

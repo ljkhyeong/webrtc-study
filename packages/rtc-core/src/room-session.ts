@@ -121,9 +121,6 @@ export interface RoomConnectionDiagnostics {
 }
 
 export interface ModerationNotice {
-  readonly id: string;
-  readonly sequence: number;
-  readonly fromPeerId: string;
   readonly kind: ModeratedMediaKind;
 }
 
@@ -136,10 +133,8 @@ export interface RoomSessionSnapshot {
   readonly study?: RoomStudySnapshot | null;
   readonly studyPending?: boolean;
   readonly studyNotice?: string | null;
-  readonly roomId: string;
   readonly status: RoomSessionStatus;
   readonly selfId: string | null;
-  readonly selfRole: ParticipantRole | null;
   readonly canModerateMedia: boolean;
   readonly screenShareAvailable: boolean;
   readonly screenSharing: boolean;
@@ -328,7 +323,6 @@ export class RoomSession {
   #selfRole: ParticipantRole | null = null;
   #canModerateMedia = false;
   #lastModerationNotice: ModerationNotice | null = null;
-  #moderationNoticeSequence = 0;
   // peerId가 있으면 해당 참가자 연결에 대한 경고다.
   #warning: (RoomIssue & { readonly peerId: string | null }) | null = null;
   #error: RoomIssue | null = null;
@@ -1396,7 +1390,6 @@ export class RoomSession {
           return;
         case 'moderation.media.disabled':
           await this.#handleModerationMediaDisabled(
-            message.from,
             message.payload.targetPeerId,
             message.payload.kind,
           );
@@ -1468,7 +1461,6 @@ export class RoomSession {
   }
 
   async #handleModerationMediaDisabled(
-    fromPeerId: string,
     targetPeerId: string,
     kind: ModeratedMediaKind,
   ): Promise<void> {
@@ -1476,13 +1468,7 @@ export class RoomSession {
       return;
     }
 
-    this.#moderationNoticeSequence += 1;
-    this.#lastModerationNotice = {
-      id: `moderation-${this.#moderationNoticeSequence.toString(36)}`,
-      sequence: this.#moderationNoticeSequence,
-      fromPeerId,
-      kind,
-    };
+    this.#lastModerationNotice = { kind };
     this.#localInput.setDesiredEnabled(kind, false);
 
     let stopPromise: Promise<boolean> | null = null;
@@ -2310,7 +2296,6 @@ export class RoomSession {
 
   #buildSnapshot(): RoomSessionSnapshot {
     return {
-      roomId: this.#options.roomId,
       study: this.#study === null ? null : { ...this.#study },
       handQueue:
         this.#handQueue === null
@@ -2320,7 +2305,6 @@ export class RoomSession {
       studyNotice: this.#studyNotice,
       status: this.#status,
       selfId: this.#selfId,
-      selfRole: this.#selfRole,
       canModerateMedia: this.#canModerateMedia,
       screenShareAvailable: this.#screenShare.isAvailable(),
       screenSharing: this.#screenShare.isSharing(),

@@ -38,10 +38,8 @@ function roomSnapshot(
   error: RoomSessionSnapshot['error'] = null,
 ): RoomSessionSnapshot {
   return {
-    roomId: ROOM_ID,
     status,
     selfId: status === 'active' ? 'self' : null,
-    selfRole: status === 'active' ? 'participant' : null,
     canModerateMedia: false,
     screenShareAvailable: false,
     videoQualityMode: 'standard',

@@ -55,7 +55,7 @@ export class ParticipantMonitor {
       this.#consecutive = 0;
     } else if (this.#qualityReport === null || now - this.#qualitySampledAt >= 3_000) {
       if (this.#qualityReport !== null) {
-        const summary = summarizeConnection(0, 'connected', this.#qualityReport, report);
+        const summary = summarizeConnection(this.#qualityReport, report);
         const next: ReceptionQuality =
           summary.packetLossPercent === null
             ? 'unavailable'

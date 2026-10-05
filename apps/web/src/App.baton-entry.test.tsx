@@ -68,10 +68,8 @@ async function fillPrejoinName(container: HTMLElement, displayName = '림'): Pro
 
 function activeRoomSnapshot(): RoomSessionSnapshot {
   return {
-    roomId: ROOM_ID,
     status: 'active',
     selfId: 'self',
-    selfRole: 'participant',
     canModerateMedia: false,
     screenShareAvailable: false,
     videoQualityMode: 'standard',

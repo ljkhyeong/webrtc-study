@@ -915,7 +915,6 @@ describe('RoomSession', () => {
     );
 
     expect(host.session.getSnapshot()).toMatchObject({
-      selfRole: 'host',
       canModerateMedia: true,
       participants: expect.arrayContaining([
         expect.objectContaining({ peerId: 'self-host', role: 'host' }),
@@ -983,12 +982,7 @@ describe('RoomSession', () => {
 
     const firstNotice = harness.session.getSnapshot().lastModerationNotice;
     expect(harness.audioTrack.enabled).toBe(false);
-    expect(firstNotice).toEqual({
-      id: 'moderation-1',
-      sequence: 1,
-      fromPeerId: 'host-peer',
-      kind: 'audio',
-    });
+    expect(firstNotice).toEqual({ kind: 'audio' });
     expect(
       channel.sent
         .map((raw) => JSON.parse(raw) as { type: string })
@@ -1014,8 +1008,7 @@ describe('RoomSession', () => {
 
     const secondNotice = harness.session.getSnapshot().lastModerationNotice;
     expect(harness.audioTrack.enabled).toBe(false);
-    expect(secondNotice?.sequence).toBe(2);
-    expect(secondNotice?.id).not.toBe(firstNotice?.id);
+    expect(secondNotice).toEqual({ kind: 'audio' });
     await harness.session.leave();
   });
 
@@ -1055,10 +1048,7 @@ describe('RoomSession', () => {
         videoEnabled: false,
         videoSource: 'camera',
       },
-      lastModerationNotice: {
-        fromPeerId: 'host-peer',
-        kind: 'video',
-      },
+      lastModerationNotice: { kind: 'video' },
     });
     expect(
       channel.sent
