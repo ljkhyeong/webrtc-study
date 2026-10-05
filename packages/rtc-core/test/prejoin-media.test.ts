@@ -97,11 +97,8 @@ function device(kind: MediaDeviceKind, deviceId: string, label: string): MediaDe
   };
 }
 
-function mediaDeviceEventTarget(): Pick<MediaDevices, 'addEventListener' | 'removeEventListener'> {
-  return {
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  };
+function mediaDeviceEventTarget(): Pick<MediaDevices, 'addEventListener'> {
+  return { addEventListener: vi.fn() };
 }
 
 function deferred<T>(): {
@@ -483,16 +480,14 @@ describe('PrejoinMedia', () => {
         device('audioinput', 'mic-usb', 'USB 마이크'),
         device('videoinput', 'camera-usb', 'USB 카메라'),
       ]);
-    const addEventListener = vi.fn((type: string, listener: EventListener) => {
-      if (type === 'devicechange') {
-        deviceChangeListeners.add(listener);
-      }
-    });
-    const removeEventListener = vi.fn((type: string, listener: EventListener) => {
-      if (type === 'devicechange') {
-        deviceChangeListeners.delete(listener);
-      }
-    });
+    const addEventListener = vi.fn(
+      (type: string, listener: EventListener, options?: AddEventListenerOptions) => {
+        if (type === 'devicechange') {
+          deviceChangeListeners.add(listener);
+          options?.signal?.addEventListener('abort', () => deviceChangeListeners.delete(listener));
+        }
+      },
+    );
     const mediaDevices = {
       addEventListener,
       enumerateDevices,
@@ -501,7 +496,6 @@ describe('PrejoinMedia', () => {
           ? (new FakeMediaStream([videoTrack]) as unknown as MediaStream)
           : (new FakeMediaStream([audioTrack]) as unknown as MediaStream),
       ),
-      removeEventListener,
     } as unknown as MediaDevices;
     const controller = new PrejoinMedia({
       mediaDevices,
@@ -509,7 +503,9 @@ describe('PrejoinMedia', () => {
     });
 
     await controller.checkDevices();
-    expect(addEventListener).toHaveBeenCalledWith('devicechange', expect.any(Function));
+    expect(addEventListener).toHaveBeenCalledWith('devicechange', expect.any(Function), {
+      signal: expect.any(AbortSignal),
+    });
     expect(deviceChangeListeners.size).toBe(1);
 
     const publishedAudioInputs: string[][] = [];
@@ -540,7 +536,6 @@ describe('PrejoinMedia', () => {
     expect(publishedAudioInputs.at(-1)).toEqual(['mic-usb']);
 
     controller.dispose();
-    expect(removeEventListener).toHaveBeenCalledWith('devicechange', expect.any(Function));
     expect(deviceChangeListeners.size).toBe(0);
     const enumerationCountAfterDispose = enumerateDevices.mock.calls.length;
     emitDeviceChange();

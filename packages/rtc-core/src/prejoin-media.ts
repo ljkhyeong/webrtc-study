@@ -30,7 +30,7 @@ export type PrejoinMediaListener = (snapshot: PrejoinMediaSnapshot) => void;
 
 type PrejoinMediaDevices = Pick<
   MediaDevices,
-  'addEventListener' | 'enumerateDevices' | 'getUserMedia' | 'removeEventListener'
+  'addEventListener' | 'enumerateDevices' | 'getUserMedia'
 >;
 
 export interface PrejoinMediaOptions {
@@ -108,13 +108,11 @@ export class PrejoinMedia {
   readonly #mediaStreamFactory: () => MediaStream;
   readonly #listeners = new Set<PrejoinMediaListener>();
   readonly #trackEndedListeners = new Map<MediaStreamTrack, EventListener>();
-  readonly #deviceChangeListener = () => {
-    void this.#requestDeviceRefresh(true);
-  };
-  readonly #deviceRefreshWaiters: {
-    readonly generation: number;
-    readonly resolve: () => void;
-  }[] = [];
+  // 폐기하면 장치 변경 리스너를 떼고 진행 중인 목록 조회를 기다리지 않는다.
+  readonly #lifetime = new AbortController();
+  readonly #disposal = new Promise<null>((resolve) => {
+    this.#lifetime.signal.addEventListener('abort', () => resolve(null), { once: true });
+  });
   readonly #desiredEnabled: PerKind<boolean> = { audio: true, video: true };
 
   #stream: MediaStream | null = null;
@@ -124,10 +122,8 @@ export class PrejoinMedia {
   #selected: PerKind<string | null> = { audio: null, video: null };
   #issues: PerKind<PrejoinMediaIssueCode | null> = { audio: null, video: null };
   #snapshot: PrejoinMediaSnapshot;
-  #disposed = false;
-  #deviceRefreshRequestedGeneration = 0;
-  #deviceRefreshCompletedGeneration = 0;
-  #deviceRefreshPromise: Promise<void> | null = null;
+  #deviceRefresh: Promise<void> | null = null;
+  #deviceRefreshStale = false;
   #deviceRefreshShouldEmit = false;
 
   constructor(options: PrejoinMediaOptions = {}) {
@@ -140,7 +136,15 @@ export class PrejoinMedia {
       (typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined);
     this.#mediaStreamFactory = options.mediaStreamFactory ?? (() => new MediaStream());
     this.#snapshot = this.#buildSnapshot();
-    this.#mediaDevices?.addEventListener('devicechange', this.#deviceChangeListener);
+    this.#mediaDevices?.addEventListener(
+      'devicechange',
+      () => void this.#requestDeviceRefresh(true),
+      { signal: this.#lifetime.signal },
+    );
+  }
+
+  get #disposed(): boolean {
+    return this.#lifetime.signal.aborted;
   }
 
   getSnapshot(): PrejoinMediaSnapshot {
@@ -229,13 +233,11 @@ export class PrejoinMedia {
   }
 
   #shutdown(): void {
-    this.#disposed = true;
+    this.#lifetime.abort();
     for (const track of [...this.#trackEndedListeners.keys()]) {
       this.#detachTrackEndedListener(track);
     }
-    this.#mediaDevices?.removeEventListener('devicechange', this.#deviceChangeListener);
     this.#listeners.clear();
-    this.#resolveDeviceRefreshWaiters(true);
   }
 
   // 선택한 장치가 없으면 요청 시점의 선택값을 쓴다.
@@ -346,65 +348,33 @@ export class PrejoinMedia {
     this.#trackEndedListeners.delete(track);
   }
 
+  /** 조회 중에 다시 요청되면 그 결과는 버리고 최신 목록을 다시 조회한다. */
   #requestDeviceRefresh(emitSnapshot: boolean): Promise<void> {
     if (this.#disposed) {
       return Promise.resolve();
     }
-
-    const generation = this.#deviceRefreshRequestedGeneration + 1;
-    this.#deviceRefreshRequestedGeneration = generation;
+    this.#deviceRefreshStale = true;
     this.#deviceRefreshShouldEmit ||= emitSnapshot;
-    const completion = new Promise<void>((resolve) => {
-      this.#deviceRefreshWaiters.push({ generation, resolve });
-    });
-    this.#startDeviceRefresh();
-    return completion;
+    this.#deviceRefresh ??= this.#refreshDevices();
+    return this.#deviceRefresh;
   }
 
-  #startDeviceRefresh(): void {
-    if (this.#disposed || this.#deviceRefreshPromise !== null) {
-      return;
-    }
-
-    const operation = this.#drainDeviceRefreshes();
-    this.#deviceRefreshPromise = operation;
-    const settle = () => {
-      if (this.#deviceRefreshPromise === operation) {
-        this.#deviceRefreshPromise = null;
+  async #refreshDevices(): Promise<void> {
+    try {
+      while (this.#deviceRefreshStale && !this.#disposed) {
+        this.#deviceRefreshStale = false;
+        const devices = await Promise.race([this.#enumerateDevices(), this.#disposal]);
+        if (this.#deviceRefreshStale || this.#disposed) {
+          continue;
+        }
+        if (devices !== null) this.#applyDevices(devices);
+        if (this.#deviceRefreshShouldEmit) {
+          this.#deviceRefreshShouldEmit = false;
+          this.#emit();
+        }
       }
-      if (this.#disposed) {
-        this.#resolveDeviceRefreshWaiters(true);
-        return;
-      }
-      this.#resolveDeviceRefreshWaiters(false);
-      if (this.#deviceRefreshCompletedGeneration < this.#deviceRefreshRequestedGeneration) {
-        this.#startDeviceRefresh();
-      }
-    };
-    void operation.then(settle, settle);
-  }
-
-  async #drainDeviceRefreshes(): Promise<void> {
-    while (
-      !this.#disposed &&
-      this.#deviceRefreshCompletedGeneration < this.#deviceRefreshRequestedGeneration
-    ) {
-      const generation = this.#deviceRefreshRequestedGeneration;
-      const devices = await this.#enumerateDevices();
-      if (this.#disposed) {
-        return;
-      }
-      if (generation !== this.#deviceRefreshRequestedGeneration) {
-        continue;
-      }
-
-      if (devices !== null) this.#applyDevices(devices);
-      this.#deviceRefreshCompletedGeneration = generation;
-      if (this.#deviceRefreshShouldEmit) {
-        this.#deviceRefreshShouldEmit = false;
-        this.#emit();
-      }
-      this.#resolveDeviceRefreshWaiters(false);
+    } finally {
+      this.#deviceRefresh = null;
     }
   }
 
@@ -433,16 +403,6 @@ export class PrejoinMedia {
         this.#inputs[kind],
         this.#tracks(kind)[0],
       );
-    }
-  }
-
-  #resolveDeviceRefreshWaiters(force: boolean): void {
-    for (let index = this.#deviceRefreshWaiters.length - 1; index >= 0; index -= 1) {
-      const waiter = this.#deviceRefreshWaiters[index]!;
-      if (force || waiter.generation <= this.#deviceRefreshCompletedGeneration) {
-        this.#deviceRefreshWaiters.splice(index, 1);
-        waiter.resolve();
-      }
     }
   }
 
