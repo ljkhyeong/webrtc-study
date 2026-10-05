@@ -221,7 +221,6 @@ export function chatErrorMessage(error: unknown): string {
       case 'queue-full':
         return '전송 대기 중인 메시지가 많습니다. 잠시 후 다시 보내세요.';
       case 'room-not-active':
-      case 'message-id-conflict':
         break;
     }
   }

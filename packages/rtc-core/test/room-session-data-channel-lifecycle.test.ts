@@ -699,7 +699,7 @@ describe('RoomSession', () => {
   });
 
   it('marks queued local chat as failed when its peer leaves before delivery', async () => {
-    const generatedIds = ['message-peer-left', 'message-after-left', 'message-peer-left'];
+    const generatedIds = ['message-peer-left', 'message-after-left'];
     let idIndex = 0;
     const harness = createHarness({
       createId: () => generatedIds[idIndex++] ?? 'unexpected-message-id',
@@ -730,9 +730,6 @@ describe('RoomSession', () => {
     );
 
     harness.session.sendChat('evict the failed message after the peer leaves');
-    expect(() => harness.session.sendChat('must not immediately reuse the retired id')).toThrow(
-      'Chat message id message-peer-left is already in use',
-    );
 
     harness.socket.serverMessage({
       v: PROTOCOL_VERSION,

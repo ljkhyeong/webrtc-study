@@ -964,7 +964,6 @@ export class RoomSession {
 
     const normalizedText = text.trim();
     const messageId = (this.#options.createId ?? defaultCreateId)();
-    this.#chat.assertLocalMessageIdAvailable(messageId);
     const wireMessage: ChatDataMessage = {
       type: 'chat.message',
       id: messageId,
