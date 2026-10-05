@@ -11,18 +11,17 @@ describe('손들기 대기열 계약', () => {
       expect(() => parseClientMessage({ ...message, payload })).toThrow();
     }
   });
-  it('중복·미지원 참가자와 잘못된 개정 번호를 대기열에 허용하지 않는다', () => {
+  it('중복 참가자·알 수 없는 필드와 잘못된 개정 번호를 대기열에 허용하지 않는다', () => {
     const message = {
       ...envelope,
       type: 'room.hand.state',
-      payload: { revision: 2, peerIds: ['b', 'a'], supportedPeerIds: ['a', 'b'] },
+      payload: { revision: 2, peerIds: ['b', 'a'] },
     };
     expect(parseServerMessage(message)).toEqual(message);
     for (const changes of [
       { revision: -1 },
       { peerIds: ['a', 'a'] },
-      { peerIds: ['unknown'] },
-      { supportedPeerIds: ['a', 'a'] },
+      { supportedPeerIds: ['a', 'b'] },
     ]) {
       expect(() =>
         parseServerMessage({ ...message, payload: { ...message.payload, ...changes } }),

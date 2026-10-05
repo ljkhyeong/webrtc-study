@@ -3,7 +3,6 @@ import { PROTOCOL_VERSION } from '@round/protocol';
 import {
   FakeDataChannel,
   ROOM_ID,
-  answerPeer,
   createHarness,
   flushMicrotasks,
   joinSession,
@@ -21,7 +20,7 @@ describe('손들기', () => {
     await harness.session.leave();
   });
 
-  it('서버 순서를 적용하고 이전 개정과 지원 참가자의 늦은 직접 메시지로 덮어쓰지 않는다', async () => {
+  it('서버 대기열 순서를 모든 참가자에 적용하고 이전 개정은 무시한다', async () => {
     await joinSession(harness, [
       { peerId: 'peer-a', displayName: '가온' },
       { peerId: 'peer-b', displayName: '나래' },
@@ -32,29 +31,51 @@ describe('손들기', () => {
         v: PROTOCOL_VERSION,
         type: 'room.hand.state',
         roomId: ROOM_ID,
-        payload: { revision, peerIds, supportedPeerIds: ['self', 'peer-a', 'peer-b'] },
+        payload: { revision, peerIds },
       });
+    const raisedIds = () =>
+      harness.session
+        .getSnapshot()
+        .participants.filter((participant) => participant.handRaised)
+        .map((participant) => participant.peerId);
     receive(3, ['peer-b', 'peer-a']);
     await flushMicrotasks();
     receive(2, ['peer-a']);
     await flushMicrotasks();
-    harness.peerConnections[0]!.channels[0]!.receive({ type: 'participant.hand', raised: false });
     expect(harness.session.getSnapshot().handQueue?.peerIds).toEqual(['peer-b', 'peer-a']);
-    expect(
-      harness.session.getSnapshot().participants.find((p) => p.peerId === 'peer-a')?.handRaised,
-    ).toBe(true);
+    expect(raisedIds()).toEqual(['peer-a', 'peer-b']);
     harness.session.setHandRaised(true);
     expect(harness.socket.messagesOfType('room.hand.update').at(-1)?.payload).toEqual({
       raised: true,
     });
-    receive(4, ['peer-b', 'peer-a', 'self']);
+    receive(4, ['peer-a', 'self']);
     await flushMicrotasks();
-    expect(harness.session.getSnapshot().handQueue?.peerIds).toHaveLength(3);
+    expect(raisedIds()).toEqual(['self', 'peer-a']);
     await harness.session.leave();
     expect(harness.session.getSnapshot().handQueue).toBeNull();
   });
 
-  it('미디어 없이 손을 들고 늦게 연결된 참가자에게 마지막 상태만 보낸다', async () => {
+  it('늦게 입장한 참가자도 현재 대기열로 손들기 상태를 표시한다', async () => {
+    await joinSession(harness);
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'room.hand.state',
+      roomId: ROOM_ID,
+      payload: { revision: 1, peerIds: ['peer-a'] },
+    });
+    harness.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'peer.joined',
+      roomId: ROOM_ID,
+      payload: { participant: { peerId: 'peer-a', displayName: '가온' } },
+    });
+    await flushMicrotasks();
+    expect(
+      harness.session.getSnapshot().participants.find((participant) => !participant.isLocal),
+    ).toMatchObject({ peerId: 'peer-a', handRaised: true });
+  });
+
+  it('미디어 없이 손을 들고 DataChannel로는 손들기 상태를 보내지 않는다', async () => {
     harness = createHarness({ preparedMediaStream: null });
     expect(harness.session.setHandRaised(true)).toBe(false);
     await joinSession(harness);
@@ -69,91 +90,13 @@ describe('손들기', () => {
     const channel = new FakeDataChannel();
     channel.readyState = 'connecting';
     harness.peerConnections[0]!.ondatachannel!({ channel } as unknown as RTCDataChannelEvent);
-    harness.session.setHandRaised(false);
-    harness.session.setHandRaised(true);
-    harness.session.setHandRaised(true);
-    expect(channel.sent).toEqual([]);
     channel.open();
-    expect(
-      channel.sent
-        .map((raw) => JSON.parse(raw))
-        .filter((message) => message.type === 'participant.hand'),
-    ).toEqual([{ type: 'participant.hand', raised: true }]);
+    expect(channel.sent.map((raw) => JSON.parse(raw).type)).not.toContain('participant.hand');
     expect(
       harness.session.getSnapshot().participants.find((participant) => participant.isLocal),
     ).toMatchObject({ handRaised: true, audioEnabled: false, videoEnabled: false });
     expect(harness.socket.messagesOfType('rtc.offer')).toHaveLength(0);
-  });
-
-  it('연결된 상대의 상태만 바꾸고 퇴장한 상대의 늦은 메시지는 무시한다', async () => {
-    await joinSession(harness, [
-      { peerId: 'peer-a', displayName: '가온' },
-      { peerId: 'peer-b', displayName: '나래' },
-    ]);
-    const channel = harness.peerConnections[0]!.channels[0]!;
-    channel.receive({ type: 'participant.hand', raised: true, peerId: 'peer-b' });
-    expect(
-      harness.session.getSnapshot().participants.every((participant) => !participant.handRaised),
-    ).toBe(true);
-    channel.receive({ type: 'participant.hand', raised: true });
-    expect(
-      harness.session
-        .getSnapshot()
-        .participants.filter((participant) => participant.handRaised)
-        .map((participant) => participant.peerId),
-    ).toEqual(['peer-a']);
-    channel.receive({ type: 'participant.hand', raised: false });
-    expect(
-      harness.session.getSnapshot().participants.every((participant) => !participant.handRaised),
-    ).toBe(true);
-    channel.receive({ type: 'participant.hand', raised: true });
-    const staleHandler = channel.onmessage!;
-    harness.socket.serverMessage({
-      v: PROTOCOL_VERSION,
-      type: 'peer.left',
-      roomId: ROOM_ID,
-      payload: { peerId: 'peer-a' },
-    });
-    await flushMicrotasks();
-    staleHandler({
-      data: JSON.stringify({ type: 'participant.hand', raised: true }),
-    } as MessageEvent);
-    expect(
-      harness.session.getSnapshot().participants.map((participant) => participant.peerId),
-    ).toEqual(['self', 'peer-b']);
-    expect(
-      harness.session.getSnapshot().participants.every((participant) => !participant.handRaised),
-    ).toBe(true);
-  });
-
-  it('송신 버퍼가 밀리면 마지막 상태만 보내고 채널 복구 뒤에도 다시 보낸다', async () => {
-    await joinSession(harness, [{ peerId: 'z-peer', displayName: '가온' }], 'a-self');
-    await answerPeer(harness, 'z-peer');
-    const peer = harness.peerConnections[0]!;
-    peer.setConnectionState('connected');
-    const channel = peer.channels[0]!;
-    channel.sent.length = 0;
-    channel.bufferedAmount = 256 * 1024;
-    harness.session.setHandRaised(true);
-    harness.session.setHandRaised(false);
-    harness.session.sendChat('질문이 있습니다.');
-    expect(channel.sent).toEqual([]);
-    channel.drainBufferedAmount();
-    expect(channel.sent.map((raw) => JSON.parse(raw))).toEqual([
-      { type: 'participant.hand', raised: false },
-      expect.objectContaining({ type: 'chat.message', text: '질문이 있습니다.' }),
-    ]);
-    harness.session.setHandRaised(true);
-    channel.remoteClose();
-    await flushMicrotasks();
-    await answerPeer(harness, 'z-peer');
-    peer.channels[1]!.open();
-    expect(peer.channels[1]!.sent.map((raw) => JSON.parse(raw))).toContainEqual({
-      type: 'participant.hand',
-      raised: true,
-    });
     await harness.session.leave();
     expect(harness.session.setHandRaised(false)).toBe(false);
-    expect(harness.session.getSnapshot().participants).toEqual([]);
   });
 });

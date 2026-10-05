@@ -125,23 +125,15 @@ function validateServerMessage(message: UnknownRecord): ServerMessage {
       roomId(message.roomId, '$.roomId');
       optionalIdentifier(message.requestId, '$.requestId');
       const payload = record(message.payload, '$.payload');
-      exactKeys(payload, ['revision', 'peerIds', 'supportedPeerIds'], '$.payload');
+      exactKeys(payload, ['revision', 'peerIds'], '$.payload');
       if (!Number.isSafeInteger(payload.revision) || (payload.revision as number) < 0)
         fail('$.payload.revision', 'must be a nonnegative safe integer');
-      for (const key of ['peerIds', 'supportedPeerIds']) {
-        const ids = payload[key];
-        if (!Array.isArray(ids) || ids.length > 6)
-          fail(`$.payload.${key}`, 'must contain at most 6 participants');
-        for (const id of ids) boundedNonBlankString(id, MAX_PEER_ID_LENGTH, `$.payload.${key}`);
-        if (new Set(ids).size !== ids.length)
-          fail(`$.payload.${key}`, 'must not contain duplicates');
-      }
-      if (
-        !(payload.peerIds as string[]).every((id) =>
-          (payload.supportedPeerIds as string[]).includes(id),
-        )
-      )
-        fail('$.payload.peerIds', 'must contain only supported participants');
+      const ids = payload.peerIds;
+      if (!Array.isArray(ids) || ids.length > 6)
+        fail('$.payload.peerIds', 'must contain at most 6 participants');
+      for (const id of ids) boundedNonBlankString(id, MAX_PEER_ID_LENGTH, '$.payload.peerIds');
+      if (new Set(ids).size !== ids.length)
+        fail('$.payload.peerIds', 'must not contain duplicates');
       return message as unknown as ServerMessage;
     }
     case 'room.study.state':

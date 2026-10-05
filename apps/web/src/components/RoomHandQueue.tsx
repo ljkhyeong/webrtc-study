@@ -12,11 +12,6 @@ export function RoomHandQueue({
 }) {
   const queue =
     state?.peerIds.flatMap((id) => participants.filter((peer) => peer.peerId === id)) ?? [];
-  const unsupported = state
-    ? participants.filter(
-        (peer) => peer.handRaised && !state.supportedPeerIds.includes(peer.peerId),
-      )
-    : [];
   return (
     <div className="room-hand-queue">
       {!active ? <p role="status">다시 연결되면 대기 순서를 불러옵니다.</p> : null}
@@ -29,12 +24,6 @@ export function RoomHandQueue({
         ))}
       </ol>
       {active && state && !queue.length ? <p>대기 중인 참가자가 없습니다.</p> : null}
-      {unsupported.length ? (
-        <p>
-          {unsupported.map((peer) => peer.displayName).join(', ')}님의 손들기 순서를 표시할 수
-          없습니다. 해당 참가자는 새로고침 후 다시 입장해 주세요.
-        </p>
-      ) : null}
       <small>서버에 도착한 순서입니다. 손을 내렸다 다시 들면 맨 뒤로 이동합니다.</small>
     </div>
   );

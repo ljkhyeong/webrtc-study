@@ -226,7 +226,6 @@ interface StudyStateServerMessage extends ServerMessageBase {
 export interface HandQueueState {
   revision: number;
   peerIds: string[];
-  supportedPeerIds: string[];
 }
 interface HandStateServerMessage extends ServerMessageBase {
   type: 'room.hand.state';

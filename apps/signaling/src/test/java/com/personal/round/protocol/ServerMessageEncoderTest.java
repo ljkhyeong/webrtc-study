@@ -119,16 +119,15 @@ class ServerMessageEncoderTest {
 	@Test
 	void 손들기_상태의_목록_순서와_빈_목록을_유지한다() throws Exception {
 		assertEncodedJson(encoder.handState(ROOM_ID, "hand-42",
-				new HandQueueState(2, List.of("peer-b", "peer-a"), List.of("peer-a", "peer-b", "peer-c"))),
+				new HandQueueState(2, List.of("peer-b", "peer-a"))),
 				"""
 				{"v":3,"type":"room.hand.state","roomId":"abcd-efgh-jkmp","requestId":"hand-42",
-				 "payload":{"revision":2,"peerIds":["peer-b","peer-a"],
-				 "supportedPeerIds":["peer-a","peer-b","peer-c"]}}
+				 "payload":{"revision":2,"peerIds":["peer-b","peer-a"]}}
 				""");
-		assertEncodedJson(encoder.handState(ROOM_ID, null, new HandQueueState(0, List.of(), List.of())),
+		assertEncodedJson(encoder.handState(ROOM_ID, null, new HandQueueState(0, List.of())),
 				"""
 				{"v":3,"type":"room.hand.state","roomId":"abcd-efgh-jkmp",
-				 "payload":{"revision":0,"peerIds":[],"supportedPeerIds":[]}}
+				 "payload":{"revision":0,"peerIds":[]}}
 				""");
 	}
 

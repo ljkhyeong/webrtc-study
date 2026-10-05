@@ -128,9 +128,9 @@ describe('RoomSession', () => {
     expect(
       harness.session.getSnapshot().participants.find((participant) => participant.isLocal),
     ).toMatchObject({ handRaised: true });
-    expect(
-      harness.peerConnections[1]?.channels[0]?.sent.map((raw) => JSON.parse(raw)),
-    ).toContainEqual({ type: 'participant.hand', raised: true });
+    expect(reconnectSocket.messagesOfType('room.hand.update').at(-1)?.payload).toEqual({
+      raised: true,
+    });
     expect(harness.peerConnections).toHaveLength(2);
     expect(harness.session.getRemoteStream('peer-a')).toBeNull();
   });

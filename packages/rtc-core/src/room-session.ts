@@ -9,7 +9,6 @@ import {
   type HandQueueState,
   type ModeratedMediaKind,
   type Participant,
-  type ParticipantHandDataMessage,
   type ParticipantMediaDataMessage,
   type ParticipantRole,
   type ServerMessage,
@@ -886,10 +885,6 @@ export class RoomSession {
     const participant = this.#participants.get(this.#selfId);
     if (participant !== undefined) participant.handRaised = raised;
     this.#emit();
-    const message = this.#currentHandDataMessage();
-    for (const peer of this.#peers.values()) {
-      peer.data.publishHandState(message);
-    }
     return true;
   }
 
@@ -1407,22 +1402,12 @@ export class RoomSession {
             (this.#handQueue && message.payload.revision < this.#handQueue.revision)
           )
             return;
-          this.#handQueue = {
-            ...message.payload,
-            peerIds: [...message.payload.peerIds],
-            supportedPeerIds: [...message.payload.supportedPeerIds],
-          };
+          this.#handQueue = { ...message.payload, peerIds: [...message.payload.peerIds] };
           const raised = new Set(message.payload.peerIds);
-          for (const id of message.payload.supportedPeerIds) {
-            const participant = this.#participants.get(id);
-            if (participant) participant.handRaised = raised.has(id);
+          for (const participant of this.#participants.values()) {
+            participant.handRaised = raised.has(participant.peerId);
           }
-          const wasRaised = this.#handRaised;
           this.#handRaised = this.#selfId !== null && raised.has(this.#selfId);
-          if (wasRaised !== this.#handRaised) {
-            for (const peer of this.#peers.values())
-              peer.data.publishHandState(this.#currentHandDataMessage());
-          }
           this.#emit();
           return;
         }
@@ -1629,7 +1614,6 @@ export class RoomSession {
       isRecovering: () => this.#peers.get(peerId)?.recovering ?? true,
       monotonicNow: () => this.#monotonicNow(),
       currentMediaState: () => this.#currentMediaDataMessage(),
-      currentHandState: () => this.#currentHandDataMessage(),
       onOpen: () => {
         const peer = this.#peers.get(peerId);
         if (peer?.data === dataChannel) {
@@ -1662,13 +1646,6 @@ export class RoomSession {
         participant.audioEnabled = message.audioEnabled;
         participant.videoEnabled = message.videoEnabled;
         participant.videoSource = message.videoSource;
-        this.#emit();
-      },
-      onHandState: (message) => {
-        if (this.#handQueue?.supportedPeerIds.includes(peerId)) return;
-        const participant = this.#participants.get(peerId);
-        if (participant === undefined || participant.handRaised === message.raised) return;
-        participant.handRaised = message.raised;
         this.#emit();
       },
       onChatAcknowledged: (messageId) =>
@@ -2127,10 +2104,6 @@ export class RoomSession {
     };
   }
 
-  #currentHandDataMessage(): ParticipantHandDataMessage {
-    return { type: 'participant.hand', raised: this.#handRaised };
-  }
-
   #broadcastMediaState(): void {
     const message = this.#currentMediaDataMessage();
     for (const peer of this.#peers.values()) {
@@ -2197,7 +2170,9 @@ export class RoomSession {
       audioEnabled: false,
       videoEnabled: false,
       videoSource: 'camera',
-      handRaised: isLocal && this.#handRaised,
+      handRaised: isLocal
+        ? this.#handRaised
+        : (this.#handQueue?.peerIds.includes(participant.peerId) ?? false),
     });
   }
 
@@ -2476,11 +2451,7 @@ export class RoomSession {
       handQueue:
         this.#handQueue === null
           ? null
-          : {
-              ...this.#handQueue,
-              peerIds: [...this.#handQueue.peerIds],
-              supportedPeerIds: [...this.#handQueue.supportedPeerIds],
-            },
+          : { ...this.#handQueue, peerIds: [...this.#handQueue.peerIds] },
       studyPending: this.#studyCommandId !== null,
       studyNotice: this.#studyNotice,
       status: this.#status,

@@ -620,22 +620,10 @@ public class SignalingService implements SmartLifecycle {
 			return;
 		}
 		RoomHandQueue queue = handQueues.computeIfAbsent(peer.roomId, ignored -> new RoomHandQueue());
-		if (!queue.update(peer.peerId, message.raised())) {
-			enqueue(peer, serverMessageEncoder.handState(peer.roomId, message.requestId(), queue.snapshot()), workPlan);
-			return;
-		}
-		ArrayDeque<PendingOutbound> pending = new ArrayDeque<>();
-		appendHandState(peer.roomId, rooms.get(peer.roomId), queue, message.requestId(), pending);
-		enqueueAllLocked(pending, workPlan);
-	}
-
-	private void appendHandState(String roomId, Map<String, Peer> room, RoomHandQueue queue,
-			String requestId, ArrayDeque<PendingOutbound> pending) {
-		TextMessage state = serverMessageEncoder.handState(roomId, requestId, queue.snapshot());
-		for (Peer target : room.values()) {
-			// 새 메시지를 요청한 웹에만 전송해 구버전 클라이언트의 통화를 유지한다.
-			if (queue.subscribes(target.peerId)) pending.addLast(new PendingOutbound(target, state));
-		}
+		boolean changed = message.raised() != null && queue.update(peer.peerId, message.raised());
+		TextMessage state = serverMessageEncoder.handState(peer.roomId, message.requestId(), queue.snapshot());
+		if (changed) broadcast(rooms.get(peer.roomId), state, null, workPlan);
+		else enqueue(peer, state, workPlan);
 	}
 
 	private void study(Peer peer, ClientMessage.Study message, WorkPlan workPlan) {
@@ -893,7 +881,9 @@ public class SignalingService implements SmartLifecycle {
 		ArrayDeque<PendingOutbound> pending = pendingOutbound == null ? new ArrayDeque<>() : pendingOutbound;
 		appendBroadcast(room, left, null, pending);
 		RoomHandQueue queue = handQueues.get(roomId);
-		if (queue != null && queue.remove(peer.peerId)) appendHandState(roomId, room, queue, null, pending);
+		if (queue != null && queue.remove(peer.peerId)) {
+			appendBroadcast(room, serverMessageEncoder.handState(roomId, null, queue.snapshot()), null, pending);
+		}
 		if (pendingOutbound == null) enqueueAllLocked(pending, workPlan);
 	}
 

@@ -263,7 +263,7 @@ describe('RoomView 브라우저 동작', () => {
           {...props}
           screenSharing
           participants={participants}
-          handQueue={{ revision: 2, peerIds: ['b', 'a'], supportedPeerIds: ['a', 'b'] }}
+          handQueue={{ revision: 2, peerIds: ['b', 'a'] }}
         />,
       ),
     );
@@ -598,7 +598,6 @@ describe('RoomView 브라우저 동작', () => {
           handQueue={{
             revision: 1,
             peerIds: Array.from({ length: 12 }, (_, index) => `peer-${index}`),
-            supportedPeerIds: [],
           }}
         />,
       ),
@@ -655,7 +654,7 @@ describe('RoomView 브라우저 동작', () => {
         <RoomView
           {...roomViewProps()}
           participants={participants}
-          handQueue={{ revision: 1, peerIds: ['b'], supportedPeerIds: ['a', 'b'] }}
+          handQueue={{ revision: 1, peerIds: ['b'] }}
         />,
       ),
     );
