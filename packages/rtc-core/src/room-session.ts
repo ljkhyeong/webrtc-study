@@ -26,6 +26,7 @@ import {
 } from './peer-connection-lifecycle.js';
 import { PEER_DATA_CHANNEL_LABEL, PeerDataChannel } from './peer-data-channel.js';
 import { PeerNegotiationLifecycle } from './peer-negotiation-lifecycle.js';
+import { PeerRecoveryLifecycle } from './peer-recovery-lifecycle.js';
 import {
   ChatSendError,
   RoomChatLedger,
@@ -264,6 +265,7 @@ export class RoomSession {
   readonly #study: RoomStudy;
   readonly #participantActivity: ParticipantActivityTracker;
   readonly #peerNegotiation: PeerNegotiationLifecycle;
+  readonly #peerRecovery: PeerRecoveryLifecycle;
   readonly #signalingRecovery: SignalingRecoveryLifecycle;
   readonly #chat: RoomChatLedger;
   readonly #screenShare: ScreenShareLifecycle;
@@ -316,7 +318,7 @@ export class RoomSession {
       replacePeerTrack: (peer, sender, track) => this.#replacePeerTrack(peer, sender, track),
       rollbackSenderUpdates: (updates) => this.#rollbackSenderUpdates(updates),
       recoverPeersAfterSenderFailure: (failures, phase) =>
-        this.#recoverPeersAfterSenderFailure(failures, phase),
+        this.#peerRecovery.recoverAfterSenderFailure(failures, phase),
       requestLocalRenegotiation: (peer) => this.#requestLocalRenegotiation(peer),
       onStateChanged: () => {
         this.#syncLocalParticipantMedia();
@@ -339,7 +341,11 @@ export class RoomSession {
         getMediaDevices: () => this.#getMediaDevices(),
         getInputConstraints: (kind) => this.#options.mediaConstraints?.[kind],
         recoverPeersAfterSenderFailure: (failures, phase) =>
-          this.#recoverPeersAfterSenderFailure(failures, phase, 'media-device-sender-recovery'),
+          this.#peerRecovery.recoverAfterSenderFailure(
+            failures,
+            phase,
+            'media-device-sender-recovery',
+          ),
         onInputTrackEnded: (track) => this.#screenShare.removeRetainedCameraTrack(track),
       },
       options.initialInputEnabled,
@@ -396,9 +402,36 @@ export class RoomSession {
       setPeerConnectionStatus: (peerId, status) => this.#setPeerConnectionStatus(peerId, status),
       setPeerWarning: (peerId, code, message) => this.#setPeerWarning(peerId, code, message),
       failPeerConnectionTimeout: (peer) => this.#failPeerConnectionTimeout(peer),
-      finishPeerRecovery: (peer) => this.#finishPeerRecovery(peer),
+      finishPeerRecovery: (peer) => this.#peerRecovery.finish(peer),
       updateVideoQuality: (peer) => this.#updateVideoQuality(peer),
       onNegotiationSettled: (peer) => this.#drainPendingLocalRenegotiation(peer),
+    });
+    this.#peerRecovery = new PeerRecoveryLifecycle({
+      maxReconnectAttempts: this.#recoveryOptions.maxReconnectAttempts,
+      peerConnectionTimeoutMs: this.#recoveryOptions.peerConnectionTimeoutMs,
+      peerDisconnectedGraceMs: this.#recoveryOptions.peerDisconnectedGraceMs,
+      peerRecoveryTimeoutMs: this.#recoveryOptions.peerRecoveryTimeoutMs,
+      reconnectDelay: (attempt) => this.#reconnectDelay(attempt),
+      negotiation: this.#peerNegotiation,
+      getPeer: (peerId) => this.#peers.get(peerId),
+      isCurrentPeer: (peer) => this.#isCurrentPeer(peer),
+      selfId: () => this.#selfId,
+      isActive: () => this.#status === 'active',
+      isDisposed: () => this.#disposed,
+      replacePeer: (peerId, preservePendingCandidates) =>
+        this.#replacePeer(peerId, preservePendingCandidates),
+      failPeer: (peerId, error) => this.#failPeer(peerId, error),
+      failPeerConnectionTimeout: (peer) => this.#failPeerConnectionTimeout(peer),
+      setPeerConnectionStatus: (peerId, status) => this.#setPeerConnectionStatus(peerId, status),
+      restoreConnectedStatus: (peerId) => {
+        const participant = this.#participants.get(peerId);
+        if (participant === undefined || participant.connectionState === 'connected') return false;
+        participant.connectionState = 'connected';
+        return true;
+      },
+      setPeerWarning: (peerId, code, message) => this.#setPeerWarning(peerId, code, message),
+      clearPeerWarning: (peerId, codes) => this.#clearPeerWarning(peerId, codes),
+      onStateChanged: () => this.#emit(),
     });
     const serializedJoinMessage = serializeClientMessage({
       v: PROTOCOL_VERSION,
@@ -593,7 +626,7 @@ export class RoomSession {
         if (
           options.restartIce === true &&
           this.#status === 'active' &&
-          this.#isPeerRecoveryInitiator(peer.peerId)
+          this.#peerRecovery.isInitiator(peer.peerId)
         ) {
           restartPeers.push(peer);
         }
@@ -603,7 +636,7 @@ export class RoomSession {
     }
 
     for (const peer of restartPeers) {
-      this.#beginPeerRecovery(peer);
+      this.#peerRecovery.begin(peer);
     }
 
     if (failedPeerCount > 0) {
@@ -811,48 +844,6 @@ export class RoomSession {
       }
     }
     return failures;
-  }
-
-  #recoverPeersAfterSenderFailure(
-    failures: ReadonlyMap<PeerContext, unknown>,
-    phase: string,
-    warningCode:
-      | 'screen-share-sender-recovery'
-      | 'media-device-sender-recovery' = 'screen-share-sender-recovery',
-  ): void {
-    if (this.#disposed || failures.size === 0) {
-      return;
-    }
-    for (const [failedPeer, error] of failures) {
-      if (!this.#isCurrentPeer(failedPeer)) {
-        continue;
-      }
-      this.#recreatePeer(
-        failedPeer.peerId,
-        warningCode,
-        `Recreated the connection to ${failedPeer.peerId} after ${phase} failed: ${getErrorMessage(error)}`,
-      );
-    }
-  }
-
-  // 실패한 연결을 새 연결로 바꾸고 경고를 남긴 뒤, 복구를 시작하는 쪽이면 새 offer를 보낸다.
-  #recreatePeer(peerId: string, warningCode: RoomIssueCode, message: string): void {
-    const shouldOffer = this.#isPeerRecoveryInitiator(peerId);
-    let replacement: PeerContext;
-    try {
-      replacement = this.#replacePeer(peerId, false);
-    } catch (error) {
-      this.#failPeer(peerId, error);
-      return;
-    }
-    this.#setPeerWarning(peerId, warningCode, message);
-    if (shouldOffer) {
-      void this.#peerNegotiation.createOffer(peerId).catch((error: unknown) => {
-        if (this.#isCurrentPeer(replacement)) {
-          this.#failPeer(peerId, error);
-        }
-      });
-    }
   }
 
   syncStudy(): boolean {
@@ -1244,7 +1235,7 @@ export class RoomSession {
       try {
         await this.#peerNegotiation.createOffer(participant.peerId);
       } catch (error) {
-        this.#scheduleInitialOfferRetry(participant.peerId, error);
+        this.#peerRecovery.scheduleInitialOfferRetry(participant.peerId, error);
       }
     });
 
@@ -1342,7 +1333,7 @@ export class RoomSession {
           return;
         }
         this.#setPeerWarning(peerId, code, message);
-        this.#beginPeerRecovery(peer);
+        this.#peerRecovery.begin(peer);
       },
       clearWarning: (codes) => this.#clearPeerWarning(peerId, codes),
       onStateChanged: () => this.#emit(),
@@ -1442,14 +1433,14 @@ export class RoomSession {
       this.#setPeerConnectionStatus(peerId, status);
       switch (status) {
         case 'connected':
-          this.#finishPeerRecovery(peer);
+          this.#peerRecovery.finish(peer);
           return;
         case 'disconnected':
-          this.#scheduleDisconnectedRecovery(peer);
+          this.#peerRecovery.scheduleDisconnectedRecovery(peer);
           return;
         case 'failed':
           peer.cancelTimer('disconnected');
-          this.#beginPeerRecovery(peer);
+          this.#peerRecovery.begin(peer);
           return;
         case 'closed':
           this.#cleanupPeer(peerId, false);
@@ -1458,16 +1449,12 @@ export class RoomSession {
       }
     };
 
-    this.#schedulePeerConnectionTimeout(peer);
+    this.#peerRecovery.scheduleConnectionTimeout(peer);
     return peer;
   }
 
   #isCurrentPeer(peer: PeerContext): boolean {
     return !peer.closed && this.#peers.get(peer.peerId) === peer;
-  }
-
-  #isPeerRecoveryInitiator(peerId: string): boolean {
-    return this.#selfId !== null && this.#selfId < peerId;
   }
 
   #requestLocalRenegotiation(peer: PeerContext): void {
@@ -1502,194 +1489,9 @@ export class RoomSession {
       })
       .catch((error: unknown) => {
         if (this.#isCurrentPeer(peer)) {
-          this.#scheduleInitialOfferRetry(peer.peerId, error);
+          this.#peerRecovery.scheduleInitialOfferRetry(peer.peerId, error);
         }
       });
-  }
-
-  #scheduleInitialOfferRetry(peerId: string, error: unknown): void {
-    const peer = this.#peers.get(peerId);
-    if (
-      peer === undefined ||
-      !this.#isCurrentPeer(peer) ||
-      this.#disposed ||
-      peer.hasTimer('offer-retry') ||
-      peer.hasTimer('recovery')
-    ) {
-      return;
-    }
-
-    if (peer.offerRetryAttempts >= this.#recoveryOptions.maxReconnectAttempts) {
-      this.#failPeer(peerId, error);
-      return;
-    }
-    peer.offerRetryAttempts += 1;
-    const retryAttempt = peer.offerRetryAttempts;
-    peer.recovering = true;
-    this.#setPeerConnectionStatus(peerId, 'connecting');
-    this.#setPeerWarning(
-      peerId,
-      'peer-negotiation-retrying',
-      `Initial connection to ${peerId} failed; retry ${retryAttempt}/${this.#recoveryOptions.maxReconnectAttempts} is scheduled: ${getErrorMessage(error)}`,
-    );
-    peer.scheduleTimer('offer-retry', this.#reconnectDelay(retryAttempt), () => {
-      if (!this.#isCurrentPeer(peer) || this.#status !== 'active') {
-        return;
-      }
-
-      let retryPeer = peer;
-      if (peer.connection.connectionState === 'failed') {
-        try {
-          retryPeer = this.#replacePeer(peer.peerId, true);
-        } catch (replacementError) {
-          this.#failPeer(peer.peerId, replacementError);
-          return;
-        }
-      }
-      void this.#peerNegotiation
-        .createOffer(retryPeer.peerId)
-        .then((offerPublished) => {
-          if (!offerPublished) {
-            return;
-          }
-          if (this.#isCurrentPeer(retryPeer) && !retryPeer.hasTimer('recovery')) {
-            retryPeer.offerRetryAttempts = 0;
-            if (this.#clearPeerWarning(retryPeer.peerId, ['peer-negotiation-retrying'])) {
-              this.#emit();
-            }
-          }
-        })
-        .catch((retryError: unknown) => {
-          if (this.#isCurrentPeer(retryPeer)) {
-            this.#scheduleInitialOfferRetry(retryPeer.peerId, retryError);
-          }
-        });
-    });
-  }
-
-  #schedulePeerConnectionTimeout(peer: PeerContext): void {
-    if (!this.#isCurrentPeer(peer) || peer.hasTimer('connection')) {
-      return;
-    }
-
-    peer.scheduleTimer('connection', this.#recoveryOptions.peerConnectionTimeoutMs, () => {
-      if (!this.#isCurrentPeer(peer) || this.#status !== 'active') {
-        return;
-      }
-      if (peer.connection.connectionState === 'connected' && peer.data.isOpen()) {
-        this.#finishPeerRecovery(peer);
-        return;
-      }
-
-      if (peer.connectionAttempt > 0) {
-        this.#failPeerConnectionTimeout(peer);
-        return;
-      }
-
-      this.#setPeerWarning(
-        peer.peerId,
-        'peer-connection-recovering',
-        `Connection to ${peer.peerId} did not complete within ${this.#recoveryOptions.peerConnectionTimeoutMs}ms; attempting ICE recovery`,
-      );
-      this.#beginPeerRecovery(peer);
-    });
-  }
-
-  #scheduleDisconnectedRecovery(peer: PeerContext): void {
-    if (!this.#isCurrentPeer(peer) || peer.hasTimer('disconnected')) {
-      return;
-    }
-    peer.recovering = true;
-    peer.scheduleTimer('disconnected', this.#recoveryOptions.peerDisconnectedGraceMs, () => {
-      if (
-        !this.#isCurrentPeer(peer) ||
-        (peer.connection.connectionState !== 'disconnected' &&
-          peer.connection.connectionState !== 'failed')
-      ) {
-        return;
-      }
-      this.#beginPeerRecovery(peer);
-    });
-  }
-
-  #beginPeerRecovery(peer: PeerContext): void {
-    if (!this.#isCurrentPeer(peer) || this.#status !== 'active' || this.#selfId === null) {
-      return;
-    }
-    peer.cancelTimer('offer-retry');
-    if (peer.hasTimer('recovery')) {
-      return;
-    }
-
-    peer.recovering = true;
-    if (peer.connectionAttempt > 0) {
-      return;
-    }
-    peer.scheduleTimer('recovery', this.#recoveryOptions.peerRecoveryTimeoutMs, () => {
-      if (!this.#isCurrentPeer(peer)) {
-        return;
-      }
-      if (peer.connection.connectionState === 'connected' && peer.data.isOpen()) {
-        this.#finishPeerRecovery(peer);
-        return;
-      }
-
-      this.#recreatePeer(
-        peer.peerId,
-        'peer-connection-recreated',
-        `Recreated the connection to ${peer.peerId} after ICE recovery timed out`,
-      );
-    });
-
-    if (!this.#isPeerRecoveryInitiator(peer.peerId)) {
-      return;
-    }
-    void this.#peerNegotiation
-      .createOffer(peer.peerId, { iceRestart: true })
-      .catch((error: unknown) => {
-        if (this.#isCurrentPeer(peer)) {
-          this.#setPeerWarning(
-            peer.peerId,
-            'peer-ice-restart-failed',
-            `ICE restart for ${peer.peerId} failed: ${getErrorMessage(error)}`,
-          );
-        }
-      });
-  }
-
-  #finishPeerRecovery(peer: PeerContext): void {
-    if (peer.connection.connectionState !== 'connected' || !peer.data.isOpen()) {
-      return;
-    }
-    const shouldFlush = peer.hasRecoveryActivity();
-    const participant = this.#participants.get(peer.peerId);
-    const restoredConnectedState =
-      participant !== undefined && participant.connectionState !== 'connected';
-    if (restoredConnectedState) {
-      participant.connectionState = 'connected';
-    }
-    peer.cancelAllTimers();
-    peer.offerRetryAttempts = 0;
-    peer.connectionAttempt = 0;
-    peer.recovering = false;
-    const warningCleared =
-      this.#clearPeerWarning(peer.peerId, [
-        'peer-connection-recovering',
-        'peer-connection-recreated',
-        'peer-ice-restart-failed',
-        'peer-restart-deferred',
-        'peer-negotiation-retrying',
-        'screen-share-sender-recovery',
-        'media-device-sender-recovery',
-        'ice-candidate-queue-overflow',
-        'ice-candidate-rejected',
-      ]) || peer.data.clearRecoveryWarning();
-    if (shouldFlush) {
-      peer.data.flush(true);
-    }
-    if (restoredConnectedState || warningCleared) {
-      this.#emit();
-    }
   }
 
   // 호출하는 쪽은 맵에 있는 현재 피어를 교체한다. 시도 횟수는 그 피어에서 하나 늘린다.
@@ -1740,7 +1542,7 @@ export class RoomSession {
       return;
     }
     if (peer.connection.connectionState === 'connected') {
-      this.#finishPeerRecovery(peer);
+      this.#peerRecovery.finish(peer);
       return;
     }
     const warningCleared = peer.data.clearRecoveryWarning();
