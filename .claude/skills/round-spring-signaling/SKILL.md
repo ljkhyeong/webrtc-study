@@ -10,10 +10,10 @@ description: ROUND의 Java 시그널링 서버(apps/signaling)에서 WebSocket �
 
 ## 패키지 책임
 
-- `protocol`: 메시지 파싱·검증·인코딩. 다른 ROUND 패키지에 의존하지 않는다.
+- `protocol`: 메시지 파싱·검증·인코딩. `config`·`net`·`signaling`·`turn`(실행 계층)에 의존하지 않는다.
 - `signaling`: 방·세션·중계·연결과 수신 제한·전송. `*WebSocketHandler`는 `protocol`·`signaling`만 사용하며 서비스 규칙을 추가하지 않는다.
-- `auth`: BATON 참여권·JWT·쿠키·방 접근. `signaling`·`turn`·`health`에 의존하지 않는다.
-- `turn`: TURN 자격 증명 발급과 발급 제한. `config`: Spring 설정·핸드셰이크. `net`: 클라이언트 주소·Origin. `health`: 전송 계층 상태.
+- `auth`: BATON 참여권·JWT·쿠키·방 접근. `signaling`·`turn`에 의존하지 않는다.
+- `turn`: TURN 자격 증명 발급과 발급 제한. `config`: Spring 설정·핸드셰이크. `net`: 클라이언트 주소.
 - 위 경계는 `ArchitectureTest`가 확인한다. 메시지 형식·필드·오류 코드가 바뀌면 `round-webrtc-flows` 스킬로 TypeScript 계약과 관련 처리를 맞춘다.
 - 인증·연결 제한을 바꿀 때만 `apps/signaling/README.md`의 참여권 만료, 연결 슬롯 예약, 요청 제한 규칙을 확인한다. 간소화 판단은 `docs/java-spring-review.md`의 유지할 코드를 참고한다.
 

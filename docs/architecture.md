@@ -61,9 +61,8 @@ BATON의 준비 화면 취소·통화 종료는 BATON 홈으로 돌아갑니다.
   전에 해당 방을 승인합니다.
 
 서버의 `ArchitectureTest`는 프로토콜에서 실행 계층으로 향하는 의존과 인증에서 시그널링·TURN으로
-향하는 의존을 금지합니다. REST 컨트롤러는 Repository에 직접 접근할 수 없고, Service는
-구체 `@Repository` 구현체에 직접 의존할 수 없습니다. WebSocket 핸들러는 프로토콜 해석과
-시그널링 서비스 호출만 담당합니다. 이 규칙은 일반 서버 테스트와 `npm run check:architecture`에서
+향하는 의존을 금지합니다. WebSocket 핸들러는 프로토콜 해석과 시그널링 서비스 호출만
+담당합니다. 이 규칙은 일반 서버 테스트와 `npm run check:architecture`에서
 자동으로 확인합니다.
 
 ## 참가자별 수동 재연결
