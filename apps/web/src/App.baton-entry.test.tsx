@@ -63,7 +63,7 @@ async function fillPrejoinName(container: HTMLElement, displayName = '림'): Pro
     valueSetter?.call(input, displayName);
     input?.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await waitForState(() => expect(container.textContent).toContain('입장 준비'));
+  await waitForState(() => expect(container.textContent).toContain('스터디룸 입장'));
 }
 
 function activeRoomSnapshot(): RoomSessionSnapshot {
@@ -205,7 +205,7 @@ describe('BATON room entry boundary', () => {
       });
       await fillPrejoinName(container);
       if (checked) {
-        await act(async () => buttonWithText(container, '장치 확인')?.click());
+        await act(async () => buttonWithText(container, '카메라·마이크 켜기')?.click());
         await waitForState(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
         expect([...container.querySelectorAll('select')].map((select) => select.value)).toEqual([
           '',
@@ -264,8 +264,8 @@ describe('BATON room entry boundary', () => {
     await waitForState(() =>
       expect(container.textContent).toContain('스터디 참여 권한을 확인하고 있습니다.'),
     );
-    expect(container.textContent).not.toContain('입장 준비');
-    expect(buttonWithText(container, '장치 확인')).toBeNull();
+    expect(container.textContent).not.toContain('스터디룸 입장');
+    expect(buttonWithText(container, '카메라·마이크 켜기')).toBeNull();
     expect(getUserMedia).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -280,7 +280,7 @@ describe('BATON room entry boundary', () => {
     await waitForState(() =>
       expect(container.querySelector<HTMLInputElement>('#display-name')?.value).toBe(''),
     );
-    expect(container.textContent).toContain('입장 준비');
+    expect(container.textContent).toContain('스터디룸 입장');
     expect(container.textContent).not.toContain('같이 공부할');
     expect(buttonWithText(container, '다른 방 만들기')).toBeNull();
     expect(buttonWithText(container, 'BATON으로 돌아가기')).not.toBeNull();
@@ -292,11 +292,11 @@ describe('BATON room entry boundary', () => {
     await fillPrejoinName(container);
     expect(localStorage.setItem).not.toHaveBeenCalled();
 
-    expect(container.textContent).toContain('입장 준비');
+    expect(container.textContent).toContain('스터디룸 입장');
     expect(getUserMedia).not.toHaveBeenCalled();
 
     await act(async () => {
-      buttonWithText(container, '장치 확인')?.click();
+      buttonWithText(container, '카메라·마이크 켜기')?.click();
     });
 
     await waitForState(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
@@ -351,7 +351,7 @@ describe('BATON room entry boundary', () => {
       );
     });
     await fillPrejoinName(container);
-    expect(container.textContent).toContain('입장 준비');
+    expect(container.textContent).toContain('스터디룸 입장');
     await act(async () => {
       const joinButton = buttonWithText(container, '카메라·마이크 없이 입장');
       expect(joinButton).not.toBeNull();
@@ -392,7 +392,7 @@ describe('BATON room entry boundary', () => {
 
     nowMs = 1_001;
     await act(async () => {
-      buttonWithText(container, '장치 확인')?.click();
+      buttonWithText(container, '카메라·마이크 켜기')?.click();
     });
 
     await waitForState(() => {
@@ -490,7 +490,7 @@ describe('BATON room entry boundary', () => {
     expect(container.textContent).toContain('BATON 로그인이 필요합니다.');
     expect(container.textContent).not.toContain('csrf-token');
     expect(container.textContent).not.toContain('participation grant');
-    expect(buttonWithText(container, '장치 확인')).toBeNull();
+    expect(buttonWithText(container, '카메라·마이크 켜기')).toBeNull();
     expect(getUserMedia).not.toHaveBeenCalled();
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -515,7 +515,7 @@ describe('BATON room entry boundary', () => {
     expect(container.textContent).not.toContain('membership detail');
     expect(container.querySelector('a[href^="/login?"]')).toBeNull();
     expect(container.querySelector('a[href="/"]')).not.toBeNull();
-    expect(buttonWithText(container, '장치 확인')).toBeNull();
+    expect(buttonWithText(container, '카메라·마이크 켜기')).toBeNull();
     expect(getUserMedia).not.toHaveBeenCalled();
   });
 
@@ -537,7 +537,7 @@ describe('BATON room entry boundary', () => {
       expect(container.textContent).toContain('이 스터디룸을 찾을 수 없습니다.'),
     );
     expect(container.textContent).not.toContain('room mapping detail');
-    expect(buttonWithText(container, '장치 확인')).toBeNull();
+    expect(buttonWithText(container, '카메라·마이크 켜기')).toBeNull();
     expect(getUserMedia).not.toHaveBeenCalled();
   });
 

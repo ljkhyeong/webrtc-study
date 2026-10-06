@@ -36,20 +36,12 @@ export function fitGallery(
   return best;
 }
 
-/** 격자 마지막 줄에 남는 칸 수다. 열 수를 모르면 0이다. */
-export function emptySeatCount(count: number, columns: number): number {
-  return columns > 0 ? (columns - (count % columns)) % columns : 0;
-}
-
-/**
- * 영상 영역의 안쪽 크기를 따라 갤러리 배치를 CSS 변수와 열 수로 돌려준다.
- * 측정할 수 없으면 CSS 기본 배치를 쓰고 열 수는 0이다.
- */
+/** 영상 영역의 안쪽 크기를 따라 갤러리 배치를 CSS 변수로 돌려준다. 측정할 수 없으면 CSS 기본 배치를 쓴다. */
 export function useGalleryLayout(
   ref: RefObject<HTMLElement | null>,
   count: number,
   enabled: boolean,
-): { readonly style: CSSProperties | undefined; readonly columns: number } {
+): CSSProperties | undefined {
   const [layout, setLayout] = useState<GalleryLayout | null>(null);
 
   useLayoutEffect(() => {
@@ -80,13 +72,11 @@ export function useGalleryLayout(
     return () => observer.disconnect();
   }, [ref, count, enabled]);
 
-  if (layout === null) return { style: undefined, columns: 0 };
-  return {
-    style: {
-      '--gallery-columns': layout.columns,
-      '--tile-width': `${layout.width}px`,
-      '--tile-height': `${layout.height}px`,
-    } as CSSProperties,
-    columns: layout.columns,
-  };
+  return layout === null
+    ? undefined
+    : ({
+        '--gallery-columns': layout.columns,
+        '--tile-width': `${layout.width}px`,
+        '--tile-height': `${layout.height}px`,
+      } as CSSProperties);
 }

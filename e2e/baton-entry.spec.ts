@@ -58,19 +58,21 @@ test('BATON authorizes the room before prejoin can request media', async ({ page
   await openBatonRoom(page);
 
   await expect(page.getByText('스터디 참여 권한을 확인하고 있습니다.')).toBeVisible();
-  await expect(page.getByRole('button', { name: '장치 확인', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '카메라·마이크 켜기', exact: true })).toHaveCount(
+    0,
+  );
   expect(await mediaRequestCount(page)).toBe(0);
 
   releaseGrant();
-  await expect(page.getByRole('heading', { name: '입장 준비', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '스터디룸 입장', exact: true })).toBeVisible();
   await expect(page.getByText('같이 공부할 사람만,')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '다른 방 만들기' })).toHaveCount(0);
   await page.getByLabel('내 이름').fill('BATON 스터디원');
 
-  await expect(page.getByRole('heading', { name: '입장 준비' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '스터디룸 입장' })).toBeVisible();
   expect(await mediaRequestCount(page)).toBe(0);
 
-  await page.getByRole('button', { name: '장치 확인', exact: true }).click();
+  await page.getByRole('button', { name: '카메라·마이크 켜기', exact: true }).click();
   await expect.poll(() => mediaRequestCount(page)).toBe(2);
 });
 
@@ -92,7 +94,9 @@ test('BATON 401 keeps media closed and offers only the canonical room login retu
     'href',
     `/login?returnTo=${encodeURIComponent(ROOM_PATH)}`,
   );
-  await expect(page.getByRole('button', { name: '장치 확인', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '카메라·마이크 켜기', exact: true })).toHaveCount(
+    0,
+  );
   expect(await mediaRequestCount(page)).toBe(0);
   await expect(page.locator('body')).not.toContainText('browser-test-csrf');
 });

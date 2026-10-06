@@ -23,8 +23,8 @@ test('WebKit keeps a direct invite behind explicit pre-join media consent', asyn
   await page.goto(ROOM_PATH);
   await page.getByLabel('내 이름').fill('사파리 스터디원');
 
-  await expect(page.getByRole('heading', { name: '입장 준비' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '장치 확인', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '스터디룸 입장' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '카메라·마이크 켜기', exact: true })).toBeVisible();
   await expect(
     page.getByText('장치를 확인하면 여기에 내 모습이 보입니다.', { exact: true }),
   ).toBeVisible();

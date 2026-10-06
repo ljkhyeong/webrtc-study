@@ -12,18 +12,17 @@ import type {
   StudyCommand,
   HandQueueState,
 } from '@round/rtc-core';
-import { CheckIcon, CloseIcon, CopyIcon, LinkIcon } from './Icons';
+import { CheckIcon, CloseIcon, CopyIcon } from './Icons';
 import { type AudioOutputSelection, type ParticipantView, VideoTile } from './VideoTile';
 import { canonicalRoomUrl } from '../lib/room';
 import type { ChatNotificationSummary } from './RoomChatPanel';
-import { ConnectionDiagnosticsPanel } from './ConnectionDiagnosticsPanel';
 import { useRoomShortcuts } from '../lib/use-room-shortcuts';
 import { useCallMediaSession } from '../lib/use-call-media-session';
 import { setDocumentTitleUnreadCount } from '../lib/document-title';
 import { useInviteCopy } from '../lib/use-invite-copy';
 import type { RegisterLeaveGuard } from '../lib/use-room-navigation';
 import { useLeaveConfirmation } from '../lib/use-leave-confirmation';
-import { emptySeatCount, useGalleryLayout } from '../lib/gallery-layout';
+import { useGalleryLayout } from '../lib/gallery-layout';
 
 type RoomSystemNoticeId =
   | 'session-error'
@@ -227,9 +226,7 @@ export function RoomView({
   }, [unreadMessageCount]);
   useEffect(() => () => setDocumentTitleUnreadCount(0), []);
   const chatNotificationCount = unreadMessageCount + unseenDeliveryIssueCount;
-  const gallery = useGalleryLayout(stageRef, participants.length, activePinnedPeerId === null);
-  // 격자 마지막 줄의 남는 칸은 빈 좌석으로 채운다.
-  const emptySeats = emptySeatCount(participants.length, gallery.columns);
+  const galleryStyle = useGalleryLayout(stageRef, participants.length, activePinnedPeerId === null);
   const connectionDiagnosticsKey = participants
     .filter((participant) => !participant.isLocal)
     .map((participant) => `${participant.peerId}:${participant.connectionState}`)
@@ -238,11 +235,7 @@ export function RoomView({
     <div className={`room-shell${panel ? ' room-shell--panel-open' : ''}`}>
       <header className="room-header">
         <div className="room-header__brand">
-          <span className="wordmark">
-            ROUND
-            <span>study room</span>
-          </span>
-          <span className="room-header__rule" />
+          <span className="wordmark">ROUND</span>
           <button
             className="room-code"
             type="button"
@@ -252,10 +245,17 @@ export function RoomView({
             disabled={inviteCopyState.status === 'copying'}
             onClick={handleCopy}
           >
-            <span>{inviteCopyState.status === 'copying' ? '복사 중' : 'ROOM'}</span>
             <strong>{roomId}</strong>
             {inviteCopyState.status === 'success' ? <CheckIcon /> : <CopyIcon />}
           </button>
+          <span
+            className={`connection-state connection-state--${
+              partialPeerFailure ? 'partial-failure' : status
+            }`}
+          >
+            <i />
+            {statusLabel}
+          </span>
         </div>
 
         {onStudyCommand && onSyncStudy ? (
@@ -274,14 +274,6 @@ export function RoomView({
         ) : null}
 
         <div className="room-header__status">
-          <span
-            className={`connection-state connection-state--${
-              partialPeerFailure ? 'partial-failure' : status
-            }`}
-          >
-            <i />
-            {statusLabel}
-          </span>
           <button
             ref={peopleButtonRef}
             className="participant-count"
@@ -290,27 +282,10 @@ export function RoomView({
             aria-expanded={panel === 'people'}
             onClick={() => togglePanel('people', peopleButtonRef.current)}
           >
-            재실 {participants.length}명
+            {participants.length}명 참여 중
           </button>
-
-          <button
-            className="room-devices-button"
-            type="button"
-            disabled={!isActive}
-            aria-label="통화 장치 설정"
-            onClick={onSelectDevices}
-          >
-            장치
-          </button>
-          <ConnectionDiagnosticsPanel
-            connectionContextKey={connectionDiagnosticsKey}
-            onCollect={onCollectConnectionDiagnostics}
-            qualityVisible={qualityVisible}
-            onSetQualityVisible={onSetQualityVisible}
-          />
           <button className="room-invite-button" type="button" onClick={openInvite}>
-            <LinkIcon />
-            초대
+            초대하기
           </button>
         </div>
       </header>
@@ -350,12 +325,11 @@ export function RoomView({
         <section
           ref={stageRef}
           className={`video-stage${activePinnedPeerId ? ' video-stage--pinned' : ''}`}
-          style={gallery.style}
+          style={galleryStyle}
           aria-label="스터디 참가자 영상"
         >
-          {participants.map((participant, index) => (
+          {participants.map((participant) => (
             <VideoTile
-              seat={index + 1}
               qualityVisible={qualityVisible}
               onRetryPeer={status === 'active' ? onRetryPeer : undefined}
               key={participant.peerId}
@@ -377,14 +351,6 @@ export function RoomView({
               onDisableAudio={onDisableParticipantAudio}
               onDisableVideo={onDisableParticipantVideo}
             />
-          ))}
-          {Array.from({ length: emptySeats }, (_, index) => (
-            <div key={`empty-seat-${index}`} className="seat-empty" aria-hidden="true">
-              <span className="video-tile__seat">
-                {String(participants.length + index + 1).padStart(2, '0')}
-              </span>
-              빈 좌석
-            </div>
           ))}
 
           {participants.length === 1 && isActive ? (
@@ -527,7 +493,14 @@ export function RoomView({
         onSetHandRaised={onSetHandRaised}
         onSelectDevices={onSelectDevices}
         onToggleChat={() => togglePanel('chat', chatButtonRef.current)}
+        onInvite={openInvite}
         onLeave={() => requestExit('leave')}
+        diagnostics={{
+          connectionContextKey: connectionDiagnosticsKey,
+          qualityVisible,
+          onSetQualityVisible,
+          onCollect: onCollectConnectionDiagnostics,
+        }}
       />
     </div>
   );

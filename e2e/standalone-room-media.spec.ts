@@ -19,7 +19,9 @@ test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) 
     await expect(firstTileOnSecondPage.getByText('방장', { exact: true })).toBeVisible();
     await expect(second.getByRole('button', { name: '가온 마이크 끄기' })).toHaveCount(0);
 
+    const moreMenu = first.locator('summary', { hasText: '더보기' });
     const diagnosticsSummary = first.locator('summary', { hasText: '진단' });
+    await moreMenu.click();
     await diagnosticsSummary.click();
     await expect(first.getByText('나래 · 연결 1', { exact: true })).toBeVisible();
     await diagnosticsSummary.click();
@@ -106,7 +108,8 @@ test('미디어와 화면 공유를 전환한다', async ({ baseURL, browser }) 
     const remoteTrackIds = await firstTileOnSecondPage
       .locator('video')
       .evaluate((video) => (video.srcObject as MediaStream).getTracks().map((track) => track.id));
-    await first.getByRole('button', { name: '통화 장치 설정' }).click();
+    await moreMenu.click();
+    await first.getByRole('button', { name: '마이크·카메라 바꾸기' }).click();
     await first.getByRole('button', { name: '마이크 적용' }).click();
     await expect(
       first.getByRole('status').filter({ hasText: '마이크를 변경했습니다.' }),

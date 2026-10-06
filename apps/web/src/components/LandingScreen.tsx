@@ -143,7 +143,7 @@ export function LandingScreen({ initialDisplayName, onEnter, onGoHome }: Landing
       </main>
 
       <footer className="landing-footer">
-        <p>카메라와 마이크 권한은 ‘장치 확인’을 누를 때만 요청합니다.</p>
+        <p>카메라와 마이크 권한은 ‘카메라·마이크 켜기’를 누를 때만 요청합니다.</p>
         <p>01 — create · 02 — share · 03 — study</p>
       </footer>
     </div>

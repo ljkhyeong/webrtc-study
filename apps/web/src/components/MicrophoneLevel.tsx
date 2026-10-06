@@ -84,7 +84,7 @@ export function MicrophoneLevel({ track, enabled }: MicrophoneLevelProps) {
               ? '이 브라우저에서는 입력 음량을 표시할 수 없습니다.'
               : state === 'suspended'
                 ? '마이크 음량 확인을 눌러 주세요.'
-                : '말하면서 막대가 움직이는지 확인하세요. 입력 음량은 이 화면에서만 계산하며 저장하지 않습니다.'}
+                : '말하면 막대가 움직입니다. 음량은 저장하지 않습니다.'}
       </small>
       {state === 'suspended' && enabled ? (
         <button

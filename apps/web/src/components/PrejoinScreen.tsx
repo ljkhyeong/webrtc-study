@@ -3,7 +3,7 @@ import { MAX_HOST_CAPABILITY_LENGTH, MIN_HOST_CAPABILITY_LENGTH } from '@round/p
 import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_AUDIO_CONSTRAINTS, DEFAULT_VIDEO_CONSTRAINTS } from '../lib/media-constraints';
 import { prejoinMediaIssueMessage } from '../lib/prejoin-presentation';
-import { ArrowIcon, CameraIcon, CameraOffIcon, MicIcon, MicOffIcon } from './Icons';
+import { CameraIcon, CameraOffIcon, MicIcon, MicOffIcon } from './Icons';
 import { MicrophoneLevel } from './MicrophoneLevel';
 import { DISPLAY_NAME_MAX_LENGTH, sanitizeDisplayName } from '../lib/room';
 import { useSpeakerTest } from '../lib/use-speaker-test';
@@ -65,12 +65,16 @@ export function PrejoinScreen({
   const [actionError, setActionError] = useState('');
   const [authorizationPending, setAuthorizationPending] = useState(false);
   const [hostCapability, setHostCapability] = useState('');
+  const [hostOpen, setHostOpen] = useState(false);
+  const [devicesOpen, setDevicesOpen] = useState(false);
   const speakerTest = useSpeakerTest('');
 
   const normalizedHostCapability = hostCapability.trim() || undefined;
   const hostCapabilityInvalid =
     normalizedHostCapability !== undefined &&
     normalizedHostCapability.length < MIN_HOST_CAPABILITY_LENGTH;
+  // 잘못 입력한 방장 키는 입장을 막으므로 접지 않고 계속 보여 준다.
+  const hostFieldVisible = hostOpen || hostCapabilityInvalid;
 
   const ensureController = () => {
     const existing = controllerRef.current;
@@ -180,24 +184,24 @@ export function PrejoinScreen({
   const isChecking = snapshot.status === 'checking';
   const hasAnyMedia = snapshot.localMedia.audioAvailable || snapshot.localMedia.videoAvailable;
 
+  const speakerTestSection = (
+    <section className="prejoin-speaker-test" aria-label="입장 전 스피커 확인">
+      <button
+        className="prejoin-link-action"
+        type="button"
+        disabled={speakerTest.testing || authorizationPending}
+        onClick={() => void speakerTest.play()}
+      >
+        {speakerTest.testing ? '확인음 재생 중' : '스피커 소리 확인'}
+      </button>
+      {speakerTest.notice ? <p role="status">{speakerTest.notice}</p> : null}
+      {speakerTest.error ? <p role="alert">{speakerTest.error}</p> : null}
+    </section>
+  );
+  const hasMediaIssue = snapshot.audioIssue !== null || snapshot.videoIssue !== null;
+
   return (
     <div className="prejoin-shell">
-      <header className="prejoin-header">
-        <button
-          className="wordmark wordmark--button"
-          type="button"
-          aria-label={backLabel}
-          onClick={handleBack}
-        >
-          ROUND
-          <span>study room</span>
-        </button>
-        <div className="prejoin-room-code">
-          <span>ROOM</span>
-          <strong>{roomId}</strong>
-        </div>
-      </header>
-
       <main className="prejoin-main">
         <div className="prejoin-stage">
           <section className="prejoin-preview" aria-label="내 카메라 미리보기">
@@ -212,7 +216,6 @@ export function PrejoinScreen({
                       ? '장치를 확인하면 여기에 내 모습이 보입니다.'
                       : '사용 가능한 카메라가 없습니다.'}
                 </strong>
-                <span>{displayName}</span>
               </div>
             ) : null}
 
@@ -264,9 +267,61 @@ export function PrejoinScreen({
           </section>
 
           <section className="prejoin-devices" aria-label="마이크·카메라·스피커 확인">
-            {!isIdle ? (
+            {isIdle ? (
+              speakerTestSection
+            ) : (
               <>
-                <div className="prejoin-device-fields">
+                <div className="prejoin-devices__bar">
+                  <MicrophoneLevel
+                    track={controllerRef.current?.getStream()?.getAudioTracks()[0] ?? null}
+                    enabled={snapshot.localMedia.audioEnabled}
+                  />
+                  <button
+                    className="prejoin-link-action"
+                    type="button"
+                    aria-expanded={devicesOpen}
+                    aria-controls="prejoin-device-panel"
+                    onClick={() => setDevicesOpen((open) => !open)}
+                  >
+                    {devicesOpen ? '장치 설정 닫기' : '장치 바꾸기'}
+                  </button>
+                </div>
+
+                <div className="prejoin-issues" aria-live="polite">
+                  {snapshot.audioIssue ? (
+                    <p role="alert">
+                      <MicOffIcon />
+                      <span>{prejoinMediaIssueMessage('audio', snapshot.audioIssue)}</span>
+                    </p>
+                  ) : null}
+                  {snapshot.videoIssue ? (
+                    <p role="alert">
+                      <CameraOffIcon />
+                      <span>{prejoinMediaIssueMessage('video', snapshot.videoIssue)}</span>
+                    </p>
+                  ) : null}
+                  {hasMediaIssue ? (
+                    <button
+                      className="prejoin-link-action"
+                      type="button"
+                      disabled={isChecking || authorizationPending}
+                      onClick={() => {
+                        const controller = controllerRef.current;
+                        if (controller !== null) {
+                          runAuthorized(() => controller.retryUnavailable());
+                        }
+                      }}
+                    >
+                      장치 다시 확인
+                    </button>
+                  ) : null}
+                </div>
+
+                <div
+                  id="prejoin-device-panel"
+                  className="prejoin-device-panel"
+                  hidden={!devicesOpen}
+                >
                   {(['audio', 'video'] as const).map((kind) => {
                     const label = kind === 'audio' ? '마이크' : '카메라';
                     const inputs = snapshot[`${kind}Inputs`];
@@ -309,67 +364,18 @@ export function PrejoinScreen({
                       </label>
                     );
                   })}
-                </div>
-
-                <MicrophoneLevel
-                  track={controllerRef.current?.getStream()?.getAudioTracks()[0] ?? null}
-                  enabled={snapshot.localMedia.audioEnabled}
-                />
-
-                <div className="prejoin-issues" aria-live="polite">
-                  {snapshot.audioIssue ? (
-                    <p role="alert">
-                      <MicOffIcon />
-                      <span>{prejoinMediaIssueMessage('audio', snapshot.audioIssue)}</span>
-                    </p>
-                  ) : null}
-                  {snapshot.videoIssue ? (
-                    <p role="alert">
-                      <CameraOffIcon />
-                      <span>{prejoinMediaIssueMessage('video', snapshot.videoIssue)}</span>
-                    </p>
-                  ) : null}
+                  {speakerTestSection}
                 </div>
               </>
-            ) : null}
-            <div className="prejoin-device-actions">
-              <section className="prejoin-speaker-test" aria-label="입장 전 스피커 확인">
-                <button
-                  className="prejoin-retry-action"
-                  type="button"
-                  disabled={speakerTest.testing || authorizationPending}
-                  onClick={() => void speakerTest.play()}
-                >
-                  {speakerTest.testing ? '확인음 재생 중' : '스피커 소리 확인'}
-                </button>
-                <small>시스템 기본 스피커로 짧은 확인음을 재생합니다.</small>
-                {speakerTest.notice ? <p role="status">{speakerTest.notice}</p> : null}
-                {speakerTest.error ? <p role="alert">{speakerTest.error}</p> : null}
-              </section>
-              {!isIdle ? (
-                <button
-                  className="prejoin-retry-action"
-                  type="button"
-                  disabled={isChecking || authorizationPending}
-                  onClick={() => {
-                    const controller = controllerRef.current;
-                    if (controller !== null) {
-                      runAuthorized(() => controller.retryUnavailable());
-                    }
-                  }}
-                >
-                  장치 다시 확인
-                </button>
-              ) : null}
-            </div>
+            )}
           </section>
         </div>
 
         <section className="prejoin-settings" aria-labelledby="prejoin-title">
-          <h1 id="prejoin-title">입장 준비</h1>
-          <p className="prejoin-description">
-            이름과 장치를 확인한 뒤 입장하세요. 카메라와 마이크는 ‘장치 확인’을 눌러야 켜집니다.
+          <p className="prejoin-room-code">
+            ROUND · <span>{roomId}</span>
           </p>
+          <h1 id="prejoin-title">스터디룸 입장</h1>
 
           <div className="prejoin-name">
             <label htmlFor="display-name">내 이름</label>
@@ -389,79 +395,80 @@ export function PrejoinScreen({
               }}
             />
             <small id="prejoin-name-help" {...(nameError ? { role: 'alert' } : {})}>
-              {nameError || '이 방에서 다른 참가자에게 표시됩니다.'}
+              {nameError || '다른 참여자에게 보이는 이름입니다.'}
             </small>
           </div>
 
           {actionError ? <p role="alert">{actionError}</p> : null}
 
-          {showHostCapabilityInput ? (
-            <label className="prejoin-host-capability">
-              <span>방장 키 (선택)</span>
-              <input
-                type="password"
-                value={hostCapability}
-                minLength={MIN_HOST_CAPABILITY_LENGTH}
-                maxLength={MAX_HOST_CAPABILITY_LENGTH}
-                autoComplete="off"
-                placeholder="방장일 때만 입력"
-                aria-describedby="prejoin-host-capability-help"
-                aria-invalid={hostCapabilityInvalid}
-                onChange={(event) => setHostCapability(event.target.value)}
-              />
-              <small id="prejoin-host-capability-help">
-                {hostCapabilityInvalid
-                  ? `방장 키는 ${MIN_HOST_CAPABILITY_LENGTH}자 이상이어야 합니다.`
-                  : '방장은 운영자에게 받은 키를 입력하세요. 일반 참가자는 비워 두세요.'}
-              </small>
-            </label>
-          ) : null}
-
-          {isIdle ? (
-            <div className="prejoin-idle-actions">
+          <div className="prejoin-actions">
+            {isIdle ? (
               <button
                 className="prejoin-primary-action"
                 type="button"
                 disabled={authorizationPending}
                 onClick={handleCheckDevices}
               >
-                장치 확인
-                <CameraIcon />
+                카메라·마이크 켜기
               </button>
+            ) : (
+              <button
+                className="prejoin-primary-action"
+                type="button"
+                disabled={isChecking || hostCapabilityInvalid || authorizationPending}
+                onClick={() => handleJoin(true)}
+              >
+                {hasAnyMedia ? '입장하기' : '카메라·마이크 없이 입장'}
+              </button>
+            )}
+            {isIdle || hasAnyMedia ? (
               <button
                 className="prejoin-text-action"
                 type="button"
-                disabled={hostCapabilityInvalid || authorizationPending}
+                disabled={(!isIdle && isChecking) || hostCapabilityInvalid || authorizationPending}
                 onClick={() => handleJoin(false)}
               >
                 카메라·마이크 없이 입장
               </button>
+            ) : null}
+          </div>
+
+          {showHostCapabilityInput ? (
+            <div className="prejoin-host">
+              <button
+                className="prejoin-host__toggle"
+                type="button"
+                aria-expanded={hostFieldVisible}
+                aria-controls="prejoin-host-field"
+                disabled={hostCapabilityInvalid}
+                onClick={() => setHostOpen((open) => !open)}
+              >
+                방장이신가요?
+              </button>
+              <label
+                id="prejoin-host-field"
+                className="prejoin-host-capability"
+                hidden={!hostFieldVisible}
+              >
+                <span>방장 키</span>
+                <input
+                  type="password"
+                  value={hostCapability}
+                  minLength={MIN_HOST_CAPABILITY_LENGTH}
+                  maxLength={MAX_HOST_CAPABILITY_LENGTH}
+                  autoComplete="off"
+                  aria-describedby="prejoin-host-capability-help"
+                  aria-invalid={hostCapabilityInvalid}
+                  onChange={(event) => setHostCapability(event.target.value)}
+                />
+                <small id="prejoin-host-capability-help">
+                  {hostCapabilityInvalid
+                    ? `방장 키는 ${MIN_HOST_CAPABILITY_LENGTH}자 이상이어야 합니다.`
+                    : '운영자에게 받은 키를 입력하면 타이머와 참여자 관리를 쓸 수 있습니다.'}
+                </small>
+              </label>
             </div>
-          ) : (
-            <>
-              <div className="prejoin-join-actions">
-                <button
-                  className="prejoin-primary-action"
-                  type="button"
-                  disabled={isChecking || hostCapabilityInvalid || authorizationPending}
-                  onClick={() => handleJoin(true)}
-                >
-                  {hasAnyMedia ? '이 설정으로 입장' : '카메라·마이크 없이 입장'}
-                  <ArrowIcon />
-                </button>
-                {hasAnyMedia ? (
-                  <button
-                    className="prejoin-text-action"
-                    type="button"
-                    disabled={isChecking || hostCapabilityInvalid || authorizationPending}
-                    onClick={() => handleJoin(false)}
-                  >
-                    카메라·마이크 없이 입장
-                  </button>
-                ) : null}
-              </div>
-            </>
-          )}
+          ) : null}
 
           <button className="prejoin-back-action" type="button" onClick={handleBack}>
             {backLabel}

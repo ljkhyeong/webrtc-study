@@ -5,6 +5,14 @@ import { useTimerChime } from '../lib/use-timer-chime';
 import { useTimerNotifications } from '../lib/use-timer-notifications';
 import { TimerChangeDialog } from './TimerChangeDialog';
 
+// 방장이 자주 쓰는 길이는 고르기만 하면 되고, 그 밖의 길이는 직접 입력한다.
+const TIMER_PRESETS = [
+  { id: 'focus-25', mode: 'focus', minutes: '25', title: '집중 25분' },
+  { id: 'focus-50', mode: 'focus', minutes: '50', title: '집중 50분' },
+  { id: 'break-5', mode: 'break', minutes: '5', title: '휴식 5분' },
+] as const satisfies readonly { id: string; mode: StudyMode; minutes: string; title: string }[];
+type TimerPreset = (typeof TIMER_PRESETS)[number]['id'] | 'custom';
+
 interface RoomStudyPanelProps {
   state: RoomStudySnapshot | null;
   canControl: boolean;
@@ -28,6 +36,7 @@ export function RoomStudyPanel({
 }: RoomStudyPanelProps) {
   const [now, setNow] = useState(() => performance.now());
   const [topic, setTopic] = useState('');
+  const [preset, setPreset] = useState<TimerPreset>('focus-25');
   const [mode, setMode] = useState<StudyMode>('focus');
   const [minutes, setMinutes] = useState('25');
   const [error, setError] = useState('');
@@ -177,16 +186,24 @@ export function RoomStudyPanel({
         <summary>
           <span className="room-study__mode">
             {state?.mode === 'break' ? '휴식' : '집중'}
-            <span className="sr-only"> 타이머</span> · {label}
+            <span className="sr-only"> 타이머</span>
+            {/* 진행 중일 때는 숫자가 줄어드는 것으로 충분하므로 상태 글자는 화면 낭독기에만 읽힌다. */}
+            <span className={label === '진행 중' ? 'sr-only' : 'room-study__state'}>
+              {' '}
+              · {label}
+            </span>
           </span>
           <time>
             {String(Math.floor(seconds / 60)).padStart(2, '0')}:
             {String(seconds % 60).padStart(2, '0')}
           </time>
+          {state?.topic ? <strong>{state.topic}</strong> : null}
           {active && !hostPresent ? (
             <span className="room-study__host-absent">방장 없음</span>
           ) : null}
-          <strong>{state?.topic || '주제 없음'}</strong>
+          <span className="room-study__open" aria-hidden="true">
+            {canControl ? '타이머 설정' : '알림 설정'}
+          </span>
           <span className="room-study__progress" aria-hidden="true">
             <i style={{ width: `${progress}%` }} />
           </span>
@@ -235,36 +252,63 @@ export function RoomStudyPanel({
                     requestTimerChange({ action: 'start', mode, durationSeconds: duration * 60 });
                 }}
               >
-                <label>
-                  타이머 종류
-                  <select
-                    value={mode}
-                    disabled={disabled}
-                    onChange={(event) => {
-                      const next = event.target.value as StudyMode;
-                      setMode(next);
-                      setMinutes(next === 'focus' ? '25' : '5');
-                    }}
-                  >
-                    <option value="focus">집중</option>
-                    <option value="break">휴식</option>
-                  </select>
-                </label>
-                <label>
-                  시간(분)
-                  <input
-                    type="number"
-                    min={1}
-                    max={120}
-                    step={1}
-                    required
-                    value={minutes}
-                    disabled={disabled}
-                    onChange={(event) => setMinutes(event.target.value)}
-                  />
-                </label>
+                <fieldset className="room-study__presets" disabled={disabled}>
+                  <legend>시간</legend>
+                  {[...TIMER_PRESETS, { id: 'custom' as const, title: '직접 입력' }].map(
+                    (option) => (
+                      <label key={option.id}>
+                        <input
+                          type="radio"
+                          name="room-study-preset"
+                          checked={preset === option.id}
+                          onChange={() => {
+                            setPreset(option.id);
+                            if (option.id === 'custom') return;
+                            setMode(option.mode);
+                            setMinutes(option.minutes);
+                          }}
+                        />
+                        {option.title}
+                      </label>
+                    ),
+                  )}
+                </fieldset>
+                {preset === 'custom' ? (
+                  <div className="room-study__custom">
+                    <label>
+                      타이머 종류
+                      <select
+                        value={mode}
+                        disabled={disabled}
+                        onChange={(event) => {
+                          const next = event.target.value as StudyMode;
+                          setMode(next);
+                          setMinutes(next === 'focus' ? '25' : '5');
+                        }}
+                      >
+                        <option value="focus">집중</option>
+                        <option value="break">휴식</option>
+                      </select>
+                    </label>
+                    <label>
+                      시간(분)
+                      <input
+                        type="number"
+                        min={1}
+                        max={120}
+                        step={1}
+                        required
+                        value={minutes}
+                        disabled={disabled}
+                        onChange={(event) => setMinutes(event.target.value)}
+                      />
+                    </label>
+                  </div>
+                ) : null}
                 <button className="room-study__primary" disabled={disabled}>
-                  {state?.running ? '새 타이머 시작' : '시작'}
+                  {state?.running
+                    ? '새 타이머 시작'
+                    : `${mode === 'focus' ? '집중' : '휴식'} ${minutes}분 시작`}
                 </button>
               </form>
               <div className="room-study__actions">

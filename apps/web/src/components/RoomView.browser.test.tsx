@@ -885,7 +885,7 @@ describe('RoomView 브라우저 동작', () => {
 
       await act(async () => {
         details.open = true;
-        details.dispatchEvent(new Event('toggle', { bubbles: true }));
+        details.dispatchEvent(new Event('toggle'));
       });
       expect(refresh.disabled).toBe(true);
       act(() => refresh.click());
@@ -926,7 +926,7 @@ describe('RoomView 브라우저 동작', () => {
     await act(async () => {
       if (details !== null) {
         details.open = true;
-        details.dispatchEvent(new Event('toggle', { bubbles: true }));
+        details.dispatchEvent(new Event('toggle'));
       }
     });
 

@@ -76,14 +76,15 @@ async function createParticipant(
 async function enterRoom(page: Page, displayName: string, hostCapability?: string): Promise<void> {
   await page.goto(ROOM_PATH);
   await page.getByLabel('내 이름').fill(displayName);
-  await expect(page.getByRole('heading', { name: '입장 준비' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '스터디룸 입장' })).toBeVisible();
 
   if (hostCapability !== undefined) {
-    await page.getByLabel('방장 키 (선택)').fill(hostCapability);
+    await page.getByRole('button', { name: '방장이신가요?' }).click();
+    await page.getByLabel('방장 키').fill(hostCapability);
   }
 
-  await page.getByRole('button', { name: '장치 확인' }).click();
-  const joinButton = page.getByRole('button', { name: '이 설정으로 입장' });
+  await page.getByRole('button', { name: '카메라·마이크 켜기' }).click();
+  const joinButton = page.getByRole('button', { name: '입장하기', exact: true });
   await expect(joinButton).toBeEnabled();
   await joinButton.click();
 }

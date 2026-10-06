@@ -4,6 +4,7 @@ import type {
   PeerConnectionStatus,
   RoomConnectionDiagnostics,
 } from '@round/rtc-core';
+import { PulseIcon } from './Icons';
 
 type ConnectionDiagnosticsState =
   | { readonly status: 'idle' | 'stale' | 'loading' | 'error' }
@@ -189,7 +190,10 @@ export function ConnectionDiagnosticsPanel({
   const ready = diagnostics.status === 'ready' ? diagnostics : null;
   return (
     <details className="connection-diagnostics" onToggle={handleToggle}>
-      <summary>진단</summary>
+      <summary>
+        <PulseIcon />
+        <span>연결 진단</span>
+      </summary>
       <section className="connection-diagnostics__panel" aria-label="연결 진단">
         <header>
           <strong>연결 진단</strong>

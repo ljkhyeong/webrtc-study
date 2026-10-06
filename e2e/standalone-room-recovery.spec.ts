@@ -14,11 +14,13 @@ test('방장 제어와 참가자 퇴장 및 장치 종료를 복구한다', asyn
     await second.getByRole('button', { name: '마이크 켜기', exact: true }).click();
     await expect(secondTileOnFirstPage.getByLabel('마이크 켜짐')).toBeVisible();
 
+    const moreMenu = second.locator('summary', { hasText: '더보기' });
+    await moreMenu.click();
     await second.getByRole('button', { name: '화면 공유 시작' }).click();
     await expect(secondTileOnFirstPage.getByText('화면 공유 중')).toBeVisible();
     await secondTileOnFirstPage.getByRole('button', { name: '나래 영상 끄기' }).click();
     await expect(second.getByRole('button', { name: '카메라 켜기', exact: true })).toBeVisible();
-    await expect(second.getByRole('button', { name: '화면 공유 시작' })).toBeVisible();
+    await expect(second.getByRole('button', { name: '화면 공유 중지' })).toHaveCount(0);
     await expect(secondTileOnFirstPage.getByText('화면 공유 중')).toHaveCount(0);
     await expect(secondTileOnFirstPage.getByLabel('나래의 카메라 꺼짐')).toBeVisible();
     await expect(
@@ -28,6 +30,7 @@ test('방장 제어와 참가자 퇴장 및 장치 종료를 복구한다', asyn
     await expectRemoteMedia(first, '나래');
 
     const diagnosticsSummary = second.locator('summary', { hasText: '진단' });
+    await moreMenu.click();
     await diagnosticsSummary.click();
     await expect(second.getByText('가온 · 연결 1', { exact: true })).toBeVisible();
     await expect(second.locator('.connection-diagnostics time')).toHaveAttribute(

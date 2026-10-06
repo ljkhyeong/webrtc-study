@@ -73,7 +73,7 @@ describe('App pre-join boundary', () => {
       expect(markup).toContain('내 이름');
       expect(markup).not.toContain('같이 공부할');
       expect(markup).not.toContain('ROUND 기능 미리보기');
-      expect(markup).toContain('입장 준비');
+      expect(markup).toContain('스터디룸 입장');
       expect(markup).not.toContain('통화 연결됨');
       expect(getUserMedia).not.toHaveBeenCalled();
       expect(webSocket).not.toHaveBeenCalled();
@@ -105,8 +105,8 @@ describe('App pre-join boundary', () => {
       const markup = renderToStaticMarkup(<App />);
 
       expect(markup).toContain('서비스 설정 오류로 입장할 수 없습니다.');
-      expect(markup).not.toContain('입장 준비');
-      expect(markup).not.toContain('장치 확인');
+      expect(markup).not.toContain('스터디룸 입장');
+      expect(markup).not.toContain('카메라·마이크 켜기');
       expect(getUserMedia).not.toHaveBeenCalled();
       expect(webSocket).not.toHaveBeenCalled();
     } finally {

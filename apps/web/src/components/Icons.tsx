@@ -162,3 +162,46 @@ export function EyeOffIcon(props: IconProps) {
     </IconFrame>
   );
 }
+
+export function ScreenShareIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4" />
+    </IconFrame>
+  );
+}
+
+export function MoreIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M5 12h.01M12 12h.01M19 12h.01" strokeWidth="3" />
+    </IconFrame>
+  );
+}
+
+export function SlidersIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="10" cy="17" r="2" />
+    </IconFrame>
+  );
+}
+
+export function PulseIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M3 12h4l3-8 4 16 3-8h4" />
+    </IconFrame>
+  );
+}
+
+export function LeaveIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" />
+    </IconFrame>
+  );
+}

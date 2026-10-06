@@ -155,7 +155,7 @@ describe('PrejoinScreen', () => {
         );
         await act(async () =>
           [...container.querySelectorAll('button')]
-            .find((button) => button.textContent?.trim() === '장치 확인')!
+            .find((button) => button.textContent?.trim() === '카메라·마이크 켜기')!
             .click(),
         );
         const [microphone, camera] = container.querySelectorAll('select');
@@ -167,7 +167,7 @@ describe('PrejoinScreen', () => {
         expect(camera!.disabled).toBe(!hasOtherDevices);
         expect(container.textContent).not.toContain('사용 가능한 마이크 없음');
         expect(container.textContent).not.toContain('사용 가능한 카메라 없음');
-        expect(container.textContent).toContain('이 설정으로 입장');
+        expect(container.textContent).toContain('입장하기');
       } finally {
         act(() => root.unmount());
         vi.restoreAllMocks();
@@ -287,15 +287,15 @@ describe('PrejoinScreen', () => {
         />,
       );
 
-      expect(markup).toContain('장치 확인');
+      expect(markup).toContain('카메라·마이크 켜기');
       expect(markup).toContain('카메라·마이크 없이 입장');
-      expect(markup).toContain('방장 키 (선택)');
+      expect(markup).toContain('방장 키');
       expect(markup).toContain('type="password"');
       expect(markup).toContain('minLength="32"');
+      expect(markup).toContain('방장이신가요?');
       expect(markup).toContain(
-        '방장은 운영자에게 받은 키를 입력하세요. 일반 참가자는 비워 두세요.',
+        '운영자에게 받은 키를 입력하면 타이머와 참여자 관리를 쓸 수 있습니다.',
       );
-      expect(markup).toContain('카메라와 마이크는 ‘장치 확인’을 눌러야 켜집니다.');
       expect(markup).not.toContain('서버에 연결 중');
       expect(getUserMedia).not.toHaveBeenCalled();
       expect(webSocket).not.toHaveBeenCalled();
@@ -316,7 +316,7 @@ describe('PrejoinScreen', () => {
       />,
     );
 
-    expect(markup).not.toContain('방장 키 (선택)');
+    expect(markup).not.toContain('방장 키');
     expect(markup).not.toContain('type="password"');
   });
 
@@ -359,7 +359,7 @@ describe('PrejoinScreen', () => {
         });
         await act(async () => {
           [...container.querySelectorAll('button')]
-            .find((button) => button.textContent?.includes('장치 확인'))!
+            .find((button) => button.textContent?.includes('카메라·마이크 켜기'))!
             .click();
         });
         getUserMedia.mockClear();
