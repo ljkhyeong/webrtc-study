@@ -15,10 +15,6 @@ final class RoomHandQueue {
 		return changed;
 	}
 
-	boolean remove(String peerId) {
-		return update(peerId, false);
-	}
-
 	HandQueueState snapshot() {
 		return new HandQueueState(revision, List.copyOf(queue));
 	}

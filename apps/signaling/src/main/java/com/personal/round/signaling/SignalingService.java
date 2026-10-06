@@ -423,7 +423,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 
 	private void join(Peer peer, ClientMessage.Join message, WorkPlan workPlan) {
 		if (peer.roomId != null) {
-			metrics.recordJoinRejectedAlreadyJoined();
+			metrics.recordJoinRejected(SignalingMetrics.JoinRejection.ALREADY_JOINED);
 			sendError(
 					peer,
 					SignalingErrorCode.ALREADY_JOINED,
@@ -434,7 +434,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 			return;
 		}
 		if (!peer.roomAccess.allows(message.roomId())) {
-			metrics.recordJoinRejectedUnauthorizedRoom();
+			metrics.recordJoinRejected(SignalingMetrics.JoinRejection.UNAUTHORIZED_ROOM);
 			sendError(
 					peer,
 					SignalingErrorCode.ROOM_MISMATCH,
@@ -447,7 +447,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 		Optional<ParticipationGrant.Role> resolvedRole =
 				peer.roomAccess.roleFor(message.hostCapability());
 		if (resolvedRole.isEmpty()) {
-			metrics.recordJoinRejectedInvalidHostCapability();
+			metrics.recordJoinRejected(SignalingMetrics.JoinRejection.INVALID_HOST_CAPABILITY);
 			sendError(
 					peer,
 					SignalingErrorCode.FORBIDDEN,
@@ -477,7 +477,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 		LinkedHashMap<String, Peer> room = rooms.computeIfAbsent(
 				message.roomId(), ignored -> new LinkedHashMap<>());
 		if (room.size() >= maxRoomSize) {
-			metrics.recordJoinRejectedRoomFull();
+			metrics.recordJoinRejected(SignalingMetrics.JoinRejection.ROOM_FULL);
 			sendError(
 					peer,
 					SignalingErrorCode.ROOM_FULL,
@@ -538,13 +538,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 	}
 
 	private void relay(Peer peer, ClientMessage.Relay message, WorkPlan workPlan) {
-		if (!requireJoinedRoom(peer, message,
-				"Join a room before sending negotiation messages.",
-				"The message room does not match the joined room.", workPlan)) {
-			return;
-		}
-		Peer target = findTargetInRoom(peer, message, message.to(),
-				"A peer cannot relay a negotiation message to itself.", workPlan);
+		Peer target = negotiationTarget(peer, message, message.to(), workPlan);
 		if (target == null) {
 			return;
 		}
@@ -560,13 +554,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 	}
 
 	private void reconnect(Peer peer, ClientMessage.Reconnect message, WorkPlan workPlan) {
-		if (!requireJoinedRoom(peer, message,
-				"Join a room before sending negotiation messages.",
-				"The message room does not match the joined room.", workPlan)) {
-			return;
-		}
-		Peer target = findTargetInRoom(peer, message, message.to(),
-				"A peer cannot relay a negotiation message to itself.", workPlan);
+		Peer target = negotiationTarget(peer, message, message.to(), workPlan);
 		if (target == null) {
 			return;
 		}
@@ -584,6 +572,20 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 			enqueue(peer, serverMessageEncoder.peerReconnect(
 					peer.roomId, target.peerId, connectionId, initiator), workPlan);
 		}
+	}
+
+	private Peer negotiationTarget(
+			Peer peer,
+			ClientMessage message,
+			String targetPeerId,
+			WorkPlan workPlan) {
+		if (!requireJoinedRoom(peer, message,
+				"Join a room before sending negotiation messages.",
+				"The message room does not match the joined room.", workPlan)) {
+			return null;
+		}
+		return findTargetInRoom(peer, message, targetPeerId,
+				"A peer cannot relay a negotiation message to itself.", workPlan);
 	}
 
 	private void hand(Peer peer, ClientMessage.Hand message, WorkPlan workPlan) {
@@ -611,12 +613,9 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 		}
 		RoomStudyState state = studyStates.computeIfAbsent(peer.roomId, ignored -> new RoomStudyState());
 		long now = monotonicTicker.getAsLong();
-		if (message.command() == null) {
-			enqueue(peer, serverMessageEncoder.studyState(peer.roomId, message.requestId(), state.snapshot(now), false), workPlan);
-			return;
-		}
-		boolean applied = state.apply(message.command(), now);
-		TextMessage response = serverMessageEncoder.studyState(peer.roomId, message.requestId(), state.snapshot(now), !applied);
+		boolean applied = message.command() != null && state.apply(message.command(), now);
+		boolean conflict = message.command() != null && !applied;
+		TextMessage response = serverMessageEncoder.studyState(peer.roomId, message.requestId(), state.snapshot(now), conflict);
 		if (applied) broadcast(rooms.get(peer.roomId), response, null, workPlan);
 		else enqueue(peer, response, workPlan);
 	}
@@ -917,48 +916,37 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 		}
 
 		int messageBytes = message.getPayloadLength();
-		if (outboundDispatcher.peerLimitExceededLocked(peer, messageBytes)) {
-			if (disconnectAndCloseLocked(
-						peer,
-						OUTBOUND_QUEUE_OVERFLOW,
-						workPlan,
-						pendingOutbound)) {
-				metrics.recordQueueOverflow();
-			}
-			return false;
-		}
-		if (outboundDispatcher.globalLimitExceededLocked(messageBytes)) {
+		boolean overflow = outboundDispatcher.peerLimitExceededLocked(peer, messageBytes);
+		if (!overflow && outboundDispatcher.globalLimitExceededLocked(messageBytes)) {
 			metrics.recordGlobalQueueOverflow();
 			for (Peer victim : outboundDispatcher.globalPressureVictimsLocked(
 					connectedPeers.values(),
 					messageBytes)) {
-				if (disconnectAndCloseLocked(
-							victim,
-							OUTBOUND_QUEUE_OVERFLOW,
-							workPlan,
-							pendingOutbound)) {
-					metrics.recordQueueOverflow();
-				}
+				closeForOutboundOverflowLocked(victim, workPlan, pendingOutbound);
 				if (!peer.connected) {
 					return false;
 				}
 			}
-			if (outboundDispatcher.globalLimitExceededLocked(messageBytes)) {
-				if (disconnectAndCloseLocked(
-							peer,
-							OUTBOUND_QUEUE_OVERFLOW,
-							workPlan,
-							pendingOutbound)) {
-					metrics.recordQueueOverflow();
-				}
-				return false;
-			}
+			overflow = outboundDispatcher.globalLimitExceededLocked(messageBytes);
+		}
+		if (overflow) {
+			closeForOutboundOverflowLocked(peer, workPlan, pendingOutbound);
+			return false;
 		}
 
 		if (outboundDispatcher.enqueueLocked(peer, message)) {
 			workPlan.drain(peer);
 		}
 		return true;
+	}
+
+	private void closeForOutboundOverflowLocked(
+			Peer peer,
+			WorkPlan workPlan,
+			ArrayDeque<PendingOutbound> pendingOutbound) {
+		if (disconnectAndCloseLocked(peer, OUTBOUND_QUEUE_OVERFLOW, workPlan, pendingOutbound)) {
+			metrics.recordQueueOverflow();
+		}
 	}
 
 	private void execute(WorkPlan workPlan) {

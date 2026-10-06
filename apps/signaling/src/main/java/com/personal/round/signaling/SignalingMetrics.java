@@ -19,10 +19,7 @@ import org.springframework.stereotype.Component;
 @Component
 public final class SignalingMetrics {
 
-	private final Counter roomFullRejections;
-	private final Counter alreadyJoinedRejections;
-	private final Counter unauthorizedRoomRejections;
-	private final Counter invalidHostCapabilityRejections;
+	private final Map<JoinRejection, Counter> joinRejections = new EnumMap<>(JoinRejection.class);
 	private final Counter invalidFrames;
 	private final Map<SignalingInboundLimiter.Decision, Counter> limitedFrames =
 			new EnumMap<>(SignalingInboundLimiter.Decision.class);
@@ -36,13 +33,14 @@ public final class SignalingMetrics {
 	private final Counter authorizationCloses;
 
 	public SignalingMetrics(MeterRegistry registry) {
-		MeterProvider<Counter> joinRejections = Counter.builder("round.signaling.joins.rejected")
+		MeterProvider<Counter> joinRejectionCounters = Counter.builder("round.signaling.joins.rejected")
 				.description("시그널링 서버가 거부한 방 입장 요청 수")
 				.withRegistry(registry);
-		roomFullRejections = joinRejections.withTag("reason", "room_full");
-		alreadyJoinedRejections = joinRejections.withTag("reason", "already_joined");
-		unauthorizedRoomRejections = joinRejections.withTag("reason", "unauthorized_room");
-		invalidHostCapabilityRejections = joinRejections.withTag("reason", "invalid_host_capability");
+		for (JoinRejection rejection : JoinRejection.values()) {
+			joinRejections.put(
+					rejection,
+					joinRejectionCounters.withTag("reason", rejection.name().toLowerCase(Locale.ROOT)));
+		}
 		invalidFrames = Counter.builder("round.signaling.frames.invalid")
 				.description("형식 오류, 미지원 또는 크기 초과로 거부한 수신 WebSocket 프레임 수")
 				.register(registry);
@@ -80,20 +78,8 @@ public final class SignalingMetrics {
 				.register(registry);
 	}
 
-	void recordJoinRejectedRoomFull() {
-		roomFullRejections.increment();
-	}
-
-	void recordJoinRejectedAlreadyJoined() {
-		alreadyJoinedRejections.increment();
-	}
-
-	void recordJoinRejectedUnauthorizedRoom() {
-		unauthorizedRoomRejections.increment();
-	}
-
-	void recordJoinRejectedInvalidHostCapability() {
-		invalidHostCapabilityRejections.increment();
+	void recordJoinRejected(JoinRejection rejection) {
+		joinRejections.get(rejection).increment();
 	}
 
 	void recordInvalidFrame() {
@@ -130,5 +116,13 @@ public final class SignalingMetrics {
 
 	void recordAuthorizationClose() {
 		authorizationCloses.increment();
+	}
+
+	/** 소문자 상수 이름이 round.signaling.joins.rejected 지표의 reason 태그다. */
+	enum JoinRejection {
+		ROOM_FULL,
+		ALREADY_JOINED,
+		UNAUTHORIZED_ROOM,
+		INVALID_HOST_CAPABILITY
 	}
 }

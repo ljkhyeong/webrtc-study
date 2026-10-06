@@ -19,22 +19,28 @@ final class SignalingInboundLimiter {
 	private final UsageWindow globalWindow = new UsageWindow();
 	private final int maximumTrackedClients;
 	private final long windowNanos;
-	private final int maximumSessionFrames;
-	private final int maximumClientFrames;
-	private final int maximumGlobalFrames;
-	private final long maximumSessionBytes;
-	private final long maximumClientBytes;
-	private final long maximumGlobalBytes;
+	private final Limit sessionLimit;
+	private final Limit clientLimit;
+	private final Limit globalLimit;
 
 	SignalingInboundLimiter(SignalingProperties properties) {
 		this.maximumTrackedClients = properties.maxConnections();
 		this.windowNanos = properties.abuseWindow().toNanos();
-		this.maximumSessionFrames = properties.maxFramesPerSessionWindow();
-		this.maximumClientFrames = properties.maxFramesPerClientWindow();
-		this.maximumGlobalFrames = properties.maxFramesGlobalWindow();
-		this.maximumSessionBytes = properties.maxBytesPerSessionWindow();
-		this.maximumClientBytes = properties.maxBytesPerClientWindow();
-		this.maximumGlobalBytes = properties.maxBytesGlobalWindow();
+		this.sessionLimit = new Limit(
+				properties.maxFramesPerSessionWindow(),
+				properties.maxBytesPerSessionWindow(),
+				Decision.SESSION_FRAME_LIMITED,
+				Decision.SESSION_BYTE_LIMITED);
+		this.clientLimit = new Limit(
+				properties.maxFramesPerClientWindow(),
+				properties.maxBytesPerClientWindow(),
+				Decision.CLIENT_FRAME_LIMITED,
+				Decision.CLIENT_BYTE_LIMITED);
+		this.globalLimit = new Limit(
+				properties.maxFramesGlobalWindow(),
+				properties.maxBytesGlobalWindow(),
+				Decision.GLOBAL_FRAME_LIMITED,
+				Decision.GLOBAL_BYTE_LIMITED);
 	}
 
 	Connection retain(String clientKey) {
@@ -58,45 +64,15 @@ final class SignalingInboundLimiter {
 	Decision tryAcquire(Connection connection, long nowNanos, int payloadBytes) {
 		// 접근 순서를 사용해 활성 트래픽 항목을 비활성 LRU 항목 뒤로 보낸다.
 		clients.get(connection.clientKey);
-		WindowDecision session = connection.sessionWindow.tryAcquire(
-				nowNanos,
-				windowNanos,
-				maximumSessionFrames,
-				maximumSessionBytes,
-				payloadBytes);
-		if (session == WindowDecision.FRAME_LIMITED) {
-			return Decision.SESSION_FRAME_LIMITED;
+		// 앞 단계에서 거부한 프레임은 다음 단계 집계에 넣지 않는다.
+		Decision decision = connection.sessionWindow.tryAcquire(nowNanos, windowNanos, sessionLimit, payloadBytes);
+		if (decision == Decision.ACCEPTED) {
+			decision = connection.clientState.window.tryAcquire(nowNanos, windowNanos, clientLimit, payloadBytes);
 		}
-		if (session == WindowDecision.BYTE_LIMITED) {
-			return Decision.SESSION_BYTE_LIMITED;
+		if (decision == Decision.ACCEPTED) {
+			decision = globalWindow.tryAcquire(nowNanos, windowNanos, globalLimit, payloadBytes);
 		}
-
-		WindowDecision client = connection.clientState.window.tryAcquire(
-				nowNanos,
-				windowNanos,
-				maximumClientFrames,
-				maximumClientBytes,
-				payloadBytes);
-		if (client == WindowDecision.FRAME_LIMITED) {
-			return Decision.CLIENT_FRAME_LIMITED;
-		}
-		if (client == WindowDecision.BYTE_LIMITED) {
-			return Decision.CLIENT_BYTE_LIMITED;
-		}
-
-		WindowDecision global = globalWindow.tryAcquire(
-				nowNanos,
-				windowNanos,
-				maximumGlobalFrames,
-				maximumGlobalBytes,
-				payloadBytes);
-		if (global == WindowDecision.FRAME_LIMITED) {
-			return Decision.GLOBAL_FRAME_LIMITED;
-		}
-		if (global == WindowDecision.BYTE_LIMITED) {
-			return Decision.GLOBAL_BYTE_LIMITED;
-		}
-		return Decision.ACCEPTED;
+		return decision;
 	}
 
 	void removeExpiredInactive(long nowNanos) {
@@ -153,10 +129,7 @@ final class SignalingInboundLimiter {
 		private int activeConnections;
 	}
 
-	private enum WindowDecision {
-		ACCEPTED,
-		FRAME_LIMITED,
-		BYTE_LIMITED
+	private record Limit(int frames, long bytes, Decision frameLimited, Decision byteLimited) {
 	}
 
 	private static final class UsageWindow {
@@ -165,11 +138,10 @@ final class SignalingInboundLimiter {
 		private int frameCount;
 		private long payloadBytes;
 
-		private WindowDecision tryAcquire(
+		private Decision tryAcquire(
 				long nowNanos,
 				long durationNanos,
-				int maximumFrames,
-				long maximumBytes,
+				Limit limit,
 				int nextPayloadBytes) {
 			if (isExpired(nowNanos, durationNanos)) {
 				startedAtNanos = nowNanos;
@@ -178,13 +150,13 @@ final class SignalingInboundLimiter {
 			}
 			frameCount++;
 			payloadBytes += nextPayloadBytes;
-			if (frameCount > maximumFrames) {
-				return WindowDecision.FRAME_LIMITED;
+			if (frameCount > limit.frames()) {
+				return limit.frameLimited();
 			}
-			if (payloadBytes > maximumBytes) {
-				return WindowDecision.BYTE_LIMITED;
+			if (payloadBytes > limit.bytes()) {
+				return limit.byteLimited();
 			}
-			return WindowDecision.ACCEPTED;
+			return Decision.ACCEPTED;
 		}
 
 		private boolean isExpired(long nowNanos, long durationNanos) {
