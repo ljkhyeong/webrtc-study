@@ -31,47 +31,59 @@
   --call-soft: #9aa3ab;
   --shadow: 0 22px 60px rgb(24 26 29 / 14%);
 
-  /* 입장 준비·통화 화면: 밝은 회백색 바탕, 청록 주요 색. 손들기는 노랑, 끄기·나가기는 빨강으로만 구분한다. */
-  --c-bg: #f7f7f5;
-  --c-surface: #ffffff;
-  --c-surface-soft: #fafaf9;
-  --c-raised: #f1f1ee;
-  --c-raised-hover: #e8e8e4;
-  --c-line: #e4e4e0;
-  --c-line-strong: #d4d4cf;
-  --c-ink: #18181b;
-  --c-ink-soft: #5f5f67;
-  --c-accent: #0f766e;
-  --c-accent-strong: #115e59;
-  --c-accent-soft: #f0fdfa;
-  --c-accent-line: #5eead4;
-  --c-accent-fill: #ccfbf1;
+  /* 입장 준비·통화 화면(에디토리얼): 미색 종이 바탕에 검정 글자와 괘선, 강조는 파랑 하나.
+     손들기·켜 둔 기능은 검정 면, 꺼짐·나가기는 빨강으로만 구분한다. 모서리는 모두 직각이다. */
+  --c-bg: #f4f3ee;
+  --c-surface: #fbfbf8;
+  --c-surface-soft: #f8f7f3;
+  --c-raised: #ebeae4;
+  --c-raised-hover: #e2e1da;
+  --c-line: #d6d5ce;
+  --c-line-strong: #77766f;
+  --c-rule: #111111;
+  --c-ink: #111111;
+  --c-ink-soft: #5c5c57;
+  --c-accent: #1f2eeb;
+  --c-accent-strong: #1520b8;
+  --c-accent-soft: #eceefe;
+  --c-accent-line: #8f97f5;
+  --c-accent-fill: #dfe2fd;
   --c-on-accent: #ffffff;
-  --c-success: #15803d;
-  --c-success-soft: #f0fdf4;
-  --c-success-line: #bbf7d0;
-  --c-success-ink: #166534;
-  --c-hand: #b45309;
+  --c-success: #18794e;
+  --c-success-soft: #eaf4ee;
+  --c-success-line: #a7d3b9;
+  --c-success-ink: #14613e;
+  --c-hand: #111111;
   --c-on-hand: #ffffff;
-  --c-hand-soft: #fef3c7;
-  --c-hand-line: #fcd34d;
-  --c-hand-ink: #92400e;
-  --c-warn: #b45309;
-  --c-warn-soft: #fffbeb;
-  --c-warn-line: #fcd34d;
-  --c-warn-ink: #92400e;
-  --c-danger: #dc2626;
-  --c-danger-strong: #b91c1c;
-  --c-danger-soft: #fee2e2;
-  --c-danger-line: #fca5a5;
-  --c-danger-ink: #b91c1c;
-  --c-tile: #e7e7e3;
-  --c-tile-avatar: #d4d4cf;
-  --c-tile-ink: #3f3f46;
-  --c-label: rgb(24 24 27 / 74%);
-  --c-overlay: rgb(255 255 255 / 92%);
-  --c-backdrop: rgb(24 24 27 / 42%);
-  --c-shadow: 0 12px 32px rgb(24 24 27 / 12%);
+  --c-hand-soft: #e9e8e1;
+  --c-hand-line: #111111;
+  --c-hand-ink: #111111;
+  --c-warn: #a15c07;
+  --c-warn-soft: #fbf3e4;
+  --c-warn-line: #e3bf7f;
+  --c-warn-ink: #7a4505;
+  --c-danger: #c0261b;
+  --c-danger-strong: #9c1d14;
+  --c-danger-soft: #fbe9e7;
+  --c-danger-line: #eba69f;
+  --c-danger-ink: #a32117;
+  --c-tile: #e3e2dc;
+  --c-tile-avatar: #c9c8c0;
+  --c-tile-ink: #3a3a36;
+  --c-label: rgb(17 17 17 / 82%);
+  --c-overlay: rgb(251 251 248 / 94%);
+  --c-backdrop: rgb(17 17 17 / 45%);
+  --c-shadow: 0 10px 28px rgb(17 17 17 / 10%);
+  --c-figure-font: 'Barlow Condensed', 'Avenir Next Condensed', 'Arial Narrow', sans-serif;
+}
+
+/* 남은 시간·방 코드처럼 숫자가 주인공인 글자만 좁은 글꼴로 쓴다(SIL OFL, assets/fonts/OFL.txt). */
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/BarlowCondensed-SemiBold.latin.woff2') format('woff2');
 }
 
 * {
@@ -275,7 +287,7 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--c-line-strong);
-  border-radius: 4px;
+  border-radius: 0;
   background: transparent;
   color: var(--c-ink);
   font-size: 0.9rem;
@@ -692,7 +704,7 @@ textarea:focus-visible {
   width: min(620px, calc(100% - 56px));
   padding: 14px 16px;
   border: 1px solid var(--c-danger-line);
-  border-radius: 10px;
+  border-radius: 0;
   gap: 5px;
   color: var(--c-ink);
   background: var(--c-danger-soft);
@@ -713,7 +725,7 @@ textarea:focus-visible {
   margin-top: 4px;
   padding: 8px 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 7px;
+  border-radius: 0;
   color: var(--c-ink);
   background: rgb(23 32 51 / 7%);
   font-family: 'SFMono-Regular', Consolas, monospace;
@@ -729,7 +741,7 @@ textarea:focus-visible {
   padding: 22px 24px 24px;
   overflow: auto;
   border: 1px solid var(--c-line);
-  border-radius: 16px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-surface);
   box-shadow: none;
@@ -803,7 +815,7 @@ textarea:focus-visible {
   height: 40px;
   padding: 0 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-surface);
   font-size: 0.8rem;
@@ -814,7 +826,7 @@ textarea:focus-visible {
   min-height: 40px;
   padding: 0 14px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.78rem;
@@ -904,7 +916,7 @@ textarea:focus-visible {
   min-height: 256px;
   margin-top: 16px;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: 0;
   place-items: center;
   background: white;
 }
@@ -950,7 +962,7 @@ textarea:focus-visible {
   min-height: 34px;
   padding: 0 11px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink);
   background: rgb(23 32 51 / 6%);
   font-size: 0.66rem;
@@ -966,7 +978,7 @@ textarea:focus-visible {
 
 .connection-diagnostics__privacy {
   padding: 10px 11px;
-  border-radius: 8px;
+  border-radius: 0;
   background: rgb(23 32 51 / 5%);
 }
 
@@ -979,7 +991,7 @@ textarea:focus-visible {
   display: grid;
   padding: 11px;
   border: 1px solid var(--c-line);
-  border-radius: 9px;
+  border-radius: 0;
   gap: 9px;
   background: rgb(23 32 51 / 3%);
 }
@@ -1021,7 +1033,7 @@ textarea:focus-visible {
   max-height: 150px;
   margin: 0;
   padding: 10px;
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink-soft);
   background: var(--c-surface-soft);
   font-size: 0.58rem;
@@ -1061,7 +1073,7 @@ textarea:focus-visible {
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--c-line);
-  border-radius: 18px;
+  border-radius: 0;
   background: var(--c-surface);
   container: video-tile / inline-size;
 }
@@ -1139,7 +1151,7 @@ textarea:focus-visible {
   width: clamp(72px, 9vw, 112px);
   aspect-ratio: 1;
   border: 0;
-  border-radius: 50%;
+  border-radius: 0;
   place-items: center;
   color: var(--c-tile-ink);
   background: var(--c-tile-avatar);
@@ -1171,7 +1183,7 @@ textarea:focus-visible {
   z-index: 4;
   padding: 6px 8px;
   border: 1px solid var(--c-warn-line);
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--c-warn-ink);
   background: var(--c-warn-soft);
   font-size: 0.64rem;
@@ -1199,7 +1211,7 @@ textarea:focus-visible {
 
 .video-tile__badges span {
   padding: 6px 9px;
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-overlay);
   font-size: 0.62rem;
@@ -1236,7 +1248,7 @@ textarea:focus-visible {
   height: 32px;
   padding: 0 8px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 8px;
+  border-radius: 0;
   place-items: center;
   color: var(--c-ink);
   background: var(--c-overlay);
@@ -1304,7 +1316,7 @@ textarea:focus-visible {
   min-height: 34px;
   padding: 0 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 9px;
+  border-radius: 0;
   align-items: center;
   gap: 7px;
   color: var(--c-ink);
@@ -1330,7 +1342,7 @@ textarea:focus-visible {
   max-width: min(280px, 100%);
   padding: 9px 11px;
   border: 1px solid var(--c-danger-line);
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--c-danger-ink);
   background: var(--c-danger-soft);
   font-size: 0.68rem;
@@ -1347,7 +1359,7 @@ textarea:focus-visible {
   width: min(280px, calc(100% - 32px));
   padding: 14px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 12px;
+  border-radius: 0;
   gap: 10px;
   color: var(--c-ink);
   background: var(--c-overlay);
@@ -1363,7 +1375,7 @@ textarea:focus-visible {
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--c-on-accent);
   background: var(--c-accent);
   font: inherit;
@@ -1420,7 +1432,7 @@ textarea:focus-visible {
   justify-content: center;
   gap: 4px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-overlay);
   font-size: 0.7rem;
@@ -1472,7 +1484,7 @@ textarea:focus-visible {
   padding: 12px;
   gap: 8px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--c-surface);
   color: var(--c-ink);
   font-size: 0.75rem;
@@ -1504,7 +1516,7 @@ textarea:focus-visible {
 .video-tile__name {
   overflow: hidden;
   padding: 6px 11px;
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-overlay);
   font-size: 0.78rem;
@@ -1520,7 +1532,7 @@ textarea:focus-visible {
   margin-left: auto;
   padding: 4px 8px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-backdrop);
   font-size: 0.7rem;
@@ -1535,7 +1547,7 @@ textarea:focus-visible {
   display: grid;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: 0;
   place-items: center;
   color: var(--c-ink-soft);
   background: var(--c-overlay);
@@ -1582,7 +1594,7 @@ textarea:focus-visible {
   display: flex;
   padding: 10px 10px 10px 14px;
   border: 1px solid var(--c-line);
-  border-radius: 11px;
+  border-radius: 0;
   align-items: center;
   gap: 14px;
   color: var(--c-ink-soft);
@@ -1595,7 +1607,7 @@ textarea:focus-visible {
 .waiting-note button {
   padding: 8px 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 0;
   color: var(--c-bg);
   background: var(--c-accent);
   font-size: 0.68rem;
@@ -1608,7 +1620,7 @@ textarea:focus-visible {
   z-index: 9;
   display: flex;
   border: 1px solid var(--c-line);
-  border-radius: 16px;
+  border-radius: 0;
   align-items: center;
   justify-content: center;
   flex-direction: column;
@@ -1665,7 +1677,7 @@ textarea:focus-visible {
   min-height: 40px;
   padding: 0 16px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.72rem;
@@ -1694,7 +1706,7 @@ textarea:focus-visible {
   margin: 0;
   padding: 10px 14px;
   border: 1px solid;
-  border-radius: 9px;
+  border-radius: 0;
   font-size: 0.72rem;
   line-height: 1.5;
 }
@@ -1728,7 +1740,7 @@ textarea:focus-visible {
   min-height: 34px;
   padding: 0 11px;
   border: 1px solid var(--c-warn-line);
-  border-radius: 8px;
+  border-radius: 0;
   flex: 0 0 auto;
   color: var(--c-warn-ink);
   background: var(--c-surface);
@@ -1759,7 +1771,7 @@ textarea:focus-visible {
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--c-line);
-  border-radius: 18px;
+  border-radius: 0;
   background: var(--c-surface);
   opacity: 0;
   visibility: hidden;
@@ -1799,7 +1811,7 @@ textarea:focus-visible {
   height: 34px;
   flex: 0 0 auto;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   place-items: center;
   color: var(--c-ink-soft);
   background: transparent;
@@ -1820,7 +1832,7 @@ textarea:focus-visible {
   min-height: 38px;
   padding: 0 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -1843,7 +1855,7 @@ textarea:focus-visible {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--c-on-accent);
   background: var(--c-accent);
   font-size: 0.65rem;
@@ -1881,7 +1893,7 @@ textarea:focus-visible {
 .participant-list li {
   display: flex;
   padding: 10px;
-  border-radius: 12px;
+  border-radius: 0;
   align-items: center;
   gap: 12px;
 }
@@ -1895,7 +1907,7 @@ textarea:focus-visible {
   width: 34px;
   height: 34px;
   flex: none;
-  border-radius: 50%;
+  border-radius: 0;
   place-items: center;
   color: var(--c-ink);
   background: var(--c-raised);
@@ -1932,7 +1944,7 @@ textarea:focus-visible {
   min-height: 30px;
   padding: 0 10px;
   border: 1px solid var(--c-line);
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.72rem;
@@ -2032,7 +2044,7 @@ textarea:focus-visible {
 .chat-message p {
   margin: 0;
   padding: 10px 12px;
-  border-radius: 4px 12px 12px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.76rem;
@@ -2042,7 +2054,7 @@ textarea:focus-visible {
 }
 
 .chat-message--mine p {
-  border-radius: 12px 4px 12px 12px;
+  border-radius: 0;
   color: var(--c-on-accent);
   background: var(--c-accent);
 }
@@ -2071,7 +2083,7 @@ textarea:focus-visible {
   min-height: 28px;
   padding: 3px 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0;
   color: var(--c-ink-soft);
   background: transparent;
   cursor: pointer;
@@ -2116,7 +2128,7 @@ textarea:focus-visible {
   padding: 12px 13px;
   resize: none;
   border: 1px solid var(--c-line);
-  border-radius: 10px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.76rem;
@@ -2174,7 +2186,7 @@ textarea:focus-visible {
   height: 44px;
   padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   place-items: center;
   color: var(--c-on-accent);
   background: var(--c-accent);
@@ -2204,7 +2216,7 @@ textarea:focus-visible {
   min-height: 36px;
   padding: 8px 12px;
   border: 1px solid var(--c-accent);
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-accent);
   font-size: 0.72rem;
@@ -2403,7 +2415,7 @@ textarea:focus-visible {
   }
 
   .video-tile {
-    border-radius: 12px;
+    border-radius: 0;
   }
 
   .waiting-note {
@@ -2540,7 +2552,7 @@ textarea:focus-visible {
   margin-block: 18px;
   padding: 12px 14px;
   border: 1px solid var(--c-line);
-  border-radius: 12px;
+  border-radius: 0;
   background: rgb(23 32 51 / 3%);
 }
 .screen-wake-setting label {
@@ -2568,7 +2580,7 @@ textarea:focus-visible {
 .room-study__host-notice {
   padding: 10px 12px;
   border-left: 3px solid var(--c-accent);
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--c-warn-soft);
   color: var(--c-warn-ink);
   line-height: 1.5;
@@ -2635,7 +2647,7 @@ textarea:focus-visible {
   gap: 14px;
   padding: 20px;
   border: 1px solid var(--c-line);
-  border-radius: 16px;
+  border-radius: 0;
   background: var(--c-surface);
   transform: translateX(-50%);
   box-shadow: none;
@@ -2666,7 +2678,7 @@ textarea:focus-visible {
   width: 100%;
   min-height: 40px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 8px;
   background: var(--c-surface);
   color: var(--c-ink);
@@ -2676,7 +2688,7 @@ textarea:focus-visible {
   min-height: 36px;
   padding: 6px 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 7px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.75rem;
@@ -2719,7 +2731,7 @@ textarea:focus-visible {
   margin-inline: auto;
   padding: 12px 16px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 12px;
+  border-radius: 0;
   background: var(--c-surface);
   color: var(--c-ink);
   box-shadow: none;
@@ -2743,7 +2755,7 @@ textarea:focus-visible {
   min-height: 36px;
   padding: 6px 10px;
   border: 1px solid currentColor;
-  border-radius: 6px;
+  border-radius: 0;
   color: inherit;
   background: transparent;
 }
@@ -2776,7 +2788,7 @@ textarea:focus-visible {
   min-height: 36px;
   padding: 6px 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 6px;
+  border-radius: 0;
   background: var(--c-surface);
   color: var(--c-ink);
 }
@@ -2795,7 +2807,7 @@ textarea:focus-visible {
   min-height: 32px;
   padding: 4px 7px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 6px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
 }
@@ -2803,7 +2815,7 @@ textarea:focus-visible {
   opacity: 0.4;
 }
 .chat-message[data-search-match] {
-  border-radius: 8px;
+  border-radius: 0;
   background: #b4ae4420;
 }
 .chat-message[data-search-current] {
@@ -2811,7 +2823,7 @@ textarea:focus-visible {
   outline-offset: 4px;
 }
 .chat-message mark {
-  border-radius: 2px;
+  border-radius: 0;
   color: #18221c;
   background: #f2dc81;
 }
@@ -2844,7 +2856,7 @@ textarea:focus-visible {
 }
 .chat-message__recipients button {
   border: 1px solid var(--c-line-strong);
-  border-radius: 5px;
+  border-radius: 0;
   padding: 4px 7px;
   color: var(--c-success-ink);
   background: var(--c-success-soft);
@@ -2961,7 +2973,7 @@ textarea:focus-visible {
 .room-hand-queue li {
   display: flex;
   padding: 8px 10px;
-  border-radius: 12px;
+  border-radius: 0;
   align-items: center;
   gap: 10px;
   color: var(--c-hand-ink);
@@ -2975,7 +2987,7 @@ textarea:focus-visible {
   width: 22px;
   height: 22px;
   flex: 0 0 auto;
-  border-radius: 50%;
+  border-radius: 0;
   place-items: center;
   color: var(--c-on-hand);
   background: var(--c-hand);
@@ -2983,14 +2995,14 @@ textarea:focus-visible {
   content: counter(hand-queue);
 }
 
-/* ── 간단명료: 상단 상태 줄 · 영상 · 아이콘과 이름을 함께 둔 조작부 ── */
+/* ── 에디토리얼: 괘선으로 나눈 머리글 · 영상 · 칸으로 나눈 조작부 ── */
 .room-shell {
   position: relative;
   display: grid;
   width: 100%;
   height: 100svh;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 64px minmax(0, 1fr) 96px;
+  grid-template-rows: auto minmax(0, 1fr) 76px;
   grid-template-areas:
     'header'
     'main'
@@ -3005,19 +3017,29 @@ textarea:focus-visible {
   grid-area: main;
 }
 
-/* 상단 줄: 왼쪽 방 정보, 가운데 공용 타이머, 오른쪽 참여 인원과 초대 */
+/* 머리글: 첫 줄은 방 정보와 초대, 아래 넓은 줄은 오늘의 주제와 큰 남은 시간 */
 .room-header {
   z-index: 20;
   display: grid;
   min-width: 0;
-  padding: 0 24px;
+  padding: 0 32px;
   grid-area: header;
-  grid-template-areas: 'brand study status';
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas:
+    'brand status'
+    'study study';
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 40px auto;
   align-items: center;
-  gap: 16px;
-  border-bottom: 1px solid var(--c-line);
+  column-gap: 16px;
   background: var(--c-bg);
+}
+
+.room-header::before {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  align-self: end;
+  border-bottom: 1px solid var(--c-rule);
+  content: '';
 }
 
 .room-header__brand {
@@ -3025,33 +3047,33 @@ textarea:focus-visible {
   min-width: 0;
   grid-area: brand;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .room-header .wordmark {
-  margin-right: 4px;
+  margin-right: 8px;
   color: var(--c-ink);
-  font-family: inherit;
-  font-size: 1rem;
-  letter-spacing: 0.04em;
+  font-family: var(--c-figure-font);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
 }
 
 .room-code {
   display: inline-flex;
   min-width: 0;
   min-height: 32px;
-  padding: 0 8px;
+  padding: 0 6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   align-items: center;
   gap: 6px;
-  color: var(--c-ink-soft);
+  color: var(--c-ink);
   background: transparent;
   font-size: 0.8125rem;
 }
 
 .room-code:hover:not(:disabled) {
-  color: var(--c-ink);
   background: var(--c-raised);
 }
 
@@ -3067,6 +3089,7 @@ textarea:focus-visible {
   width: 14px;
   height: 14px;
   flex: none;
+  color: var(--c-ink-soft);
 }
 
 .connection-state {
@@ -3101,20 +3124,20 @@ textarea:focus-visible {
   grid-area: status;
   justify-self: end;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .participant-count,
 .room-invite-button {
-  min-height: 38px;
-  border-radius: 8px;
-  font-size: 0.875rem;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  font-size: 0.8125rem;
   white-space: nowrap;
 }
 
 .participant-count {
-  padding: 0 12px;
-  border: 0;
   color: var(--c-ink-soft);
   background: transparent;
 }
@@ -3126,18 +3149,18 @@ textarea:focus-visible {
 }
 
 .room-invite-button {
-  padding: 0 16px;
-  border: 1px solid var(--c-ink);
   color: var(--c-ink);
   background: transparent;
-  font-weight: 650;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .room-invite-button:hover {
   background: var(--c-raised);
 }
 
-/* 공용 타이머: 모드 · 남은 시간 · 주제를 한 줄로 두고, 누르면 아래에 설정 창을 연다. */
+/* 공용 타이머: 왼쪽에 모드와 오늘의 주제, 오른쪽에 큰 남은 시간. 누르면 오른쪽 아래에 설정 창을 연다. */
 .room-study-region {
   min-width: 0;
   grid-area: study;
@@ -3151,107 +3174,133 @@ textarea:focus-visible {
 
 .room-study > summary {
   position: relative;
-  display: flex;
-  min-height: 44px;
-  padding: 0 6px 0 12px;
-  border-radius: 10px;
-  align-items: center;
-  gap: 12px;
+  display: grid;
+  min-height: 0;
+  padding: 16px 0 18px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'mode absent time open'
+    'topic topic time open';
+  align-items: end;
+  column-gap: 12px;
+  row-gap: 8px;
   cursor: pointer;
   list-style: none;
-  white-space: nowrap;
-  transition: background 160ms ease;
 }
 
 .room-study > summary::-webkit-details-marker {
   display: none;
 }
 
-.room-study > summary:hover,
-.room-study[open] > summary {
-  background: var(--c-raised);
-}
-
 .room-study__mode {
-  color: var(--c-accent);
-  font-size: 0.875rem;
+  justify-self: start;
+  padding: 3px 8px;
+  grid-area: mode;
+  color: var(--c-on-accent);
+  background: var(--c-accent);
+  font-size: 0.8125rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .room-study[data-mode='break'] .room-study__mode {
-  color: var(--c-success-ink);
+  background: var(--c-ink);
 }
 
 .room-study__state {
-  color: var(--c-ink-soft);
   font-weight: 500;
 }
 
 .room-study time {
+  margin-left: 12px;
+  grid-area: time;
   color: var(--c-ink);
-  font-size: 1.5rem;
+  font-family: var(--c-figure-font);
+  font-size: clamp(4.25rem, 7vw, 6.5rem);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  line-height: 0.8;
   letter-spacing: -0.01em;
 }
 
 .room-study summary strong {
-  max-width: 220px;
+  min-width: 0;
   overflow: hidden;
-  color: var(--c-ink-soft);
-  font-size: 0.875rem;
-  font-weight: 400;
+  grid-area: topic;
+  color: var(--c-ink);
+  font-size: clamp(1.75rem, 3vw, 2.625rem);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .room-study__host-absent {
+  justify-self: start;
   padding: 3px 8px;
-  border-radius: 999px;
+  grid-area: absent;
   color: var(--c-warn-ink);
   background: var(--c-warn-soft);
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .room-study__open {
   display: inline-flex;
-  min-height: 32px;
+  min-height: 34px;
   padding: 0 12px;
-  border: 1px solid var(--c-line);
-  border-radius: 8px;
+  grid-area: open;
+  border: 1px solid var(--c-rule);
   align-items: center;
   color: var(--c-ink);
-  background: var(--c-surface);
+  background: transparent;
   font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 160ms ease;
 }
 
-/* 진행 정도는 타이머 아래의 가는 선으로만 보여 준다. */
+.room-study > summary:hover .room-study__open {
+  background: var(--c-raised);
+}
+
+.room-study[open] > summary .room-study__open {
+  color: var(--c-bg);
+  background: var(--c-ink);
+}
+
+/* 진행 정도는 머리글 아래 괘선을 채우는 굵은 선으로 보여 준다. */
 .room-study__progress {
   position: absolute;
-  right: 12px;
-  bottom: 3px;
-  left: 12px;
-  height: 2px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
   overflow: hidden;
-  border-radius: 1px;
+  background: var(--c-line);
 }
 
 .room-study__progress i {
   display: block;
   height: 100%;
   background: var(--c-accent);
-  opacity: 0.55;
   transition: width 1s linear;
 }
 
 .room-study[data-mode='break'] .room-study__progress i {
-  background: var(--c-success);
+  background: var(--c-ink);
 }
 
 .room-study__body {
-  border-radius: 14px;
+  top: calc(100% + 1px);
+  right: 0;
+  left: auto;
+  max-height: calc(100svh - 260px);
+  border-color: var(--c-rule);
   box-shadow: var(--c-shadow);
   font-size: 0.875rem;
+  transform: none;
 }
 
 .room-study__body .room-study__presets {
@@ -3275,8 +3324,7 @@ textarea:focus-visible {
   min-width: 0;
   min-height: 48px;
   padding: 0 12px;
-  border: 1px solid var(--c-line);
-  border-radius: 10px;
+  border: 1px solid var(--c-line-strong);
   align-items: center;
   gap: 10px;
   cursor: pointer;
@@ -3284,9 +3332,9 @@ textarea:focus-visible {
 }
 
 .room-study__body .room-study__presets label:has(input:checked) {
-  border-color: var(--c-accent);
-  box-shadow: inset 0 0 0 1px var(--c-accent);
-  background: var(--c-accent-soft);
+  border-color: var(--c-ink);
+  box-shadow: inset 0 0 0 1px var(--c-ink);
+  background: var(--c-surface);
 }
 
 .room-study__body .room-study__presets input {
@@ -3296,7 +3344,7 @@ textarea:focus-visible {
   margin: 0;
   padding: 0;
   flex: none;
-  accent-color: var(--c-accent);
+  accent-color: var(--c-ink);
 }
 
 .room-study__custom {
@@ -3310,50 +3358,49 @@ textarea:focus-visible {
   width: 100%;
   min-height: 48px;
   border: 0;
-  border-radius: 10px;
   color: var(--c-on-accent);
-  background: var(--c-accent);
+  background: var(--c-ink);
   font-size: 0.9375rem;
   font-weight: 700;
 }
 
 .room-study__body .room-study__primary:hover:not(:disabled) {
-  background: var(--c-accent-strong);
+  background: #2b2b2b;
 }
 
-/* 하단 조작부: 아이콘과 이름을 함께 둔 같은 크기의 버튼, 끝에 빨간 나가기 */
+/* 하단 조작부: 괘선 아래를 같은 너비의 칸으로 나누고, 마지막 칸은 빨간 글자의 나가기 */
 .control-dock {
   z-index: 20;
-  display: flex;
+  display: grid;
   min-width: 0;
-  padding: 0 16px;
+  margin: 0 32px;
   grid-area: dock;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  border-top: 1px solid var(--c-rule);
   background: var(--c-bg);
 }
 
 .control-button {
   position: relative;
-  display: grid;
-  width: 92px;
-  height: 64px;
-  padding: 0 4px;
-  border: 1px solid var(--c-line);
-  border-radius: 10px;
-  justify-items: center;
-  align-content: center;
-  gap: 5px;
+  display: flex;
+  width: auto;
+  height: 100%;
+  min-width: 0;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--c-line);
+  border-radius: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   color: var(--c-ink);
-  background: var(--c-surface);
-  font-size: 0.75rem;
+  background: transparent;
+  font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
   list-style: none;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease;
+  transition: background 160ms ease;
 }
 
 .control-button::-webkit-details-marker {
@@ -3363,17 +3410,17 @@ textarea:focus-visible {
 .control-button svg {
   width: 20px;
   height: 20px;
+  flex: none;
 }
 
 .control-button span {
-  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .control-button:hover:not(:disabled) {
-  border-color: var(--c-line-strong);
   background: var(--c-raised);
 }
 
@@ -3381,98 +3428,84 @@ textarea:focus-visible {
   opacity: 0.45;
 }
 
-.control-button--off {
-  border-color: var(--c-danger-line);
+.control-button--off,
+.control-button--off:hover:not(:disabled) {
   color: var(--c-danger-ink);
   background: var(--c-danger-soft);
 }
 
-.control-button--off:hover:not(:disabled) {
-  border-color: var(--c-danger);
-  background: #fecaca;
+.control-button--active,
+.control-button--hand {
+  color: var(--c-on-hand);
+  background: var(--c-ink);
 }
 
-.control-button--active {
-  border-color: var(--c-accent-line);
-  color: var(--c-accent-strong);
-  background: var(--c-accent-fill);
-}
-
-.control-button--active:hover:not(:disabled) {
-  border-color: var(--c-accent);
-  background: #99f6e4;
-}
-
-.control-button--hand,
+.control-button--active:hover:not(:disabled),
 .control-button--hand:hover:not(:disabled) {
-  border-color: var(--c-hand-line);
-  color: var(--c-hand-ink);
-  background: var(--c-hand-soft);
+  background: #2b2b2b;
 }
 
 .control-button b {
-  position: absolute;
-  top: 6px;
-  right: calc(50% - 26px);
   display: grid;
-  min-width: 18px;
-  height: 18px;
+  min-width: 20px;
+  height: 20px;
   padding: 0 5px;
-  border-radius: 999px;
+  flex: none;
   place-items: center;
-  color: #ffffff;
-  background: var(--c-danger);
+  color: var(--c-on-accent);
+  background: var(--c-accent);
   font-size: 0.6875rem;
   font-weight: 700;
 }
 
-.control-button[aria-pressed] b {
-  background: var(--c-hand);
+.control-button--active b,
+.control-button--hand b {
+  color: var(--c-ink);
+  background: var(--c-bg);
 }
 
 .control-button--leave {
-  width: 104px;
-  margin-left: 16px;
-  border-color: transparent;
-  color: #ffffff;
-  background: var(--c-danger);
-  font-size: 0.875rem;
-  font-weight: 700;
+  border-right: 0;
+  flex-direction: row-reverse;
+  color: var(--c-danger);
+  font-size: 0.9375rem;
+  font-weight: 800;
 }
 
 .control-button--leave:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--c-danger-strong);
-}
-
-/* 넓은 화면의 나가기는 빨간 바탕과 글자만으로 충분하므로 아이콘은 좁은 화면에서만 쓴다. */
-.control-button--leave svg {
-  display: none;
+  background: var(--c-danger-soft);
 }
 
 /* 더보기: 초대 · 장치 · 화면 공유 · 연결 진단을 조작부 위 메뉴에 모은다. */
 .more-menu {
   position: relative;
+  display: grid;
+  min-width: 0;
 }
 
-.more-menu[open] > summary {
-  border-color: var(--c-line-strong);
-  background: var(--c-raised);
+/* details 안의 요약 줄은 칸 높이를 따라 늘지 않으므로 조작부 높이를 직접 준다. */
+.more-menu > summary {
+  min-height: 75px;
+}
+
+.more-menu[open] > summary,
+.more-menu[open] > summary:hover:not(:disabled) {
+  color: var(--c-on-hand);
+  background: var(--c-ink);
 }
 
 .more-menu__panel {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 1px);
   z-index: 30;
   display: grid;
   width: 320px;
   max-height: calc(100svh - 200px);
-  padding: 8px;
+  padding: 6px;
   overflow-y: auto;
-  gap: 2px;
-  border: 1px solid var(--c-line);
-  border-radius: 14px;
+  gap: 0;
+  border: 1px solid var(--c-rule);
   color: var(--c-ink);
   background: var(--c-surface);
   box-shadow: var(--c-shadow);
@@ -3485,7 +3518,8 @@ textarea:focus-visible {
   min-height: 56px;
   padding: 8px 10px;
   border: 0;
-  border-radius: 10px;
+  border-bottom: 1px solid var(--c-line);
+  border-radius: 0;
   grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
@@ -3535,6 +3569,7 @@ textarea:focus-visible {
 }
 
 .more-menu .connection-diagnostics > summary {
+  border-bottom: 0;
   list-style: none;
 }
 
@@ -3553,52 +3588,140 @@ textarea:focus-visible {
   padding: 14px;
   gap: 12px;
   border: 1px solid var(--c-line);
-  border-radius: 10px;
   color: var(--c-ink);
   background: var(--c-surface-soft);
 }
 
-/* 영상 타일: 둥근 회색 판에 어두운 이름표, 말하는 사람은 청록 테두리 */
+/* 영상 타일: 직각 회색 판 아래에 사진 설명처럼 이름 줄을 둔다. 말하는 사람은 파란 테두리, 손든 사람은 검정 표. */
+.video-stage {
+  padding: 20px 32px 16px;
+  gap: 20px;
+}
+
 .video-tile {
+  --tile-caption: 32px;
   border: 0;
-  border-radius: 12px;
   background: var(--c-tile);
 }
 
+.video-tile__viewport,
+.video-tile__fallback {
+  bottom: var(--tile-caption);
+  height: auto;
+}
+
+/* 이름이 영상 밖으로 나가므로 이름표용 그라데이션은 깔지 않는다. */
+.video-tile__shade {
+  display: none;
+}
+
+.video-tile__meta {
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--tile-caption);
+  padding-right: 2px;
+  border-top: 1px solid var(--c-rule);
+  background: var(--c-bg);
+}
+
 .video-tile__name {
-  padding: 4px 8px;
-  border-radius: 6px;
-  color: #ffffff;
-  background: var(--c-label);
-  font-size: 0.8125rem;
-  font-weight: 600;
+  min-width: 0;
+  padding: 0;
+  color: var(--c-ink);
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 700;
   backdrop-filter: none;
 }
 
-.video-tile__badges span {
-  border-radius: 6px;
-  color: #ffffff;
-  background: var(--c-label);
+.video-tile__meta > .video-tile__local-mute,
+.participant-audio summary {
+  width: 28px;
+  min-width: 28px;
+  height: 26px;
+  min-height: 0;
+  border-color: transparent;
+  color: var(--c-ink);
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.video-tile__meta > .video-tile__local-mute:hover,
+.participant-audio summary:hover,
+.participant-audio[open] summary {
+  border-color: var(--c-line-strong);
+  background: var(--c-surface);
+}
+
+.video-tile__muted {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  color: var(--c-danger-ink);
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.video-tile__fallback span {
+  width: clamp(64px, 8vw, 96px);
+  color: var(--c-tile-ink);
+  background: var(--c-tile-avatar);
+  font-family: var(--c-figure-font);
+  font-size: clamp(1.5rem, 2.6vw, 2.25rem);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.video-tile__badges span,
+.video-tile__connection {
+  border: 0;
+  color: var(--c-ink);
+  background: var(--c-overlay);
   backdrop-filter: none;
 }
 
 .video-tile__badges .video-tile__hand-raised {
-  color: var(--c-hand-ink);
-  background: var(--c-hand-soft);
+  color: var(--c-on-hand);
+  background: var(--c-hand);
+}
+
+.video-tile__connection--failed,
+.video-tile__connection--closed {
+  color: var(--c-danger-ink);
+  background: var(--c-danger-soft);
 }
 
 .video-tile--speaking::after {
-  inset: 0;
+  inset: 0 0 var(--tile-caption);
+  border-width: 3px;
 }
 
-/* 혼자 있을 때의 초대 안내는 영상 위쪽 가운데에 두어 이름표를 가리지 않는다. */
+@container video-tile (max-width: 240px) {
+  .video-tile {
+    --tile-caption: 28px;
+  }
+
+  .video-tile__meta {
+    right: 0;
+    bottom: 0;
+    left: 0;
+  }
+
+  .video-tile__name {
+    font-size: 0.75rem;
+  }
+}
+
+/* 혼자 있을 때의 초대 안내는 영상 위쪽 가운데에 두어 이름 줄을 가리지 않는다. */
 .waiting-note {
   top: 16px;
   bottom: auto;
   left: 50%;
-  border-radius: 10px;
+  border: 1px solid var(--c-rule);
   background: var(--c-surface);
-  box-shadow: var(--c-shadow);
+  box-shadow: none;
   font-size: 0.8125rem;
   transform: translateX(-50%);
   white-space: nowrap;
@@ -3606,17 +3729,21 @@ textarea:focus-visible {
 }
 
 .waiting-note button {
-  border-radius: 8px;
   color: var(--c-on-accent);
+  background: var(--c-ink);
   font-size: 0.8125rem;
 }
 
-/* 입장 화면: 왼쪽 미리보기, 오른쪽 이름과 입장 버튼 */
+.waiting-note button:hover {
+  background: #2b2b2b;
+}
+
+/* 입장 화면: 위에 큰 제목과 방 코드, 아래 왼쪽 미리보기와 오른쪽 번호 붙인 이름·입장 단계 */
 .prejoin-shell {
   display: grid;
   min-height: 100svh;
-  padding: 32px 24px;
-  place-items: center;
+  padding: 0 32px 40px;
+  place-items: start center;
   color: var(--c-ink);
   background: var(--c-bg);
   color-scheme: light;
@@ -3624,26 +3751,85 @@ textarea:focus-visible {
 
 .prejoin-main {
   display: grid;
-  width: min(100%, 960px);
-  grid-template-columns: minmax(0, 580px) minmax(280px, 340px);
-  justify-content: center;
+  width: min(100%, 1180px);
+  grid-template-columns: minmax(0, 7fr) minmax(300px, 5fr);
+  grid-template-areas:
+    'head head'
+    'stage settings';
+  align-items: start;
+  column-gap: 48px;
+  row-gap: 28px;
+}
+
+.prejoin-masthead {
+  display: grid;
+  min-width: 0;
+  grid-area: head;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'mark mark'
+    'title code';
+  align-items: end;
+  column-gap: 24px;
+  border-bottom: 1px solid var(--c-rule);
+}
+
+.prejoin-masthead .wordmark {
+  display: flex;
+  height: 40px;
+  margin-bottom: 18px;
+  grid-area: mark;
   align-items: center;
-  gap: 40px;
+  border-bottom: 1px solid var(--c-rule);
+  color: var(--c-ink);
+  font-family: var(--c-figure-font);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+}
+
+.prejoin-masthead h1 {
+  margin: 0 0 16px;
+  grid-area: title;
+  font-size: clamp(2.5rem, 6vw, 4.25rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.prejoin-room-code {
+  display: grid;
+  margin: 0 0 16px;
+  grid-area: code;
+  justify-items: end;
+  gap: 2px;
+  color: var(--c-ink-soft);
+  font-size: 0.75rem;
+}
+
+.prejoin-room-code span {
+  color: var(--c-ink);
+  font-family: var(--c-figure-font);
+  font-size: clamp(1.75rem, 3.4vw, 2.75rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 0.9;
+  letter-spacing: 0.02em;
 }
 
 .prejoin-stage {
   display: grid;
   min-width: 0;
-  gap: 12px;
+  grid-area: stage;
+  gap: 14px;
 }
 
 .prejoin-preview {
   position: relative;
   width: 100%;
-  max-height: 64svh;
+  max-height: 58svh;
   aspect-ratio: 4 / 3;
   overflow: hidden;
-  border-radius: 14px;
   background: var(--c-tile);
 }
 
@@ -3690,26 +3876,30 @@ textarea:focus-visible {
 .prejoin-preview__controls {
   position: absolute;
   right: 0;
-  bottom: 16px;
+  bottom: 0;
   left: 0;
   z-index: 4;
-  display: flex;
-  justify-content: center;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .prejoin-preview__controls button {
   display: flex;
-  min-height: 44px;
+  min-height: 48px;
   padding: 0 16px;
   border: 0;
-  border-radius: 10px;
+  border-right: 1px solid rgb(255 255 255 / 18%);
   align-items: center;
+  justify-content: center;
   gap: 8px;
   color: #ffffff;
   background: var(--c-label);
   font-size: 0.875rem;
   font-weight: 600;
+}
+
+.prejoin-preview__controls button:last-child {
+  border-right: 0;
 }
 
 .prejoin-preview__controls button.is-off {
@@ -3729,7 +3919,7 @@ textarea:focus-visible {
 .prejoin-preview__checking {
   z-index: 6;
   color: var(--c-ink);
-  background: rgb(247 247 245 / 90%);
+  background: rgb(244 243 238 / 92%);
 }
 
 .prejoin-preview__checking strong {
@@ -3748,9 +3938,11 @@ textarea:focus-visible {
 .prejoin-devices__bar {
   display: flex;
   min-width: 0;
+  padding-top: 12px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  border-top: 1px solid var(--c-rule);
 }
 
 .prejoin-devices__bar .microphone-level {
@@ -3771,7 +3963,7 @@ textarea:focus-visible {
 }
 
 .prejoin-devices__bar .microphone-level meter {
-  width: 72px;
+  width: 96px;
   height: 8px;
   flex: none;
 }
@@ -3789,18 +3981,18 @@ textarea:focus-visible {
   min-height: 32px;
   padding: 0;
   border: 0;
-  color: var(--c-accent);
+  color: var(--c-ink);
   background: transparent;
   font-size: 0.8125rem;
-  font-weight: 600;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
   white-space: nowrap;
 }
 
 .prejoin-link-action:hover:not(:disabled),
 .prejoin-text-action:hover:not(:disabled) {
-  color: var(--c-accent-strong);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  color: var(--c-accent);
 }
 
 .prejoin-link-action:disabled,
@@ -3833,7 +4025,6 @@ textarea:focus-visible {
   display: flex;
   margin: 0;
   padding: 10px 12px;
-  border-radius: 8px;
   align-items: flex-start;
   gap: 8px;
   color: var(--c-warn-ink);
@@ -3852,8 +4043,7 @@ textarea:focus-visible {
   display: grid;
   padding: 14px;
   gap: 12px;
-  border: 1px solid var(--c-line);
-  border-radius: 10px;
+  border: 1px solid var(--c-rule);
   background: var(--c-surface);
 }
 
@@ -3873,39 +4063,50 @@ textarea:focus-visible {
   min-height: 42px;
   padding: 0 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 8px;
   color: var(--c-ink);
   background: var(--c-surface);
   font-weight: 400;
 }
 
+/* 이름과 입장을 01·02 단계로 나누고 단계마다 괘선을 긋는다. 번호는 화면 낭독기에 읽히지 않는다. */
 .prejoin-settings {
   display: grid;
   min-width: 0;
-  gap: 18px;
+  grid-area: settings;
+  gap: 0;
 }
 
-.prejoin-room-code {
-  margin: 0;
+.prejoin-name,
+.prejoin-actions {
+  position: relative;
+  display: grid;
+  padding: 16px 0 22px 48px;
+  gap: 10px;
+  border-top: 1px solid var(--c-rule);
+}
+
+.prejoin-name::before,
+.prejoin-actions::before {
+  position: absolute;
+  top: 12px;
+  left: 0;
   color: var(--c-ink-soft);
-  font-size: 0.8125rem;
+  font-family: var(--c-figure-font);
+  font-size: 1.375rem;
+  font-weight: 600;
 }
 
-.prejoin-room-code span {
-  font-variant-numeric: tabular-nums;
+.prejoin-name::before {
+  content: '01' / '';
 }
 
-.prejoin-settings h1 {
-  margin: -8px 0 0;
-  font-size: 1.75rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+.prejoin-actions::before {
+  content: '02' / '';
 }
 
 .prejoin-settings > p[role='alert'] {
-  margin: 0;
+  margin: 0 0 16px;
   padding: 10px 12px;
-  border-radius: 8px;
   color: var(--c-danger-ink);
   background: var(--c-danger-soft);
   font-size: 0.8125rem;
@@ -3914,22 +4115,40 @@ textarea:focus-visible {
 
 .prejoin-name,
 .prejoin-host-capability {
-  display: grid;
   gap: 8px;
+}
+
+.prejoin-host-capability {
+  display: grid;
 }
 
 .prejoin-name > label,
 .prejoin-host-capability > span {
-  font-weight: 600;
+  font-size: 0.875rem;
+  font-weight: 700;
 }
 
-.prejoin-name input,
+.prejoin-name input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid var(--c-ink);
+  color: var(--c-ink);
+  background: transparent;
+  font-size: 1.625rem;
+  font-weight: 700;
+}
+
+.prejoin-name input:focus-visible {
+  outline-offset: 2px;
+}
+
 .prejoin-host-capability input {
   width: 100%;
   min-height: 48px;
   padding: 0 12px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 8px;
   color: var(--c-ink);
   background: var(--c-surface);
   font-size: 1rem;
@@ -3953,22 +4172,32 @@ textarea:focus-visible {
 }
 
 .prejoin-actions {
-  display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .prejoin-primary-action {
-  min-height: 52px;
+  display: flex;
+  min-height: 68px;
+  padding: 0 22px;
   border: 0;
-  border-radius: 10px;
-  color: var(--c-on-accent);
-  background: var(--c-accent);
-  font-size: 1rem;
-  font-weight: 700;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--c-bg);
+  background: var(--c-ink);
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.prejoin-primary-action svg {
+  width: 26px;
+  height: 26px;
+  flex: none;
 }
 
 .prejoin-primary-action:hover:not(:disabled) {
-  background: var(--c-accent-strong);
+  background: #2b2b2b;
 }
 
 .prejoin-primary-action:disabled {
@@ -3976,29 +4205,28 @@ textarea:focus-visible {
 }
 
 .prejoin-actions .prejoin-text-action {
-  justify-self: center;
-  min-height: 40px;
-  color: var(--c-ink);
-  font-size: 0.875rem;
+  justify-self: start;
+  min-height: 36px;
   font-weight: 500;
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .prejoin-host {
   display: grid;
-  padding-top: 14px;
+  padding: 14px 0 0 48px;
   gap: 12px;
   border-top: 1px solid var(--c-line);
 }
 
 .prejoin-host__toggle {
   justify-self: start;
+  min-height: 32px;
   padding: 0;
   border: 0;
   color: var(--c-ink-soft);
   background: transparent;
   font-size: 0.875rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .prejoin-host__toggle:hover:not(:disabled) {
@@ -4011,6 +4239,7 @@ textarea:focus-visible {
 
 .prejoin-back-action {
   justify-self: start;
+  margin: 16px 0 0 48px;
   padding: 0;
   border: 0;
   color: var(--c-ink-soft);
@@ -4024,106 +4253,139 @@ textarea:focus-visible {
   text-underline-offset: 3px;
 }
 
-/* 패널을 연 중간 폭에서는 타이머 주제와 연결 상태 글자를 줄여 한 줄을 지킨다. */
+/* 채팅을 연 중간 폭에서는 연결 상태 글자를 숨기고 주제 글자를 줄인다. */
 @media (max-width: 1180px) {
-  .room-shell--panel-open .room-study summary strong,
   .room-shell--panel-open .connection-state {
     display: none;
   }
 
-  .room-shell--panel-open .control-button {
-    width: 76px;
+  .room-shell--panel-open .room-study summary strong {
+    font-size: 1.75rem;
   }
 }
 
 @media (max-width: 1080px) {
-  .room-study summary strong,
-  .room-study__open {
-    display: none;
+  .room-header,
+  .video-stage {
+    padding-inline: 24px;
+  }
+
+  .control-dock {
+    margin-inline: 24px;
+  }
+
+  .control-button {
+    gap: 8px;
+    font-size: 0.8125rem;
   }
 
   .prejoin-main {
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
-    gap: 32px;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    column-gap: 32px;
   }
 }
 
-/* 좁은 화면: 위에 타이머, 아래에 6칸 조작부. 상단 방 정보는 짧게 줄인다. */
+/* 좁은 화면: 큰 남은 시간 옆에 모드·주제를 쌓고, 아래에 6칸 조작부를 둔다. */
 @media (max-width: 760px) {
   .room-shell {
     grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
   .room-header {
-    padding: 8px 12px;
-    grid-template-areas:
-      'brand status'
-      'study study';
-    grid-template-columns: minmax(0, 1fr) auto;
-    row-gap: 4px;
+    padding: 0 16px;
   }
 
-  .room-header .wordmark,
   .connection-state--active {
     display: none;
   }
 
   .room-study > summary {
-    min-height: 40px;
-    padding-left: 4px;
+    padding: 12px 0 14px;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'time mode'
+      'time absent'
+      'time topic'
+      'time open';
+    align-content: end;
+    column-gap: 14px;
+    row-gap: 4px;
   }
 
-  .room-study summary strong {
-    display: block;
-    max-width: none;
-    min-width: 0;
-    flex: 1;
+  .room-study__mode {
+    align-self: end;
+    font-size: 0.75rem;
   }
 
   .room-study time {
-    font-size: 1.625rem;
+    margin-left: 0;
+    align-self: end;
+    font-size: clamp(3.5rem, 19vw, 5.25rem);
   }
 
-  .room-study__open {
-    display: inline-flex;
-    margin-left: auto;
+  .room-study summary strong {
+    font-size: 1.125rem;
+    letter-spacing: -0.02em;
   }
 
-  .room-study__progress {
-    right: 4px;
-    left: 4px;
+  .room-study__host-absent {
+    font-size: 0.6875rem;
+  }
+
+  .room-study__open,
+  .room-study[open] > summary .room-study__open {
+    justify-self: start;
+    min-height: 28px;
+    padding: 0;
+    border: 0;
+    color: var(--c-ink);
+    background: transparent;
+    font-size: 0.75rem;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .room-study > summary:hover .room-study__open {
+    background: transparent;
   }
 
   .room-study__body {
+    right: auto;
     left: 0;
-    transform: none;
   }
 
   .participant-count,
   .room-invite-button {
-    min-height: 34px;
-    padding-inline: 10px;
-    font-size: 0.8125rem;
+    padding-inline: 8px;
+    font-size: 0.75rem;
+  }
+
+  .video-stage {
+    padding: 14px 16px 12px;
+    gap: 12px;
   }
 
   .control-dock {
-    display: grid;
-    padding: 6px 6px calc(10px + env(safe-area-inset-bottom));
-    grid-auto-columns: minmax(0, 1fr);
-    grid-auto-flow: column;
-    gap: 0;
-    border-top: 1px solid var(--c-line);
-    background: var(--c-surface);
+    margin: 0;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .control-button,
   .control-button--leave {
-    width: auto;
-    height: 58px;
-    margin: 0;
+    height: 72px;
     padding: 0 2px;
-    border-color: transparent;
+    flex-direction: column;
+    gap: 5px;
     font-size: 0.6875rem;
+  }
+
+  .control-button b {
+    position: absolute;
+    top: 8px;
+    right: calc(50% - 24px);
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
   }
 
   /* 터치 화면에서는 누른 뒤 남는 hover 배경이 켜진 상태처럼 보이지 않게 한다. */
@@ -4133,8 +4395,17 @@ textarea:focus-visible {
       .control-button--active,
       .control-button--hand
     ):hover:not(:disabled) {
-    border-color: transparent;
     background: transparent;
+  }
+
+  .more-menu > summary {
+    min-height: 72px;
+  }
+
+  .more-menu[open] > summary,
+  .more-menu[open] > summary:hover:not(:disabled) {
+    color: var(--c-on-hand);
+    background: var(--c-ink);
   }
 
   .waiting-note {
@@ -4142,17 +4413,6 @@ textarea:focus-visible {
     left: 16px;
     transform: none;
     white-space: normal;
-  }
-
-  .control-button--leave,
-  .control-button--leave:hover:not(:disabled) {
-    color: var(--c-danger);
-    background: transparent;
-    font-size: 0.6875rem;
-  }
-
-  .control-button--leave svg {
-    display: block;
   }
 
   .more-menu > summary {
@@ -4171,8 +4431,7 @@ textarea:focus-visible {
     display: block;
     min-height: 48px;
     margin-top: 8px;
-    border: 1px solid var(--c-line);
-    border-radius: 10px;
+    border: 1px solid var(--c-rule);
     color: var(--c-ink);
     background: var(--c-surface);
     font-size: 0.9375rem;
@@ -4189,41 +4448,77 @@ textarea:focus-visible {
     max-height: 80svh;
     padding: 12px 12px calc(20px + env(safe-area-inset-bottom));
     border: 0;
-    border-radius: 16px 16px 0 0;
+    border-top: 1px solid var(--c-rule);
   }
 
   .prejoin-shell {
-    padding: 20px 16px 28px;
-    place-items: start center;
+    padding: 0 16px 28px;
   }
 
   .prejoin-main {
     width: min(100%, 560px);
     grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
+    grid-template-areas:
+      'head'
+      'stage'
+      'settings';
+    row-gap: 20px;
+  }
+
+  .prejoin-masthead {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'mark'
+      'title'
+      'code';
+  }
+
+  .prejoin-masthead .wordmark {
+    margin-bottom: 14px;
+  }
+
+  .prejoin-masthead h1 {
+    margin-bottom: 8px;
+  }
+
+  .prejoin-room-code {
+    display: flex;
+    margin-bottom: 14px;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .prejoin-room-code span {
+    font-size: 1.5rem;
   }
 
   .prejoin-preview {
     max-height: 46svh;
   }
 
-  .prejoin-settings {
-    gap: 16px;
+  .prejoin-name,
+  .prejoin-actions {
+    padding-left: 40px;
   }
 
-  .prejoin-settings h1 {
-    font-size: 1.5rem;
+  .prejoin-host {
+    padding-left: 40px;
+  }
+
+  .prejoin-back-action {
+    margin-left: 40px;
   }
 }
 
 @media (max-width: 430px) {
+  .room-header .wordmark,
   .room-code svg,
   .connection-state {
     display: none;
   }
 
   .room-study__mode {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
   }
 
   .prejoin-preview__controls button {
@@ -4234,6 +4529,6 @@ textarea:focus-visible {
 @media (max-width: 359px) {
   .participant-count,
   .room-invite-button {
-    padding-inline: 8px;
+    padding-inline: 6px;
   }
 }

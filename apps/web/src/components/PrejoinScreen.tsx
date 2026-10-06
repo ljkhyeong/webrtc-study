@@ -3,7 +3,7 @@ import { MAX_HOST_CAPABILITY_LENGTH, MIN_HOST_CAPABILITY_LENGTH } from '@round/p
 import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_AUDIO_CONSTRAINTS, DEFAULT_VIDEO_CONSTRAINTS } from '../lib/media-constraints';
 import { prejoinMediaIssueMessage } from '../lib/prejoin-presentation';
-import { CameraIcon, CameraOffIcon, MicIcon, MicOffIcon } from './Icons';
+import { ArrowIcon, CameraIcon, CameraOffIcon, MicIcon, MicOffIcon } from './Icons';
 import { MicrophoneLevel } from './MicrophoneLevel';
 import { DISPLAY_NAME_MAX_LENGTH, sanitizeDisplayName } from '../lib/room';
 import { useSpeakerTest } from '../lib/use-speaker-test';
@@ -203,6 +203,14 @@ export function PrejoinScreen({
   return (
     <div className="prejoin-shell">
       <main className="prejoin-main">
+        <header className="prejoin-masthead">
+          <span className="wordmark">ROUND</span>
+          <h1 id="prejoin-title">스터디룸 입장</h1>
+          <p className="prejoin-room-code">
+            방 코드 <span>{roomId}</span>
+          </p>
+        </header>
+
         <div className="prejoin-stage">
           <section className="prejoin-preview" aria-label="내 카메라 미리보기">
             <video ref={previewRef} autoPlay muted playsInline />
@@ -372,11 +380,6 @@ export function PrejoinScreen({
         </div>
 
         <section className="prejoin-settings" aria-labelledby="prejoin-title">
-          <p className="prejoin-room-code">
-            ROUND · <span>{roomId}</span>
-          </p>
-          <h1 id="prejoin-title">스터디룸 입장</h1>
-
           <div className="prejoin-name">
             <label htmlFor="display-name">내 이름</label>
             <input
@@ -410,6 +413,7 @@ export function PrejoinScreen({
                 onClick={handleCheckDevices}
               >
                 카메라·마이크 켜기
+                <ArrowIcon />
               </button>
             ) : (
               <button
@@ -419,6 +423,7 @@ export function PrejoinScreen({
                 onClick={() => handleJoin(true)}
               >
                 {hasAnyMedia ? '입장하기' : '카메라·마이크 없이 입장'}
+                <ArrowIcon />
               </button>
             )}
             {isIdle || hasAnyMedia ? (
