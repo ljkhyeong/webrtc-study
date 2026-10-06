@@ -130,12 +130,7 @@ class TurnCredentialServiceTest {
 		CloudflareTurnClient client = mock(CloudflareTurnClient.class);
 		when(client.issue(anyLong())).thenThrow(new RestClientException("provider unavailable"));
 		MutableClock clock = new MutableClock(1_800_000_000);
-		TurnCredentialService service = new TurnCredentialService(
-				properties,
-				clock,
-				clock::nanoTime,
-				new TurnCredentialMetrics(registry),
-				client);
+		TurnCredentialService service = service(properties, clock, registry, client);
 
 		assertThat(service.issueFor("192.0.2.10"))
 				.isSameAs(TurnCredentialService.ProviderUnavailable.INSTANCE);
@@ -613,6 +608,14 @@ class TurnCredentialServiceTest {
 					"provider-user-" + value,
 					"provider-credential-" + value);
 		});
+		return service(properties, clock, registry, client);
+	}
+
+	private static TurnCredentialService service(
+			TurnProperties properties,
+			MutableClock clock,
+			SimpleMeterRegistry registry,
+			CloudflareTurnClient client) {
 		return new TurnCredentialService(
 				properties,
 				clock,

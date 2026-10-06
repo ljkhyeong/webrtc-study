@@ -8,35 +8,20 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
-import com.nimbusds.jose.JOSEObjectType;
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.crypto.RSASSASigner;
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
-import com.personal.round.signaling.SignalingWebSocketHandler;
+import com.personal.round.auth.TestBatonIssuer;
 import com.personal.round.signaling.SignalingService;
+import com.personal.round.signaling.SignalingWebSocketHandler;
 import com.personal.round.turn.CloudflareTurnClient;
 import com.personal.round.turn.TurnCredentialMaterial;
-import com.sun.net.httpserver.HttpServer;
-import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,10 +33,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.WebSocketSession;
@@ -82,7 +67,7 @@ import tools.jackson.databind.ObjectMapper;
 		})
 @Execution(ExecutionMode.SAME_THREAD)
 class BatonAuthBoundaryIntegrationTest {
-	private static final String ACCOUNT_ID = "4c1e30a9-6d44-4f05-8f31-0f8a0f490042";
+	private static final String ACCOUNT_ID = TestBatonIssuer.ACCOUNT_ID;
 
 	private static final TestBatonIssuer BATON_ISSUER = TestBatonIssuer.start();
 	private static final String COOKIE_NAME = "__Secure-round_access";
@@ -90,26 +75,31 @@ class BatonAuthBoundaryIntegrationTest {
 	private static final String ROOM_ID = "abcd-efgh-jkmp";
 	private static final String OTHER_ROOM_ID = "qrst-uvwx-yz23";
 	private static final String MATCHING_TOKEN =
-			BATON_ISSUER.issueParticipationGrant(ROOM_ID, "ticket-1");
+			BATON_ISSUER.issue(ROOM_ID, "ticket-1");
 	private static final String RECONNECT_TOKEN =
-			BATON_ISSUER.issueParticipationGrant(ROOM_ID, "ticket-2");
+			BATON_ISSUER.issue(ROOM_ID, "ticket-2");
 	private static final String EXCESS_TOKEN =
-			BATON_ISSUER.issueParticipationGrant(ROOM_ID, "ticket-3");
+			BATON_ISSUER.issue(ROOM_ID, "ticket-3");
 	private static final String OTHER_ROOM_TOKEN =
-			BATON_ISSUER.issueParticipationGrant(OTHER_ROOM_ID, "ticket-other-room");
-	private static final String UNKNOWN_KEY_TOKEN = BATON_ISSUER.issueParticipationGrant(
+			BATON_ISSUER.issue(OTHER_ROOM_ID, "ticket-other-room");
+	private static final String UNKNOWN_KEY_TOKEN = BATON_ISSUER.issue(
 			ROOM_ID,
 			"ticket-unknown-key",
-			"retired-baton-key");
-	private static final String MALFORMED_KEY_TOKEN = BATON_ISSUER.issueParticipationGrant(
+			"retired-baton-key",
+			claims -> {
+			});
+	private static final String MALFORMED_KEY_TOKEN = BATON_ISSUER.issue(
 			ROOM_ID,
 			"ticket-malformed-key",
-			"../baton-key");
+			"../baton-key",
+			claims -> {
+			});
 	private static final String EXTRA_AUDIENCE_TOKEN =
-			BATON_ISSUER.issueParticipationGrant(
+			BATON_ISSUER.issue(
 					ROOM_ID,
 					"ticket-extra-audience",
-					List.of("round", "other-service"));
+					TestBatonIssuer.KEY_ID,
+					claims -> claims.audience(List.of("round", "other-service")));
 	private static final String INVALID_TOKEN = "not-a-jwt";
 
 	private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -529,135 +519,5 @@ class BatonAuthBoundaryIntegrationTest {
 
 	private String webSocketOrigin() {
 		return "ws://127.0.0.1:" + port;
-	}
-
-	private static final class TestBatonIssuer implements AutoCloseable {
-
-		private static final String KEY_ID = "baton-integration-key";
-
-		private final HttpServer server;
-		private final KeyPair signingKey;
-		private final String issuer;
-		private final AtomicInteger jwkRequestCount = new AtomicInteger();
-
-		private TestBatonIssuer(
-				HttpServer server,
-				KeyPair signingKey,
-				String issuer) {
-			this.server = server;
-			this.signingKey = signingKey;
-			this.issuer = issuer;
-		}
-
-		static TestBatonIssuer start() {
-			try {
-				KeyPair signingKey = rsaKeyPair();
-				RSAKey publicJwk = new RSAKey.Builder(
-						(RSAPublicKey) signingKey.getPublic())
-						.keyID(KEY_ID)
-						.algorithm(JWSAlgorithm.RS256)
-						.build();
-				byte[] jwkSet = new JWKSet(publicJwk)
-						.toString()
-						.getBytes(StandardCharsets.UTF_8);
-				HttpServer server = HttpServer.create(
-						new InetSocketAddress("127.0.0.1", 0),
-						0);
-				String issuer = "http://127.0.0.1:"
-						+ server.getAddress().getPort()
-						+ "/oauth2";
-				TestBatonIssuer testIssuer =
-						new TestBatonIssuer(server, signingKey, issuer);
-				server.createContext("/oauth2/jwks", exchange -> {
-					testIssuer.jwkRequestCount.incrementAndGet();
-					exchange.getResponseHeaders().set(
-							HttpHeaders.CONTENT_TYPE,
-							"application/json");
-					exchange.sendResponseHeaders(200, jwkSet.length);
-					try (var responseBody = exchange.getResponseBody()) {
-						responseBody.write(jwkSet);
-					}
-				});
-				server.start();
-				return testIssuer;
-			}
-			catch (Exception exception) {
-				throw new IllegalStateException(
-						"Could not start the BATON test issuer",
-						exception);
-			}
-		}
-
-		String issuer() {
-			return issuer;
-		}
-
-		String jwkSetUri() {
-			return issuer + "/jwks";
-		}
-
-		int jwkRequestCount() {
-			return jwkRequestCount.get();
-		}
-
-		String issueParticipationGrant(String roomId, String tokenId) {
-			return issueParticipationGrant(roomId, tokenId, KEY_ID);
-		}
-
-		String issueParticipationGrant(
-				String roomId,
-				String tokenId,
-				List<String> audiences) {
-			return issueParticipationGrant(roomId, tokenId, KEY_ID, audiences);
-		}
-
-		String issueParticipationGrant(String roomId, String tokenId, String keyId) {
-			return issueParticipationGrant(roomId, tokenId, keyId, List.of("round"));
-		}
-
-		String issueParticipationGrant(
-				String roomId,
-				String tokenId,
-				String keyId,
-				List<String> audiences) {
-			try {
-				Instant now = Instant.now();
-				JWTClaimsSet claims = new JWTClaimsSet.Builder()
-						.issuer(issuer)
-						.subject(ACCOUNT_ID)
-						.audience(audiences)
-						.issueTime(Date.from(now.minusSeconds(30)))
-						.expirationTime(Date.from(now.plusSeconds(240)))
-						.jwtID(tokenId)
-						.claim("study_id", "study-7")
-						.claim("room_id", roomId)
-						.claim("role", "participant")
-						.build();
-				SignedJWT token = new SignedJWT(
-						new JWSHeader.Builder(JWSAlgorithm.RS256)
-								.type(JOSEObjectType.JWT)
-								.keyID(keyId)
-								.build(),
-						claims);
-				token.sign(new RSASSASigner(signingKey.getPrivate()));
-				return token.serialize();
-			}
-			catch (Exception exception) {
-				throw new IllegalStateException(
-						"Could not sign a BATON participation grant",
-						exception);
-			}
-		}
-
-		private static KeyPair rsaKeyPair() throws Exception {
-			KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-			generator.initialize(2_048);
-			return generator.generateKeyPair();
-		}
-
-		@Override
-		public void close() {
-			server.stop(0);
-		}
 	}
 }
