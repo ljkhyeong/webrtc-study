@@ -68,21 +68,6 @@ class HealthIntegrationTest {
 	}
 
 	@Test
-	void reportsReadinessAsUnavailableWhileSignalingIsStopped() throws Exception {
-		try {
-			signalingService.stop();
-
-			HttpResponse<String> readiness = get("/actuator/health/readiness");
-
-			assertThat(readiness.statusCode()).isEqualTo(503);
-			assertThat(readiness.body()).contains("\"status\":\"OUT_OF_SERVICE\"");
-		}
-		finally {
-			signalingService.start();
-		}
-	}
-
-	@Test
 	void keepsTurnCredentialEndpointHiddenWhenTurnIsDisabled() throws Exception {
 		String origin = "http://127.0.0.1:" + port;
 		HttpRequest request = HttpRequest.newBuilder()

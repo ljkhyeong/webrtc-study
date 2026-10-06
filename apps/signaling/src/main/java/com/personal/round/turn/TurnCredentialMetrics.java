@@ -1,8 +1,10 @@
 package com.personal.round.turn;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Meter.MeterProvider;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.EnumMap;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
@@ -20,15 +22,15 @@ public final class TurnCredentialMetrics {
 		providerErrors = Counter.builder("round.turn.credentials.provider.errors")
 				.description("실패한 Cloudflare TURN 자격 증명 요청 수")
 				.register(registry);
+		MeterProvider<Counter> rateLimitedCounters =
+				Counter.builder("round.turn.credentials.rate_limited")
+						.description("발급 한도로 거부한 TURN 자격 증명 요청 수")
+						.withRegistry(registry);
 		rateLimited = new EnumMap<>(TurnCredentialRateLimitScope.class);
-		for (TurnCredentialRateLimitScope scope
-				: TurnCredentialRateLimitScope.values()) {
+		for (TurnCredentialRateLimitScope scope : TurnCredentialRateLimitScope.values()) {
 			rateLimited.put(
 					scope,
-					Counter.builder("round.turn.credentials.rate_limited")
-							.tag("scope", scope.metricTag())
-							.description("발급 한도로 거부한 TURN 자격 증명 요청 수")
-							.register(registry));
+					rateLimitedCounters.withTag("scope", scope.name().toLowerCase(Locale.ROOT)));
 		}
 	}
 

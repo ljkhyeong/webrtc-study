@@ -36,8 +36,8 @@ class CoturnCredentialIntegrationTest {
 	void issuesWithoutExternalApiAndRetainsGrantExpiryAndQuota() {
 		Instant now = Instant.now();
 		ParticipationGrant grant = new ParticipationGrant(
-				"member-1", "study-1", "abcd-efgh-jkmp", ParticipationGrant.Role.PARTICIPANT,
-				"ticket-1", now, now.plusSeconds(120));
+				"member-1", "abcd-efgh-jkmp", ParticipationGrant.Role.PARTICIPANT,
+				"ticket-1", now.plusSeconds(120));
 		TurnCredentialService.Issued first = (TurnCredentialService.Issued) service.issueFor("192.0.2.1", grant);
 		TurnCredentialService.Issued second = (TurnCredentialService.Issued) service.issueFor("192.0.2.1", grant);
 

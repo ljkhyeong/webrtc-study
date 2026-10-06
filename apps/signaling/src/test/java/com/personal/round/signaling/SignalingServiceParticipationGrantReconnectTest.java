@@ -15,7 +15,6 @@ import com.personal.round.protocol.ProtocolParser;
 import com.personal.round.protocol.ServerMessageEncoder.Participant;
 import com.personal.round.protocol.SignalingErrorCode;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -46,7 +45,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 			attachGrantReservation(
 					original,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.120", 41_120),
+					"192.0.2.120",
 					originalGrant);
 			assertThat(batonService.connect(original.session())).isTrue();
 			batonService.handle(original.session(), join("Original"));
@@ -62,7 +61,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 			attachGrantReservation(
 					replacement,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.121", 41_121),
+					"192.0.2.121",
 					freshGrant);
 			assertThat(batonService.connect(replacement.session())).isTrue();
 
@@ -101,6 +100,56 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 	}
 
 	@Test
+	void batonReconnectOfTheOnlyHostKeepsTheRunningStudyTimer() throws Exception {
+		SignalingService batonService = newBatonService(new SimpleMeterRegistry());
+		ConnectionAdmissionPolicy batonAdmissionPolicy =
+				admissionPolicy(properties(6));
+		batonService.start();
+		try {
+			TestPeer original = peer("original-host");
+			attachGrantReservation(
+					original,
+					batonAdmissionPolicy,
+					"192.0.2.124",
+					grantFor(ROOM_ID, "host-user", "original-host-token",
+							clock.instant().plusSeconds(120), ParticipationGrant.Role.HOST));
+			assertThat(batonService.connect(original.session())).isTrue();
+			batonService.handle(original.session(), join("Host"));
+			original.nextJson();
+			batonService.handle(original.session(), new ClientMessage.Study(
+					ROOM_ID,
+					"change",
+					new ClientMessage.StudyCommand("start", 0, null, "focus", 1500)));
+			assertThat(original.nextJson().at("/payload/revision").asLong()).isOne();
+
+			monotonicTicker.advanceMillis(5_000);
+			TestPeer replacement = peer("replacement-host");
+			attachGrantReservation(
+					replacement,
+					batonAdmissionPolicy,
+					"192.0.2.125",
+					grantFor(ROOM_ID, "host-user", "fresh-host-token",
+							clock.instant().plusSeconds(120), ParticipationGrant.Role.HOST));
+			assertThat(batonService.connect(replacement.session())).isTrue();
+			batonService.handle(replacement.session(), join("Host"));
+			original.awaitClosed();
+			replacement.nextJson();
+
+			batonService.handle(
+					replacement.session(),
+					new ClientMessage.Study(ROOM_ID, "sync", null));
+			JsonNode study = replacement.nextJson();
+			assertThat(study.at("/payload/revision").asLong()).isOne();
+			assertThat(study.at("/payload/running").asBoolean()).isTrue();
+			assertThat(study.at("/payload/remainingMs").asLong()).isEqualTo(1_495_000);
+			assertThat(batonService.roomCount()).isOne();
+		}
+		finally {
+			batonService.stop();
+		}
+	}
+
+	@Test
 	void queuePressureDuringBatonSupersessionCannotLeaveADisconnectedReplacementInRoom()
 			throws Exception {
 		String fixturePeerId = "p".repeat(36);
@@ -121,16 +170,16 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 		assertThat(secondDetailLength).isPositive();
 		assertThat(globalQueueBytes).isGreaterThanOrEqualTo(maxPeerQueueBytes);
 
-		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
-				2,
-				100,
-				200,
-				400,
-				1_000_000,
-				2_000_000,
-				4_000_000,
-				maxPeerQueueBytes,
-				globalQueueBytes);
+		SignalingProperties properties = TestProperties.signaling(
+				"max-room-size=2",
+				"max-frames-per-session-window=100",
+				"max-frames-per-client-window=200",
+				"max-frames-global-window=400",
+				"max-bytes-per-session-window=1000000",
+				"max-bytes-per-client-window=2000000",
+				"max-bytes-global-window=4000000",
+				"max-outbound-queue-bytes=" + maxPeerQueueBytes,
+				"max-outbound-queue-bytes-global=" + globalQueueBytes);
 		SimpleMeterRegistry batonRegistry = new SimpleMeterRegistry();
 		SignalingService batonService = newBatonService(properties, batonRegistry);
 		ConnectionAdmissionPolicy batonAdmissionPolicy = admissionPolicy(properties);
@@ -158,7 +207,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 			attachGrantReservation(
 					original,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.140", 41_140),
+					"192.0.2.140",
 					originalGrant);
 			assertThat(batonService.connect(original.session())).isTrue();
 			batonService.handle(original.session(), join("Original"));
@@ -168,7 +217,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 			attachGrantReservation(
 					observer,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.141", 41_141),
+					"192.0.2.141",
 					observerGrant);
 			assertThat(batonService.connect(observer.session())).isTrue();
 			batonService.handle(observer.session(), join("Observer"));
@@ -187,7 +236,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 			attachGrantReservation(
 					replacement,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.142", 41_142),
+					"192.0.2.142",
 					replacementGrant);
 			assertThat(batonService.connect(replacement.session())).isTrue();
 			batonService.sendInvalidMessage(
@@ -251,7 +300,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 			attachGrantReservation(
 					original,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.122", 41_122),
+					"192.0.2.122",
 					originalGrant);
 			assertThat(batonService.connect(original.session())).isTrue();
 
@@ -259,7 +308,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 			attachGrantReservation(
 					replacement,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.123", 41_123),
+					"192.0.2.123",
 					freshGrant);
 			assertThat(batonService.connect(replacement.session())).isTrue();
 			batonService.handle(replacement.session(), join("Replacement"));
@@ -312,7 +361,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 				attachGrantReservation(
 						peer,
 						batonAdmissionPolicy,
-						new InetSocketAddress("192.0.2." + (130 + index), 41_130 + index),
+						"192.0.2." + (130 + index),
 						grant);
 				assertThat(batonService.connect(peer.session())).isTrue();
 				batonService.handle(peer.session(), join("Participant " + index));
@@ -343,7 +392,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 			attachGrantReservation(
 					replacement,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.140", 41_140),
+					"192.0.2.140",
 					freshGrant);
 			assertThat(batonAdmissionPolicy.activeParticipantRoomReservationCount(
 					freshGrant)).isEqualTo(2);
@@ -410,7 +459,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 			attachGrantReservation(
 					original,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.150", 41_150),
+					"192.0.2.150",
 					originalGrant);
 			assertThat(batonService.connect(original.session())).isTrue();
 			batonService.handle(original.session(), join("Original"));
@@ -426,7 +475,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 			attachGrantReservation(
 					replacement,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.151", 41_151),
+					"192.0.2.151",
 					freshGrant);
 			assertThat(batonService.connect(replacement.session())).isTrue();
 
@@ -468,7 +517,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 					clock.instant().plusSeconds(120));
 			ConnectionAdmissionPolicy.Admission blockedAdmission =
 					batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.152", 41_152),
+							"192.0.2.152",
 							thirdGrant);
 			assertThat(blockedAdmission).isEqualTo(new ConnectionAdmissionPolicy.Rejected(
 					ConnectionAdmissionPolicy.Rejection.PARTICIPANT_ROOM_CAPACITY));
@@ -507,7 +556,7 @@ class SignalingServiceParticipationGrantReconnectTest extends SignalingServiceTe
 
 			ConnectionAdmissionPolicy.Admission admittedAfterClose =
 					batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.152", 41_152),
+							"192.0.2.152",
 							thirdGrant);
 			ConnectionAdmissionPolicy.Reservation thirdReservation =
 					acceptedReservation(admittedAfterClose);

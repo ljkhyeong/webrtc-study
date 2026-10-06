@@ -23,5 +23,11 @@ class SignalingMetricsTest {
 				.containsExactlyInAnyOrder(
 						"server_capacity", "client_capacity", "participation_token_capacity",
 						"participant_room_capacity", "missing_reservation", "missing_room_access");
+		assertThat(registry.get("round.signaling.frames.limited").counters())
+				.allSatisfy(counter -> assertThat(counter.count()).isZero())
+				.extracting(counter -> counter.getId().getTag("scope") + "/" + counter.getId().getTag("limit"))
+				.containsExactlyInAnyOrder(
+						"session/frames", "session/bytes", "client/frames",
+						"client/bytes", "global/frames", "global/bytes");
 	}
 }

@@ -27,7 +27,7 @@ WebSocket 요청은 허용합니다. 비브라우저 클라이언트는 Origin�
 
 ## 연결·요청 제한과 만료 처리
 
-`server.shutdown=graceful`과 시그널링 종료 처리를 함께 사용합니다. 서버 종료가 시작되면
+Spring Boot 기본 graceful 종료와 시그널링 종료 처리를 함께 사용합니다. 서버 종료가 시작되면
 새 연결 요청에는 HTTP 503을 반환합니다. 종료 처리와 겹쳐 연결된 WebSocket과 기존 연결은
 종료 코드 1001로 닫고, 중복 종료 요청에도 방 상태를 한 번만 정리합니다.
 
@@ -78,10 +78,7 @@ Micrometer는 다음 시그널링 지표를 제공합니다.
 - `round.signaling.joins.rejected`
   (`reason=room_full|already_joined|unauthorized_room|invalid_host_capability`)
 - `round.signaling.frames.invalid`
-- `round.signaling.frames.rate_limited`
-- `round.signaling.frames.client_rate_limited`
-- `round.signaling.frames.overloaded`
-- `round.signaling.frames.byte_limited` (`scope=session|client|global`)
+- `round.signaling.frames.limited` (`scope=session|client|global`, `limit=frames|bytes`)
 - `round.signaling.connections.rejected`
   (`reason=server_capacity|client_capacity|participation_token_capacity|participant_room_capacity|missing_reservation|missing_room_access`)
 - `round.signaling.outbound.queue.overflows` (참가자별 또는 전체 송신 큐 제한으로 닫힌 참가자 수)

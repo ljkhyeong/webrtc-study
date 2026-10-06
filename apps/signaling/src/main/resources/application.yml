@@ -2,7 +2,6 @@ server:
   address: ${HOST:0.0.0.0}
   port: ${PORT:8787}
   forward-headers-strategy: native
-  shutdown: graceful
 
 spring:
   http:
@@ -15,24 +14,14 @@ spring:
 management:
   endpoint:
     health:
-      probes:
-        enabled: true
-      show-details: never
       group:
         liveness:
           include: livenessState
           additional-path: 'server:/healthz'
-        readiness:
-          include: readinessState,signaling
   endpoints:
     web:
       exposure:
         include: health,metrics,prometheus
-  health:
-    livenessstate:
-      enabled: true
-    readinessstate:
-      enabled: true
   metrics:
     tags:
       application: round-signaling

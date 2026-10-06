@@ -8,18 +8,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.personal.round.auth.ParticipationGrant;
-import com.personal.round.net.ClientAddressKeyResolver;
 import com.personal.round.signaling.ConnectionAdmissionPolicy;
 import com.personal.round.signaling.SignalingMetrics;
 import com.personal.round.signaling.SignalingService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
-import java.net.InetSocketAddress;
 import java.security.Principal;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,18 +29,16 @@ import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeFailureException;
-import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
+import org.springframework.web.socket.server.HandshakeHandler;
 
 class ConnectionAdmissionHandshakeHandlerTest {
 
-	private static final InetSocketAddress REMOTE_ADDRESS =
-			new InetSocketAddress("192.0.2.20", 41_000);
-
 	private SignalingService service;
 	private ConnectionAdmissionPolicy policy;
-	private DefaultHandshakeHandler delegate;
+	private HandshakeHandler delegate;
 	private ConnectionAdmissionHandshakeHandler handler;
 	private MockHttpServletRequest nativeRequest;
 	private ServletServerHttpRequest request;
@@ -52,18 +49,16 @@ class ConnectionAdmissionHandshakeHandlerTest {
 	void setUp() {
 		service = mock(SignalingService.class);
 		policy = new ConnectionAdmissionPolicy(
-				TestProperties.signalingWithConnectionLimits(6, 1_000, 1),
-				new SignalingMetrics(new SimpleMeterRegistry()),
-				new ClientAddressKeyResolver());
-		delegate = mock(DefaultHandshakeHandler.class);
+				TestProperties.signaling("max-connections-per-client=1"),
+				new SignalingMetrics(new SimpleMeterRegistry()));
+		delegate = mock(HandshakeHandler.class);
 		handler = new ConnectionAdmissionHandshakeHandler(service, policy, delegate);
 		nativeRequest = new MockHttpServletRequest();
-		nativeRequest.setRemoteAddr(REMOTE_ADDRESS.getAddress().getHostAddress());
-		nativeRequest.setRemotePort(REMOTE_ADDRESS.getPort());
+		nativeRequest.setRemoteAddr("192.0.2.20");
 		request = new ServletServerHttpRequest(nativeRequest);
 		response = mock(ServerHttpResponse.class);
 		webSocketHandler = mock(WebSocketHandler.class);
-		when(service.isAcceptingConnections()).thenReturn(true);
+		when(service.isRunning()).thenReturn(true);
 	}
 
 	@Test
@@ -140,16 +135,13 @@ class ConnectionAdmissionHandshakeHandlerTest {
 	@Test
 	void mapsParticipationTokenCapacityToTooManyRequests() {
 		policy = new ConnectionAdmissionPolicy(
-				TestProperties.signalingWithConnectionLimits(6, 1_000, 4),
-				new SignalingMetrics(new SimpleMeterRegistry()),
-				new ClientAddressKeyResolver());
+				TestProperties.signaling("max-connections-per-client=4"),
+				new SignalingMetrics(new SimpleMeterRegistry()));
 		handler = new ConnectionAdmissionHandshakeHandler(service, policy, delegate);
 		when(delegate.doHandshake(any(), any(), any(), any())).thenReturn(true);
-		ParticipationGrant grant = grant();
+		nativeRequest.setUserPrincipal(authenticated(grant(), "raw-jwt"));
 		Map<String, Object> firstAttributes = new HashMap<>();
-		firstAttributes.put(ParticipationGrant.SESSION_ATTRIBUTE, grant);
 		Map<String, Object> replayAttributes = new HashMap<>();
-		replayAttributes.put(ParticipationGrant.SESSION_ATTRIBUTE, grant);
 
 		assertThat(handler.doHandshake(
 				request,
@@ -170,7 +162,7 @@ class ConnectionAdmissionHandshakeHandlerTest {
 
 	@Test
 	void refusesBeforeAllocatingWhenShutdownHasStarted() {
-		when(service.isAcceptingConnections()).thenReturn(false);
+		when(service.isRunning()).thenReturn(false);
 
 		assertThat(handler.doHandshake(
 				request,
@@ -194,11 +186,11 @@ class ConnectionAdmissionHandshakeHandlerTest {
 		nativeRequest.setCookies(
 				new Cookie("__Secure-round_access", "raw-jwt"),
 				new Cookie("preference", "compact"));
-		Principal originalPrincipal = () -> "raw-jwt-principal";
+		ParticipationGrant grant = grant();
+		Principal originalPrincipal = authenticated(grant, "raw-jwt");
 		nativeRequest.setUserPrincipal(originalPrincipal);
 		when(delegate.doHandshake(any(), any(), any(), any())).thenReturn(true);
 		Map<String, Object> attributes = new HashMap<>();
-		attributes.put(ParticipationGrant.SESSION_ATTRIBUTE, grant());
 
 		assertThat(handler.doHandshake(
 				request,
@@ -252,6 +244,7 @@ class ConnectionAdmissionHandshakeHandlerTest {
 		assertThat(sanitizedNativeRequest.getUserPrincipal())
 				.isNotSameAs(originalPrincipal);
 		assertThat(sanitizedNativeRequest.getRemoteUser()).isEqualTo("member-42");
+		assertThat(attributes).containsEntry(ParticipationGrant.SESSION_ATTRIBUTE, grant);
 		release(attributes);
 	}
 
@@ -263,14 +256,16 @@ class ConnectionAdmissionHandshakeHandlerTest {
 		((ConnectionAdmissionPolicy.Reservation) reservation).close();
 	}
 
+	private static Principal authenticated(ParticipationGrant grant, String token) {
+		return UsernamePasswordAuthenticationToken.authenticated(grant, token, List.of());
+	}
+
 	private static ParticipationGrant grant() {
 		return new ParticipationGrant(
 				"member-42",
-				"study-7",
 				"abcd-efgh-jkmp",
 				ParticipationGrant.Role.PARTICIPANT,
 				"ticket-1",
-				Instant.parse("2026-07-30T00:00:00Z"),
 				Instant.parse("2026-07-30T00:05:00Z"));
 	}
 }

@@ -4,9 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.config.TestProperties;
-import com.personal.round.net.ClientAddressKeyResolver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.net.InetSocketAddress;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,12 +16,8 @@ import org.junit.jupiter.api.Test;
 
 class ConnectionAdmissionPolicyTest {
 
-	private static final InetSocketAddress FIRST_CLIENT =
-			new InetSocketAddress("192.0.2.10", 41_000);
-	private static final InetSocketAddress SAME_CLIENT_DIFFERENT_PORT =
-			new InetSocketAddress("192.0.2.10", 42_000);
-	private static final InetSocketAddress SECOND_CLIENT =
-			new InetSocketAddress("192.0.2.11", 41_000);
+	private static final String FIRST_CLIENT = "192.0.2.10";
+	private static final String SECOND_CLIENT = "192.0.2.11";
 
 	@Test
 	void enforcesClientAndServerCapacityUsingOnlyTheRemoteAddress() {
@@ -32,12 +26,12 @@ class ConnectionAdmissionPolicyTest {
 
 		ConnectionAdmissionPolicy.Admission first = policy.reserve(FIRST_CLIENT, null);
 		ConnectionAdmissionPolicy.Admission second =
-				policy.reserve(SAME_CLIENT_DIFFERENT_PORT, null);
+				policy.reserve(FIRST_CLIENT, null);
 		ConnectionAdmissionPolicy.Admission sameClientRejected =
 				policy.reserve(FIRST_CLIENT, null);
 		ConnectionAdmissionPolicy.Admission otherClient = policy.reserve(SECOND_CLIENT, null);
 		ConnectionAdmissionPolicy.Admission serverRejected =
-				policy.reserve(new InetSocketAddress("192.0.2.12", 41_000), null);
+				policy.reserve("192.0.2.12", null);
 
 		assertAccepted(first);
 		assertAccepted(second);
@@ -77,12 +71,12 @@ class ConnectionAdmissionPolicyTest {
 	@Test
 	void appliesOneConnectionLimitAcrossRotatingIpv6InterfaceIdentifiers() {
 		ConnectionAdmissionPolicy policy = policy(3, 1, new SimpleMeterRegistry());
-		InetSocketAddress first =
-				new InetSocketAddress("2001:db8:abcd:12::1", 41_000);
-		InetSocketAddress samePrefix =
-				new InetSocketAddress("2001:db8:abcd:12:ffff::beef", 42_000);
-		InetSocketAddress otherPrefix =
-				new InetSocketAddress("2001:db8:abcd:13::1", 41_000);
+		String first =
+				"2001:db8:abcd:12::1";
+		String samePrefix =
+				"2001:db8:abcd:12:ffff::beef";
+		String otherPrefix =
+				"2001:db8:abcd:13::1";
 
 		assertAccepted(policy.reserve(first, null));
 		assertThat(policy.reserve(samePrefix, null))
@@ -152,7 +146,7 @@ class ConnectionAdmissionPolicyTest {
 				policy.reserve(SECOND_CLIENT, reconnectGrant));
 
 		assertThat(policy.reserve(
-						new InetSocketAddress("192.0.2.12", 41_000),
+						"192.0.2.12",
 						excessGrant))
 				.isEqualTo(new ConnectionAdmissionPolicy.Rejected(
 						ConnectionAdmissionPolicy.Rejection
@@ -167,7 +161,7 @@ class ConnectionAdmissionPolicyTest {
 		first.close();
 		ConnectionAdmissionPolicy.Reservation replacement = acceptedReservation(
 				policy.reserve(
-						new InetSocketAddress("192.0.2.12", 41_000),
+						"192.0.2.12",
 						excessGrant));
 
 		reconnect.close();
@@ -210,9 +204,7 @@ class ConnectionAdmissionPolicyTest {
 					ready.countDown();
 					start.await();
 					return policy.reserve(
-							new InetSocketAddress(
-									"192.0.2." + (attempt + 1),
-									41_000),
+							"192.0.2." + (attempt + 1),
 							grant(
 									"member-42",
 									"study-7",
@@ -256,10 +248,11 @@ class ConnectionAdmissionPolicyTest {
 			int maxConnectionsPerClient,
 			SimpleMeterRegistry registry) {
 		return new ConnectionAdmissionPolicy(
-				TestProperties.signalingWithConnectionLimits(
-						1, maxConnections, maxConnectionsPerClient),
-				new SignalingMetrics(registry),
-				new ClientAddressKeyResolver());
+				TestProperties.signaling(
+						"max-room-size=1",
+						"max-connections=" + maxConnections,
+						"max-connections-per-client=" + maxConnectionsPerClient),
+				new SignalingMetrics(registry));
 	}
 
 	private static void assertAccepted(ConnectionAdmissionPolicy.Admission admission) {
@@ -279,11 +272,9 @@ class ConnectionAdmissionPolicyTest {
 			String tokenId) {
 		return new ParticipationGrant(
 				subject,
-				studyId,
 				roomId,
 				ParticipationGrant.Role.PARTICIPANT,
 				tokenId,
-				Instant.parse("2026-07-30T00:00:00Z"),
 				Instant.parse("2026-07-30T00:05:00Z"));
 	}
 }

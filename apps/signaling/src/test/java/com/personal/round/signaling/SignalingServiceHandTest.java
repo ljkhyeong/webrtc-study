@@ -62,7 +62,6 @@ class SignalingServiceHandTest extends SignalingServiceTestSupport {
 		service.handle(next.session(), hand(null));
 		var state = next.nextJson();
 		assertThat(state.at("/payload/peerIds").size()).isZero();
-		assertThat(state.get("payload").has("supportedPeerIds")).isFalse();
 	}
 
 	@Test

@@ -1,15 +1,14 @@
 package com.personal.round.auth;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.Optional;
 
 public record ParticipationGrant(
 		String subject,
-		String studyId,
 		String roomId,
 		Role role,
 		String tokenId,
-		Instant issuedAt,
 		Instant expiresAt)
 		implements RoomAccess {
 
@@ -31,14 +30,19 @@ public record ParticipationGrant(
 		return Lease.until(expiresAt.toEpochMilli(), currentEpochMillis, currentMonotonicNanos);
 	}
 
+	public ParticipantRoomKey participantRoomKey() {
+		return new ParticipantRoomKey(roomId, subject);
+	}
+
 	@Override
 	public String toString() {
-		return "ParticipationGrant[role=%s, issuedAt=%s, expiresAt=%s]"
-				.formatted(role, issuedAt, expiresAt);
+		return "ParticipationGrant[role=%s, expiresAt=%s]".formatted(role, expiresAt);
 	}
 
 	public enum Role {
+		@JsonProperty("host")
 		HOST,
+		@JsonProperty("participant")
 		PARTICIPANT
 	}
 }

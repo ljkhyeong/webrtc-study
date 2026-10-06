@@ -1,245 +1,85 @@
 package com.personal.round.config;
 
-import java.time.Duration;
+import com.personal.round.auth.RoundAuthProperties;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import org.springframework.boot.context.properties.bind.BindHandler;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.bind.PropertySourcesPlaceholdersResolver;
+import org.springframework.boot.context.properties.bind.handler.NoUnboundElementsBindHandler;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.MutablePropertySources;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.ClassPathResource;
 
+/**
+ * application.yml 기본값에 {@code "속성-이름=값"}으로 덮어쓴 설정을 운영과 같은 Spring Boot 바인딩 경로로 만든다.
+ * 모르는 속성 이름은 바로 실패한다. Bean Validation은 실행하지 않으므로 경계 밖 값도 만들 수 있다.
+ */
 public final class TestProperties {
 
-	private static final List<String> DEFAULT_ALLOWED_ORIGINS = List.of(
-			"http://localhost:5173",
-			"http://127.0.0.1:5173");
-	private static final int DEFAULT_MAX_ROOM_SIZE = 6;
-	private static final int DEFAULT_MAX_CONNECTIONS = 1_000;
-	private static final int DEFAULT_MAX_CONNECTIONS_PER_CLIENT = 12;
-	private static final Duration DEFAULT_HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
-	private static final Duration DEFAULT_UNJOINED_TIMEOUT = Duration.ofSeconds(15);
-	private static final Duration DEFAULT_UNJOINED_SWEEP_INTERVAL = Duration.ofSeconds(1);
-	private static final Duration DEFAULT_SHUTDOWN_CLOSE_TIMEOUT = Duration.ofSeconds(5);
-	private static final Duration DEFAULT_ABUSE_WINDOW = Duration.ofSeconds(10);
-	private static final int DEFAULT_MAX_FRAMES_PER_SESSION_WINDOW = 600;
-	private static final int DEFAULT_MAX_FRAMES_PER_CLIENT_WINDOW = 1_200;
-	private static final int DEFAULT_MAX_FRAMES_GLOBAL_WINDOW = 3_600;
-	private static final long DEFAULT_MAX_BYTES_PER_SESSION_WINDOW = 4L * 1024 * 1024;
-	private static final long DEFAULT_MAX_BYTES_PER_CLIENT_WINDOW = 8L * 1024 * 1024;
-	private static final long DEFAULT_MAX_BYTES_GLOBAL_WINDOW = 24L * 1024 * 1024;
-	private static final long DEFAULT_MAX_OUTBOUND_QUEUE_BYTES = 2L * 1024 * 1024;
-	private static final long DEFAULT_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL = 64L * 1024 * 1024;
-	private static final Duration DEFAULT_TURN_CREDENTIAL_TTL = Duration.ofMinutes(10);
-	private static final Duration DEFAULT_TURN_RATE_LIMIT_WINDOW = Duration.ofMinutes(10);
-	private static final int DEFAULT_TURN_RATE_LIMIT_MAX_REQUESTS = 12;
-	private static final int DEFAULT_TURN_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS = 6;
-	private static final int DEFAULT_TURN_RATE_LIMIT_GLOBAL_MAX_REQUESTS = 24;
-	private static final int DEFAULT_TURN_RATE_LIMIT_MAX_CLIENTS = 10_000;
-	private static final int DEFAULT_TURN_RATE_LIMIT_MAX_PARTICIPANTS = 10_000;
+	private static final List<PropertySource<?>> APPLICATION_YAML = loadApplicationYaml();
 
 	private TestProperties() {
 	}
 
-	public static SignalingProperties signaling() {
-		return signaling(DEFAULT_MAX_ROOM_SIZE);
+	public static SignalingProperties signaling(String... overrides) {
+		return bind("round.signaling", SignalingProperties.class, overrides);
 	}
 
-	public static SignalingProperties signaling(int maxRoomSize) {
-		return signalingWithConnectionLimits(
-				maxRoomSize,
-				DEFAULT_MAX_CONNECTIONS,
-				DEFAULT_MAX_CONNECTIONS_PER_CLIENT);
+	public static TurnProperties turn(String... overrides) {
+		return bind("round.turn", TurnProperties.class, overrides);
 	}
 
-	public static SignalingProperties signalingWithShutdownCloseTimeout(Duration timeout) {
-		SignalingProperties defaults = signaling();
-		return new SignalingProperties(
-				defaults.allowedOrigins(),
-				defaults.maxRoomSize(),
-				defaults.maxConnections(),
-				defaults.maxConnectionsPerClient(),
-				defaults.heartbeatInterval(),
-				defaults.unjoinedTimeout(),
-				defaults.unjoinedSweepInterval(),
-				timeout,
-				defaults.abuseWindow(),
-				defaults.maxFramesPerSessionWindow(),
-				defaults.maxFramesPerClientWindow(),
-				defaults.maxFramesGlobalWindow(),
-				defaults.maxBytesPerSessionWindow(),
-				defaults.maxBytesPerClientWindow(),
-				defaults.maxBytesGlobalWindow(),
-				defaults.maxOutboundQueueBytes(),
-				defaults.maxOutboundQueueBytesGlobal());
+	public static RoundAuthProperties standaloneAuth() {
+		return bind("round.auth", RoundAuthProperties.class);
 	}
 
-	public static SignalingProperties signalingWithConnectionLimits(
-			int maxRoomSize,
-			int maxConnections,
-			int maxConnectionsPerClient) {
-		return signalingWithConnectionAndFrameLimits(
-				maxRoomSize,
-				maxConnections,
-				maxConnectionsPerClient,
-				DEFAULT_MAX_FRAMES_PER_SESSION_WINDOW,
-				DEFAULT_MAX_FRAMES_PER_CLIENT_WINDOW,
-				DEFAULT_MAX_FRAMES_GLOBAL_WINDOW);
+	public static RoundAuthProperties standaloneAuth(String hostTokenSha256) {
+		return bind(
+				"round.auth",
+				RoundAuthProperties.class,
+				"standalone-host-token-sha256=" + hostTokenSha256);
 	}
 
-	public static SignalingProperties signalingWithConnectionAndFrameLimits(
-			int maxRoomSize,
-			int maxConnections,
-			int maxConnectionsPerClient,
-			int maxFramesPerSessionWindow,
-			int maxFramesPerClientWindow,
-			int maxFramesGlobalWindow) {
-		return signalingWithConnectionFrameAndByteLimits(
-				maxRoomSize,
-				maxConnections,
-				maxConnectionsPerClient,
-				maxFramesPerSessionWindow,
-				maxFramesPerClientWindow,
-				maxFramesGlobalWindow,
-				DEFAULT_MAX_BYTES_PER_SESSION_WINDOW,
-				DEFAULT_MAX_BYTES_PER_CLIENT_WINDOW,
-				DEFAULT_MAX_BYTES_GLOBAL_WINDOW,
-				DEFAULT_MAX_OUTBOUND_QUEUE_BYTES,
-				DEFAULT_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL);
+	public static RoundAuthProperties batonAuth() {
+		return bind(
+				"round.auth",
+				RoundAuthProperties.class,
+				"mode=baton",
+				"issuer=https://baton.example/oauth2",
+				"jwk-set-uri=https://baton.example/oauth2/jwks");
 	}
 
-	public static SignalingProperties signalingWithConnectionFrameAndByteLimits(
-			int maxRoomSize,
-			int maxConnections,
-			int maxConnectionsPerClient,
-			int maxFramesPerSessionWindow,
-			int maxFramesPerClientWindow,
-			int maxFramesGlobalWindow,
-			long maxBytesPerSessionWindow,
-			long maxBytesPerClientWindow,
-			long maxBytesGlobalWindow,
-			long maxOutboundQueueBytes,
-			long maxOutboundQueueBytesGlobal) {
-		return new SignalingProperties(
-				DEFAULT_ALLOWED_ORIGINS,
-				maxRoomSize,
-				maxConnections,
-				maxConnectionsPerClient,
-				DEFAULT_HEARTBEAT_INTERVAL,
-				DEFAULT_UNJOINED_TIMEOUT,
-				DEFAULT_UNJOINED_SWEEP_INTERVAL,
-				DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
-				DEFAULT_ABUSE_WINDOW,
-				maxFramesPerSessionWindow,
-				maxFramesPerClientWindow,
-				maxFramesGlobalWindow,
-				maxBytesPerSessionWindow,
-				maxBytesPerClientWindow,
-				maxBytesGlobalWindow,
-				maxOutboundQueueBytes,
-				maxOutboundQueueBytesGlobal);
+	private static <T> T bind(String prefix, Class<T> type, String... overrides) {
+		Map<String, Object> values = new LinkedHashMap<>();
+		for (String override : overrides) {
+			int separator = override.indexOf('=');
+			values.put(prefix + "." + override.substring(0, separator), override.substring(separator + 1));
+		}
+		MutablePropertySources sources = new MutablePropertySources();
+		sources.addFirst(new MapPropertySource("test-overrides", values));
+		APPLICATION_YAML.forEach(sources::addLast);
+		// 자리표시자의 환경변수는 찾지 않고 application.yml의 기본값을 쓴다.
+		return new Binder(
+				ConfigurationPropertySources.from(sources),
+				new PropertySourcesPlaceholdersResolver(sources))
+				.bindOrCreate(prefix, Bindable.of(type), new NoUnboundElementsBindHandler(BindHandler.DEFAULT));
 	}
 
-	public static SignalingProperties signalingWithFrameLimits(
-			int maxRoomSize,
-			int maxFramesPerSessionWindow,
-			int maxFramesPerClientWindow,
-			int maxFramesGlobalWindow) {
-		return signalingWithConnectionAndFrameLimits(
-				maxRoomSize,
-				DEFAULT_MAX_CONNECTIONS,
-				DEFAULT_MAX_CONNECTIONS_PER_CLIENT,
-				maxFramesPerSessionWindow,
-				maxFramesPerClientWindow,
-				maxFramesGlobalWindow);
-	}
-
-	public static SignalingProperties signalingWithFrameAndByteLimits(
-			int maxRoomSize,
-			int maxFramesPerSessionWindow,
-			int maxFramesPerClientWindow,
-			int maxFramesGlobalWindow,
-			long maxBytesPerSessionWindow,
-			long maxBytesPerClientWindow,
-			long maxBytesGlobalWindow,
-			long maxOutboundQueueBytes) {
-		return signalingWithFrameAndByteLimits(
-				maxRoomSize,
-				maxFramesPerSessionWindow,
-				maxFramesPerClientWindow,
-				maxFramesGlobalWindow,
-				maxBytesPerSessionWindow,
-				maxBytesPerClientWindow,
-				maxBytesGlobalWindow,
-				maxOutboundQueueBytes,
-				DEFAULT_MAX_OUTBOUND_QUEUE_BYTES_GLOBAL);
-	}
-
-	public static SignalingProperties signalingWithFrameAndByteLimits(
-			int maxRoomSize,
-			int maxFramesPerSessionWindow,
-			int maxFramesPerClientWindow,
-			int maxFramesGlobalWindow,
-			long maxBytesPerSessionWindow,
-			long maxBytesPerClientWindow,
-			long maxBytesGlobalWindow,
-			long maxOutboundQueueBytes,
-			long maxOutboundQueueBytesGlobal) {
-		return signalingWithConnectionFrameAndByteLimits(
-				maxRoomSize,
-				DEFAULT_MAX_CONNECTIONS,
-				DEFAULT_MAX_CONNECTIONS_PER_CLIENT,
-				maxFramesPerSessionWindow,
-				maxFramesPerClientWindow,
-				maxFramesGlobalWindow,
-				maxBytesPerSessionWindow,
-				maxBytesPerClientWindow,
-				maxBytesGlobalWindow,
-				maxOutboundQueueBytes,
-				maxOutboundQueueBytesGlobal);
-	}
-
-	public static TurnProperties turn(String cloudflareKeyId, String cloudflareApiToken) {
-		return turnWithRateLimits(
-				cloudflareKeyId,
-				cloudflareApiToken,
-				DEFAULT_TURN_RATE_LIMIT_MAX_REQUESTS,
-				DEFAULT_TURN_RATE_LIMIT_GLOBAL_MAX_REQUESTS,
-				DEFAULT_TURN_RATE_LIMIT_MAX_CLIENTS);
-	}
-
-	public static TurnProperties turnWithRateLimits(
-			String cloudflareKeyId,
-			String cloudflareApiToken,
-			int rateLimitMaxRequests,
-			int rateLimitGlobalMaxRequests,
-			int rateLimitMaxClients) {
-		return turnWithRateLimits(
-				cloudflareKeyId,
-				cloudflareApiToken,
-				rateLimitMaxRequests,
-				DEFAULT_TURN_RATE_LIMIT_PARTICIPANT_MAX_REQUESTS,
-				rateLimitGlobalMaxRequests,
-				rateLimitMaxClients,
-				DEFAULT_TURN_RATE_LIMIT_MAX_PARTICIPANTS);
-	}
-
-	public static TurnProperties turnWithRateLimits(
-			String cloudflareKeyId,
-			String cloudflareApiToken,
-			int rateLimitMaxRequests,
-			int rateLimitParticipantMaxRequests,
-			int rateLimitGlobalMaxRequests,
-			int rateLimitMaxClients,
-			int rateLimitMaxParticipants) {
-		return new TurnProperties(
-				cloudflareKeyId.isBlank() && cloudflareApiToken.isBlank()
-						? TurnProperties.Provider.DISABLED
-						: TurnProperties.Provider.CLOUDFLARE,
-				cloudflareKeyId,
-				cloudflareApiToken,
-				List.of(),
-				"",
-				DEFAULT_TURN_CREDENTIAL_TTL,
-				DEFAULT_TURN_RATE_LIMIT_WINDOW,
-				rateLimitMaxRequests,
-				rateLimitParticipantMaxRequests,
-				rateLimitGlobalMaxRequests,
-				rateLimitMaxClients,
-				rateLimitMaxParticipants);
+	private static List<PropertySource<?>> loadApplicationYaml() {
+		try {
+			return new YamlPropertySourceLoader()
+					.load("application.yml", new ClassPathResource("application.yml"));
+		}
+		catch (IOException exception) {
+			throw new UncheckedIOException(exception);
+		}
 	}
 }

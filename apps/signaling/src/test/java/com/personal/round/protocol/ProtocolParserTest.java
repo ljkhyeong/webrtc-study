@@ -271,15 +271,15 @@ class ProtocolParserTest {
 
 	@Test
 	void rejectsMalformedJsonAndNonObjects() {
-		assertThatThrownBy(() -> parser.parse(null))
-				.isInstanceOf(MalformedJsonException.class);
 		assertThatThrownBy(() -> parser.parse("{"))
-				.isInstanceOf(MalformedJsonException.class);
+				.isInstanceOf(ProtocolValidationException.class)
+				.hasMessage("$: must be valid JSON");
 		assertInvalid("[]", "$");
 		assertInvalid("null", "$");
 		assertThatThrownBy(() -> parser.parse(
 						"{\"v\":3,\"type\":\"room.leave\",\"roomId\":\"abcd-efgh-jkmp\"} true"))
-				.isInstanceOf(MalformedJsonException.class);
+				.isInstanceOf(ProtocolValidationException.class)
+				.hasMessage("$: must be valid JSON");
 	}
 
 	private void assertInvalid(String json, String expectedPath) {

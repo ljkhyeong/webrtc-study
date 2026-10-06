@@ -15,7 +15,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.util.WebUtils;
 import tools.jackson.databind.ObjectMapper;
 
-/** HTTP 지원 기능 조회만 응답하고 일반 WebSocket 연결은 다음 단계로 전달한다. */
+/** HTTP 지원 기능 조회만 응답하고 일반 WebSocket 연결은 다음 단계로 전달한다. 캐시 금지 헤더는 Spring Security가 붙인다. */
 public final class ClientCompatibilityHandshakeInterceptor implements HandshakeInterceptor {
 	private final CorsConfiguration cors = new CorsConfiguration();
 	private final byte[] responseBody;
@@ -35,7 +35,6 @@ public final class ClientCompatibilityHandshakeInterceptor implements HandshakeI
 						.getQueryParams().containsKey("compatibility")) {
 			return true;
 		}
-		response.getHeaders().setCacheControl("no-store");
 		String origin = request.getHeaders().getOrigin();
 		if (origin != null && !WebUtils.isSameOrigin(request)) {
 			if (cors.checkOrigin(origin) == null) {

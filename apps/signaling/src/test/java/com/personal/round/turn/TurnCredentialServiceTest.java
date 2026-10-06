@@ -9,7 +9,6 @@ import static org.mockito.Mockito.when;
 import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.config.TestProperties;
 import com.personal.round.config.TurnProperties;
-import com.personal.round.net.ClientAddressKeyResolver;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
@@ -25,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestClientException;
 
 class TurnCredentialServiceTest {
 
@@ -112,7 +112,7 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void isDisabledWhenTurnConfigurationIsAbsent() {
-		TurnProperties disabled = TestProperties.turn("", "");
+		TurnProperties disabled = TestProperties.turn();
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(disabled, clock, registry);
@@ -123,19 +123,18 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void countsProviderFailuresTowardTheAttemptRateLimit() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 1, 2, 10_000);
+		TurnProperties properties = enabledProperties(
+				"rate-limit-max-requests=1",
+				"rate-limit-global-max-requests=2");
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		CloudflareTurnClient client = mock(CloudflareTurnClient.class);
-		when(client.issue(anyLong())).thenThrow(
-				new CloudflareTurnClient.ProviderUnavailableException("provider unavailable"));
+		when(client.issue(anyLong())).thenThrow(new RestClientException("provider unavailable"));
 		MutableClock clock = new MutableClock(1_800_000_000);
 		TurnCredentialService service = new TurnCredentialService(
 				properties,
 				clock,
 				clock::nanoTime,
 				new TurnCredentialMetrics(registry),
-				new ClientAddressKeyResolver(),
 				client);
 
 		assertThat(service.issueFor("192.0.2.10"))
@@ -153,8 +152,9 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void rateLimitsPerEffectiveAddressAndResetsAtTheWindowBoundary() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 2, 8, 10_000);
+		TurnProperties properties = enabledProperties(
+				"rate-limit-max-requests=2",
+				"rate-limit-global-max-requests=8");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -182,8 +182,11 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void standaloneIssuanceDoesNotCreateOrApplyParticipantQuotaState() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 2, 1, 4, 10_000, 1);
+		TurnProperties properties = enabledProperties(
+				"rate-limit-max-requests=2",
+				"rate-limit-participant-max-requests=1",
+				"rate-limit-global-max-requests=4",
+				"rate-limit-max-participants=1");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service =
@@ -205,8 +208,9 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void backwardClockMovementDoesNotResetTurnIssuanceQuota() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 1, 2, 10_000);
+		TurnProperties properties = enabledProperties(
+				"rate-limit-max-requests=1",
+				"rate-limit-global-max-requests=2");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		TurnCredentialService service =
 				service(properties, clock, new SimpleMeterRegistry());
@@ -220,8 +224,9 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void usesMonotonicTimeForForwardClockJumpsAndRetryBoundaries() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 1, 2, 10_000);
+		TurnProperties properties = enabledProperties(
+				"rate-limit-max-requests=1",
+				"rate-limit-global-max-requests=2");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		TurnCredentialService service =
 				service(properties, clock, new SimpleMeterRegistry());
@@ -242,8 +247,9 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void sharesTurnIssuanceQuotaAcrossOneIpv6Prefix() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 1, 8, 10_000);
+		TurnProperties properties = enabledProperties(
+				"rate-limit-max-requests=1",
+				"rate-limit-global-max-requests=8");
 		TurnCredentialService service = service(
 				properties,
 				new MutableClock(1_800_000_000),
@@ -259,8 +265,9 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void rateLimitsIssuanceAcrossClientAddressesAndResetsAtTheWindowBoundary() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 1, 2, 10_000);
+		TurnProperties properties = enabledProperties(
+				"rate-limit-max-requests=1",
+				"rate-limit-global-max-requests=2");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -285,8 +292,10 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void refusesUntrackedClientsWhenLiveWindowCapacityIsFullWithoutEvictingQuotaState() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 1, 8, 2);
+		TurnProperties properties = enabledProperties(
+				"rate-limit-max-requests=1",
+				"rate-limit-global-max-requests=8",
+				"rate-limit-max-clients=2");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(
@@ -315,8 +324,7 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void rateLimitsOneParticipantAcrossNewTicketsAndClientAddresses() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 12, 2, 24, 10_000, 10_000);
+		TurnProperties properties = enabledProperties("rate-limit-participant-max-requests=2");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -350,8 +358,10 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void participantRejectionDoesNotConsumeClientOrGlobalQuota() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 2, 1, 4, 10_000, 10_000);
+		TurnProperties properties = enabledProperties(
+				"rate-limit-max-requests=2",
+				"rate-limit-participant-max-requests=1",
+				"rate-limit-global-max-requests=4");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service =
@@ -391,8 +401,7 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void refusesUntrackedParticipantsWhenLiveWindowCapacityIsFull() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 12, 6, 24, 10_000, 2);
+		TurnProperties properties = enabledProperties("rate-limit-max-participants=2");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -427,8 +436,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void atomicallyLimitsConcurrentParticipantRequestsWithVirtualThreads()
 			throws Exception {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 12, 6, 24, 10_000, 10_000);
+		TurnProperties properties = enabledProperties();
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service =
@@ -479,8 +487,10 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void reportsTheScopeWithTheLongestExactRetryWindow() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 2, 1, 4, 10_000, 10_000);
+		TurnProperties properties = enabledProperties(
+				"rate-limit-max-requests=2",
+				"rate-limit-participant-max-requests=1",
+				"rate-limit-global-max-requests=4");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -518,8 +528,10 @@ class TurnCredentialServiceTest {
 
 	@Test
 	void reportsGlobalScopeWhenParticipantAndGlobalWindowsExpireTogether() {
-		TurnProperties properties = TestProperties.turnWithRateLimits(
-				KEY_ID, API_TOKEN, 2, 1, 4, 10_000, 10_000);
+		TurnProperties properties = enabledProperties(
+				"rate-limit-max-requests=2",
+				"rate-limit-participant-max-requests=1",
+				"rate-limit-global-max-requests=4");
 		MutableClock clock = new MutableClock(1_800_000_000);
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service = service(properties, clock, registry);
@@ -554,15 +566,13 @@ class TurnCredentialServiceTest {
 				.isZero();
 	}
 
-	@Test
-	void redactsParticipantIdentityFromQuotaKeyDiagnostics() {
-		assertThat(new ParticipantRoomKey("abcd-efgh-jkmp", "sensitive-member").toString())
-				.isEqualTo("ParticipantRoomKey[redacted]")
-				.doesNotContain("abcd-efgh-jkmp", "sensitive-member");
-	}
-
-	private static TurnProperties enabledProperties() {
-		return TestProperties.turn(KEY_ID, API_TOKEN);
+	private static TurnProperties enabledProperties(String... rateLimits) {
+		String[] overrides = new String[rateLimits.length + 3];
+		overrides[0] = "provider=cloudflare";
+		overrides[1] = "cloudflare-key-id=" + KEY_ID;
+		overrides[2] = "cloudflare-api-token=" + API_TOKEN;
+		System.arraycopy(rateLimits, 0, overrides, 3, rateLimits.length);
+		return TestProperties.turn(overrides);
 	}
 
 	private static ParticipationGrant grant(
@@ -584,11 +594,9 @@ class TurnCredentialServiceTest {
 			Instant expiresAt) {
 		return new ParticipationGrant(
 				subject,
-				"study-1",
 				roomId,
 				ParticipationGrant.Role.PARTICIPANT,
 				tokenId,
-				expiresAt.minusSeconds(300),
 				expiresAt);
 	}
 
@@ -610,7 +618,6 @@ class TurnCredentialServiceTest {
 				clock,
 				clock::nanoTime,
 				new TurnCredentialMetrics(registry),
-				new ClientAddressKeyResolver(),
 				client);
 	}
 

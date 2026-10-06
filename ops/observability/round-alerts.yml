@@ -33,7 +33,7 @@ groups:
     interval: 30s
     rules:
       - alert: RoundSignalingOverloaded
-        expr: sum(increase(round_signaling_frames_overloaded_total{job="round-signaling"}[5m])) > 0
+        expr: sum(increase(round_signaling_frames_limited_total{job="round-signaling", scope="global", limit="frames"}[5m])) > 0
         for: 1m
         labels:
           severity: warning

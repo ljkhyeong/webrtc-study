@@ -3,13 +3,11 @@ package com.personal.round.auth;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.core.Authentication;
 
 final class ParticipationGrantTestFixtures {
 
@@ -43,10 +41,6 @@ final class ParticipationGrantTestFixtures {
 				.build();
 	}
 
-	static Authentication authentication() {
-		return new ParticipationGrantAuthenticationConverter().convert(validJwt());
-	}
-
 	static Jwt jwtWithLifetime(Instant issuedAt, Instant expiresAt) {
 		Jwt jwt = mock(Jwt.class);
 		when(jwt.getSubject()).thenReturn(ACCOUNT_ID);
@@ -63,33 +57,9 @@ final class ParticipationGrantTestFixtures {
 	static ParticipationGrant grant() {
 		return new ParticipationGrant(
 				ACCOUNT_ID,
-				"study-7",
 				ROOM_ID,
 				ParticipationGrant.Role.PARTICIPANT,
 				"ticket-123",
-				ISSUED_AT,
 				EXPIRES_AT);
-	}
-
-	static RoundAuthProperties standaloneProperties() {
-		return new RoundAuthProperties(
-				RoundAuthProperties.Mode.STANDALONE,
-				"round_access",
-				null,
-				"round",
-				null,
-				null,
-				Duration.ofMinutes(5));
-	}
-
-	static RoundAuthProperties batonProperties() {
-		return new RoundAuthProperties(
-				RoundAuthProperties.Mode.BATON,
-				"__Secure-round_access",
-				"https://baton.example/oauth2",
-				"round",
-				"https://baton.example/oauth2/jwks",
-				null,
-				Duration.ofMinutes(5));
 	}
 }

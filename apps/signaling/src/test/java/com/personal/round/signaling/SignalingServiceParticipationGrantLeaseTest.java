@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.protocol.ClientMessage;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.net.InetSocketAddress;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.CloseStatus;
@@ -26,7 +25,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					peer,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.40", 41_000),
+							"192.0.2.40",
 							grant)));
 			peer.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,
@@ -107,7 +106,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					accepted,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.61", 41_000),
+							"192.0.2.61",
 							stillValid)));
 			accepted.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,
@@ -117,7 +116,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					rejected,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.62", 41_001),
+							"192.0.2.62",
 							expired)));
 			rejected.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,
@@ -163,7 +162,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					inbound,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.63", 41_002),
+							"192.0.2.63",
 							inboundGrant)));
 			inbound.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,
@@ -186,7 +185,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					handleRace,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.64", 41_003),
+							"192.0.2.64",
 							handleGrant)));
 			handleRace.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,
@@ -248,22 +247,22 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachGrantReservation(
 					observer,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.65", 41_004),
+					"192.0.2.65",
 					observerGrant);
 			attachGrantReservation(
 					joined,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.66", 41_005),
+					"192.0.2.66",
 					joinedGrant);
 			attachGrantReservation(
 					unjoined,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.67", 41_006),
+					"192.0.2.67",
 					unjoinedGrant);
 			attachGrantReservation(
 					left,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.68", 41_007),
+					"192.0.2.68",
 					leftGrant);
 			assertThat(batonService.connect(observer.session())).isTrue();
 			assertThat(batonService.connect(joined.session())).isTrue();
@@ -350,7 +349,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					sender,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.69", 41_008),
+							"192.0.2.69",
 							senderGrant)));
 			sender.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,
@@ -358,7 +357,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					target,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.70", 41_009),
+							"192.0.2.70",
 							targetGrant)));
 			target.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,
@@ -418,7 +417,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					peer,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.71", 41_010),
+							"192.0.2.71",
 							grant)));
 			peer.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,
@@ -468,7 +467,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					first,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.72", 41_011),
+							"192.0.2.72",
 							oldFirst)));
 			first.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,
@@ -476,7 +475,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					second,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.73", 41_012),
+							"192.0.2.73",
 							oldSecond)));
 			second.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,
@@ -503,7 +502,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					reconnect,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.74", 41_013),
+							"192.0.2.74",
 							fresh)));
 			reconnect.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,
@@ -539,7 +538,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 			attachReservation(
 					peer,
 					acceptedReservation(batonAdmissionPolicy.reserve(
-							new InetSocketAddress("192.0.2.75", 41_014),
+							"192.0.2.75",
 							grant)));
 			peer.session().getAttributes().put(
 					ParticipationGrant.SESSION_ATTRIBUTE,

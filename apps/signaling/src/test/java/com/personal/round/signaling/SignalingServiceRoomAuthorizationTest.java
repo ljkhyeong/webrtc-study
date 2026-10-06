@@ -6,7 +6,6 @@ import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ServerMessageEncoder.Participant;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -44,7 +43,7 @@ class SignalingServiceRoomAuthorizationTest extends SignalingServiceTestSupport 
 				ROOM_ID,
 				"must-not-be-relayed",
 				adaPeerId,
-				(ObjectNodeFixture.object(objectMapper, """
+				(objectNode("""
 						{"negotiationId":"negotiation-42",
 						 "description":{"type":"offer","sdp":"v=0"}}
 						"""))));
@@ -129,9 +128,6 @@ class SignalingServiceRoomAuthorizationTest extends SignalingServiceTestSupport 
 
 	@Test
 	void standaloneHostDisablesOnlyARemoteParticipantsMedia() throws Exception {
-		service.stop();
-		service = newService(properties(6), meterRegistry, standaloneAuth(HOST_TOKEN_SHA256));
-		service.start();
 		TestPeer host = peer("host-session");
 		TestPeer participant = peer("participant-session");
 		connect(host, participant);
@@ -182,9 +178,6 @@ class SignalingServiceRoomAuthorizationTest extends SignalingServiceTestSupport 
 
 	@Test
 	void rejectsAnInvalidStandaloneHostCapabilityWithoutJoiningTheRoom() throws Exception {
-		service.stop();
-		service = newService(properties(6), meterRegistry, standaloneAuth(HOST_TOKEN_SHA256));
-		service.start();
 		TestPeer impostor = peer("impostor-session");
 		connect(impostor);
 
@@ -204,9 +197,6 @@ class SignalingServiceRoomAuthorizationTest extends SignalingServiceTestSupport 
 
 	@Test
 	void rejectsModerationOutsideTheAuthorizedTargetBoundary() throws Exception {
-		service.stop();
-		service = newService(properties(6), meterRegistry, standaloneAuth(HOST_TOKEN_SHA256));
-		service.start();
 		TestPeer host = peer("boundary-host");
 		TestPeer secondHost = peer("boundary-second-host");
 		TestPeer participant = peer("boundary-participant");
@@ -286,9 +276,6 @@ class SignalingServiceRoomAuthorizationTest extends SignalingServiceTestSupport 
 
 	@Test
 	void clearsStandaloneHostRoleBeforeRejoiningWithoutTheCapability() throws Exception {
-		service.stop();
-		service = newService(properties(6), meterRegistry, standaloneAuth(HOST_TOKEN_SHA256));
-		service.start();
 		TestPeer peer = peer("rejoining-host");
 		connect(peer);
 
@@ -329,12 +316,12 @@ class SignalingServiceRoomAuthorizationTest extends SignalingServiceTestSupport 
 			attachGrantReservation(
 					host,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.90", 41_020),
+					"192.0.2.90",
 					hostGrant);
 			attachGrantReservation(
 					participant,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.91", 41_021),
+					"192.0.2.91",
 					participantGrant);
 			assertThat(batonService.connect(host.session())).isTrue();
 			assertThat(batonService.connect(participant.session())).isTrue();

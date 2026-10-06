@@ -9,9 +9,11 @@ import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ServerMessageEncoder;
 import com.personal.round.protocol.ServerMessageEncoder.Participant;
 import com.personal.round.protocol.SignalingErrorCode;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.binder.MeterBinder;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.security.MessageDigest;
 import java.time.Clock;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -24,8 +26,8 @@ import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +44,7 @@ import org.springframework.web.socket.WebSocketMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 @Service
-public class SignalingService implements SmartLifecycle {
+public class SignalingService implements SmartLifecycle, MeterBinder {
 
 	private static final Logger log = LoggerFactory.getLogger(SignalingService.class);
 	private static final String CLOSE_DECISION_ATTRIBUTE =
@@ -57,8 +59,6 @@ public class SignalingService implements SmartLifecycle {
 			CloseStatus.POLICY_VIOLATION.withReason("Room join timeout");
 	private static final CloseStatus RATE_LIMITED =
 			CloseStatus.POLICY_VIOLATION.withReason("Inbound frame rate exceeded");
-	private static final CloseStatus CONNECTION_LIMIT =
-			CloseStatus.SERVICE_OVERLOAD.withReason("Server connection limit reached");
 	private static final CloseStatus ADMISSION_REQUIRED =
 			CloseStatus.SERVER_ERROR.withReason("Connection admission required");
 	private static final CloseStatus ROOM_ACCESS_REQUIRED =
@@ -72,7 +72,6 @@ public class SignalingService implements SmartLifecycle {
 			KeyGenerators.secureRandom(2 * Long.BYTES);
 
 	private final Object monitor = new Object();
-	private final Object lifecycleMonitor = new Object();
 	private final Map<String, Peer> connectedPeers = new HashMap<>();
 	private final Map<String, LinkedHashMap<String, Peer>> rooms = new HashMap<>();
 	private final Map<String, RoomStudyState> studyStates = new HashMap<>();
@@ -115,13 +114,10 @@ public class SignalingService implements SmartLifecycle {
 		this.outboundDispatcher = new SignalingOutboundDispatcher<>(
 				monitor,
 				outboundExecutor,
-				metrics,
 				monotonicTicker,
 				properties.maxOutboundQueueBytes(),
 				properties.maxOutboundQueueBytesGlobal(),
 				this::handleOutboundSendFailure);
-		metrics.updateState(0, 0, 0);
-		metrics.updateOutboundQueuedBytes(0);
 	}
 
 	public boolean connect(WebSocketSession session) {
@@ -161,33 +157,22 @@ public class SignalingService implements SmartLifecycle {
 					accepted = false;
 				}
 				else {
-					String clientKey = reservation.clientKey();
-					SignalingInboundLimiter.Connection inboundLimit =
-							inboundLimiter.retain(clientKey);
-					if (inboundLimit == null) {
-						metrics.recordConnectionRejectedServerCapacity();
-						workPlan.close(session, CONNECTION_LIMIT);
-						accepted = false;
-					}
-					else {
-						SessionCloseDecision closeDecision = new SessionCloseDecision();
-						session.getAttributes().put(CLOSE_DECISION_ATTRIBUTE, closeDecision);
-						connectedPeers.put(
-								session.getId(),
-								new Peer(
-										UUID.randomUUID().toString(),
-										session,
-										nowNanos,
-										nextConnectionSequence++,
-										reservation,
-										roomAccess,
-										accessLease,
-										closeDecision,
-										inboundLimit));
-						reservationTransferred = true;
-						refreshMetricsLocked();
-						accepted = true;
-					}
+					SessionCloseDecision closeDecision = new SessionCloseDecision();
+					session.getAttributes().put(CLOSE_DECISION_ATTRIBUTE, closeDecision);
+					connectedPeers.put(
+							session.getId(),
+							new Peer(
+									UUID.randomUUID().toString(),
+									session,
+									nowNanos,
+									nextConnectionSequence++,
+									reservation,
+									roomAccess,
+									accessLease,
+									closeDecision,
+									inboundLimiter.retain(reservation.clientKey())));
+					reservationTransferred = true;
+					accepted = true;
 				}
 			}
 			execute(workPlan);
@@ -200,10 +185,6 @@ public class SignalingService implements SmartLifecycle {
 		}
 	}
 
-	public boolean isAcceptingConnections() {
-		return running;
-	}
-
 	public boolean acceptInboundFrame(WebSocketSession session, int payloadBytes) {
 		WorkPlan workPlan = new WorkPlan();
 		boolean accepted = false;
@@ -212,23 +193,19 @@ public class SignalingService implements SmartLifecycle {
 			long nowNanos = monotonicTicker.getAsLong();
 			Peer peer = connectedPeers.get(session.getId());
 			if (peer != null
-					&& !closeForExpiredAuthorizationLocked(peer, nowMillis, nowNanos, workPlan)) {
+					&& !closeForExpiredAuthorizationLocked(peer, nowMillis, nowNanos, workPlan, null)) {
 				SignalingInboundLimiter.Decision decision =
 						inboundLimiter.tryAcquire(peer.inboundLimit, nowNanos, payloadBytes);
 				switch (decision) {
 					case ACCEPTED -> accepted = true;
-					case SESSION_FRAME_LIMITED -> {
-						metrics.recordRateLimitedFrame();
+					case SESSION_FRAME_LIMITED, SESSION_BYTE_LIMITED -> {
+						metrics.recordInboundLimited(decision);
 						disconnectAndCloseLocked(peer, RATE_LIMITED, workPlan);
 					}
-					case SESSION_BYTE_LIMITED -> {
-						metrics.recordSessionByteLimitedFrame();
-						disconnectAndCloseLocked(peer, RATE_LIMITED, workPlan);
-					}
-					case CLIENT_FRAME_LIMITED -> metrics.recordClientRateLimitedFrame();
-					case CLIENT_BYTE_LIMITED -> metrics.recordClientByteLimitedFrame();
-					case GLOBAL_FRAME_LIMITED -> metrics.recordOverloadedFrame();
-					case GLOBAL_BYTE_LIMITED -> metrics.recordGlobalByteLimitedFrame();
+					case CLIENT_FRAME_LIMITED,
+							CLIENT_BYTE_LIMITED,
+							GLOBAL_FRAME_LIMITED,
+							GLOBAL_BYTE_LIMITED -> metrics.recordInboundLimited(decision);
 				}
 			}
 		}
@@ -260,20 +237,7 @@ public class SignalingService implements SmartLifecycle {
 
 	public void sendInvalidMessage(WebSocketSession session, String detail) {
 		metrics.recordInvalidFrame();
-		WorkPlan workPlan = new WorkPlan();
-		synchronized (monitor) {
-			Peer peer = connectedPeers.get(session.getId());
-			if (peer != null) {
-				sendError(
-						peer,
-						SignalingErrorCode.INVALID_MESSAGE,
-						detail,
-						peer.roomId,
-						null,
-						workPlan);
-			}
-		}
-		execute(workPlan);
+		sendSessionError(session, SignalingErrorCode.INVALID_MESSAGE, detail);
 	}
 
 	public void recordInvalidFrame() {
@@ -281,34 +245,36 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	public void sendInternalError(WebSocketSession session) {
+		sendSessionError(
+				session,
+				SignalingErrorCode.INTERNAL_ERROR,
+				"The signaling server could not process this message.");
+	}
+
+	private void sendSessionError(
+			WebSocketSession session,
+			SignalingErrorCode code,
+			String detail) {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
 			Peer peer = connectedPeers.get(session.getId());
 			if (peer != null) {
-				sendError(
-						peer,
-						SignalingErrorCode.INTERNAL_ERROR,
-						"The signaling server could not process this message.",
-						peer.roomId,
-						null,
-						workPlan);
+				sendError(peer, code, detail, peer.roomId, null, workPlan);
 			}
 		}
 		execute(workPlan);
 	}
 
-	public void markAlive(WebSocketSession session, byte[] pongPayload) {
+	// 기대 응답값은 ping 대기 상태에서만 있다. 같은 연결에 평문으로 보낸 값이라 상수 시간 비교가 필요 없다.
+	public void markAlive(WebSocketSession session, ByteBuffer pongPayload) {
 		WorkPlan workPlan = new WorkPlan();
 		synchronized (monitor) {
 			Peer peer = connectedPeers.get(session.getId());
 			if (peer != null
 					&& !closeForExpiredAuthorizationLocked(peer, workPlan)
 					&& peer.expectedPongPayload != null
-					&& (peer.heartbeatState == HeartbeatState.PING_QUEUED
-							|| peer.heartbeatState == HeartbeatState.AWAITING_PONG)
-					&& MessageDigest.isEqual(peer.expectedPongPayload, pongPayload)) {
+					&& ByteBuffer.wrap(peer.expectedPongPayload).equals(pongPayload)) {
 				peer.heartbeatState = HeartbeatState.READY;
-				peer.heartbeatPhaseStartedAtNanos = UNSET_NANOS;
 				peer.expectedPongPayload = null;
 			}
 		}
@@ -325,11 +291,7 @@ public class SignalingService implements SmartLifecycle {
 				if (!peer.connected) {
 					continue;
 				}
-				if (closeForExpiredAuthorizationLocked(
-						peer,
-						nowMillis,
-						nowNanos,
-						workPlan)) {
+				if (closeForExpiredAuthorizationLocked(peer, nowMillis, nowNanos, workPlan, null)) {
 					continue;
 				}
 				switch (peer.heartbeatState) {
@@ -369,11 +331,7 @@ public class SignalingService implements SmartLifecycle {
 				if (!peer.connected) {
 					continue;
 				}
-				if (closeForExpiredAuthorizationLocked(
-						peer,
-						nowMillis,
-						nowNanos,
-						workPlan)) {
+				if (closeForExpiredAuthorizationLocked(peer, nowMillis, nowNanos, workPlan, null)) {
 					continue;
 				}
 				if (elapsedAtLeast(
@@ -410,7 +368,7 @@ public class SignalingService implements SmartLifecycle {
 		execute(workPlan);
 	}
 
-	public int participantCount(String roomId) {
+	int participantCount(String roomId) {
 		synchronized (monitor) {
 			Map<String, Peer> room = rooms.get(roomId);
 			return room == null ? 0 : room.size();
@@ -427,6 +385,34 @@ public class SignalingService implements SmartLifecycle {
 		synchronized (monitor) {
 			return connectedPeers.size();
 		}
+	}
+
+	private int joinedPeerCount() {
+		synchronized (monitor) {
+			return rooms.values().stream().mapToInt(Map::size).sum();
+		}
+	}
+
+	private long outboundQueuedBytes() {
+		synchronized (monitor) {
+			return outboundDispatcher.queuedBytesLocked();
+		}
+	}
+
+	@Override
+	public void bindTo(MeterRegistry registry) {
+		Gauge.builder("round.signaling.rooms.active", this, SignalingService::roomCount)
+				.description("현재 참가자가 있는 시그널링 방 수")
+				.register(registry);
+		Gauge.builder("round.signaling.peers.connected", this, SignalingService::connectedPeerCount)
+				.description("현재 연결된 WebSocket 참가자 수")
+				.register(registry);
+		Gauge.builder("round.signaling.peers.joined", this, SignalingService::joinedPeerCount)
+				.description("현재 방에 입장한 참가자 수")
+				.register(registry);
+		Gauge.builder("round.signaling.outbound.queue.bytes", this, SignalingService::outboundQueuedBytes)
+				.description("현재 전송 대기 중이거나 전송 중인 전체 시그널링 바이트 수")
+				.register(registry);
 	}
 
 	int trackedInboundClientCount() {
@@ -472,27 +458,24 @@ public class SignalingService implements SmartLifecycle {
 			return;
 		}
 
-		LinkedHashMap<String, Peer> room = rooms.computeIfAbsent(
-				message.roomId(), ignored -> new LinkedHashMap<>());
-		Peer existingParticipationSession = findSameBatonParticipant(peer, room);
+		Peer existingParticipationSession = findSameBatonParticipant(peer, rooms.get(message.roomId()));
 		if (existingParticipationSession != null) {
 			if (peer.connectionSequence < existingParticipationSession.connectionSequence) {
-				closeSupersededParticipationSessionLocked(peer, workPlan);
+				disconnectAndCloseLocked(peer, PARTICIPATION_SESSION_SUPERSEDED, workPlan);
 				return;
 			}
+			// 단독 참가자를 교체하면 방이 비워져 스터디 상태도 지워지므로 이어서 쓸 상태를 먼저 잡아 둔다.
 			RoomStudyState previousStudy = studyStates.get(message.roomId());
-			closeSupersededParticipationSessionLocked(
-					existingParticipationSession,
-					workPlan);
-			rooms.putIfAbsent(message.roomId(), room);
-			if (previousStudy != null && peer.connected) studyStates.put(message.roomId(), previousStudy);
-		}
-		if (!peer.connected) {
-			if (room.isEmpty()) {
-				rooms.remove(message.roomId(), room);
+			disconnectAndCloseLocked(existingParticipationSession, PARTICIPATION_SESSION_SUPERSEDED, workPlan);
+			if (!peer.connected) {
+				return;
 			}
-			return;
+			if (previousStudy != null) {
+				studyStates.putIfAbsent(message.roomId(), previousStudy);
+			}
 		}
+		LinkedHashMap<String, Peer> room = rooms.computeIfAbsent(
+				message.roomId(), ignored -> new LinkedHashMap<>());
 		if (room.size() >= maxRoomSize) {
 			metrics.recordJoinRejectedRoomFull();
 			sendError(
@@ -513,7 +496,6 @@ public class SignalingService implements SmartLifecycle {
 		peer.role = resolvedRole.orElseThrow();
 		peer.unjoinedSinceNanos = UNSET_NANOS;
 		room.put(peer.peerId, peer);
-		refreshMetricsLocked();
 
 		TextMessage joined = serverMessageEncoder.roomJoined(
 				message.roomId(),
@@ -535,7 +517,7 @@ public class SignalingService implements SmartLifecycle {
 	private static Peer findSameBatonParticipant(
 			Peer joiningPeer,
 			Map<String, Peer> room) {
-		if (!(joiningPeer.roomAccess instanceof ParticipationGrant joiningGrant)) {
+		if (room == null || !(joiningPeer.roomAccess instanceof ParticipationGrant joiningGrant)) {
 			return null;
 		}
 		return room.values().stream()
@@ -544,15 +526,6 @@ public class SignalingService implements SmartLifecycle {
 								&& existingGrant.subject().equals(joiningGrant.subject()))
 				.findFirst()
 				.orElse(null);
-	}
-
-	private void closeSupersededParticipationSessionLocked(
-			Peer peer,
-			WorkPlan workPlan) {
-		disconnectAndCloseLocked(
-				peer,
-				PARTICIPATION_SESSION_SUPERSEDED,
-				workPlan);
 	}
 
 	private void leave(Peer peer, ClientMessage.Leave message, WorkPlan workPlan) {
@@ -746,19 +719,6 @@ public class SignalingService implements SmartLifecycle {
 			Peer peer,
 			long currentEpochMillis,
 			long currentMonotonicNanos,
-			WorkPlan workPlan) {
-		return closeForExpiredAuthorizationLocked(
-				peer,
-				currentEpochMillis,
-				currentMonotonicNanos,
-				workPlan,
-				null);
-	}
-
-	private boolean closeForExpiredAuthorizationLocked(
-			Peer peer,
-			long currentEpochMillis,
-			long currentMonotonicNanos,
 			WorkPlan workPlan,
 			ArrayDeque<PendingOutbound> pendingOutbound) {
 		if (!peer.accessLease.isExpired(currentEpochMillis, currentMonotonicNanos)) {
@@ -847,7 +807,6 @@ public class SignalingService implements SmartLifecycle {
 			WorkPlan workPlan,
 			ArrayDeque<PendingOutbound> pendingOutbound) {
 		if (peer.roomId == null) {
-			refreshMetricsLocked();
 			return;
 		}
 
@@ -862,17 +821,14 @@ public class SignalingService implements SmartLifecycle {
 		}
 		LinkedHashMap<String, Peer> room = rooms.get(roomId);
 		if (room == null || room.remove(peer.peerId) == null) {
-			refreshMetricsLocked();
 			return;
 		}
 		if (room.isEmpty()) {
 			rooms.remove(roomId, room);
 			studyStates.remove(roomId);
 			handQueues.remove(roomId);
-			refreshMetricsLocked();
 			return;
 		}
-		refreshMetricsLocked();
 		if (!wasAnnounced) {
 			return;
 		}
@@ -881,7 +837,7 @@ public class SignalingService implements SmartLifecycle {
 		ArrayDeque<PendingOutbound> pending = pendingOutbound == null ? new ArrayDeque<>() : pendingOutbound;
 		appendBroadcast(room, left, null, pending);
 		RoomHandQueue queue = handQueues.get(roomId);
-		if (queue != null && queue.remove(peer.peerId)) {
+		if (queue != null && queue.update(peer.peerId, false)) {
 			appendBroadcast(room, serverMessageEncoder.handState(roomId, null, queue.snapshot()), null, pending);
 		}
 		if (pendingOutbound == null) enqueueAllLocked(pending, workPlan);
@@ -1066,49 +1022,37 @@ public class SignalingService implements SmartLifecycle {
 
 	@Override
 	public void start() {
-		synchronized (lifecycleMonitor) {
-			synchronized (monitor) {
-				if (running || outboundDispatcher.isShutdown()) {
-					return;
-				}
-				running = true;
-			}
+		synchronized (monitor) {
+			running = true;
 		}
 	}
 
 	@Override
 	public void stop() {
-		synchronized (lifecycleMonitor) {
-			long closeDeadlineNanos = System.nanoTime()
-					+ TimeUnit.MILLISECONDS.toNanos(shutdownCloseTimeoutMs);
-			List<WebSocketSession> sessions;
-			synchronized (monitor) {
-				if (!running
-						&& connectedPeers.isEmpty()
-						&& pendingTerminalCleanup.isEmpty()
-						&& inboundLimiter.isEmpty()
-						&& rooms.isEmpty()) {
-					return;
-				}
-				running = false;
-				sessions = connectedPeers.values().stream()
-						.map(peer -> peer.session)
-						.toList();
-				connectedPeers.values().forEach(peer -> {
-					peer.connected = false;
-					peer.reservation.close();
-					outboundDispatcher.clearLocked(peer);
-				});
-				connectedPeers.clear();
-				inboundLimiter.clear();
-				rooms.clear();
-				studyStates.clear();
-				handQueues.clear();
-				refreshMetricsLocked();
+		long closeDeadlineNanos = System.nanoTime()
+				+ TimeUnit.MILLISECONDS.toNanos(shutdownCloseTimeoutMs);
+		List<WebSocketSession> sessions;
+		synchronized (monitor) {
+			if (!running) {
+				return;
 			}
-			closeSessionsConcurrently(sessions, closeDeadlineNanos);
-			awaitPendingTerminalCleanup(closeDeadlineNanos);
+			running = false;
+			sessions = connectedPeers.values().stream()
+					.map(peer -> peer.session)
+					.toList();
+			connectedPeers.values().forEach(peer -> {
+				peer.connected = false;
+				peer.reservation.close();
+				outboundDispatcher.clearLocked(peer);
+			});
+			connectedPeers.clear();
+			inboundLimiter.clear();
+			rooms.clear();
+			studyStates.clear();
+			handQueues.clear();
 		}
+		closeSessionsConcurrently(sessions, closeDeadlineNanos);
+		awaitPendingTerminalCleanup(closeDeadlineNanos);
 	}
 
 	private void awaitPendingTerminalCleanup(long deadlineNanos) {
@@ -1136,23 +1080,8 @@ public class SignalingService implements SmartLifecycle {
 	}
 
 	@Override
-	public void stop(Runnable callback) {
-		try {
-			stop();
-		}
-		finally {
-			callback.run();
-		}
-	}
-
-	@Override
 	public boolean isRunning() {
 		return running;
-	}
-
-	private void refreshMetricsLocked() {
-		int joined = rooms.values().stream().mapToInt(Map::size).sum();
-		metrics.updateState(rooms.size(), connectedPeers.size(), joined);
 	}
 
 	private static ConnectionAdmissionPolicy.Reservation takeReservation(
@@ -1250,36 +1179,28 @@ public class SignalingService implements SmartLifecycle {
 			return;
 		}
 
-		AtomicInteger remainingSessions = new AtomicInteger(sessions.size());
-		List<Callable<Void>> closeTasks = sessions.stream()
-				.<Callable<Void>>map(session -> () -> {
-					try {
-						closeQuietly(session, SERVER_SHUTDOWN);
-						return null;
-					}
-					finally {
-						remainingSessions.decrementAndGet();
-					}
-				})
+		List<Callable<Object>> closeTasks = sessions.stream()
+				.map(session -> Executors.callable(() -> closeQuietly(session, SERVER_SHUTDOWN)))
 				.toList();
 		ExecutorService closeExecutor = Executors.newVirtualThreadPerTaskExecutor();
 		try {
 			long remainingNanos = Math.max(0, deadlineNanos - System.nanoTime());
-			closeExecutor.invokeAll(
-					closeTasks,
-					remainingNanos,
-					TimeUnit.NANOSECONDS);
-			if (remainingSessions.get() > 0) {
+			// 기한이 지나면 invokeAll이 끝나지 않은 작업을 취소한다.
+			long unfinished = closeExecutor.invokeAll(closeTasks, remainingNanos, TimeUnit.NANOSECONDS)
+					.stream()
+					.filter(Future::isCancelled)
+					.count();
+			if (unfinished > 0) {
 				log.warn(
 						"Signaling shutdown close deadline elapsed with {} sessions remaining",
-						remainingSessions.get());
+						unfinished);
 			}
 		}
 		catch (InterruptedException exception) {
 			Thread.currentThread().interrupt();
 			log.warn(
-					"Signaling shutdown was interrupted with {} sessions remaining",
-					remainingSessions.get());
+					"Signaling shutdown was interrupted while closing {} sessions",
+					sessions.size());
 		}
 		finally {
 			closeExecutor.shutdownNow();

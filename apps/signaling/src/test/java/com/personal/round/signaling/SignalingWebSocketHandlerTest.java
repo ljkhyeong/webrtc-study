@@ -3,7 +3,6 @@ package com.personal.round.signaling;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.AdditionalMatchers.aryEq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -41,16 +40,18 @@ class SignalingWebSocketHandlerTest {
 	void returnsInvalidMessageForMalformedJson() throws Exception {
 		handler.handleMessage(session, new TextMessage("{"));
 
-		verify(service).sendInvalidMessage(session, "Message must be valid JSON.");
+		verify(service).sendInvalidMessage(session, "$: must be valid JSON");
 	}
 
 	@Test
-	void rejectsBinaryFramesWithoutTreatingThemAsJson() throws Exception {
+	void closesBinaryFramesWithoutTreatingThemAsJson() throws Exception {
 		handler.handleMessage(
 				session,
 				new BinaryMessage("not-json".getBytes(StandardCharsets.UTF_8)));
 
-		verify(service).sendInvalidMessage(session, "Binary messages are not supported.");
+		verify(session).close(new CloseStatus(1003, "Binary messages not supported"));
+		verify(service, never()).acceptInboundFrame(any(), anyInt());
+		verify(service, never()).sendInvalidMessage(any(), any());
 	}
 
 	@Test
@@ -106,7 +107,7 @@ class SignalingWebSocketHandlerTest {
 		order.verify(service).acceptInboundFrame(session, challenge.length);
 		order.verify(service).markAlive(
 				org.mockito.ArgumentMatchers.eq(session),
-				aryEq(challenge));
+				org.mockito.ArgumentMatchers.eq(ByteBuffer.wrap(challenge)));
 	}
 
 	@Test
@@ -119,7 +120,7 @@ class SignalingWebSocketHandlerTest {
 		order.verify(service).acceptInboundFrame(session, 0);
 		order.verify(service).markAlive(
 				org.mockito.ArgumentMatchers.eq(session),
-				aryEq(new byte[0]));
+				org.mockito.ArgumentMatchers.eq(ByteBuffer.wrap(new byte[0])));
 	}
 
 	@Test

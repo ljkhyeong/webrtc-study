@@ -2,11 +2,13 @@ package com.personal.round.signaling;
 
 import com.personal.round.config.SignalingProperties;
 import java.util.LinkedHashMap;
+import org.springframework.util.Assert;
 
 /**
  * 세션·클라이언트·서버 전체의 고정 집계 구간과 수신량 상태를 관리한다.
  *
- * <p>호출자는 SignalingService의 단일 monitor 안에서 이 객체를 사용한다.
+ * <p>호출자는 SignalingService의 단일 monitor 안에서 이 객체를 사용한다. 활성 클라이언트 수는
+ * {@link ConnectionAdmissionPolicy}의 연결 예약 수를 넘지 않으므로 상한도 같은 최대 연결 수를 쓴다.
  */
 final class SignalingInboundLimiter {
 
@@ -39,9 +41,9 @@ final class SignalingInboundLimiter {
 		ClientState state = clients.get(clientKey);
 		if (state == null) {
 			evictInactiveForCapacity();
-			if (clients.size() >= maximumTrackedClients) {
-				return null;
-			}
+			Assert.state(
+					clients.size() < maximumTrackedClients,
+					"Inbound limiter capacity must follow connection admission");
 			state = new ClientState();
 			clients.put(clientKey, state);
 		}
@@ -107,10 +109,6 @@ final class SignalingInboundLimiter {
 
 	int trackedClientCount() {
 		return clients.size();
-	}
-
-	boolean isEmpty() {
-		return clients.isEmpty();
 	}
 
 	void clear() {

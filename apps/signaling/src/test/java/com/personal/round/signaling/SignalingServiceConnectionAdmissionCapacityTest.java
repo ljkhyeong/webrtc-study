@@ -3,11 +3,6 @@ package com.personal.round.signaling;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.personal.round.config.SignalingProperties;
-import com.personal.round.config.TestProperties;
-import com.personal.round.net.ClientAddressKeyResolver;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -85,50 +80,29 @@ class SignalingServiceConnectionAdmissionCapacityTest extends SignalingServiceTe
 	}
 
 	@Test
-	void releasesAdmissionReservationsOnConnectRejectionDisconnectAndStop()
+	void releasesAdmissionReservationsOnDisconnectStopAndConnectRejection()
 			throws Exception {
-		service.stop();
-		SignalingProperties properties =
-				TestProperties.signalingWithConnectionLimits(1, 1, 1);
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
-		ConnectionAdmissionPolicy policy = new ConnectionAdmissionPolicy(
-				TestProperties.signalingWithConnectionLimits(1, 3, 3),
-				new SignalingMetrics(new SimpleMeterRegistry()),
-				new ClientAddressKeyResolver());
+		ConnectionAdmissionPolicy policy = admissionPolicy(properties(6));
 		TestPeer accepted = peer("reserved-accepted");
-		TestPeer rejected = peer("reserved-rejected");
-		attachReservation(
-				accepted,
-				acceptedReservation(policy.reserve(
-						new InetSocketAddress("192.0.2.30", 41_000),
-						null)));
-		attachReservation(
-				rejected,
-				acceptedReservation(policy.reserve(
-						new InetSocketAddress("192.0.2.31", 41_000),
-						null)));
-
+		attachReservation(accepted, acceptedReservation(policy.reserve("192.0.2.30", null)));
 		assertThat(service.connect(accepted.session())).isTrue();
-		assertThat(service.connect(rejected.session())).isFalse();
-		rejected.awaitClosed();
-		assertThat(policy.activeReservationCount()).isEqualTo(1);
 
-		service.disconnect(rejected.session());
 		service.disconnect(accepted.session());
 		service.disconnect(accepted.session());
 		assertThat(policy.activeReservationCount()).isZero();
 
 		TestPeer stoppedPeer = peer("reserved-stop");
-		attachReservation(
-				stoppedPeer,
-				acceptedReservation(policy.reserve(
-						new InetSocketAddress("192.0.2.32", 41_000),
-						null)));
+		attachReservation(stoppedPeer, acceptedReservation(policy.reserve("192.0.2.32", null)));
 		assertThat(service.connect(stoppedPeer.session())).isTrue();
-
 		service.stop();
+		assertThat(policy.activeReservationCount()).isZero();
 
+		TestPeer rejected = peer("reserved-rejected");
+		attachReservation(rejected, acceptedReservation(policy.reserve("192.0.2.31", null)));
+		assertThat(service.connect(rejected.session())).isFalse();
+		rejected.awaitClosed();
+		assertThat(rejected.closeStatus().get())
+				.isEqualTo(new CloseStatus(1001, "Server shutting down"));
 		assertThat(policy.activeReservationCount()).isZero();
 	}
 }

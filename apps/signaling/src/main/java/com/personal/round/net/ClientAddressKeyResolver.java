@@ -1,11 +1,9 @@
 package com.personal.round.net;
 
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.regex.Pattern;
-import org.springframework.stereotype.Component;
 
 /**
  * 유효 원격 주소에서 남용 제어용 키 하나를 만든다.
@@ -14,25 +12,16 @@ import org.springframework.stereotype.Component;
  * 인터페이스 식별자를 회전해도 연결, 시그널링 프레임, TURN 발급 제한을 초기화할 수 없다. 숫자 형식이
  * 아니거나 잘못된 값은 DNS 조회를 시작하지 않고 하나의 공유 미확인 클라이언트 버킷에 보수적으로 묶는다.
  */
-@Component
 public final class ClientAddressKeyResolver {
 
 	static final String UNKNOWN_CLIENT = "<unknown>";
 	private static final Pattern IPV6_LITERAL_CHARACTERS =
 			Pattern.compile("[0-9A-Fa-f:.]+");
 
-	public String resolve(InetSocketAddress remoteAddress) {
-		if (remoteAddress == null) {
-			return UNKNOWN_CLIENT;
-		}
-		InetAddress resolved = remoteAddress.getAddress();
-		if (resolved != null) {
-			return key(resolved.getAddress());
-		}
-		return resolve(remoteAddress.getHostString());
+	private ClientAddressKeyResolver() {
 	}
 
-	public String resolve(String remoteAddress) {
+	public static String resolve(String remoteAddress) {
 		if (remoteAddress == null) {
 			return UNKNOWN_CLIENT;
 		}
@@ -64,24 +53,17 @@ public final class ClientAddressKeyResolver {
 		}
 	}
 
+	// 입력 배열은 parseIpv4가 새로 만들거나 InetAddress.getAddress()가 복제해 돌려준 값이다.
 	private static String key(byte[] address) {
-		if (address.length == 4) {
-			return "ipv4:" + Byte.toUnsignedInt(address[0])
-					+ "." + Byte.toUnsignedInt(address[1])
-					+ "." + Byte.toUnsignedInt(address[2])
-					+ "." + Byte.toUnsignedInt(address[3]);
-		}
-		if (address.length != 16) {
-			return UNKNOWN_CLIENT;
-		}
-
-		byte[] prefix = Arrays.copyOf(address, address.length);
-		Arrays.fill(prefix, 8, prefix.length, (byte) 0);
 		try {
-			return "ipv6:" + InetAddress.getByAddress(prefix).getHostAddress() + "/64";
+			if (address.length == 4) {
+				return "ipv4:" + InetAddress.getByAddress(address).getHostAddress();
+			}
+			Arrays.fill(address, 8, address.length, (byte) 0);
+			return "ipv6:" + InetAddress.getByAddress(address).getHostAddress() + "/64";
 		}
 		catch (UnknownHostException impossible) {
-			throw new IllegalStateException("A 16-byte IPv6 prefix must be valid", impossible);
+			throw new IllegalStateException("A 4- or 16-byte address must be valid", impossible);
 		}
 	}
 

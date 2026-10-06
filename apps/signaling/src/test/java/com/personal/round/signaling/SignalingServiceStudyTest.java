@@ -7,9 +7,6 @@ import org.junit.jupiter.api.Test;
 class SignalingServiceStudyTest extends SignalingServiceTestSupport {
 	@Test
 	void synchronizesLateJoinRejectsParticipantAndPreservesFirstHostUpdate() throws Exception {
-		service.stop();
-		service = newService(properties(6), meterRegistry, standaloneAuth(HOST_TOKEN_SHA256));
-		service.start();
 		TestPeer host = peer("host");
 		TestPeer participant = peer("participant");
 		connect(host, participant);

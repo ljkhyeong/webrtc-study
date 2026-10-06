@@ -33,7 +33,7 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 		service.heartbeatSweep();
 		PingMessage responsivePing = responsive.awaitPing();
 		sleeping.awaitMessage(PingMessage.class::isInstance);
-		service.markAlive(responsive.session(), payloadBytes(responsivePing));
+		service.markAlive(responsive.session(), responsivePing.getPayload());
 		monotonicTicker.advanceMillis(properties(6).heartbeatInterval().toMillis());
 		service.heartbeatSweep();
 
@@ -115,10 +115,12 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 		offender.awaitClosed();
 		assertThat(offender.closeStatus().get())
 				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
-		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "session", "limit", "frames")
 				.counter()
 				.count()).isEqualTo(1);
-		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "global", "limit", "frames")
 				.counter()
 				.count()).isZero();
 		assertThat(service.connectedPeerCount()).isEqualTo(5);
@@ -128,7 +130,11 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	void forwardWallClockMovementDoesNotResetAnInboundQuotaWindow() throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithFrameLimits(1, 1, 2, 4);
+				TestProperties.signaling(
+						"max-room-size=1",
+						"max-frames-per-session-window=1",
+						"max-frames-per-client-window=2",
+						"max-frames-global-window=4");
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		TestPeer peer = peer("clock-forward");
@@ -147,7 +153,11 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	void monotonicElapsedWindowResetsAfterTheWallClockRollsBack() throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithFrameLimits(1, 1, 2, 4);
+				TestProperties.signaling(
+						"max-room-size=1",
+						"max-frames-per-session-window=1",
+						"max-frames-per-client-window=2",
+						"max-frames-global-window=4");
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		TestPeer peer = peer("clock-rollback");
@@ -166,7 +176,10 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 			throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithFrameLimits(6, 4, 6, 20);
+				TestProperties.signaling(
+						"max-frames-per-session-window=4",
+						"max-frames-per-client-window=6",
+						"max-frames-global-window=20");
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
@@ -185,13 +198,16 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 		assertThat(first.closeStatus().get()).isNull();
 		assertThat(second.closeStatus().get()).isNull();
 		assertThat(service.acceptInboundFrame(otherClient.session(), 0)).isTrue();
-		assertThat(meterRegistry.get("round.signaling.frames.client_rate_limited")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "client", "limit", "frames")
 				.counter()
 				.count()).isEqualTo(1);
-		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "session", "limit", "frames")
 				.counter()
 				.count()).isZero();
-		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "global", "limit", "frames")
 				.counter()
 				.count()).isZero();
 
@@ -201,7 +217,8 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
 		assertThat(second.closeStatus().get()).isNull();
 		assertThat(otherClient.closeStatus().get()).isNull();
-		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "session", "limit", "frames")
 				.counter()
 				.count()).isEqualTo(1);
 	}
@@ -210,7 +227,10 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	void rejectedSessionAndClientFramesDoNotConsumeGlobalQuota() throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithFrameLimits(6, 2, 2, 4);
+				TestProperties.signaling(
+						"max-frames-per-session-window=2",
+						"max-frames-per-client-window=2",
+						"max-frames-global-window=4");
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
@@ -228,7 +248,8 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 		assertThat(service.acceptInboundFrame(exhaustedClient.session(), 0)).isFalse();
 
 		assertThat(service.acceptInboundFrame(otherClient.session(), 0)).isTrue();
-		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "global", "limit", "frames")
 				.counter()
 				.count()).isZero();
 	}
@@ -237,7 +258,10 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	void preservesClientQuotaAcrossDisconnectAndReconnectWithinTheWindow() throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithFrameLimits(6, 2, 2, 6);
+				TestProperties.signaling(
+						"max-frames-per-session-window=2",
+						"max-frames-per-client-window=2",
+						"max-frames-global-window=6");
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
@@ -255,7 +279,8 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 		assertThat(service.acceptInboundFrame(reconnected.session(), 0)).isFalse();
 		assertThat(reconnected.closeStatus().get()).isNull();
 		assertThat(service.connectedPeerCount()).isOne();
-		assertThat(meterRegistry.get("round.signaling.frames.client_rate_limited")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "client", "limit", "frames")
 				.counter()
 				.count()).isEqualTo(1);
 	}
@@ -314,8 +339,13 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	void boundsClientWindowsByEvictingOnlyInactiveState() throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithConnectionAndFrameLimits(
-						1, 2, 2, 2, 2, 6);
+				TestProperties.signaling(
+						"max-room-size=1",
+						"max-connections=2",
+						"max-connections-per-client=2",
+						"max-frames-per-session-window=2",
+						"max-frames-per-client-window=2",
+						"max-frames-global-window=6");
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
@@ -359,7 +389,10 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	void dropsGlobalOverloadWithoutClosingAnArbitrarySession() throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithFrameLimits(6, 10, 10, 20);
+				TestProperties.signaling(
+						"max-frames-per-session-window=10",
+						"max-frames-per-client-window=10",
+						"max-frames-global-window=20");
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
@@ -383,13 +416,16 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 		assertThat(second.closeStatus().get()).isNull();
 		assertThat(third.closeStatus().get()).isNull();
 		assertThat(service.connectedPeerCount()).isEqualTo(3);
-		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "session", "limit", "frames")
 				.counter()
 				.count()).isZero();
-		assertThat(meterRegistry.get("round.signaling.frames.client_rate_limited")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "client", "limit", "frames")
 				.counter()
 				.count()).isZero();
-		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "global", "limit", "frames")
 				.counter()
 				.count()).isEqualTo(1);
 		monotonicTicker.advanceMillis(properties.abuseWindow().toMillis());
@@ -399,15 +435,15 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	@Test
 	void closesOnlyTheSessionThatExhaustsItsInboundByteBudget() throws Exception {
 		service.stop();
-		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
-				2,
-				100,
-				200,
-				400,
-				10,
-				100,
-				200,
-				64 * 1024);
+		SignalingProperties properties = TestProperties.signaling(
+				"max-room-size=2",
+				"max-frames-per-session-window=100",
+				"max-frames-per-client-window=200",
+				"max-frames-global-window=400",
+				"max-bytes-per-session-window=10",
+				"max-bytes-per-client-window=100",
+				"max-bytes-global-window=200",
+				"max-outbound-queue-bytes=" + 64 * 1024);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		TestPeer offender = peer("session-byte-offender");
@@ -421,11 +457,12 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 		assertThat(offender.closeStatus().get())
 				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
 		assertThat(healthy.closeStatus().get()).isNull();
-		assertThat(meterRegistry.get("round.signaling.frames.byte_limited")
-				.tag("scope", "session")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "session", "limit", "bytes")
 				.counter()
 				.count()).isEqualTo(1);
-		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "session", "limit", "frames")
 				.counter()
 				.count()).isZero();
 	}
@@ -433,15 +470,15 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	@Test
 	void sharesInboundByteBudgetAcrossConnectionsFromOneClient() throws Exception {
 		service.stop();
-		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
-				2,
-				100,
-				200,
-				400,
-				10,
-				10,
-				100,
-				64 * 1024);
+		SignalingProperties properties = TestProperties.signaling(
+				"max-room-size=2",
+				"max-frames-per-session-window=100",
+				"max-frames-per-client-window=200",
+				"max-frames-global-window=400",
+				"max-bytes-per-session-window=10",
+				"max-bytes-per-client-window=10",
+				"max-bytes-global-window=100",
+				"max-outbound-queue-bytes=" + 64 * 1024);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
@@ -454,8 +491,8 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 		assertThat(first.closeStatus().get()).isNull();
 		assertThat(second.closeStatus().get()).isNull();
-		assertThat(meterRegistry.get("round.signaling.frames.byte_limited")
-				.tag("scope", "client")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "client", "limit", "bytes")
 				.counter()
 				.count()).isEqualTo(1);
 	}
@@ -463,15 +500,15 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	@Test
 	void globalInboundByteBudgetDropsLoadWithoutClosingAnArbitraryPeer() throws Exception {
 		service.stop();
-		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
-				3,
-				100,
-				200,
-				400,
-				100,
-				100,
-				200,
-				64 * 1024);
+		SignalingProperties properties = TestProperties.signaling(
+				"max-room-size=3",
+				"max-frames-per-session-window=100",
+				"max-frames-per-client-window=200",
+				"max-frames-global-window=400",
+				"max-bytes-per-session-window=100",
+				"max-bytes-per-client-window=100",
+				"max-bytes-global-window=200",
+				"max-outbound-queue-bytes=" + 64 * 1024);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
@@ -489,8 +526,8 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 		assertThat(first.closeStatus().get()).isNull();
 		assertThat(second.closeStatus().get()).isNull();
 		assertThat(third.closeStatus().get()).isNull();
-		assertThat(meterRegistry.get("round.signaling.frames.byte_limited")
-				.tag("scope", "global")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "global", "limit", "bytes")
 				.counter()
 				.count()).isEqualTo(1);
 	}
@@ -499,7 +536,11 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	void globalOverloadDoesNotTurnAValidPongIntoAHeartbeatTimeout() throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithFrameLimits(3, 1, 1, 2);
+				TestProperties.signaling(
+						"max-room-size=3",
+						"max-frames-per-session-window=1",
+						"max-frames-per-client-window=1",
+						"max-frames-global-window=2");
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
@@ -528,7 +569,8 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 		responsive.awaitFrameCount(2);
 		assertThat(responsive.closeStatus().get()).isNull();
 		assertThat(service.connectedPeerCount()).isOne();
-		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "global", "limit", "frames")
 				.counter()
 				.count()).isEqualTo(1);
 		assertThat(meterRegistry.get("round.signaling.heartbeat.closes")
@@ -550,7 +592,8 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 			service.heartbeatSweep();
 			service.markAlive(
 					slow.session(),
-					"forged-heartbeat-response".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+					java.nio.ByteBuffer.wrap(
+							"forged-heartbeat-response".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
 			monotonicTicker.advanceMillis(properties(6).heartbeatInterval().toMillis());
 			service.heartbeatSweep();
 
@@ -567,7 +610,11 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	void pongStillDisconnectsTheSessionThatExceedsItsOwnFrameWindow() throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithFrameLimits(1, 1, 1, 2);
+				TestProperties.signaling(
+						"max-room-size=1",
+						"max-frames-per-session-window=1",
+						"max-frames-per-client-window=1",
+						"max-frames-global-window=2");
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
@@ -583,10 +630,12 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 		assertThat(offender.closeStatus().get())
 				.isEqualTo(new CloseStatus(1008, "Inbound frame rate exceeded"));
 		assertThat(service.connectedPeerCount()).isZero();
-		assertThat(meterRegistry.get("round.signaling.frames.rate_limited")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "session", "limit", "frames")
 				.counter()
 				.count()).isEqualTo(1);
-		assertThat(meterRegistry.get("round.signaling.frames.overloaded")
+		assertThat(meterRegistry.get("round.signaling.frames.limited")
+				.tags("scope", "global", "limit", "frames")
 				.counter()
 				.count()).isZero();
 	}

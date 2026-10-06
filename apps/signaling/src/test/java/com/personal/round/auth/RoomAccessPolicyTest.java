@@ -3,16 +3,14 @@ package com.personal.round.auth;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.EXPIRES_AT;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.OTHER_ROOM_ID;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.ROOM_ID;
-import static com.personal.round.auth.ParticipationGrantTestFixtures.batonProperties;
 import static com.personal.round.auth.ParticipationGrantTestFixtures.grant;
-import static com.personal.round.auth.ParticipationGrantTestFixtures.standaloneProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.personal.round.config.TestProperties;
 import java.util.HashMap;
 import java.util.Map;
-import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.WebSocketSession;
@@ -25,7 +23,7 @@ class RoomAccessPolicyTest {
 
 	@Test
 	void standaloneModeAllowsAnyRoomWithoutSessionAuthenticationAttributes() {
-		RoomAccessPolicy policy = new RoomAccessPolicy(standaloneProperties());
+		RoomAccessPolicy policy = new RoomAccessPolicy(TestProperties.standaloneAuth());
 		WebSocketSession session = mock(WebSocketSession.class);
 
 		RoomAccess access = policy.resolve(session).orElseThrow();
@@ -36,7 +34,7 @@ class RoomAccessPolicyTest {
 
 	@Test
 	void batonModeAllowsOnlyTheRoomCarriedByTheVerifiedGrant() {
-		RoomAccessPolicy policy = new RoomAccessPolicy(batonProperties());
+		RoomAccessPolicy policy = new RoomAccessPolicy(TestProperties.batonAuth());
 		WebSocketSession session = sessionWith(Map.of(
 				ParticipationGrant.SESSION_ATTRIBUTE,
 				grant()));
@@ -49,7 +47,7 @@ class RoomAccessPolicyTest {
 
 	@Test
 	void batonModeFailsClosedForMissingOrWronglyTypedGrantAttributes() {
-		RoomAccessPolicy policy = new RoomAccessPolicy(batonProperties());
+		RoomAccessPolicy policy = new RoomAccessPolicy(TestProperties.batonAuth());
 
 		assertThat(policy.resolve(sessionWith(new HashMap<>()))).isEmpty();
 		assertThat(policy.resolve(sessionWith(Map.of(
@@ -74,7 +72,7 @@ class RoomAccessPolicyTest {
 
 	@Test
 	void standaloneLeaseNeverExpires() {
-		RoomAccess access = new RoomAccessPolicy(standaloneProperties())
+		RoomAccess access = new RoomAccessPolicy(TestProperties.standaloneAuth())
 				.resolve(sessionWith(new HashMap<>()))
 				.orElseThrow();
 		RoomAccess.Lease lease = access.openLease(0, 0);
@@ -84,15 +82,7 @@ class RoomAccessPolicyTest {
 
 	@Test
 	void standaloneRoleRequiresTheConfiguredHighEntropyHostCapability() {
-		RoundAuthProperties properties = new RoundAuthProperties(
-				RoundAuthProperties.Mode.STANDALONE,
-				"round_access",
-				null,
-				"round",
-				null,
-				HOST_TOKEN_SHA256,
-				Duration.ofMinutes(5));
-		RoomAccess access = new RoomAccessPolicy(properties)
+		RoomAccess access = new RoomAccessPolicy(TestProperties.standaloneAuth(HOST_TOKEN_SHA256))
 				.resolve(sessionWith(new HashMap<>()))
 				.orElseThrow();
 
@@ -103,7 +93,7 @@ class RoomAccessPolicyTest {
 
 	@Test
 	void batonRoleComesOnlyFromTheVerifiedGrant() {
-		RoomAccess access = new RoomAccessPolicy(batonProperties())
+		RoomAccess access = new RoomAccessPolicy(TestProperties.batonAuth())
 				.resolve(sessionWith(Map.of(
 						ParticipationGrant.SESSION_ATTRIBUTE,
 						grant())))

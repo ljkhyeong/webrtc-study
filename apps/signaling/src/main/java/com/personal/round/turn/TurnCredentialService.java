@@ -1,12 +1,15 @@
 package com.personal.round.turn;
 
+import com.personal.round.auth.ParticipantRoomKey;
 import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.config.TurnProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.function.LongSupplier;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 
 @Service
 public class TurnCredentialService {
@@ -17,7 +20,6 @@ public class TurnCredentialService {
 	private final Clock clock;
 	private final LongSupplier monotonicTicker;
 	private final TurnCredentialMetrics metrics;
-	private final ClientAddressKeyResolver clientAddressKeyResolver;
 	private final CloudflareTurnClient cloudflareTurnClient;
 	private final TurnIssuanceLimiter issuanceLimiter;
 
@@ -26,13 +28,11 @@ public class TurnCredentialService {
 			Clock clock,
 			LongSupplier monotonicTicker,
 			TurnCredentialMetrics metrics,
-			ClientAddressKeyResolver clientAddressKeyResolver,
 			CloudflareTurnClient cloudflareTurnClient) {
 		this.properties = properties;
 		this.clock = clock;
 		this.monotonicTicker = monotonicTicker;
 		this.metrics = metrics;
-		this.clientAddressKeyResolver = clientAddressKeyResolver;
 		this.cloudflareTurnClient = cloudflareTurnClient;
 		this.issuanceLimiter = new TurnIssuanceLimiter(properties);
 	}
@@ -44,10 +44,7 @@ public class TurnCredentialService {
 	public IssueResult issueFor(
 			String clientAddress,
 			ParticipationGrant grant) {
-		return issueFor(
-				clientAddress,
-				grant.expiresAt(),
-				new ParticipantRoomKey(grant.roomId(), grant.subject()));
+		return issueFor(clientAddress, grant.expiresAt(), grant.participantRoomKey());
 	}
 
 	private IssueResult issueFor(
@@ -58,7 +55,7 @@ public class TurnCredentialService {
 			return Disabled.INSTANCE;
 		}
 
-		String clientKey = clientAddressKeyResolver.resolve(clientAddress);
+		String clientKey = ClientAddressKeyResolver.resolve(clientAddress);
 		long nowNanos = monotonicTicker.getAsLong();
 		long nowMillis = clock.millis();
 		long nowEpochSecond = Math.floorDiv(nowMillis, 1_000);
@@ -72,11 +69,11 @@ public class TurnCredentialService {
 			return AuthorizationExpired.INSTANCE;
 		}
 
-		TurnIssuanceLimiter.Acquisition acquisition =
+		Optional<TurnIssuanceLimiter.Rejected> rejection =
 				issuanceLimiter.tryAcquire(clientKey, participantKey, nowNanos);
-		if (acquisition instanceof TurnIssuanceLimiter.Rejected rejected) {
-			metrics.recordRateLimited(rejected.scope());
-			return new RateLimited(rejected.retryAfterSeconds());
+		if (rejection.isPresent()) {
+			metrics.recordRateLimited(rejection.get().scope());
+			return new RateLimited(rejection.get().retryAfterSeconds());
 		}
 
 		TurnCredentialMaterial providerCredentials;
@@ -85,7 +82,7 @@ public class TurnCredentialService {
 					? CoturnCredentials.issue(properties, expiresAt)
 					: cloudflareTurnClient.issue(expiresAt - nowEpochSecond);
 		}
-		catch (CloudflareTurnClient.ProviderUnavailableException exception) {
+		catch (RestClientException exception) {
 			metrics.recordProviderError();
 			return ProviderUnavailable.INSTANCE;
 		}

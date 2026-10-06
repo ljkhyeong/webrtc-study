@@ -1,9 +1,9 @@
 package com.personal.round.signaling;
 
+import com.personal.round.auth.ParticipantRoomKey;
 import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.net.ClientAddressKeyResolver;
-import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -26,44 +26,39 @@ public final class ConnectionAdmissionPolicy {
 	private final int maxConnections;
 	private final int maxConnectionsPerClient;
 	private final SignalingMetrics metrics;
-	private final ClientAddressKeyResolver clientAddressKeyResolver;
 	private int activeReservations;
 
 	public ConnectionAdmissionPolicy(
 			SignalingProperties properties,
-			SignalingMetrics metrics,
-			ClientAddressKeyResolver clientAddressKeyResolver) {
+			SignalingMetrics metrics) {
 		this.maxConnections = properties.maxConnections();
 		this.maxConnectionsPerClient = properties.maxConnectionsPerClient();
 		this.metrics = metrics;
-		this.clientAddressKeyResolver = clientAddressKeyResolver;
 	}
 
 	public Admission reserve(
-			InetSocketAddress remoteAddress,
+			String remoteAddress,
 			ParticipationGrant participationGrant) {
-		String clientKey = clientAddressKeyResolver.resolve(remoteAddress);
-		ParticipantRoomKey participantRoomKey =
-				ParticipantRoomKey.from(participationGrant);
+		String clientKey = ClientAddressKeyResolver.resolve(remoteAddress);
+		ParticipantRoomKey participantRoomKey = participationGrant == null
+				? null
+				: participationGrant.participantRoomKey();
 		String participationTokenId = participationGrant == null
 				? null
 				: participationGrant.tokenId();
 		synchronized (monitor) {
 			if (activeReservations >= maxConnections) {
-				metrics.recordConnectionRejectedServerCapacity();
-				return new Rejected(Rejection.SERVER_CAPACITY);
+				return rejectLocked(Rejection.SERVER_CAPACITY);
 			}
 
 			int clientConnections = connectionsByClient.getOrDefault(clientKey, 0);
 			if (clientConnections >= maxConnectionsPerClient) {
-				metrics.recordConnectionRejectedClientCapacity();
-				return new Rejected(Rejection.CLIENT_CAPACITY);
+				return rejectLocked(Rejection.CLIENT_CAPACITY);
 			}
 
 			if (participationTokenId != null
 					&& reservedParticipationTokens.contains(participationTokenId)) {
-				metrics.recordConnectionRejectedParticipationTokenCapacity();
-				return new Rejected(Rejection.PARTICIPATION_TOKEN_CAPACITY);
+				return rejectLocked(Rejection.PARTICIPATION_TOKEN_CAPACITY);
 			}
 
 			if (participantRoomKey != null
@@ -71,8 +66,7 @@ public final class ConnectionAdmissionPolicy {
 									participantRoomKey,
 									0)
 							>= MAX_CONNECTIONS_PER_PARTICIPANT_ROOM) {
-				metrics.recordConnectionRejectedParticipantRoomCapacity();
-				return new Rejected(Rejection.PARTICIPANT_ROOM_CAPACITY);
+				return rejectLocked(Rejection.PARTICIPANT_ROOM_CAPACITY);
 			}
 
 			activeReservations++;
@@ -89,16 +83,21 @@ public final class ConnectionAdmissionPolicy {
 		}
 	}
 
+	private Rejected rejectLocked(Rejection rejection) {
+		metrics.recordConnectionRejected(rejection);
+		return new Rejected(rejection);
+	}
+
 	int activeReservationCount() {
 		synchronized (monitor) {
 			return activeReservations;
 		}
 	}
 
-	int activeReservationCount(InetSocketAddress remoteAddress) {
+	int activeReservationCount(String remoteAddress) {
 		synchronized (monitor) {
 			return connectionsByClient.getOrDefault(
-					clientAddressKeyResolver.resolve(remoteAddress), 0);
+					ClientAddressKeyResolver.resolve(remoteAddress), 0);
 		}
 	}
 
@@ -110,9 +109,7 @@ public final class ConnectionAdmissionPolicy {
 
 	int activeParticipantRoomReservationCount(ParticipationGrant grant) {
 		synchronized (monitor) {
-			return connectionsByParticipantRoom.getOrDefault(
-					ParticipantRoomKey.from(grant),
-					0);
+			return connectionsByParticipantRoom.getOrDefault(grant.participantRoomKey(), 0);
 		}
 	}
 
@@ -187,19 +184,6 @@ public final class ConnectionAdmissionPolicy {
 		@Override
 		public void close() {
 			owner.release(this);
-		}
-	}
-
-	private record ParticipantRoomKey(
-			String roomId,
-			String subject) {
-
-		private static ParticipantRoomKey from(ParticipationGrant grant) {
-			return grant == null
-					? null
-					: new ParticipantRoomKey(
-							grant.roomId(),
-							grant.subject());
 		}
 	}
 }

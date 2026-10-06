@@ -3,7 +3,6 @@ package com.personal.round.config;
 import static com.personal.round.config.RoundRoutes.BATON_SIGNAL_TEMPLATE;
 import static com.personal.round.config.RoundRoutes.STANDALONE_SIGNAL;
 
-import com.personal.round.auth.ParticipationGrantHandshakeInterceptor;
 import com.personal.round.auth.RoundAuthProperties;
 import com.personal.round.protocol.ProtocolParser;
 import com.personal.round.signaling.ConnectionAdmissionPolicy;
@@ -15,7 +14,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
-import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistration;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 import java.util.List;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
@@ -29,7 +27,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
 	private final SignalingWebSocketHandler handler;
 	private final String[] allowedOrigins;
 	private final ClientCompatibilityHandshakeInterceptor compatibilityInterceptor;
-	private final ParticipationGrantHandshakeInterceptor grantInterceptor;
 	private final ConnectionAdmissionHandshakeHandler admissionHandler;
 	private final boolean batonMode;
 
@@ -48,7 +45,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
 				AllowedOrigins.SecurityMode.from(production, batonMode));
 		this.allowedOrigins = allowedOrigins.toArray(String[]::new);
 		this.compatibilityInterceptor = new ClientCompatibilityHandshakeInterceptor(allowedOrigins, objectMapper);
-		this.grantInterceptor = new ParticipationGrantHandshakeInterceptor();
 		this.admissionHandler =
 				new ConnectionAdmissionHandshakeHandler(
 						signalingService,
@@ -59,13 +55,10 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
 	@Override
 	public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-		WebSocketHandlerRegistration registration = batonMode
-				? registry.addHandler(handler, BATON_SIGNAL_TEMPLATE)
-						.addInterceptors(grantInterceptor, compatibilityInterceptor)
-				: registry.addHandler(handler, STANDALONE_SIGNAL)
-						.addInterceptors(compatibilityInterceptor);
 		// Spring이 마지막 인터셉터로 Origin을 검사한다. Origin이 없거나 같은 출처인 요청은 허용한다.
-		registration.setHandshakeHandler(admissionHandler)
+		registry.addHandler(handler, batonMode ? BATON_SIGNAL_TEMPLATE : STANDALONE_SIGNAL)
+				.addInterceptors(compatibilityInterceptor)
+				.setHandshakeHandler(admissionHandler)
 				.setAllowedOrigins(allowedOrigins);
 	}
 
@@ -73,7 +66,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
 	ServletServerContainerFactoryBean webSocketContainer() {
 		ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
 		container.setMaxTextMessageBufferSize(ProtocolParser.MAX_SIGNALING_FRAME_BYTES);
-		container.setMaxBinaryMessageBufferSize(ProtocolParser.MAX_SIGNALING_FRAME_BYTES);
 		return container;
 	}
 }

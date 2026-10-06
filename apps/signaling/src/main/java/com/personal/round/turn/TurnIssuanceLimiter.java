@@ -1,12 +1,21 @@
 package com.personal.round.turn;
 
+import com.personal.round.auth.ParticipantRoomKey;
 import com.personal.round.config.TurnProperties;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 final class TurnIssuanceLimiter {
 
 	private static final long NANOS_PER_SECOND = 1_000_000_000L;
+	// 가장 늦게 풀리는 거부를 고르고, 해제 시점이 같으면 enum 선언 순서가 뒤인 범위를 고른다.
+	private static final Comparator<Rejected> LATEST_RELEASE =
+			Comparator.comparingLong(Rejected::retryAfterNanos)
+					.thenComparing(Rejected::scope);
 
 	private final Map<String, IssuanceWindow> clientWindows = new HashMap<>();
 	private final Map<ParticipantRoomKey, IssuanceWindow> participantWindows =
@@ -29,7 +38,8 @@ final class TurnIssuanceLimiter {
 		this.maxTrackedParticipants = properties.rateLimitMaxParticipants();
 	}
 
-	synchronized Acquisition tryAcquire(
+	/** 허용하면 집계하고 빈 값을, 거부하면 집계 없이 보고할 거부 사유를 돌려준다. */
+	synchronized Optional<Rejected> tryAcquire(
 			String clientKey,
 			ParticipantRoomKey participantKey,
 			long nowNanos) {
@@ -43,43 +53,37 @@ final class TurnIssuanceLimiter {
 		IssuanceWindow participantWindow = participantKey == null
 				? null
 				: participantWindows.get(participantKey);
-		Rejected rejection = null;
-
+		List<Rejected> rejections = new ArrayList<>();
 		if (participantWindow != null
 				&& participantWindow.attempts >= maxRequestsPerParticipant) {
-			rejection = laterRejection(
-					rejection,
+			rejections.add(new Rejected(
 					participantWindow.retryAfterNanos(nowNanos, windowNanos),
-					TurnCredentialRateLimitScope.PARTICIPANT);
+					TurnCredentialRateLimitScope.PARTICIPANT));
 		}
 		if (clientWindow != null && clientWindow.attempts >= maxRequestsPerClient) {
-			rejection = laterRejection(
-					rejection,
+			rejections.add(new Rejected(
 					clientWindow.retryAfterNanos(nowNanos, windowNanos),
-					TurnCredentialRateLimitScope.CLIENT);
+					TurnCredentialRateLimitScope.CLIENT));
 		}
 		if (globalWindow != null && globalWindow.attempts >= maxRequestsGlobal) {
-			rejection = laterRejection(
-					rejection,
+			rejections.add(new Rejected(
 					globalWindow.retryAfterNanos(nowNanos, windowNanos),
-					TurnCredentialRateLimitScope.GLOBAL);
+					TurnCredentialRateLimitScope.GLOBAL));
 		}
 		if (participantKey != null
 				&& participantWindow == null
 				&& participantWindows.size() >= maxTrackedParticipants) {
-			rejection = laterRejection(
-					rejection,
+			rejections.add(new Rejected(
 					retryAfterCapacityNanos(participantWindows, nowNanos),
-					TurnCredentialRateLimitScope.PARTICIPANT_STATE_CAPACITY);
+					TurnCredentialRateLimitScope.PARTICIPANT_STATE_CAPACITY));
 		}
 		if (clientWindow == null && clientWindows.size() >= maxTrackedClients) {
-			rejection = laterRejection(
-					rejection,
+			rejections.add(new Rejected(
 					retryAfterCapacityNanos(clientWindows, nowNanos),
-					TurnCredentialRateLimitScope.CLIENT_STATE_CAPACITY);
+					TurnCredentialRateLimitScope.CLIENT_STATE_CAPACITY));
 		}
-		if (rejection != null) {
-			return rejection;
+		if (!rejections.isEmpty()) {
+			return rejections.stream().max(LATEST_RELEASE);
 		}
 
 		clientWindows.computeIfAbsent(clientKey, ignored -> new IssuanceWindow(nowNanos)).attempts++;
@@ -92,7 +96,7 @@ final class TurnIssuanceLimiter {
 			globalWindow = new IssuanceWindow(nowNanos);
 		}
 		globalWindow.attempts++;
-		return Acquired.INSTANCE;
+		return Optional.empty();
 	}
 
 	private <K> void removeExpiredWindows(
@@ -110,33 +114,11 @@ final class TurnIssuanceLimiter {
 				.orElseThrow();
 	}
 
-	private static Rejected laterRejection(
-			Rejected current,
-			long retryAfterNanos,
-			TurnCredentialRateLimitScope scope) {
-		if (current == null
-				|| retryAfterNanos > current.retryAfterNanos()
-				|| (retryAfterNanos == current.retryAfterNanos()
-						&& scope.priority() > current.scope().priority())) {
-			return new Rejected(retryAfterNanos, scope);
-		}
-		return current;
-	}
+	record Rejected(long retryAfterNanos, TurnCredentialRateLimitScope scope) {
 
-	sealed interface Acquisition permits Acquired, Rejected {
-	}
-
-	enum Acquired implements Acquisition {
-		INSTANCE
-	}
-
-	record Rejected(
-			long retryAfterNanos,
-			TurnCredentialRateLimitScope scope)
-			implements Acquisition {
-
+		// retryAfterNanos는 항상 1 이상이라 Retry-After도 1초 이상이다.
 		long retryAfterSeconds() {
-			return Math.max(1, Math.ceilDiv(retryAfterNanos, NANOS_PER_SECOND));
+			return Math.ceilDiv(retryAfterNanos, NANOS_PER_SECOND);
 		}
 	}
 

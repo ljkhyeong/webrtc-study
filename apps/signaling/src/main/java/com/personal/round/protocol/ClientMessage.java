@@ -1,28 +1,20 @@
 package com.personal.round.protocol;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import tools.jackson.databind.node.ObjectNode;
 
 public sealed interface ClientMessage
 		permits ClientMessage.Join, ClientMessage.Leave, ClientMessage.Relay, ClientMessage.Moderation, ClientMessage.Reconnect, ClientMessage.Study, ClientMessage.Hand {
-
-	String type();
 
 	String roomId();
 
 	String requestId();
 
 	record Hand(String roomId, String requestId, Boolean raised) implements ClientMessage {
-		@Override
-		public String type() { return raised == null ? "room.hand.sync" : "room.hand.update"; }
 	}
 
 	record Join(String roomId, String requestId, String displayName, String hostCapability)
 			implements ClientMessage {
-
-		@Override
-		public String type() {
-			return "room.join";
-		}
 
 		@Override
 		public String toString() {
@@ -36,25 +28,14 @@ public sealed interface ClientMessage
 	}
 
 	record Leave(String roomId, String requestId) implements ClientMessage {
-
-		@Override
-		public String type() {
-			return "room.leave";
-		}
 	}
 
 	record Study(String roomId, String requestId, StudyCommand command) implements ClientMessage {
-		@Override
-		public String type() { return command == null ? "room.study.sync" : "room.study.update"; }
 	}
 
 	record StudyCommand(String action, long expectedRevision, String topic, String mode, int durationSeconds) { }
 
 	record Reconnect(String roomId, String requestId, String to) implements ClientMessage {
-		@Override
-		public String type() {
-			return "peer.reconnect";
-		}
 	}
 
 	record Relay(
@@ -70,19 +51,12 @@ public sealed interface ClientMessage
 			String requestId,
 			String to,
 			MediaKind kind) implements ClientMessage {
-
-		@Override
-		public String type() {
-			return "moderation.media.disable";
-		}
 	}
 
 	enum MediaKind {
+		@JsonProperty("audio")
 		AUDIO,
-		VIDEO;
-
-		public String wireValue() {
-			return name().toLowerCase(java.util.Locale.ROOT);
-		}
+		@JsonProperty("video")
+		VIDEO
 	}
 }

@@ -11,7 +11,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -19,13 +18,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class TurnCredentialController {
 
 	private final TurnCredentialService credentialService;
-	private final TurnCredentialRequestPolicy requestPolicy;
 
-	public TurnCredentialController(
-			TurnCredentialService credentialService,
-			TurnCredentialRequestPolicy requestPolicy) {
+	public TurnCredentialController(TurnCredentialService credentialService) {
 		this.credentialService = credentialService;
-		this.requestPolicy = requestPolicy;
 	}
 
 	@PostMapping(STANDALONE_TURN_CREDENTIALS)
@@ -35,14 +30,11 @@ public class TurnCredentialController {
 				() -> credentialService.issueFor(request.getRemoteAddr()));
 	}
 
+	// 방 일치는 보안 필터 체인의 인가 규칙이 확인한다.
 	@PostMapping(BATON_TURN_CREDENTIALS_TEMPLATE)
 	public ResponseEntity<TurnCredentials> credentials(
-			@PathVariable String roomId,
 			@AuthenticationPrincipal ParticipationGrant grant,
 			HttpServletRequest request) {
-		if (grant == null || !grant.allows(roomId)) {
-			return forbidden();
-		}
 		return issueCredentials(
 				request,
 				() -> credentialService.issueFor(request.getRemoteAddr(), grant));
@@ -51,7 +43,7 @@ public class TurnCredentialController {
 	private ResponseEntity<TurnCredentials> issueCredentials(
 			HttpServletRequest request,
 			Supplier<TurnCredentialService.IssueResult> issuer) {
-		if (!requestPolicy.allows(request)) {
+		if (!TurnCredentialRequestPolicy.allows(request)) {
 			return forbidden();
 		}
 		TurnCredentialService.IssueResult result = issuer.get();

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -23,43 +24,32 @@ public class CloudflareTurnClient {
 		this.properties = properties;
 	}
 
+	/** 요청·응답 실패와 쓸 수 있는 TURN 서버가 없는 응답은 모두 {@link RestClientException}으로 알린다. */
 	public TurnCredentialMaterial issue(long ttlSeconds) {
-		try {
-			CredentialResponse response = restClient.post()
-					.uri(
-							"/v1/turn/keys/{keyId}/credentials/generate-ice-servers",
-							properties.cloudflareKeyId())
-					.headers(headers -> headers.setBearerAuth(properties.cloudflareApiToken()))
-					.contentType(MediaType.APPLICATION_JSON)
-					.body(new CredentialRequest(ttlSeconds))
-					.retrieve()
-					.body(CredentialResponse.class);
-			return credentialsFrom(response);
-		}
-		catch (RestClientException exception) {
-			throw new ProviderUnavailableException(
-					"Cloudflare TURN credential request failed",
-					exception);
-		}
-	}
-
-	private static TurnCredentialMaterial credentialsFrom(CredentialResponse response) {
+		CredentialResponse response = restClient.post()
+				.uri(
+						"/v1/turn/keys/{keyId}/credentials/generate-ice-servers",
+						properties.cloudflareKeyId())
+				.headers(headers -> headers.setBearerAuth(properties.cloudflareApiToken()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(new CredentialRequest(ttlSeconds))
+				.retrieve()
+				.body(CredentialResponse.class);
 		if (response == null || response.iceServers() == null) {
-			throw new ProviderUnavailableException(
-					"Cloudflare TURN credential response is empty");
+			throw new RestClientException("Cloudflare TURN credential response is empty");
 		}
 
 		return response.iceServers().stream()
 				.filter(Objects::nonNull)
-				.filter(server -> server.username() != null && !server.username().isBlank())
-				.filter(server -> server.credential() != null && !server.credential().isBlank())
+				.filter(server -> StringUtils.hasText(server.username()))
+				.filter(server -> StringUtils.hasText(server.credential()))
 				.map(server -> new TurnCredentialMaterial(
 						turnUrls(server.urls()),
 						server.username(),
 						server.credential()))
 				.filter(credentials -> !credentials.urls().isEmpty())
 				.findFirst()
-				.orElseThrow(() -> new ProviderUnavailableException(
+				.orElseThrow(() -> new RestClientException(
 						"Cloudflare TURN credential response has no usable TURN server"));
 	}
 
@@ -84,16 +74,5 @@ public class CloudflareTurnClient {
 			List<String> urls,
 			String username,
 			String credential) {
-	}
-
-	public static final class ProviderUnavailableException extends RuntimeException {
-
-		ProviderUnavailableException(String message) {
-			super(message);
-		}
-
-		ProviderUnavailableException(String message, Throwable cause) {
-			super(message, cause);
-		}
 	}
 }

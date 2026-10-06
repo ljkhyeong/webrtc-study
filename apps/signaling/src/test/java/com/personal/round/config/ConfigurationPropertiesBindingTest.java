@@ -9,45 +9,21 @@ import java.io.StringWriter;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 
 class ConfigurationPropertiesBindingTest {
 
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-			.withUserConfiguration(PropertiesConfiguration.class)
-			.withPropertyValues(
-					"round.auth.mode=standalone",
-					"round.auth.cookie-name=__Secure-round_access",
-					"round.auth.audience=round",
-					"round.auth.max-grant-lifetime=5m",
-					"round.signaling.allowed-origins=http://localhost:5173",
-					"round.signaling.max-room-size=6",
-					"round.signaling.max-connections=1000",
-					"round.signaling.max-connections-per-client=12",
-					"round.signaling.heartbeat-interval=30s",
-					"round.signaling.unjoined-timeout=15s",
-					"round.signaling.unjoined-sweep-interval=1s",
-					"round.signaling.shutdown-close-timeout=5s",
-					"round.signaling.abuse-window=10s",
-					"round.signaling.max-frames-per-session-window=600",
-					"round.signaling.max-frames-per-client-window=1200",
-					"round.signaling.max-frames-global-window=3600",
-					"round.signaling.max-bytes-per-session-window=4194304",
-					"round.signaling.max-bytes-per-client-window=8388608",
-					"round.signaling.max-bytes-global-window=25165824",
-					"round.signaling.max-outbound-queue-bytes=2097152",
-					"round.signaling.max-outbound-queue-bytes-global=67108864",
-					"round.turn.provider=disabled",
-					"round.turn.credential-ttl=10m",
-					"round.turn.rate-limit-window=600s",
-					"round.turn.rate-limit-max-requests=12",
-					"round.turn.rate-limit-participant-max-requests=6",
-					"round.turn.rate-limit-global-max-requests=24",
-					"round.turn.rate-limit-max-clients=10000",
-					"round.turn.rate-limit-max-participants=10000");
+			.withInitializer(new ConfigDataApplicationContextInitializer())
+			.withUserConfiguration(PropertiesConfiguration.class);
 
 	@Test
 	void bindsIsoAndReadableDurationsAndKeepsDisabledTurnConfigurationImmutable() {
@@ -106,7 +82,7 @@ class ConfigurationPropertiesBindingTest {
 	void recordConstructorDefensivelyCopiesOriginsAndRedactsTurnCredentials() {
 		List<String> origins = new ArrayList<>(List.of("https://study.example"));
 		SignalingProperties defaults = TestProperties.signaling();
-		TurnProperties turnDefaults = TestProperties.turn("", "");
+		TurnProperties turnDefaults = TestProperties.turn();
 		SignalingProperties signaling = new SignalingProperties(
 				origins,
 				defaults.maxRoomSize(),
@@ -189,40 +165,56 @@ class ConfigurationPropertiesBindingTest {
 				});
 	}
 
-	@Test
-	void keepsConnectionCapacityInsideTheBoundedShutdownPolicy() {
+	static Stream<Arguments> singleFieldLimits() {
+		return Stream.of(
+				Arguments.of(
+						"connection capacity stays inside the bounded shutdown policy",
+						List.of(
+								"round.signaling.max-connections=5001",
+								"round.signaling.max-connections-per-client=5001"),
+						List.of(
+								"Max.round.signaling.maxConnections",
+								"Max.round.signaling.maxConnectionsPerClient")),
+				Arguments.of(
+						"room size stays inside the supported mesh limit",
+						List.of("round.signaling.max-room-size=7"),
+						List.of("Max.round.signaling.maxRoomSize")),
+				Arguments.of(
+						"session sweep stays inside the authorization expiry budget",
+						List.of("round.signaling.unjoined-sweep-interval=1001ms"),
+						List.of("DurationMax.round.signaling.unjoinedSweepInterval")),
+				Arguments.of(
+						"outbound budgets stay inside the container heap policy",
+						List.of(
+								"round.signaling.max-outbound-queue-bytes=16777217",
+								"round.signaling.max-outbound-queue-bytes-global=134217729"),
+						List.of(
+								"Max.round.signaling.maxOutboundQueueBytes",
+								"Max.round.signaling.maxOutboundQueueBytesGlobal")),
+				Arguments.of(
+						"unjoined timeout is not too short",
+						List.of("round.signaling.unjoined-timeout=999ms"),
+						List.of("DurationMin.round.signaling.unjoinedTimeout")),
+				Arguments.of(
+						"close deadline stays inside the Spring shutdown phase",
+						List.of("round.signaling.shutdown-close-timeout=10s"),
+						List.of("DurationMax.round.signaling.shutdownCloseTimeout")));
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("singleFieldLimits")
+	void rejectsValuesOutsideSingleFieldLimits(
+			String description,
+			List<String> properties,
+			List<String> constraintCodes) {
 		contextRunner
-				.withPropertyValues(
-						"round.signaling.max-connections=5001",
-						"round.signaling.max-connections-per-client=5001")
+				.withPropertyValues(properties.toArray(String[]::new))
 				.run(context -> {
 					Throwable failure = context.getStartupFailure();
 
 					assertThat(failure).isNotNull();
-					assertThat(failure)
-							.hasStackTraceContaining(
-									"Max.round.signaling.maxConnections")
-							.hasStackTraceContaining(
-									"Max.round.signaling.maxConnectionsPerClient");
+					constraintCodes.forEach(code -> assertThat(failure).hasStackTraceContaining(code));
 				});
-	}
-
-	@Test
-	void rejectsRoomSizesAboveTheSupportedMeshLimit() {
-		contextRunner
-				.withPropertyValues("round.signaling.max-room-size=7")
-				.run(context -> assertThat(context.getStartupFailure())
-						.hasStackTraceContaining(
-								"Max.round.signaling.maxRoomSize"));
-	}
-
-	@Test
-	void rejectsSessionSweepIntervalsAboveTheAuthorizationExpiryBudget() {
-		contextRunner
-				.withPropertyValues("round.signaling.unjoined-sweep-interval=1001ms")
-				.run(context -> assertThat(context.getStartupFailure())
-						.hasStackTraceContaining(
-								"DurationMax.round.signaling.unjoinedSweepInterval"));
 	}
 
 	@Test
@@ -296,47 +288,6 @@ class ConfigurationPropertiesBindingTest {
 						"round.signaling.max-outbound-queue-bytes=65536",
 						"round.signaling.max-outbound-queue-bytes-global=65536")
 				.run(context -> assertThat(context.getStartupFailure()).isNull());
-	}
-
-	@Test
-	void keepsOutboundBudgetsInsideTheContainerHeapPolicy() {
-		contextRunner
-				.withPropertyValues(
-						"round.signaling.max-outbound-queue-bytes=16777217",
-						"round.signaling.max-outbound-queue-bytes-global=134217729")
-				.run(context -> {
-					Throwable failure = context.getStartupFailure();
-
-					assertThat(failure).isNotNull();
-					assertThat(failure)
-							.hasStackTraceContaining(
-									"Max.round.signaling.maxOutboundQueueBytes")
-							.hasStackTraceContaining(
-									"Max.round.signaling.maxOutboundQueueBytesGlobal");
-				});
-	}
-
-	@Test
-	void rejectsTooShortDurationDuringContextStartup() {
-		contextRunner
-				.withPropertyValues("round.signaling.unjoined-timeout=999ms")
-				.run(context -> {
-					Throwable failure = context.getStartupFailure();
-
-					assertThat(failure).isNotNull();
-					assertThat(failure)
-							.hasStackTraceContaining(
-									"DurationMin.round.signaling.unjoinedTimeout");
-				});
-	}
-
-	@Test
-	void keepsTheCloseDeadlineInsideTheSpringShutdownPhase() {
-		contextRunner
-				.withPropertyValues("round.signaling.shutdown-close-timeout=10s")
-				.run(context -> assertThat(context.getStartupFailure())
-						.hasStackTraceContaining(
-								"DurationMax.round.signaling.shutdownCloseTimeout"));
 	}
 
 	@Test

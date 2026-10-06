@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 class CloudflareTurnClientTest {
 
@@ -55,7 +56,10 @@ class CloudflareTurnClientTest {
 
 		CloudflareTurnClient client = new CloudflareTurnClient(
 				builder,
-				TestProperties.turn("test-key", "test-token"));
+				TestProperties.turn(
+						"provider=cloudflare",
+						"cloudflare-key-id=test-key",
+						"cloudflare-api-token=test-token"));
 
 		TurnCredentialMaterial credentials = client.issue(600);
 
@@ -84,10 +88,13 @@ class CloudflareTurnClientTest {
 						.body(responseBody));
 		CloudflareTurnClient client = new CloudflareTurnClient(
 				builder,
-				TestProperties.turn("test-key", "test-token"));
+				TestProperties.turn(
+						"provider=cloudflare",
+						"cloudflare-key-id=test-key",
+						"cloudflare-api-token=test-token"));
 
 		assertThatThrownBy(() -> client.issue(600))
-				.isInstanceOf(CloudflareTurnClient.ProviderUnavailableException.class);
+				.isInstanceOf(RestClientException.class);
 		server.verify();
 	}
 }

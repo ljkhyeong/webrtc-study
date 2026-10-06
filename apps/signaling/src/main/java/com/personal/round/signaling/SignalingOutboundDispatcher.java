@@ -25,7 +25,6 @@ final class SignalingOutboundDispatcher<P extends SignalingOutboundDispatcher.Ta
 
 	private final Object monitor;
 	private final ExecutorService executor;
-	private final SignalingMetrics metrics;
 	private final LongSupplier monotonicTicker;
 	private final long maxPeerBytes;
 	private final long maxGlobalBytes;
@@ -37,7 +36,6 @@ final class SignalingOutboundDispatcher<P extends SignalingOutboundDispatcher.Ta
 	SignalingOutboundDispatcher(
 		Object monitor,
 		ExecutorService executor,
-		SignalingMetrics metrics,
 		LongSupplier monotonicTicker,
 		long maxPeerBytes,
 		long maxGlobalBytes,
@@ -45,15 +43,14 @@ final class SignalingOutboundDispatcher<P extends SignalingOutboundDispatcher.Ta
 	) {
 		this.monitor = monitor;
 		this.executor = executor;
-		this.metrics = metrics;
 		this.monotonicTicker = monotonicTicker;
 		this.maxPeerBytes = maxPeerBytes;
 		this.maxGlobalBytes = maxGlobalBytes;
 		this.sendFailureHandler = sendFailureHandler;
 	}
 
-	boolean isShutdown() {
-		return executor.isShutdown();
+	long queuedBytesLocked() {
+		return globalBytes;
 	}
 
 	boolean peerLimitExceededLocked(P peer, int messageBytes) {
@@ -96,7 +93,6 @@ final class SignalingOutboundDispatcher<P extends SignalingOutboundDispatcher.Ta
 		queue.frames.addLast(new OutboundFrame(message, messageBytes));
 		queue.outboundBytes += messageBytes;
 		globalBytes += messageBytes;
-		metrics.updateOutboundQueuedBytes(globalBytes);
 
 		if (queue.draining) {
 			return false;
@@ -115,7 +111,6 @@ final class SignalingOutboundDispatcher<P extends SignalingOutboundDispatcher.Ta
 		queue.frames.clear();
 		queue.outboundBytes = queue.inFlightBytes;
 		globalBytes -= queuedBytes;
-		metrics.updateOutboundQueuedBytes(globalBytes);
 
 		if (queue.inFlightBytes == 0) {
 			queues.remove(peer);
@@ -180,7 +175,6 @@ final class SignalingOutboundDispatcher<P extends SignalingOutboundDispatcher.Ta
 		queue.inFlightBytes = 0;
 		queue.outboundBytes -= frame.payloadBytes();
 		globalBytes -= frame.payloadBytes();
-		metrics.updateOutboundQueuedBytes(globalBytes);
 		if (queue.outboundBytes == 0 && (!queue.draining || !peer.connected())) {
 			queues.remove(peer);
 		}

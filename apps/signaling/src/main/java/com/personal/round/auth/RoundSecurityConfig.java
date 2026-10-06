@@ -32,6 +32,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
@@ -67,7 +68,14 @@ public class RoundSecurityConfig {
 		http.securityMatcher(
 						BATON_SIGNAL_TEMPLATE,
 						BATON_TURN_CREDENTIALS_TEMPLATE)
-				.authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
+				// ADR 0001: 경로의 roomId와 참여권 room_id가 같아야 한다.
+				.authorizeHttpRequests(authorize -> authorize
+						.requestMatchers(BATON_SIGNAL_TEMPLATE, BATON_TURN_CREDENTIALS_TEMPLATE)
+						.access((authentication, context) -> new AuthorizationDecision(
+								authentication.get().getPrincipal() instanceof ParticipationGrant grant
+										&& grant.allows(context.getVariables().get("roomId"))))
+						.anyRequest()
+						.denyAll())
 				.oauth2ResourceServer(oauth2 -> oauth2
 						.bearerTokenResolver(new CookieBearerTokenResolver(properties.cookieName()))
 						.jwt(jwt -> jwt.jwtAuthenticationConverter(
@@ -77,7 +85,6 @@ public class RoundSecurityConfig {
 								handleAuthenticationServiceFailures(
 										authenticationEntryPoint)))
 				.sessionManagement(session -> session.sessionCreationPolicy(STATELESS))
-				.requestCache(cache -> cache.disable())
 				.csrf(csrf -> csrf.ignoringRequestMatchers(
 						BATON_TURN_CREDENTIALS_TEMPLATE))
 				.logout(logout -> logout.disable());
@@ -96,7 +103,6 @@ public class RoundSecurityConfig {
 						.anyRequest()
 						.denyAll())
 				.sessionManagement(session -> session.sessionCreationPolicy(STATELESS))
-				.requestCache(cache -> cache.disable())
 				.logout(logout -> logout.disable());
 		return http.build();
 	}
@@ -119,7 +125,6 @@ public class RoundSecurityConfig {
 						.anyRequest()
 						.denyAll())
 				.sessionManagement(session -> session.sessionCreationPolicy(STATELESS))
-				.requestCache(cache -> cache.disable())
 				.csrf(csrf -> csrf.ignoringRequestMatchers(
 						STANDALONE_TURN_CREDENTIALS))
 				.logout(logout -> logout.disable());

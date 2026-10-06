@@ -1,13 +1,15 @@
 package com.personal.round.protocol;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.personal.round.auth.ParticipationGrant;
 import java.util.List;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
+/** 서버가 보내는 메시지를 record로 만들어 JSON으로 직렬화한다. record의 모든 구성요소가 전송되므로 내부용 값을 넣지 않는다. */
 @Component
 public final class ServerMessageEncoder {
 
@@ -23,34 +25,19 @@ public final class ServerMessageEncoder {
 			String peerId,
 			ParticipationGrant.Role selfRole,
 			List<Participant> participants) {
-		ObjectNode message = base("room.joined", roomId);
-		if (requestId != null) {
-			message.put("requestId", requestId);
-		}
-		ObjectNode payload = message.putObject("payload");
-		payload.put("peerId", peerId);
-		payload.put("selfRole", roleValue(selfRole));
-		payload.putObject("capabilities")
-				.put("canModerateMedia", selfRole == ParticipationGrant.Role.HOST);
-		ArrayNode participantNodes = payload.putArray("participants");
-		for (Participant participant : participants) {
-			participantNodes.add(participantNode(participant));
-		}
-		return textMessage(message);
+		return frame("room.joined", roomId, null, requestId, new RoomJoined(
+				peerId,
+				selfRole,
+				new Capabilities(selfRole == ParticipationGrant.Role.HOST),
+				participants));
 	}
 
 	public TextMessage peerJoined(String roomId, Participant participant) {
-		ObjectNode message = base("peer.joined", roomId);
-		message.putObject("payload")
-				.set("participant", participantNode(participant));
-		return textMessage(message);
+		return frame("peer.joined", roomId, null, null, new PeerJoined(participant));
 	}
 
 	public TextMessage relay(String type, String roomId, String from, ObjectNode payload) {
-		ObjectNode message = base(type, roomId);
-		message.put("from", from);
-		message.set("payload", payload);
-		return textMessage(message);
+		return frame(type, roomId, from, null, payload);
 	}
 
 	public TextMessage moderationMediaDisabled(
@@ -59,46 +46,25 @@ public final class ServerMessageEncoder {
 			String from,
 			String targetPeerId,
 			ClientMessage.MediaKind kind) {
-		ObjectNode message = base("moderation.media.disabled", roomId);
-		message.put("from", from);
-		if (requestId != null) {
-			message.put("requestId", requestId);
-		}
-		message.putObject("payload")
-				.put("targetPeerId", targetPeerId)
-				.put("kind", kind.wireValue());
-		return textMessage(message);
+		return frame("moderation.media.disabled", roomId, from, requestId, new MediaDisabled(targetPeerId, kind));
 	}
 
 	public TextMessage studyState(String roomId, String requestId, StudyState state, boolean conflict) {
-		ObjectNode message = base("room.study.state", roomId);
-		if (requestId != null) message.put("requestId", requestId);
 		ObjectNode payload = objectMapper.valueToTree(state);
 		payload.put("conflict", conflict);
-		message.set("payload", payload);
-		return textMessage(message);
+		return frame("room.study.state", roomId, null, requestId, payload);
 	}
 
 	public TextMessage handState(String roomId, String requestId, HandQueueState state) {
-		ObjectNode message = base("room.hand.state", roomId);
-		if (requestId != null) message.put("requestId", requestId);
-		message.set("payload", objectMapper.valueToTree(state));
-		return textMessage(message);
+		return frame("room.hand.state", roomId, null, requestId, state);
 	}
 
 	public TextMessage peerReconnect(String roomId, String peerId, String connectionId, boolean initiator) {
-		ObjectNode message = base("peer.reconnect", roomId);
-		message.putObject("payload")
-				.put("peerId", peerId)
-				.put("connectionId", connectionId)
-				.put("initiator", initiator);
-		return textMessage(message);
+		return frame("peer.reconnect", roomId, null, null, new PeerReconnect(peerId, connectionId, initiator));
 	}
 
 	public TextMessage peerLeft(String roomId, String peerId) {
-		ObjectNode message = base("peer.left", roomId);
-		message.putObject("payload").put("peerId", peerId);
-		return textMessage(message);
+		return frame("peer.left", roomId, null, null, new PeerLeft(peerId));
 	}
 
 	public TextMessage error(
@@ -106,48 +72,47 @@ public final class ServerMessageEncoder {
 			String detail,
 			String roomId,
 			String requestId) {
-		ObjectNode message = objectMapper.createObjectNode();
-		message.put("v", ProtocolParser.PROTOCOL_VERSION);
-		message.put("type", "error");
-		if (roomId != null) {
-			message.put("roomId", roomId);
-		}
-		if (requestId != null) {
-			message.put("requestId", requestId);
-		}
-		ObjectNode payload = message.putObject("payload");
-		payload.put("code", code.name());
-		payload.put("message", detail);
-		return textMessage(message);
+		return frame("error", roomId, null, requestId, new ErrorPayload(code, detail));
 	}
 
-	private ObjectNode base(String type, String roomId) {
-		ObjectNode message = objectMapper.createObjectNode();
-		message.put("v", ProtocolParser.PROTOCOL_VERSION);
-		message.put("type", type);
-		message.put("roomId", roomId);
-		return message;
-	}
-
-	private ObjectNode participantNode(Participant participant) {
-		ObjectNode node = objectMapper.createObjectNode();
-		node.put("peerId", participant.peerId());
-		node.put("displayName", participant.displayName());
-		node.put("role", roleValue(participant.role()));
-		return node;
-	}
-
-	private static String roleValue(ParticipationGrant.Role role) {
-		return role.name().toLowerCase(java.util.Locale.ROOT);
-	}
-
-	private static TextMessage textMessage(ObjectNode message) {
-		return new TextMessage(message.toString());
+	private TextMessage frame(String type, String roomId, String from, String requestId, Object payload) {
+		return new TextMessage(objectMapper.writeValueAsString(
+				new Frame(ProtocolParser.PROTOCOL_VERSION, type, roomId, from, requestId, payload)));
 	}
 
 	public record Participant(
 			String peerId,
 			String displayName,
 			ParticipationGrant.Role role) {
+	}
+
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonPropertyOrder({"v", "type", "roomId", "from", "requestId", "payload"})
+	record Frame(int v, String type, String roomId, String from, String requestId, Object payload) {
+	}
+
+	record RoomJoined(
+			String peerId,
+			ParticipationGrant.Role selfRole,
+			Capabilities capabilities,
+			List<Participant> participants) {
+	}
+
+	record Capabilities(boolean canModerateMedia) {
+	}
+
+	record PeerJoined(Participant participant) {
+	}
+
+	record MediaDisabled(String targetPeerId, ClientMessage.MediaKind kind) {
+	}
+
+	record PeerReconnect(String peerId, String connectionId, boolean initiator) {
+	}
+
+	record PeerLeft(String peerId) {
+	}
+
+	record ErrorPayload(SignalingErrorCode code, String message) {
 	}
 }

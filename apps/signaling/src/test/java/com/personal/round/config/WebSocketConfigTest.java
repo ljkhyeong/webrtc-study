@@ -9,12 +9,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.personal.round.auth.ParticipationGrantHandshakeInterceptor;
-import com.personal.round.auth.RoundAuthProperties;
 import com.personal.round.signaling.ConnectionAdmissionPolicy;
 import com.personal.round.signaling.SignalingService;
 import com.personal.round.signaling.SignalingWebSocketHandler;
-import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -48,7 +45,7 @@ class WebSocketConfigTest {
 				signalingService,
 				admissionPolicy,
 				TestProperties.signaling(),
-				standaloneAuth(),
+				TestProperties.standaloneAuth(),
 				environment, new ObjectMapper()))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("HTTPS");
@@ -71,7 +68,7 @@ class WebSocketConfigTest {
 				signalingService,
 				admissionPolicy,
 				TestProperties.signaling(),
-				standaloneAuth(),
+				TestProperties.standaloneAuth(),
 				new MockEnvironment(), new ObjectMapper());
 
 		config.registerWebSocketHandlers(registry);
@@ -89,7 +86,7 @@ class WebSocketConfigTest {
 	}
 
 	@Test
-	void batonModeRegistersOnlyTheRoomScopedEndpointAndGrantInterceptor() {
+	void batonModeRegistersOnlyTheRoomScopedEndpoint() {
 		WebSocketHandlerRegistry registry = mock(WebSocketHandlerRegistry.class);
 		WebSocketHandlerRegistration registration = mock(WebSocketHandlerRegistration.class);
 		when(registry.addHandler(same(webSocketHandler), any(String[].class)))
@@ -105,7 +102,7 @@ class WebSocketConfigTest {
 				signalingService,
 				admissionPolicy,
 				TestProperties.signaling(),
-				batonAuth(),
+				TestProperties.batonAuth(),
 				new MockEnvironment(), new ObjectMapper());
 
 		config.registerWebSocketHandlers(registry);
@@ -115,33 +112,9 @@ class WebSocketConfigTest {
 		verify(registration).addInterceptors(interceptors.capture());
 		assertThat(interceptors.getValue())
 				.extracting(Object::getClass)
-				.containsExactly(
-						ParticipationGrantHandshakeInterceptor.class,
-						ClientCompatibilityHandshakeInterceptor.class);
+				.containsExactly(ClientCompatibilityHandshakeInterceptor.class);
 		verify(registry).addHandler(
 				same(webSocketHandler),
 				eq(new String[] {"/rooms/{roomId}/signal"}));
-	}
-
-	private static RoundAuthProperties standaloneAuth() {
-		return new RoundAuthProperties(
-				RoundAuthProperties.Mode.STANDALONE,
-				"__Secure-round_access",
-				null,
-				"round",
-				null,
-				null,
-				Duration.ofMinutes(5));
-	}
-
-	private static RoundAuthProperties batonAuth() {
-		return new RoundAuthProperties(
-				RoundAuthProperties.Mode.BATON,
-				"__Secure-round_access",
-				"https://baton.example/oauth2",
-				"round",
-				"https://baton.example/oauth2/jwks",
-				null,
-				Duration.ofMinutes(5));
 	}
 }

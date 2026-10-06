@@ -8,8 +8,6 @@ import org.springframework.mock.web.MockHttpServletRequest;
 
 class TurnCredentialRequestPolicyTest {
 
-	private final TurnCredentialRequestPolicy policy = new TurnCredentialRequestPolicy();
-
 	@Test
 	void allowsAnExactSameOriginRequestWithOrWithoutFetchMetadata() {
 		MockHttpServletRequest withMetadata = request("https", "study.example", 443);
@@ -20,9 +18,9 @@ class TurnCredentialRequestPolicyTest {
 		MockHttpServletRequest ipv6 = request("http", "[::1]", 5173);
 		ipv6.addHeader(HttpHeaders.ORIGIN, "http://[::1]:5173");
 
-		assertThat(policy.allows(withMetadata)).isTrue();
-		assertThat(policy.allows(withoutMetadata)).isTrue();
-		assertThat(policy.allows(ipv6)).isTrue();
+		assertThat(TurnCredentialRequestPolicy.allows(withMetadata)).isTrue();
+		assertThat(TurnCredentialRequestPolicy.allows(withoutMetadata)).isTrue();
+		assertThat(TurnCredentialRequestPolicy.allows(ipv6)).isTrue();
 	}
 
 	@Test
@@ -35,10 +33,10 @@ class TurnCredentialRequestPolicyTest {
 		MockHttpServletRequest otherPort = request("https", "study.example", 443);
 		otherPort.addHeader(HttpHeaders.ORIGIN, "https://study.example:8443");
 
-		assertThat(policy.allows(missing)).isFalse();
-		assertThat(policy.allows(otherScheme)).isFalse();
-		assertThat(policy.allows(otherHost)).isFalse();
-		assertThat(policy.allows(otherPort)).isFalse();
+		assertThat(TurnCredentialRequestPolicy.allows(missing)).isFalse();
+		assertThat(TurnCredentialRequestPolicy.allows(otherScheme)).isFalse();
+		assertThat(TurnCredentialRequestPolicy.allows(otherHost)).isFalse();
+		assertThat(TurnCredentialRequestPolicy.allows(otherPort)).isFalse();
 	}
 
 	@Test
@@ -47,7 +45,7 @@ class TurnCredentialRequestPolicyTest {
 		request.addHeader(HttpHeaders.ORIGIN, "https://study.example");
 		request.addHeader("Sec-Fetch-Site", "cross-site");
 
-		assertThat(policy.allows(request)).isFalse();
+		assertThat(TurnCredentialRequestPolicy.allows(request)).isFalse();
 	}
 
 	private static MockHttpServletRequest request(String scheme, String host, int port) {

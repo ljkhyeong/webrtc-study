@@ -31,11 +31,9 @@ class ParticipationGrantAuthenticationConverterTest {
 		assertThat(authentication.getAuthorities()).isEmpty();
 
 		assertThat(grant.subject()).isEqualTo(ACCOUNT_ID);
-		assertThat(grant.studyId()).isEqualTo("study-7");
 		assertThat(grant.roomId()).isEqualTo(ROOM_ID);
 		assertThat(grant.role()).isEqualTo(ParticipationGrant.Role.PARTICIPANT);
 		assertThat(grant.tokenId()).isEqualTo("ticket-123");
-		assertThat(grant.issuedAt()).isEqualTo(ISSUED_AT);
 		assertThat(grant.expiresAt()).isEqualTo(EXPIRES_AT);
 		assertThat(grant.allows(ROOM_ID)).isTrue();
 	}
@@ -79,6 +77,15 @@ class ParticipationGrantAuthenticationConverterTest {
 		assertRejected(
 				"uppercase UUID",
 				jwt(claims -> claims.put("sub", ACCOUNT_ID.toUpperCase())));
+	}
+
+	@Test
+	void keepsParticipantIdentityOutOfDiagnosticStrings() {
+		ParticipationGrant grant = grantOf(validJwt());
+
+		assertThat(grant.toString()).doesNotContain(ACCOUNT_ID, ROOM_ID, "ticket-123");
+		assertThat(grant.participantRoomKey().toString())
+				.isEqualTo("ParticipantRoomKey[redacted]");
 	}
 
 	private ParticipationGrant grantOf(Jwt jwt) {

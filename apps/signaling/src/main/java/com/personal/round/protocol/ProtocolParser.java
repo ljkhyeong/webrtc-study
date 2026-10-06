@@ -1,6 +1,7 @@
 package com.personal.round.protocol;
 
 import java.util.Set;
+import java.util.function.BiFunction;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.DeserializationFeature;
@@ -29,16 +30,12 @@ public class ProtocolParser {
 	}
 
 	public ClientMessage parse(String rawMessage) {
-		if (rawMessage == null) {
-			throw new MalformedJsonException();
-		}
-
 		JsonNode parsed;
 		try {
 			parsed = objectReader.readTree(rawMessage);
 		}
 		catch (JacksonException exception) {
-			throw new MalformedJsonException();
+			throw fail("$", "must be valid JSON");
 		}
 
 		ObjectNode message = object(parsed, "$");
@@ -46,10 +43,16 @@ public class ProtocolParser {
 		String type = requiredText(message.get("type"), "$.type");
 		return switch (type) {
 			case "room.join" -> parseJoin(message);
-			case "room.leave" -> parseLeave(message);
+			case "room.leave" -> roomOnly(message, ClientMessage.Leave::new);
+			case "room.study.sync" -> roomOnly(
+					message,
+					(roomId, requestId) -> new ClientMessage.Study(roomId, requestId, null));
+			case "room.hand.sync" -> roomOnly(
+					message,
+					(roomId, requestId) -> new ClientMessage.Hand(roomId, requestId, null));
 			case "peer.reconnect" -> parseReconnect(message);
-			case "room.study.sync", "room.study.update" -> parseStudy(message, type);
-			case "room.hand.sync", "room.hand.update" -> parseHand(message, type);
+			case "room.study.update" -> parseStudyUpdate(message);
+			case "room.hand.update" -> parseHandUpdate(message);
 			case "rtc.offer" -> parseDescriptionRelay(message, "offer");
 			case "rtc.answer" -> parseDescriptionRelay(message, "answer");
 			case "rtc.ice" -> parseIceRelay(message);
@@ -58,27 +61,27 @@ public class ProtocolParser {
 		};
 	}
 
-	private ClientMessage.Hand parseHand(ObjectNode message, String type) {
-		boolean sync = type.equals("room.hand.sync");
-		exactKeys(message, sync ? Set.of("v", "type", "roomId", "requestId")
-				: Set.of("v", "type", "roomId", "requestId", "payload"), "$");
-		String roomId = roomId(message.get("roomId"), "$.roomId");
-		String requestId = optionalNonBlankString(message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId");
-		if (sync) return new ClientMessage.Hand(roomId, requestId, null);
+	private static <T extends ClientMessage> T roomOnly(
+			ObjectNode message,
+			BiFunction<String, String, T> factory) {
+		exactKeys(message, Set.of("v", "type", "roomId", "requestId"), "$");
+		RoomEnvelope room = roomEnvelope(message);
+		return factory.apply(room.roomId(), room.requestId());
+	}
+
+	private ClientMessage.Hand parseHandUpdate(ObjectNode message) {
+		exactKeys(message, Set.of("v", "type", "roomId", "requestId", "payload"), "$");
+		RoomEnvelope room = roomEnvelope(message);
 		ObjectNode payload = object(message.get("payload"), "$.payload");
 		exactKeys(payload, Set.of("raised"), "$.payload");
 		JsonNode raised = payload.get("raised");
 		if (raised == null || !raised.isBoolean()) throw fail("$.payload.raised", "must be boolean");
-		return new ClientMessage.Hand(roomId, requestId, raised.asBoolean());
+		return new ClientMessage.Hand(room.roomId(), room.requestId(), raised.asBoolean());
 	}
 
-	private ClientMessage.Study parseStudy(ObjectNode message, String type) {
-		boolean sync = type.equals("room.study.sync");
-		exactKeys(message, sync ? Set.of("v", "type", "roomId", "requestId")
-				: Set.of("v", "type", "roomId", "requestId", "payload"), "$");
-		String roomId = roomId(message.get("roomId"), "$.roomId");
-		String requestId = optionalNonBlankString(message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId");
-		if (sync) return new ClientMessage.Study(roomId, requestId, null);
+	private ClientMessage.Study parseStudyUpdate(ObjectNode message) {
+		exactKeys(message, Set.of("v", "type", "roomId", "requestId", "payload"), "$");
+		RoomEnvelope room = roomEnvelope(message);
 		ObjectNode payload = object(message.get("payload"), "$.payload");
 		String action = requiredText(payload.get("action"), "$.payload.action");
 		long revision = boundedInteger(payload.get("expectedRevision"), 0, 9_007_199_254_740_991L, "$.payload.expectedRevision");
@@ -99,7 +102,10 @@ public class ProtocolParser {
 			case "pause", "resume", "reset" -> exactKeys(payload, Set.of("action", "expectedRevision"), "$.payload");
 			default -> throw fail("$.payload.action", "must be a supported study action");
 		}
-		return new ClientMessage.Study(roomId, requestId, new ClientMessage.StudyCommand(action, revision, topic, mode, duration));
+		return new ClientMessage.Study(
+				room.roomId(),
+				room.requestId(),
+				new ClientMessage.StudyCommand(action, revision, topic, mode, duration));
 	}
 
 	private static long boundedInteger(JsonNode value, long minimum, long maximum, String path) {
@@ -121,9 +127,7 @@ public class ProtocolParser {
 
 	private ClientMessage.Join parseJoin(ObjectNode message) {
 		exactKeys(message, Set.of("v", "type", "roomId", "requestId", "payload"), "$");
-		String roomId = roomId(message.get("roomId"), "$.roomId");
-		String requestId = optionalNonBlankString(
-				message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId");
+		RoomEnvelope room = roomEnvelope(message);
 		ObjectNode payload = object(message.get("payload"), "$.payload");
 		exactKeys(payload, Set.of("displayName", "hostCapability"), "$.payload");
 		String displayName = normalizedString(
@@ -138,7 +142,7 @@ public class ProtocolParser {
 					"$.payload.hostCapability",
 					"must contain at least " + MIN_HOST_CAPABILITY_LENGTH + " characters");
 		}
-		return new ClientMessage.Join(roomId, requestId, displayName, hostCapability);
+		return new ClientMessage.Join(room.roomId(), room.requestId(), displayName, hostCapability);
 	}
 
 	private ClientMessage.Moderation parseModeration(ObjectNode message) {
@@ -154,14 +158,6 @@ public class ProtocolParser {
 		};
 		return new ClientMessage.Moderation(
 				envelope.roomId(), envelope.requestId(), envelope.to(), mediaKind);
-	}
-
-	private ClientMessage.Leave parseLeave(ObjectNode message) {
-		exactKeys(message, Set.of("v", "type", "roomId", "requestId"), "$");
-		String roomId = roomId(message.get("roomId"), "$.roomId");
-		String requestId = optionalNonBlankString(
-				message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId");
-		return new ClientMessage.Leave(roomId, requestId);
 	}
 
 	private ClientMessage.Relay parseDescriptionRelay(ObjectNode message, String expectedType) {
@@ -206,12 +202,16 @@ public class ProtocolParser {
 				payload);
 	}
 
-	private RelayEnvelope relayEnvelope(ObjectNode message) {
-		String roomId = roomId(message.get("roomId"), "$.roomId");
-		String requestId = optionalNonBlankString(
-				message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId");
+	private static RoomEnvelope roomEnvelope(ObjectNode message) {
+		return new RoomEnvelope(
+				roomId(message.get("roomId"), "$.roomId"),
+				optionalNonBlankString(message, "requestId", MAX_REQUEST_ID_LENGTH, "$.requestId"));
+	}
+
+	private static RelayEnvelope relayEnvelope(ObjectNode message) {
+		RoomEnvelope room = roomEnvelope(message);
 		String to = nonBlankString(message.get("to"), MAX_PEER_ID_LENGTH, "$.to");
-		return new RelayEnvelope(roomId, requestId, to);
+		return new RelayEnvelope(room.roomId(), room.requestId(), to);
 	}
 
 	private void validateIceCandidate(JsonNode candidateNode) {
@@ -352,14 +352,9 @@ public class ProtocolParser {
 			int maximum,
 			String path) {
 		JsonNode input = parent.get(key);
-		if (input == null || input.isNull()) {
-			return;
-		}
-		if (!input.canConvertToInt()) {
-			throw fail(path, "must be null or an integer between " + minimum + " and " + maximum);
-		}
-		int value = input.intValue();
-		if (value < minimum || value > maximum) {
+		if (input != null
+				&& !input.isNull()
+				&& (!input.canConvertToInt() || input.intValue() < minimum || input.intValue() > maximum)) {
 			throw fail(path, "must be null or an integer between " + minimum + " and " + maximum);
 		}
 	}
@@ -378,6 +373,9 @@ public class ProtocolParser {
 
 	private static ProtocolValidationException fail(String path, String reason) {
 		return new ProtocolValidationException(path, reason);
+	}
+
+	private record RoomEnvelope(String roomId, String requestId) {
 	}
 
 	private record RelayEnvelope(String roomId, String requestId, String to) {

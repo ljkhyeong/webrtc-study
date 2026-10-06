@@ -7,7 +7,6 @@ import static org.mockito.Mockito.when;
 
 import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.auth.RoundAuthProperties;
-import com.personal.round.net.ClientAddressKeyResolver;
 import com.personal.round.turn.CloudflareTurnClient;
 import com.personal.round.turn.TurnCredentialMetrics;
 import com.personal.round.turn.TurnCredentialService;
@@ -93,7 +92,7 @@ class ProductionConfigurationTest {
 						TurnCredentialService service = new TurnCredentialService(
 								context.getBean(TurnProperties.class), clock,
 								() -> TimeUnit.SECONDS.toNanos(elapsed.get()),
-								new TurnCredentialMetrics(registry), new ClientAddressKeyResolver(), cloudflare);
+								new TurnCredentialMetrics(registry), cloudflare);
 
 						// 두 방에서 각각 같은 NAT의 6명이 5분 참여권으로 입장하고 4분마다 갱신한다.
 						for (int seconds : new int[] {0, 240, 480}) {
@@ -156,9 +155,8 @@ class ProductionConfigurationTest {
 
 	private static ParticipationGrant grant(int room, int participant, long now) {
 		return new ParticipationGrant(
-				"member-" + participant, "study-" + room,
+				"member-" + participant,
 				room == 0 ? "abcd-efgh-jkmp" : "bcde-fghj-kmnp", ParticipationGrant.Role.PARTICIPANT,
-				"ticket-" + now + "-" + participant,
-				Instant.ofEpochSecond(now), Instant.ofEpochSecond(now + 300));
+				"ticket-" + now + "-" + participant, Instant.ofEpochSecond(now + 300));
 	}
 }

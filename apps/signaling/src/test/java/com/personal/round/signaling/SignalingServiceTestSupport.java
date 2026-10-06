@@ -12,11 +12,9 @@ import com.personal.round.auth.RoomAccessPolicy;
 import com.personal.round.auth.RoundAuthProperties;
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.config.TestProperties;
-import com.personal.round.net.ClientAddressKeyResolver;
 import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ServerMessageEncoder;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.net.InetSocketAddress;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -45,6 +43,7 @@ import org.springframework.web.socket.WebSocketMessage;
 import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 abstract class SignalingServiceTestSupport {
 
@@ -97,9 +96,7 @@ abstract class SignalingServiceTestSupport {
 
 	void attachDefaultReservation(TestPeer peer) {
 		ConnectionAdmissionPolicy.Admission admission = defaultAdmissionPolicy.reserve(
-				new InetSocketAddress(
-						"198.51.100." + nextTestClientAddress++,
-						41_000),
+				"198.51.100." + nextTestClientAddress++,
 				null);
 		attachReservation(peer, acceptedReservation(admission));
 	}
@@ -107,18 +104,16 @@ abstract class SignalingServiceTestSupport {
 	ConnectionAdmissionPolicy admissionPolicy(SignalingProperties properties) {
 		return new ConnectionAdmissionPolicy(
 				properties,
-				new SignalingMetrics(new SimpleMeterRegistry()),
-				new ClientAddressKeyResolver());
+				new SignalingMetrics(new SimpleMeterRegistry()));
 	}
 
 	void connectFrom(
 			ConnectionAdmissionPolicy policy,
 			String clientAddress,
 			TestPeer... peers) {
-		int port = 41_000;
 		for (TestPeer peer : peers) {
 			ConnectionAdmissionPolicy.Admission admission =
-					policy.reserve(new InetSocketAddress(clientAddress, port++), null);
+					policy.reserve(clientAddress, null);
 			attachReservation(peer, acceptedReservation(admission));
 			assertThat(service.connect(peer.session())).isTrue();
 		}
@@ -135,13 +130,15 @@ abstract class SignalingServiceTestSupport {
 				roomId,
 				null,
 				target,
-				ObjectNodeFixture.object(
-						objectMapper,
-						"{\"description\":{\"type\":\"" + descriptionType + "\"}}"));
+				objectNode("{\"description\":{\"type\":\"" + descriptionType + "\"}}"));
+	}
+
+	ObjectNode objectNode(String json) {
+		return (ObjectNode) objectMapper.readTree(json);
 	}
 
 	static SignalingProperties properties(int maxRoomSize) {
-		return TestProperties.signaling(maxRoomSize);
+		return TestProperties.signaling("max-room-size=" + maxRoomSize);
 	}
 
 	SignalingService service(
@@ -155,14 +152,14 @@ abstract class SignalingServiceTestSupport {
 	SignalingService newService(
 			SignalingProperties properties,
 			SimpleMeterRegistry registry) {
-		return newService(properties, registry, standaloneAuth());
+		return newService(properties, registry, TestProperties.standaloneAuth(HOST_TOKEN_SHA256));
 	}
 
 	SignalingService newService(
 			SignalingProperties properties,
 			SimpleMeterRegistry registry,
 			RoundAuthProperties authProperties) {
-		return new SignalingService(
+		SignalingService created = new SignalingService(
 				serverMessageEncoder,
 				properties,
 				new SignalingMetrics(registry),
@@ -170,6 +167,8 @@ abstract class SignalingServiceTestSupport {
 				outboundExecutor,
 				clock,
 				monotonicTicker);
+		created.bindTo(registry);
+		return created;
 	}
 
 	SignalingService newBatonService(SimpleMeterRegistry registry) {
@@ -179,40 +178,7 @@ abstract class SignalingServiceTestSupport {
 	SignalingService newBatonService(
 			SignalingProperties properties,
 			SimpleMeterRegistry registry) {
-		return new SignalingService(
-				serverMessageEncoder,
-				properties,
-				new SignalingMetrics(registry),
-				new RoomAccessPolicy(batonAuth()),
-				outboundExecutor,
-				clock,
-				monotonicTicker);
-	}
-
-	static RoundAuthProperties standaloneAuth() {
-		return standaloneAuth(null);
-	}
-
-	static RoundAuthProperties standaloneAuth(String hostTokenSha256) {
-		return new RoundAuthProperties(
-				RoundAuthProperties.Mode.STANDALONE,
-				"__Secure-round_access",
-				null,
-				"round",
-				null,
-				hostTokenSha256,
-				Duration.ofMinutes(5));
-	}
-
-	private static RoundAuthProperties batonAuth() {
-		return new RoundAuthProperties(
-				RoundAuthProperties.Mode.BATON,
-				"__Secure-round_access",
-				"https://baton.example/oauth2",
-				"round",
-				"https://baton.example/oauth2/jwks",
-				null,
-				Duration.ofMinutes(5));
+		return newService(properties, registry, TestProperties.batonAuth());
 	}
 
 	ParticipationGrant grantFor(String roomId) {
@@ -244,11 +210,9 @@ abstract class SignalingServiceTestSupport {
 			ParticipationGrant.Role role) {
 		return new ParticipationGrant(
 				subject,
-				"study-1",
 				roomId,
 				role,
 				tokenId,
-				clock.instant().minusSeconds(1),
 				expiresAt);
 	}
 
@@ -267,7 +231,7 @@ abstract class SignalingServiceTestSupport {
 	static void attachGrantReservation(
 			TestPeer peer,
 			ConnectionAdmissionPolicy admissionPolicy,
-			InetSocketAddress remoteAddress,
+			String remoteAddress,
 			ParticipationGrant grant) {
 		attachReservation(
 				peer,
@@ -333,13 +297,6 @@ abstract class SignalingServiceTestSupport {
 	static void assertError(JsonNode message, String code) {
 		assertThat(message.get("type").asString()).isEqualTo("error");
 		assertThat(message.at("/payload/code").asString()).isEqualTo(code);
-	}
-
-	static byte[] payloadBytes(PingMessage pingMessage) {
-		var payload = pingMessage.getPayload().asReadOnlyBuffer();
-		byte[] bytes = new byte[payload.remaining()];
-		payload.get(bytes);
-		return bytes;
 	}
 
 	static final class MutableClock extends Clock {
@@ -492,17 +449,6 @@ abstract class SignalingServiceTestSupport {
 							return messages.stream().noneMatch(TextMessage.class::isInstance);
 						}
 					});
-		}
-	}
-
-	static final class ObjectNodeFixture {
-
-		private ObjectNodeFixture() {
-		}
-
-		static tools.jackson.databind.node.ObjectNode object(ObjectMapper mapper, String json)
-				throws Exception {
-			return (tools.jackson.databind.node.ObjectNode) mapper.readTree(json);
 		}
 	}
 }

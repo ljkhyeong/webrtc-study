@@ -14,7 +14,6 @@ import com.personal.round.protocol.ClientMessage;
 import com.personal.round.protocol.ServerMessageEncoder.Participant;
 import com.personal.round.protocol.SignalingErrorCode;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -78,7 +77,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 					ROOM_ID,
 					null,
 					adaPeerId,
-					ObjectNodeFixture.object(objectMapper, """
+					objectNode("""
 							{"candidate":null}
 							""")));
 			service.heartbeatSweep();
@@ -209,15 +208,15 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	@Test
 	void outboundByteBudgetDisconnectsBeforeAFrameCountFlood() throws Exception {
 		service.stop();
-		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
-				1,
-				100,
-				200,
-				400,
-				1_000_000,
-				2_000_000,
-				4_000_000,
-				64 * 1024);
+		SignalingProperties properties = TestProperties.signaling(
+				"max-room-size=1",
+				"max-frames-per-session-window=100",
+				"max-frames-per-client-window=200",
+				"max-frames-global-window=400",
+				"max-bytes-per-session-window=1000000",
+				"max-bytes-per-client-window=2000000",
+				"max-bytes-global-window=4000000",
+				"max-outbound-queue-bytes=" + 64 * 1024);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		CountDownLatch firstSendEntered = new CountDownLatch(1);
@@ -271,16 +270,16 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	void globalOutboundByteBudgetEvictsTheLargestReleasableSlowPeer()
 			throws Exception {
 		service.stop();
-		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
-				2,
-				100,
-				200,
-				400,
-				1_000_000,
-				2_000_000,
-				4_000_000,
-				128 * 1024,
-				160 * 1024);
+		SignalingProperties properties = TestProperties.signaling(
+				"max-room-size=2",
+				"max-frames-per-session-window=100",
+				"max-frames-per-client-window=200",
+				"max-frames-global-window=400",
+				"max-bytes-per-session-window=1000000",
+				"max-bytes-per-client-window=2000000",
+				"max-bytes-global-window=4000000",
+				"max-outbound-queue-bytes=" + 128 * 1024,
+				"max-outbound-queue-bytes-global=" + 160 * 1024);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		CountDownLatch firstSendEntered = new CountDownLatch(1);
@@ -332,16 +331,16 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	void globalOutboundBudgetEvictsEnoughQueuedConsumersBeforeAdmittingAHealthyPeer()
 			throws Exception {
 		service.stop();
-		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
-				3,
-				100,
-				200,
-				400,
-				1_000_000,
-				2_000_000,
-				4_000_000,
-				64 * 1024,
-				120 * 1024);
+		SignalingProperties properties = TestProperties.signaling(
+				"max-room-size=3",
+				"max-frames-per-session-window=100",
+				"max-frames-per-client-window=200",
+				"max-frames-global-window=400",
+				"max-bytes-per-session-window=1000000",
+				"max-bytes-per-client-window=2000000",
+				"max-bytes-global-window=4000000",
+				"max-outbound-queue-bytes=" + 64 * 1024,
+				"max-outbound-queue-bytes-global=" + 120 * 1024);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		CountDownLatch firstSendEntered = new CountDownLatch(1);
@@ -421,16 +420,16 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 		assertThat(queuedDetailLength).isPositive();
 		assertThat(globalQueueBytes).isGreaterThanOrEqualTo(maxPeerQueueBytes);
 
-		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
-				2,
-				100,
-				200,
-				400,
-				1_000_000,
-				2_000_000,
-				4_000_000,
-				maxPeerQueueBytes,
-				globalQueueBytes);
+		SignalingProperties properties = TestProperties.signaling(
+				"max-room-size=2",
+				"max-frames-per-session-window=100",
+				"max-frames-per-client-window=200",
+				"max-frames-global-window=400",
+				"max-bytes-per-session-window=1000000",
+				"max-bytes-per-client-window=2000000",
+				"max-bytes-global-window=4000000",
+				"max-outbound-queue-bytes=" + maxPeerQueueBytes,
+				"max-outbound-queue-bytes-global=" + globalQueueBytes);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		CountDownLatch slowSendEntered = new CountDownLatch(1);
@@ -524,16 +523,16 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 		assertThat(observerJoinedBytes + queuedPeerJoinedBytes)
 				.isLessThanOrEqualTo(newcomerJoinedBytes + leftBytes - 1);
 
-		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
-				3,
-				100,
-				200,
-				400,
-				1_000_000,
-				2_000_000,
-				4_000_000,
-				maxPeerQueueBytes,
-				globalQueueBytes);
+		SignalingProperties properties = TestProperties.signaling(
+				"max-room-size=3",
+				"max-frames-per-session-window=100",
+				"max-frames-per-client-window=200",
+				"max-frames-global-window=400",
+				"max-bytes-per-session-window=1000000",
+				"max-bytes-per-client-window=2000000",
+				"max-bytes-global-window=4000000",
+				"max-outbound-queue-bytes=" + maxPeerQueueBytes,
+				"max-outbound-queue-bytes-global=" + globalQueueBytes);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		CountDownLatch ballastSendEntered = new CountDownLatch(1);
@@ -644,16 +643,16 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 		assertThat(desiredVictimBytes + leftBytes).isLessThanOrEqualTo(maxPeerQueueBytes);
 		assertThat(desiredVictimBytes).isGreaterThan(desiredLeaverBytes);
 
-		SignalingProperties properties = TestProperties.signalingWithFrameAndByteLimits(
-				3,
-				100,
-				200,
-				400,
-				1_000_000,
-				2_000_000,
-				4_000_000,
-				maxPeerQueueBytes,
-				globalQueueBytes);
+		SignalingProperties properties = TestProperties.signaling(
+				"max-room-size=3",
+				"max-frames-per-session-window=100",
+				"max-frames-per-client-window=200",
+				"max-frames-global-window=400",
+				"max-bytes-per-session-window=1000000",
+				"max-bytes-per-client-window=2000000",
+				"max-bytes-global-window=4000000",
+				"max-outbound-queue-bytes=" + maxPeerQueueBytes,
+				"max-outbound-queue-bytes-global=" + globalQueueBytes);
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		CountDownLatch leaverSendEntered = new CountDownLatch(1);
@@ -714,7 +713,6 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 		service.stop();
 		service = newService(properties(6), new SimpleMeterRegistry());
 		assertThat(service.isRunning()).isFalse();
-		assertThat(service.isAcceptingConnections()).isFalse();
 
 		TestPeer beforeStart = peer("before-start");
 		attachDefaultReservation(beforeStart);
@@ -725,7 +723,6 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 
 		service.start();
 		assertThat(service.isRunning()).isTrue();
-		assertThat(service.isAcceptingConnections()).isTrue();
 		TestPeer connected = peer("connected-before-stop");
 		connect(connected);
 		service.handle(connected.session(), join("Ada"));
@@ -740,7 +737,6 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 		assertThat(connected.closeStatus().get())
 				.isEqualTo(new CloseStatus(1001, "Server shutting down"));
 		assertThat(service.isRunning()).isFalse();
-		assertThat(service.isAcceptingConnections()).isFalse();
 		assertThat(service.connectedPeerCount()).isZero();
 		assertThat(service.roomCount()).isZero();
 		assertThat(outboundExecutor.isShutdown()).isFalse();
@@ -749,7 +745,6 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 		TestPeer restarted = peer("after-restart");
 		connect(restarted);
 		assertThat(service.isRunning()).isTrue();
-		assertThat(service.isAcceptingConnections()).isTrue();
 
 		service.stop();
 		restarted.awaitClosed();
@@ -818,7 +813,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	void shutdownDeadlineIncludesCloseTasksThatIgnoreInterrupts() throws Exception {
 		service.stop();
 		SignalingProperties properties =
-				TestProperties.signalingWithShutdownCloseTimeout(Duration.ofMillis(100));
+				TestProperties.signaling("shutdown-close-timeout=100ms");
 		meterRegistry = new SimpleMeterRegistry();
 		service = service(properties, meterRegistry);
 		int peerCount = 4;
@@ -868,7 +863,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	void sharesOneShutdownDeadlineAcrossConnectedAndSupersededSessions()
 			throws Exception {
 		SignalingProperties shutdownProperties =
-				TestProperties.signalingWithShutdownCloseTimeout(Duration.ofMillis(300));
+				TestProperties.signaling("shutdown-close-timeout=300ms");
 		SignalingService batonService =
 				newBatonService(shutdownProperties, new SimpleMeterRegistry());
 		ConnectionAdmissionPolicy batonAdmissionPolicy =
@@ -887,7 +882,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 			attachGrantReservation(
 					original,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.160", 41_160),
+					"192.0.2.160",
 					originalGrant);
 			assertThat(batonService.connect(original.session())).isTrue();
 			batonService.handle(original.session(), join("Original"));
@@ -910,7 +905,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 			attachGrantReservation(
 					replacement,
 					batonAdmissionPolicy,
-					new InetSocketAddress("192.0.2.161", 41_161),
+					"192.0.2.161",
 					freshGrant);
 			assertThat(batonService.connect(replacement.session())).isTrue();
 			batonService.handle(replacement.session(), join("Replacement"));
@@ -951,7 +946,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 					serverMessageEncoder,
 					properties(1),
 					new SignalingMetrics(new SimpleMeterRegistry()),
-					new RoomAccessPolicy(standaloneAuth()),
+					new RoomAccessPolicy(TestProperties.standaloneAuth(HOST_TOKEN_SHA256)),
 					rejectingExecutor,
 					clock,
 					monotonicTicker);
