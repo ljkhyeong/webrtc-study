@@ -179,23 +179,10 @@ export function RoomStudyPanel({
             {state?.mode === 'break' ? '휴식' : '집중'}
             <span className="sr-only"> 타이머</span> · {label}
           </span>
-          <span className="room-study__dial">
-            <svg className="room-study__ring" viewBox="0 0 100 100" aria-hidden="true">
-              <circle className="room-study__ring-track" cx="50" cy="50" r="44" />
-              <circle
-                className="room-study__ring-value"
-                cx="50"
-                cy="50"
-                r="44"
-                pathLength={100}
-                strokeDasharray={`${100 - progress} 100`}
-              />
-            </svg>
-            <time>
-              {String(Math.floor(seconds / 60)).padStart(2, '0')}:
-              {String(seconds % 60).padStart(2, '0')}
-            </time>
-          </span>
+          <time>
+            {String(Math.floor(seconds / 60)).padStart(2, '0')}:
+            {String(seconds % 60).padStart(2, '0')}
+          </time>
           {active && !hostPresent ? (
             <span className="room-study__host-absent">방장 없음</span>
           ) : null}

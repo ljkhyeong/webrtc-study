@@ -1,14 +1,4 @@
 import type { RefObject } from 'react';
-import {
-  CameraIcon,
-  CameraOffIcon,
-  HandIcon,
-  MessageIcon,
-  MicIcon,
-  MicOffIcon,
-  PhoneOffIcon,
-  ScreenShareIcon,
-} from './Icons';
 
 interface RoomControlDockProps {
   readonly active: boolean;
@@ -86,7 +76,6 @@ export function RoomControlDock({
         aria-keyshortcuts="Alt+Shift+M"
         title="마이크 전환: Alt+Shift+M"
       >
-        {audioEnabled ? <MicIcon /> : <MicOffIcon />}
         <span>{!audioAvailable ? '마이크 연결' : audioEnabled ? '마이크' : '음소거'}</span>
       </button>
       <button
@@ -112,7 +101,6 @@ export function RoomControlDock({
         aria-keyshortcuts="Alt+Shift+C"
         title="카메라 전환: Alt+Shift+C"
       >
-        {videoEnabled ? <CameraIcon /> : <CameraOffIcon />}
         <span>{!videoAvailable ? '카메라 선택' : videoEnabled ? '카메라' : '카메라 꺼짐'}</span>
       </button>
       <button
@@ -134,7 +122,6 @@ export function RoomControlDock({
         onClick={onToggleScreenShare}
         title={screenSharing ? '화면 공유 중지' : '화면 공유'}
       >
-        <ScreenShareIcon />
         <span>
           {screenSharePending === 'starting'
             ? '준비 중'
@@ -155,7 +142,6 @@ export function RoomControlDock({
         aria-keyshortcuts="Alt+Shift+H"
         title="손들기 전환: Alt+Shift+H"
       >
-        <HandIcon />
         <span>{handRaised ? '손 내리기' : '손들기'}</span>
         {handCount > 0 ? <b>{badgeCount(handCount)}</b> : null}
       </button>
@@ -168,7 +154,6 @@ export function RoomControlDock({
         onClick={onToggleChat}
         title="채팅"
       >
-        <MessageIcon />
         <span>채팅</span>
         {chatNotificationCount > 0 ? <b>{badgeCount(chatNotificationCount)}</b> : null}
       </button>
@@ -178,7 +163,6 @@ export function RoomControlDock({
         onClick={onLeave}
         title="나가기"
       >
-        <PhoneOffIcon />
         <span>나가기</span>
       </button>
     </footer>

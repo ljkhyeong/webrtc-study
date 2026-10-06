@@ -33,6 +33,12 @@ describe('VideoTile', () => {
     expect(markup).toContain('카메라 꺼짐');
   });
 
+  it('좌석 번호를 두 자리로 보여 주고 화면 낭독기에는 읽히지 않게 한다', () => {
+    const markup = renderToStaticMarkup(<VideoTile participant={participant()} seat={3} />);
+
+    expect(markup).toContain('<span class="video-tile__seat" aria-hidden="true">03</span>');
+  });
+
   it('스트림이 없으면 영상 요소 없이 영상 없음으로 안내한다', () => {
     const markup = renderToStaticMarkup(
       <VideoTile participant={participant({ stream: undefined })} />,

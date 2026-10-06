@@ -709,61 +709,6 @@ describe('RoomView 브라우저 동작', () => {
     expect(shell.classList.contains('room-shell--panel-open')).toBe(false);
   });
 
-  it('넓은 화면은 진행 열에 손들기 순서와 참가자를 늘 보여 주고 오른쪽 패널은 채팅만 연다', async () => {
-    vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(min-width: 1100px)',
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    }));
-    try {
-      const participants = ['a', 'b'].map((peerId) => ({
-        peerId,
-        displayName: peerId === 'a' ? '가온' : '나래',
-        role: peerId === 'a' ? ('host' as const) : ('participant' as const),
-        isLocal: peerId === 'a',
-        connectionState: 'connected' as const,
-        audioEnabled: true,
-        videoEnabled: false,
-        videoSource: 'camera' as const,
-        handRaised: peerId === 'b',
-      }));
-      act(() =>
-        root.render(
-          <RoomView
-            {...roomViewProps()}
-            participants={participants}
-            handQueue={{ revision: 1, peerIds: ['b'] }}
-          />,
-        ),
-      );
-      const rail = container.querySelector('.room-rail')!;
-      expect(rail.querySelector('#room-rail-hands')?.textContent).toBe('손들기 대기 1명');
-      expect(
-        [...rail.querySelectorAll('[aria-labelledby="room-rail-hands"] li')].map(
-          (item) => item.textContent,
-        ),
-      ).toEqual(['나래']);
-      expect(rail.querySelector('.participant-list')?.textContent).toContain('가온 (나)방장');
-      expect(container.querySelector('.participant-count')).toBeNull();
-      expect(container.querySelector('[role="tablist"]')).toBeNull();
-      expect(container.querySelector('#room-hand-panel')).toBeNull();
-
-      await act(async () =>
-        container.querySelector<HTMLButtonElement>('button[aria-label="채팅 열기"]')!.click(),
-      );
-      const shell = container.querySelector('.room-shell')!;
-      expect(shell.classList.contains('room-shell--panel-open')).toBe(true);
-      expect(container.querySelector('.side-panel__title')?.textContent).toBe('채팅');
-      await act(async () =>
-        container.querySelector<HTMLButtonElement>('.side-panel__close')!.click(),
-      );
-      expect(shell.classList.contains('room-shell--panel-open')).toBe(false);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
   it('패널 탭을 방향키로 옮기고 방장은 참가자 탭에서 참가자의 마이크와 영상을 끈다', async () => {
     const props = roomViewProps();
     const participants = [

@@ -31,42 +31,51 @@
   --call-soft: #9aa3ab;
   --shadow: 0 22px 60px rgb(24 26 29 / 14%);
 
-  /* 입장 준비·통화 화면(낮 열람실): 밝은 바탕, 코발트 주요 색, 손들기는 주황으로 구분한다. */
-  --c-bg: #eef1f5;
-  --c-surface: #ffffff;
-  --c-surface-soft: #f6f8fb;
-  --c-raised: #eef1f5;
-  --c-raised-hover: #e3e8ef;
-  --c-line: #dce1e8;
-  --c-line-strong: #cdd4df;
-  --c-ink: #172033;
-  --c-ink-soft: #5b6577;
-  --c-accent: #2b59e8;
-  --c-accent-strong: #2148c4;
-  --c-accent-soft: #e8eefd;
-  --c-on-accent: #ffffff;
-  --c-success: #1f9d63;
-  --c-success-soft: #e6f6ee;
-  --c-success-line: #bfe5d1;
-  --c-success-ink: #166a45;
-  --c-hand: #b9520e;
-  --c-hand-soft: #fff3e8;
-  --c-hand-ink: #8a3a06;
-  --c-warn: #c27c0e;
-  --c-warn-soft: #fff6e0;
-  --c-warn-line: #f1d48a;
-  --c-warn-ink: #7a4b00;
-  --c-danger: #c9372b;
-  --c-danger-strong: #a92a20;
-  --c-danger-soft: #fdecea;
-  --c-danger-line: #f1b8b1;
-  --c-danger-ink: #a1271c;
-  --c-tile: #d6dde8;
-  --c-tile-avatar: #c3ccda;
-  --c-tile-ink: #39445a;
-  --c-overlay: rgb(255 255 255 / 92%);
-  --c-backdrop: rgb(23 32 51 / 40%);
-  --c-shadow: 0 10px 30px rgb(23 32 51 / 12%);
+  /* 입장 준비·통화 화면(독서실): 벽색 바탕, 나무 칸막이, 종이 면, 전광판 빨강. 모서리는 직각이다. */
+  --c-bg: #e7e2d8;
+  --c-surface: #f3efe7;
+  --c-surface-soft: #ece7dd;
+  --c-raised: #ddd6c9;
+  --c-raised-hover: #d2cabb;
+  --c-line: #cfc7b8;
+  --c-line-strong: #a39886;
+  --c-ink: #221d18;
+  --c-ink-soft: #4d443a;
+  --c-accent: #2b231c;
+  --c-accent-strong: #15110d;
+  --c-accent-soft: #ddd6c9;
+  --c-on-accent: #f3efe7;
+  --c-success: #2f7d4f;
+  --c-success-soft: #dfe8d8;
+  --c-success-line: #b5c9ad;
+  --c-success-ink: #2a5a33;
+  --c-hand: #e8833a;
+  --c-on-hand: #2b1606;
+  --c-hand-soft: #f6dcc6;
+  --c-hand-ink: #6b2e07;
+  --c-warn: #b07a12;
+  --c-warn-soft: #f3e3bd;
+  --c-warn-line: #d9bf86;
+  --c-warn-ink: #5c3d00;
+  --c-danger: #b3261e;
+  --c-danger-strong: #8f1d17;
+  --c-danger-soft: #f2d6d1;
+  --c-danger-line: #d9a39b;
+  --c-danger-ink: #8f1d17;
+  --c-tile: #cfc7b8;
+  --c-tile-avatar: #b9ae9c;
+  --c-tile-ink: #3b3229;
+  --c-overlay: rgb(243 239 231 / 92%);
+  --c-backdrop: rgb(34 29 24 / 45%);
+  --c-shadow: none;
+  --c-wood: #4a3a2c;
+  --c-plate: #2b231c;
+  --c-plate-ink: #e7e2d8;
+  --c-desk: #b9a68c;
+  --c-lamp: #e9c27a;
+  --c-led: #ff5a36;
+  --c-led-bg: #141210;
+  --c-led-soft: #8f8678;
 }
 
 * {
@@ -270,7 +279,7 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--c-line-strong);
-  border-radius: 4px;
+  border-radius: 0;
   background: transparent;
   color: var(--c-ink);
   font-size: 0.9rem;
@@ -712,7 +721,7 @@ textarea:focus-visible {
   gap: 14px;
   padding: 16px 18px;
   border: 1px solid var(--c-line);
-  border-radius: 16px;
+  border-radius: 0;
   background: var(--c-surface);
 }
 
@@ -743,10 +752,10 @@ textarea:focus-visible {
   max-height: 50svh;
   aspect-ratio: 16 / 10;
   border: 1px solid var(--c-line);
-  border-radius: 16px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-tile);
-  box-shadow: 0 12px 32px rgb(24 26 29 / 10%);
+  box-shadow: none;
 }
 
 .prejoin-preview video {
@@ -812,7 +821,7 @@ textarea:focus-visible {
   min-height: 42px;
   padding: 0 14px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 999px;
+  border-radius: 0;
   align-items: center;
   gap: 8px;
   color: var(--c-ink);
@@ -883,7 +892,7 @@ textarea:focus-visible {
   min-height: 54px;
   padding: 0 17px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   align-items: center;
   justify-content: space-between;
   color: var(--c-on-accent);
@@ -966,7 +975,7 @@ textarea:focus-visible {
   height: 48px;
   padding: 0 38px 0 13px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 9px;
+  border-radius: 0;
   background: var(--c-surface);
 }
 
@@ -1024,7 +1033,7 @@ textarea:focus-visible {
   height: 48px;
   padding: 0 13px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 9px;
+  border-radius: 0;
   background: var(--c-surface);
 }
 
@@ -1061,7 +1070,7 @@ textarea:focus-visible {
   margin: 0;
   padding: 9px 10px;
   border: 1px solid rgb(222 101 79 / 30%);
-  border-radius: 8px;
+  border-radius: 0;
   align-items: flex-start;
   gap: 8px;
   color: var(--c-danger-ink);
@@ -1091,11 +1100,12 @@ textarea:focus-visible {
   display: grid;
   width: 100%;
   height: 100svh;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  grid-template-rows: 76px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 96px minmax(0, 1fr) 64px;
   grid-template-areas:
-    'brand study header'
-    'main main main';
+    'header'
+    'main'
+    'dock';
   overflow: hidden;
   color: var(--c-ink);
   background: var(--c-bg);
@@ -1111,11 +1121,11 @@ textarea:focus-visible {
   width: min(620px, calc(100% - 56px));
   padding: 14px 16px;
   border: 1px solid var(--c-danger-line);
-  border-radius: 10px;
+  border-radius: 0;
   gap: 5px;
   color: var(--c-ink);
   background: var(--c-danger-soft);
-  box-shadow: 0 14px 34px rgb(23 32 51 / 14%);
+  box-shadow: none;
 }
 
 .room-copy-recovery strong {
@@ -1132,7 +1142,7 @@ textarea:focus-visible {
   margin-top: 4px;
   padding: 8px 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 7px;
+  border-radius: 0;
   color: var(--c-ink);
   background: rgb(23 32 51 / 7%);
   font-family: 'SFMono-Regular', Consolas, monospace;
@@ -1140,42 +1150,43 @@ textarea:focus-visible {
 }
 
 /* 상단 바는 방 정보 · 공용 타이머 · 연결 상태와 초대를 세 칸으로 나눈다. */
-/* 진행 열은 넓은 화면에서만 왼쪽 열이 되고, 그보다 좁으면 상단 줄의 칸으로 펼쳐진다. */
-.room-rail {
-  display: contents;
-}
-
-.room-rail__brand {
+.room-header {
   z-index: 20;
-  display: flex;
+  display: grid;
   min-width: 0;
-  padding-left: 24px;
-  grid-area: brand;
+  padding: 0 32px;
+  grid-area: header;
+  grid-template-areas: 'brand study status';
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 16px;
 }
 
-.room-rail > .room-study-region {
-  z-index: 20;
+.room-header__brand {
+  display: flex;
+  min-width: 0;
+  grid-area: brand;
+  align-items: center;
+  gap: 14px;
+}
+
+.room-header > .room-study-region {
   grid-area: study;
 }
 
-.room-rail__brand .wordmark {
-  color: var(--c-ink);
+.room-header__rule,
+.room-header .wordmark span {
+  display: none;
 }
 
-.room-rail__brand .wordmark span {
-  color: var(--c-ink-soft);
-}
-
-.room-header {
-  z-index: 20;
-  display: flex;
-  min-width: 0;
-  padding-right: 24px;
-  grid-area: header;
-  align-items: center;
-  justify-content: flex-end;
+/* 방 이름표: 진한 나무 명판에 고정폭 글자 */
+.room-header .wordmark {
+  padding: 7px 12px;
+  color: var(--c-plate-ink);
+  background: var(--c-plate);
+  font-family: 'SFMono-Regular', ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+  letter-spacing: 0.22em;
 }
 
 .room-workspace {
@@ -1191,7 +1202,7 @@ textarea:focus-visible {
   display: flex;
   padding: 7px 9px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   align-items: center;
   gap: 9px;
   color: var(--c-ink);
@@ -1235,7 +1246,7 @@ textarea:focus-visible {
   min-height: 36px;
   padding: 0 11px;
   border: 1px solid var(--c-line);
-  border-radius: 10px;
+  border-radius: 0;
   align-items: center;
   gap: 8px;
   color: var(--c-ink-soft);
@@ -1251,7 +1262,7 @@ textarea:focus-visible {
   padding: 0 12px;
   cursor: pointer;
   border: 1px solid var(--c-line);
-  border-radius: 10px;
+  border-radius: 0;
   align-items: center;
   color: var(--c-ink-soft);
   font-size: 0.72rem;
@@ -1301,10 +1312,6 @@ textarea:focus-visible {
 
 /* 패널을 연 중간 폭에서는 상단 바의 부가 글자를 줄여 버튼이 줄바꿈되지 않게 한다. */
 @media (max-width: 1180px) {
-  .room-rail__brand .wordmark span {
-    display: none;
-  }
-
   .room-code {
     margin-left: 10px;
   }
@@ -1330,10 +1337,10 @@ textarea:focus-visible {
   padding: 22px 24px 24px;
   overflow: auto;
   border: 1px solid var(--c-line);
-  border-radius: 16px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-surface);
-  box-shadow: 0 24px 80px rgb(23 32 51 / 14%);
+  box-shadow: none;
   font-size: 0.8rem;
   color-scheme: light;
 }
@@ -1404,7 +1411,7 @@ textarea:focus-visible {
   height: 40px;
   padding: 0 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-surface);
   font-size: 0.8rem;
@@ -1415,7 +1422,7 @@ textarea:focus-visible {
   min-height: 40px;
   padding: 0 14px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.78rem;
@@ -1505,7 +1512,7 @@ textarea:focus-visible {
   min-height: 256px;
   margin-top: 16px;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: 0;
   place-items: center;
   background: white;
 }
@@ -1556,11 +1563,11 @@ textarea:focus-visible {
   max-height: min(680px, calc(100svh - 96px));
   padding: 18px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 14px;
+  border-radius: 0;
   gap: 14px;
   color: var(--c-ink);
   background: var(--c-surface);
-  box-shadow: 0 20px 54px rgb(23 32 51 / 14%);
+  box-shadow: none;
 }
 
 .connection-diagnostics__panel > header {
@@ -1578,7 +1585,7 @@ textarea:focus-visible {
   min-height: 34px;
   padding: 0 11px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink);
   background: rgb(23 32 51 / 6%);
   font-size: 0.66rem;
@@ -1594,7 +1601,7 @@ textarea:focus-visible {
 
 .connection-diagnostics__privacy {
   padding: 10px 11px;
-  border-radius: 8px;
+  border-radius: 0;
   background: rgb(23 32 51 / 5%);
 }
 
@@ -1607,7 +1614,7 @@ textarea:focus-visible {
   display: grid;
   padding: 11px;
   border: 1px solid var(--c-line);
-  border-radius: 9px;
+  border-radius: 0;
   gap: 9px;
   background: rgb(23 32 51 / 3%);
 }
@@ -1649,7 +1656,7 @@ textarea:focus-visible {
   max-height: 150px;
   margin: 0;
   padding: 10px;
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink-soft);
   background: var(--c-surface-soft);
   font-size: 0.58rem;
@@ -1702,7 +1709,7 @@ textarea:focus-visible {
   display: grid;
   min-width: 0;
   min-height: 0;
-  padding: 4px 24px 112px;
+  padding: 16px 32px 20px;
   grid-template-columns: repeat(var(--gallery-columns, 2), var(--tile-width, minmax(0, 1fr)));
   grid-auto-rows: var(--tile-height, minmax(180px, 1fr));
   place-content: center;
@@ -1716,7 +1723,7 @@ textarea:focus-visible {
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--c-line);
-  border-radius: 18px;
+  border-radius: 0;
   background: var(--c-surface);
   container: video-tile / inline-size;
 }
@@ -1826,7 +1833,7 @@ textarea:focus-visible {
   z-index: 4;
   padding: 6px 8px;
   border: 1px solid var(--c-warn-line);
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--c-warn-ink);
   background: var(--c-warn-soft);
   font-size: 0.64rem;
@@ -1854,7 +1861,7 @@ textarea:focus-visible {
 
 .video-tile__badges span {
   padding: 6px 9px;
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-overlay);
   font-size: 0.62rem;
@@ -1891,7 +1898,7 @@ textarea:focus-visible {
   height: 32px;
   padding: 0 8px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 8px;
+  border-radius: 0;
   place-items: center;
   color: var(--c-ink);
   background: var(--c-overlay);
@@ -1959,7 +1966,7 @@ textarea:focus-visible {
   min-height: 34px;
   padding: 0 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 9px;
+  border-radius: 0;
   align-items: center;
   gap: 7px;
   color: var(--c-ink);
@@ -1985,12 +1992,12 @@ textarea:focus-visible {
   max-width: min(280px, 100%);
   padding: 9px 11px;
   border: 1px solid var(--c-danger-line);
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--c-danger-ink);
   background: var(--c-danger-soft);
   font-size: 0.68rem;
   line-height: 1.45;
-  box-shadow: 0 8px 24px rgb(23 32 51 / 14%);
+  box-shadow: none;
 }
 
 .video-tile__playback-recovery {
@@ -2002,14 +2009,14 @@ textarea:focus-visible {
   width: min(280px, calc(100% - 32px));
   padding: 14px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 12px;
+  border-radius: 0;
   gap: 10px;
   color: var(--c-ink);
   background: var(--c-overlay);
   font-size: 0.72rem;
   line-height: 1.45;
   text-align: center;
-  box-shadow: 0 12px 32px rgb(23 32 51 / 14%);
+  box-shadow: none;
   transform: translate(-50%, -50%);
   backdrop-filter: blur(12px);
 }
@@ -2018,7 +2025,7 @@ textarea:focus-visible {
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--c-on-accent);
   background: var(--c-accent);
   font: inherit;
@@ -2075,7 +2082,7 @@ textarea:focus-visible {
   justify-content: center;
   gap: 4px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-overlay);
   font-size: 0.7rem;
@@ -2127,7 +2134,7 @@ textarea:focus-visible {
   padding: 12px;
   gap: 8px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--c-surface);
   color: var(--c-ink);
   font-size: 0.75rem;
@@ -2159,7 +2166,7 @@ textarea:focus-visible {
 .video-tile__name {
   overflow: hidden;
   padding: 6px 11px;
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-overlay);
   font-size: 0.78rem;
@@ -2175,7 +2182,7 @@ textarea:focus-visible {
   margin-left: auto;
   padding: 4px 8px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-backdrop);
   font-size: 0.7rem;
@@ -2190,7 +2197,7 @@ textarea:focus-visible {
   display: grid;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: 0;
   place-items: center;
   color: var(--c-ink-soft);
   background: var(--c-overlay);
@@ -2210,7 +2217,7 @@ textarea:focus-visible {
 
 .video-tile__signal i {
   width: 2px;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--c-accent);
   animation: signal-wave 1.3s ease-in-out infinite;
 }
@@ -2231,18 +2238,18 @@ textarea:focus-visible {
 
 .waiting-note {
   position: absolute;
-  bottom: 126px;
+  bottom: 28px;
   left: 36px;
   z-index: 8;
   display: flex;
   padding: 10px 10px 10px 14px;
   border: 1px solid var(--c-line);
-  border-radius: 11px;
+  border-radius: 0;
   align-items: center;
   gap: 14px;
   color: var(--c-ink-soft);
   background: var(--c-overlay);
-  box-shadow: 0 12px 36px rgb(23 32 51 / 14%);
+  box-shadow: none;
   font-size: 0.7rem;
   backdrop-filter: blur(14px);
 }
@@ -2250,7 +2257,7 @@ textarea:focus-visible {
 .waiting-note button {
   padding: 8px 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 0;
   color: var(--c-bg);
   background: var(--c-accent);
   font-size: 0.68rem;
@@ -2259,11 +2266,11 @@ textarea:focus-visible {
 
 .connecting-layer {
   position: absolute;
-  inset: 18px 18px 108px;
+  inset: 18px;
   z-index: 9;
   display: flex;
   border: 1px solid var(--c-line);
-  border-radius: 16px;
+  border-radius: 0;
   align-items: center;
   justify-content: center;
   flex-direction: column;
@@ -2320,7 +2327,7 @@ textarea:focus-visible {
   min-height: 40px;
   padding: 0 16px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.72rem;
@@ -2349,7 +2356,7 @@ textarea:focus-visible {
   margin: 0;
   padding: 10px 14px;
   border: 1px solid;
-  border-radius: 9px;
+  border-radius: 0;
   font-size: 0.72rem;
   line-height: 1.5;
 }
@@ -2383,7 +2390,7 @@ textarea:focus-visible {
   min-height: 34px;
   padding: 0 11px;
   border: 1px solid var(--c-warn-line);
-  border-radius: 8px;
+  border-radius: 0;
   flex: 0 0 auto;
   color: var(--c-warn-ink);
   background: var(--c-surface);
@@ -2414,7 +2421,7 @@ textarea:focus-visible {
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--c-line);
-  border-radius: 18px;
+  border-radius: 0;
   background: var(--c-surface);
   opacity: 0;
   visibility: hidden;
@@ -2454,7 +2461,7 @@ textarea:focus-visible {
   height: 34px;
   flex: 0 0 auto;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   place-items: center;
   color: var(--c-ink-soft);
   background: transparent;
@@ -2475,7 +2482,7 @@ textarea:focus-visible {
   min-height: 38px;
   padding: 0 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -2498,7 +2505,7 @@ textarea:focus-visible {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--c-on-accent);
   background: var(--c-accent);
   font-size: 0.65rem;
@@ -2536,7 +2543,7 @@ textarea:focus-visible {
 .participant-list li {
   display: flex;
   padding: 10px;
-  border-radius: 12px;
+  border-radius: 0;
   align-items: center;
   gap: 12px;
 }
@@ -2550,7 +2557,7 @@ textarea:focus-visible {
   width: 34px;
   height: 34px;
   flex: none;
-  border-radius: 50%;
+  border-radius: 0;
   place-items: center;
   color: var(--c-ink);
   background: var(--c-raised);
@@ -2587,7 +2594,7 @@ textarea:focus-visible {
   min-height: 30px;
   padding: 0 10px;
   border: 1px solid var(--c-line);
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.72rem;
@@ -2687,7 +2694,7 @@ textarea:focus-visible {
 .chat-message p {
   margin: 0;
   padding: 10px 12px;
-  border-radius: 4px 12px 12px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.76rem;
@@ -2697,7 +2704,7 @@ textarea:focus-visible {
 }
 
 .chat-message--mine p {
-  border-radius: 12px 4px 12px 12px;
+  border-radius: 0;
   color: var(--c-on-accent);
   background: var(--c-accent);
 }
@@ -2726,7 +2733,7 @@ textarea:focus-visible {
   min-height: 28px;
   padding: 3px 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0;
   color: var(--c-ink-soft);
   background: transparent;
   cursor: pointer;
@@ -2771,7 +2778,7 @@ textarea:focus-visible {
   padding: 12px 13px;
   resize: none;
   border: 1px solid var(--c-line);
-  border-radius: 10px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.76rem;
@@ -2829,7 +2836,7 @@ textarea:focus-visible {
   height: 44px;
   padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   place-items: center;
   color: var(--c-on-accent);
   background: var(--c-accent);
@@ -2859,60 +2866,57 @@ textarea:focus-visible {
   min-height: 36px;
   padding: 8px 12px;
   border: 1px solid var(--c-accent);
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-accent);
   font-size: 0.72rem;
 }
 
-/* 하단 조작부는 둥근 아이콘 버튼으로 두고, 이름은 화면 낭독기와 설명 풍선으로 제공한다. */
+/* 하단 조작부는 책상 가장자리처럼 화면 아래 한 줄을 차지하고, 버튼은 상태 표시등과 이름을 함께 보여 준다. */
 .control-dock {
-  position: fixed;
-  bottom: max(18px, env(safe-area-inset-bottom));
-  left: 50%;
   z-index: 30;
   display: flex;
-  padding: 8px;
-  border: 1px solid var(--c-line);
-  border-radius: 999px;
-  align-items: center;
-  gap: 10px;
-  color: var(--c-ink);
-  background: var(--c-surface);
-  box-shadow: 0 10px 30px rgb(23 32 51 / 14%);
-  backdrop-filter: blur(12px);
-  transform: translateX(-50%);
-  transition: left 260ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* 패널이 열리면 조작부를 영상 영역 가운데에 두어 메시지 입력창을 가리지 않는다. */
-.room-shell--panel-open .control-dock {
-  left: calc(50% - 180px);
+  min-width: 0;
+  grid-area: dock;
+  align-items: stretch;
+  overflow-x: auto;
+  color: var(--c-plate-ink);
+  background: var(--c-plate);
+  scrollbar-width: none;
 }
 
 .control-button {
   position: relative;
-  display: grid;
-  width: 52px;
-  height: 52px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 50%;
-  place-items: center;
-  color: var(--c-ink);
-  background: var(--c-raised);
-  transition:
-    color 160ms ease,
-    background 160ms ease;
+  display: flex;
+  min-width: 0;
+  padding: 0 22px;
+  border: 0;
+  border-right: 1px solid var(--c-wood);
+  border-radius: 0;
+  align-items: center;
+  gap: 10px;
+  color: var(--c-plate-ink);
+  background: transparent;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  transition: background 160ms ease;
+}
+
+.control-button::before {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  background: #6b5e50;
+  content: '';
 }
 
 .control-button:hover:not(:disabled) {
-  background: var(--c-raised-hover);
+  background: #3a2f25;
 }
 
 .control-button:focus-visible {
-  outline-color: var(--c-accent);
-  outline-offset: 3px;
+  outline: 2px solid var(--c-led);
+  outline-offset: -4px;
 }
 
 .control-button:disabled {
@@ -2920,82 +2924,56 @@ textarea:focus-visible {
 }
 
 .control-button svg {
-  width: 21px;
+  display: none;
 }
 
-.control-button span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
+/* 켜진 마이크·카메라는 초록, 꺼진 장치는 빨강 표시등을 켠다. */
+.control-button:first-child::before,
+.control-button:nth-child(2)::before {
+  background: #5ad17a;
 }
 
-.control-button--off {
-  color: var(--c-on-accent);
-  background: var(--c-ink);
+.control-button--off:first-child::before,
+.control-button--off:nth-child(2)::before {
+  background: var(--c-led);
 }
 
-.control-button--off:hover:not(:disabled) {
-  background: #2b3650;
+.control-button--active::before {
+  background: var(--c-lamp);
 }
 
 .control-button--active {
-  color: var(--c-on-accent);
-  background: var(--c-accent);
+  background: #3a2f25;
 }
 
-.control-button--active:hover:not(:disabled) {
-  background: var(--c-accent-strong);
-}
-
-.control-button--hand {
+.control-button--hand::before {
   background: var(--c-hand);
 }
 
-.control-button--hand:hover:not(:disabled) {
-  background: #9a4409;
-}
-
 .control-button b {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  display: grid;
   min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 999px;
-  place-items: center;
-  color: var(--c-on-accent);
-  background: var(--c-ink);
-  font-size: 0.65rem;
+  padding: 1px 5px;
+  color: var(--c-plate);
+  background: var(--c-lamp);
+  font-size: 0.68rem;
+  text-align: center;
 }
 
 .control-button--leave {
-  display: flex;
-  width: auto;
-  padding: 0 22px;
-  border-radius: 26px;
-  gap: 8px;
-  color: white;
+  margin-left: auto;
+  padding: 0 28px;
+  border-right: 0;
+  color: #ffffff;
   background: var(--c-danger);
+  font-weight: 800;
+}
+
+.control-button--leave::before {
+  display: none;
 }
 
 .control-button--leave:hover:not(:disabled) {
-  color: white;
   background: var(--c-danger-strong);
-}
-
-.control-button--leave span {
-  position: static;
-  width: auto;
-  height: auto;
-  overflow: visible;
-  clip: auto;
-  font-size: 0.85rem;
-  font-weight: 750;
 }
 
 @keyframes copy-entrance {
@@ -3092,26 +3070,6 @@ textarea:focus-visible {
 
   .room-shell--panel-open .room-workspace {
     grid-template-columns: minmax(0, 1fr) 330px;
-  }
-
-  .room-shell--panel-open .control-dock {
-    left: calc(50% - 165px);
-  }
-}
-
-@media (min-width: 761px) and (max-width: 960px) {
-  .room-shell--panel-open .control-dock {
-    gap: 6px;
-  }
-
-  .room-shell--panel-open .control-button {
-    width: 44px;
-    height: 44px;
-  }
-
-  .room-shell--panel-open .control-button--leave {
-    width: auto;
-    padding: 0 16px;
   }
 }
 
@@ -3215,7 +3173,7 @@ textarea:focus-visible {
   }
 
   .prejoin-preview {
-    border-radius: 16px;
+    border-radius: 0;
   }
 
   .prejoin-settings {
@@ -3227,24 +3185,16 @@ textarea:focus-visible {
   }
 
   .room-shell {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto auto minmax(0, 1fr);
-    grid-template-areas:
-      'brand header'
-      'study study'
-      'main main';
-  }
-
-  .room-rail__brand {
-    padding: 8px 0 0 14px;
+    grid-template-rows: auto minmax(0, 1fr) 56px;
   }
 
   .room-header {
-    padding: 8px 14px 0 8px;
-  }
-
-  .room-rail > .room-study-region {
-    padding: 8px 14px 10px;
+    padding: 10px 14px;
+    grid-template-areas:
+      'brand status'
+      'study study';
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 10px;
   }
 
   .room-copy-recovery {
@@ -3252,10 +3202,6 @@ textarea:focus-visible {
     right: 10px;
     left: 10px;
     width: auto;
-  }
-
-  .room-rail__brand .wordmark span {
-    display: none;
   }
 
   .connection-state {
@@ -3297,23 +3243,23 @@ textarea:focus-visible {
 
   .video-stage {
     height: 100%;
-    padding: 8px 8px 96px;
+    padding: 8px 8px 12px;
     gap: 8px;
   }
 
   .video-tile {
-    border-radius: 12px;
+    border-radius: 0;
   }
 
   .waiting-note {
     right: 18px;
-    bottom: 112px;
+    bottom: 20px;
     left: 18px;
     justify-content: space-between;
   }
 
   .connecting-layer {
-    inset: 8px 8px 96px;
+    inset: 8px;
   }
 
   .side-panel {
@@ -3331,38 +3277,41 @@ textarea:focus-visible {
 
   .room-hand-queue,
   .participant-list {
-    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    padding-bottom: 12px;
   }
 
   .chat-composer {
-    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    padding-bottom: 12px;
   }
 
-  .control-dock,
-  .room-shell--panel-open .control-dock {
-    bottom: max(10px, env(safe-area-inset-bottom));
-    left: 50%;
-    max-width: calc(100% - 20px);
-    padding: 6px;
-    gap: 8px;
+  .control-dock {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .control-button {
-    width: 48px;
-    height: 48px;
+    flex: 1 1 0;
+    padding: 0 6px;
+    justify-content: center;
+    gap: 6px;
+    font-size: 0.72rem;
+  }
+
+  .control-button--leave {
+    flex: 0 0 auto;
+    padding: 0 14px;
   }
 }
 
 @media (max-width: 430px) {
-  .room-rail__brand {
-    padding-left: 10px;
-  }
-
   .room-header {
-    padding-right: 10px;
+    padding-inline: 10px;
   }
 
-  .room-rail__brand .wordmark {
+  .room-header__brand {
+    flex: 1;
+  }
+
+  .room-header .wordmark {
     display: none;
   }
 
@@ -3436,27 +3385,8 @@ textarea:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .control-dock {
-    gap: 6px;
-  }
-
-  .control-button {
-    width: 44px;
-    height: 44px;
-  }
-
-  .control-button--leave {
-    width: 44px;
-    padding: 0;
-    justify-content: center;
-  }
-
-  .control-button--leave span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+  .control-button::before {
+    display: none;
   }
 }
 
@@ -3544,7 +3474,7 @@ textarea:focus-visible {
   margin-block: 18px;
   padding: 12px 14px;
   border: 1px solid var(--c-line);
-  border-radius: 12px;
+  border-radius: 0;
   background: rgb(23 32 51 / 3%);
 }
 .screen-wake-setting label {
@@ -3587,15 +3517,19 @@ textarea:focus-visible {
   min-width: 0;
 }
 /* 공용 타이머는 상단 가운데에 크게 두고, 누르면 아래에 조작 패널을 연다. */
+/* 공용 타이머는 벽에 걸린 검은 전광판처럼 보여 준다. */
 .room-study > summary {
-  display: flex;
-  min-width: 340px;
-  padding: 8px 14px 10px;
-  border-radius: 12px;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 6px 12px;
+  display: grid;
+  min-width: 0;
+  grid-template-areas:
+    'mode time topic'
+    'mode time absent'
+    'progress progress progress';
+  grid-template-columns: auto auto minmax(0, auto);
+  grid-template-rows: minmax(0, 1fr) auto 3px;
+  align-items: stretch;
+  color: var(--c-plate-ink);
+  background: var(--c-led-bg);
   cursor: pointer;
   font-size: 0.78rem;
   list-style: none;
@@ -3606,69 +3540,83 @@ textarea:focus-visible {
 }
 .room-study > summary:hover,
 .room-study[open] > summary {
-  background: rgb(23 32 51 / 5%);
+  background: #1f1b18;
 }
 .room-study__mode {
-  padding: 3px 9px;
-  border-radius: 999px;
-  color: var(--c-accent);
-  background: var(--c-accent-soft);
-  font-size: 0.72rem;
-  font-weight: 750;
+  display: flex;
+  padding: 0 16px;
+  grid-area: mode;
+  align-items: center;
+  border-right: 1px solid #2c2722;
+  color: var(--c-led);
+  font-size: 0.75rem;
+  font-weight: 700;
   white-space: nowrap;
 }
+/* 고정폭 숫자에 점 무늬를 씌워 전광판의 점 글자처럼 보이게 한다. */
 .room-study time {
-  color: var(--c-ink);
-  font-size: 1.9rem;
-  font-weight: 700;
+  padding: 8px 20px 4px;
+  grid-area: time;
+  color: var(--c-led);
+  font:
+    700 3.3rem/1 'SFMono-Regular',
+    ui-monospace,
+    Consolas,
+    monospace;
   font-variant-numeric: tabular-nums;
-  line-height: 1;
-  letter-spacing: -0.02em;
+  letter-spacing: 0.04em;
+  -webkit-mask-image: radial-gradient(circle, #000 55%, transparent 62%);
+  mask-image: radial-gradient(circle, #000 55%, transparent 62%);
+  -webkit-mask-size: 3px 3px;
+  mask-size: 3px 3px;
 }
 .room-study summary strong {
+  display: grid;
   max-width: 220px;
   min-width: 0;
+  padding: 0 16px;
+  grid-area: topic;
+  align-content: center;
   overflow: hidden;
+  border-left: 1px solid #2c2722;
+  color: var(--c-plate-ink);
+  font-size: 0.82rem;
+  font-weight: 700;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-weight: 500;
-  color: var(--c-ink-soft);
 }
 .room-study__progress {
-  order: 10;
-  flex: 0 0 100%;
-  height: 4px;
+  height: 3px;
+  grid-area: progress;
   overflow: hidden;
-  border-radius: 2px;
-  background: var(--c-line);
+  background: #2c2722;
 }
 .room-study__progress i {
   display: block;
   height: 100%;
-  background: var(--c-accent);
+  background: var(--c-led);
   transition: width 1s linear;
 }
-.room-study[data-mode='break'] .room-study__mode {
-  color: var(--c-success-ink);
-  background: var(--c-success-soft);
+.room-study[data-mode='break'] .room-study__mode,
+.room-study[data-mode='break'] time {
+  color: #5ad17a;
 }
 .room-study[data-mode='break'] .room-study__progress i {
-  background: var(--c-accent);
+  background: #5ad17a;
 }
 
 .room-study__host-absent {
-  flex-shrink: 0;
-  padding: 3px 6px;
-  border-radius: 5px;
-  background: var(--c-warn-soft);
-  color: var(--c-warn-ink);
+  padding: 0 16px 6px;
+  grid-area: absent;
+  border-left: 1px solid #2c2722;
+  color: var(--c-lamp);
   font-size: 0.68rem;
 }
 
 .room-study__host-notice {
   padding: 10px 12px;
   border-left: 3px solid var(--c-accent);
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--c-warn-soft);
   color: var(--c-warn-ink);
   line-height: 1.5;
@@ -3742,10 +3690,10 @@ textarea:focus-visible {
   gap: 14px;
   padding: 20px;
   border: 1px solid var(--c-line);
-  border-radius: 16px;
+  border-radius: 0;
   background: var(--c-surface);
   transform: translateX(-50%);
-  box-shadow: 0 18px 48px #0008;
+  box-shadow: none;
   font-size: 0.8rem;
 }
 .room-study__body p {
@@ -3773,7 +3721,7 @@ textarea:focus-visible {
   width: 100%;
   min-height: 40px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 8px;
   background: var(--c-surface);
   color: var(--c-ink);
@@ -3783,7 +3731,7 @@ textarea:focus-visible {
   min-height: 36px;
   padding: 6px 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 7px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
   font-size: 0.75rem;
@@ -3826,10 +3774,10 @@ textarea:focus-visible {
   margin-inline: auto;
   padding: 12px 16px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 12px;
+  border-radius: 0;
   background: var(--c-surface);
   color: var(--c-ink);
-  box-shadow: 0 4px 24px #0006;
+  box-shadow: none;
   font-size: 0.8rem;
   line-height: 1.6;
 }
@@ -3850,7 +3798,7 @@ textarea:focus-visible {
   min-height: 36px;
   padding: 6px 10px;
   border: 1px solid currentColor;
-  border-radius: 6px;
+  border-radius: 0;
   color: inherit;
   background: transparent;
 }
@@ -3883,7 +3831,7 @@ textarea:focus-visible {
   min-height: 36px;
   padding: 6px 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 6px;
+  border-radius: 0;
   background: var(--c-surface);
   color: var(--c-ink);
 }
@@ -3902,7 +3850,7 @@ textarea:focus-visible {
   min-height: 32px;
   padding: 4px 7px;
   border: 1px solid var(--c-line-strong);
-  border-radius: 6px;
+  border-radius: 0;
   color: var(--c-ink);
   background: var(--c-raised);
 }
@@ -3910,7 +3858,7 @@ textarea:focus-visible {
   opacity: 0.4;
 }
 .chat-message[data-search-match] {
-  border-radius: 8px;
+  border-radius: 0;
   background: #b4ae4420;
 }
 .chat-message[data-search-current] {
@@ -3918,7 +3866,7 @@ textarea:focus-visible {
   outline-offset: 4px;
 }
 .chat-message mark {
-  border-radius: 2px;
+  border-radius: 0;
   color: #18221c;
   background: #f2dc81;
 }
@@ -3951,7 +3899,7 @@ textarea:focus-visible {
 }
 .chat-message__recipients button {
   border: 1px solid var(--c-line-strong);
-  border-radius: 5px;
+  border-radius: 0;
   padding: 4px 7px;
   color: var(--c-success-ink);
   background: var(--c-success-soft);
@@ -3982,15 +3930,26 @@ textarea:focus-visible {
 }
 @media (max-width: 760px) {
   .room-study > summary {
-    min-width: 0;
-    padding: 10px 14px 12px;
-    border-radius: 14px;
-    justify-content: space-between;
-    gap: 8px;
-    background: var(--c-surface);
+    grid-template-areas:
+      'mode time'
+      'topic time'
+      'absent time'
+      'progress progress';
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto 3px;
+  }
+  .room-study__mode,
+  .room-study summary strong,
+  .room-study__host-absent {
+    padding-inline: 14px;
+    border: 0;
+  }
+  .room-study__mode {
+    padding-top: 8px;
   }
   .room-study time {
-    font-size: 1.6rem;
+    padding: 6px 14px 4px;
+    font-size: 2.4rem;
   }
   .room-study__body {
     left: 0;
@@ -4069,39 +4028,6 @@ textarea:focus-visible {
   }
 }
 
-/* 타이머 원형 표시는 넓은 화면의 진행 열에서만 쓰고, 좁은 화면은 아래 막대로 진행을 보여 준다. */
-.room-study__dial {
-  display: contents;
-}
-
-.room-study__ring {
-  display: none;
-}
-
-.room-study__mode {
-  order: -1;
-}
-
-.room-study__ring-track,
-.room-study__ring-value {
-  fill: none;
-  stroke-width: 7;
-}
-
-.room-study__ring-track {
-  stroke: var(--c-line);
-}
-
-.room-study__ring-value {
-  stroke: var(--c-accent);
-  stroke-linecap: round;
-  transition: stroke-dasharray 1s linear;
-}
-
-.room-study[data-mode='break'] .room-study__ring-value {
-  stroke: var(--c-success);
-}
-
 /* 손들기 대기 순서는 번호를 붙인 주황 줄로 보여 준다. */
 .room-hand-queue ol {
   display: grid;
@@ -4115,7 +4041,7 @@ textarea:focus-visible {
 .room-hand-queue li {
   display: flex;
   padding: 8px 10px;
-  border-radius: 12px;
+  border-radius: 0;
   align-items: center;
   gap: 10px;
   color: var(--c-hand-ink);
@@ -4129,182 +4055,248 @@ textarea:focus-visible {
   width: 22px;
   height: 22px;
   flex: 0 0 auto;
-  border-radius: 50%;
+  border-radius: 0;
   place-items: center;
-  color: var(--c-on-accent);
+  color: var(--c-on-hand);
   background: var(--c-hand);
   font-size: 0.7rem;
   content: counter(hand-queue);
 }
 
-.side-panel__title {
-  flex: 1;
-  margin: 0;
-  padding: 14px 18px;
-  font-size: 0.9rem;
+/* ── 독서실: 칸막이 좌석, 명판, 책상 이름표 ── */
+.video-tile,
+.seat-empty {
+  position: relative;
+  border: 0;
+  border-top: 12px solid var(--c-wood);
+  border-inline: 7px solid var(--c-wood);
 }
 
-/* 넓은 화면의 입장 준비는 이름·입장 버튼을 흰 카드로 묶는다. */
+/* 좌석 번호는 화면에 놓인 순서대로 매긴다. */
+.video-tile__seat {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 6;
+  padding: 3px 7px;
+  color: var(--c-plate-ink);
+  background: var(--c-plate);
+  font:
+    700 0.72rem/1.2 'SFMono-Regular',
+    ui-monospace,
+    Consolas,
+    monospace;
+}
+
+.video-tile__viewport {
+  bottom: 34px;
+}
+
+.video-tile__fallback {
+  inset: 0 0 34px;
+  height: auto;
+  background: var(--c-tile);
+}
+
+.video-tile__fallback span {
+  border-radius: 0;
+  color: var(--c-tile-ink);
+  background: transparent;
+}
+
+.video-tile__shade {
+  display: none;
+}
+
+.video-tile__meta {
+  inset: auto 0 0;
+  height: 34px;
+  padding: 0 10px;
+  background: var(--c-desk);
+}
+
+/* 말하는 사람의 책상에는 스탠드 불이 켜진 것처럼 이름표를 밝힌다. */
+.video-tile--speaking .video-tile__meta {
+  background: var(--c-lamp);
+}
+
+.video-tile--speaking::after {
+  display: none;
+}
+
+.video-tile__name {
+  padding: 0;
+  color: var(--c-ink);
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.video-tile__meta > .video-tile__local-mute,
+.participant-audio summary,
+.video-tile__muted {
+  height: 28px;
+  border: 0;
+  color: var(--c-ink);
+  background: transparent;
+}
+
+.video-tile__connection {
+  top: 10px;
+  left: 52px;
+}
+
+.video-tile__badges {
+  top: 0;
+  right: 14px;
+  align-items: flex-start;
+}
+
+.video-tile__badges span {
+  margin-top: 10px;
+  padding: 4px 7px;
+  color: var(--c-plate-ink);
+  background: var(--c-plate);
+}
+
+/* 손든 사람의 칸막이에는 주황 질문표를 건다. */
+.video-tile__badges .video-tile__hand-raised {
+  margin-top: 0;
+  padding: 14px 8px 6px;
+  color: var(--c-on-hand);
+  background: var(--c-hand);
+  font-weight: 800;
+}
+
+.video-tile--pinned {
+  border-color: var(--c-plate);
+}
+
+.seat-empty {
+  display: grid;
+  padding-bottom: 34px;
+  place-items: center;
+  color: #5e5446;
+  background: #ddd6c9;
+  font-size: 0.8rem;
+}
+
+.seat-empty::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 34px;
+  background: #cbbca5;
+  content: '';
+}
+
+/* ── 독서실: 상단 줄은 글자 버튼, 초대만 테두리 버튼 ── */
+.room-header__status {
+  gap: 18px;
+}
+
+.connection-state,
+.participant-count,
+.room-devices-button,
+.connection-diagnostics > summary {
+  min-height: 0;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  color: var(--c-ink);
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.participant-count,
+.room-devices-button,
+.connection-diagnostics > summary {
+  border-bottom-color: var(--c-ink);
+}
+
+.participant-count:hover,
+.participant-count[aria-expanded='true'],
+.room-devices-button:hover:not(:disabled),
+.connection-diagnostics > summary:hover,
+.connection-diagnostics[open] > summary {
+  color: var(--c-ink);
+  background: transparent;
+  box-shadow: inset 0 -1px 0 var(--c-ink);
+}
+
+.room-invite-button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 2px solid var(--c-ink);
+  color: var(--c-ink);
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.room-invite-button svg {
+  display: none;
+}
+
+.room-invite-button:hover {
+  color: var(--c-plate-ink);
+  background: var(--c-plate);
+}
+
+.room-code {
+  padding: 0 0 1px;
+  border-bottom: 1px solid var(--c-line-strong);
+  color: var(--c-ink-soft);
+  background: transparent;
+}
+
+.room-code span {
+  display: none;
+}
+
+/* ── 독서실: 오른쪽 패널은 벽에 붙인 종이 게시판처럼 화면 높이를 채운다. ── */
+.side-panel {
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--c-line-strong);
+  background: var(--c-surface);
+}
+
+.side-panel__tabs [aria-selected='true'] {
+  color: var(--c-ink);
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--c-ink);
+}
+
+.side-panel__tabs b {
+  color: var(--c-plate-ink);
+  background: var(--c-plate);
+}
+
 @media (min-width: 761px) {
   .prejoin-settings {
     padding: 32px;
-    border-radius: 22px;
+    border: 1px solid var(--c-line-strong);
     background: var(--c-surface);
-    box-shadow: var(--c-shadow);
   }
 }
 
-@media (min-width: 1100px) {
-  .room-shell {
-    grid-template-columns: 288px minmax(0, 1fr);
-    grid-template-rows: 64px minmax(0, 1fr);
-    grid-template-areas:
-      'rail header'
-      'rail main';
+@media (max-width: 1180px) {
+  .connection-state {
+    gap: 0;
+    font-size: 0;
   }
+}
 
-  .room-rail {
-    display: flex;
-    min-height: 0;
-    padding: 22px 20px;
-    grid-area: rail;
-    flex-direction: column;
-    gap: 22px;
-    overflow-y: auto;
-    border-right: 1px solid var(--c-line);
-    background: var(--c-surface);
-  }
-
-  .room-rail__brand {
-    padding-left: 0;
-    justify-content: space-between;
-  }
-
-  .room-rail__brand .wordmark span {
-    display: none;
-  }
-
-  .room-rail .room-code {
-    padding: 6px 10px;
-    border: 1px solid var(--c-line);
-    border-radius: 999px;
-    background: var(--c-surface-soft);
-  }
-
-  .room-rail .room-code span {
-    display: none;
-  }
-
-  .room-header {
-    padding-left: 24px;
-  }
-
+@media (max-width: 760px) {
   .room-header__status {
-    flex: 1;
+    gap: 12px;
   }
 
-  .room-header__status > .connection-state {
-    margin-right: auto;
-    border-color: transparent;
-    background: var(--c-surface);
-  }
-
-  .room-rail .room-study > summary {
-    display: grid;
-    min-width: 0;
-    padding: 18px 14px;
-    justify-items: center;
-    gap: 10px;
-    border-radius: 18px;
-    background: var(--c-surface-soft);
-    text-align: center;
-  }
-
-  .room-rail .room-study__mode {
-    order: 0;
-  }
-
-  .room-rail .room-study__dial {
-    position: relative;
-    display: grid;
-    width: 152px;
-    height: 152px;
-    place-items: center;
-  }
-
-  .room-rail .room-study__ring {
-    position: absolute;
-    inset: 0;
-    display: block;
-    width: 100%;
-    height: 100%;
-    transform: rotate(-90deg);
-  }
-
-  .room-rail .room-study time {
-    font-size: 2.2rem;
-  }
-
-  .room-rail .room-study summary strong {
-    display: block;
-    max-width: 100%;
-    font-size: 0.9rem;
-  }
-
-  .room-rail .room-study__progress {
-    display: none;
-  }
-
-  .room-rail .room-study__body {
-    position: static;
-    width: auto;
-    max-height: none;
-    margin-top: 10px;
-    padding: 16px;
-    border-radius: 16px;
-    transform: none;
-    box-shadow: none;
-  }
-
-  .room-rail__section {
-    display: grid;
-    gap: 10px;
-  }
-
-  .room-rail__section h2 {
-    margin: 0;
-    color: var(--c-ink-soft);
-    font-size: 0.75rem;
-    font-weight: 750;
-  }
-
-  .room-rail .room-hand-queue,
-  .room-rail .participant-list {
-    padding: 0;
-    overflow: visible;
-  }
-
-  .room-rail .room-hand-queue {
-    font-size: 0.78rem;
-  }
-
-  .room-rail .room-hand-queue small {
-    font-size: 0.7rem;
-  }
-
-  .room-rail .participant-list li {
-    padding-inline: 4px;
-  }
-
-  .room-copy-recovery {
-    left: 316px;
-  }
-
-  .control-dock {
-    left: calc(50% + 144px);
-  }
-
-  .room-shell--panel-open .control-dock {
-    left: calc(50% + 144px - 180px);
+  .video-tile,
+  .seat-empty {
+    border-top-width: 8px;
+    border-inline-width: 5px;
   }
 }

@@ -46,7 +46,12 @@ test('한글 조합 입력과 양방향 채팅 전송 상태를 처리한다', a
         first.evaluate(() => {
           const dock = document.querySelector('.control-dock')!.getBoundingClientRect();
           const composer = document.querySelector('.chat-composer')!.getBoundingClientRect();
-          return dock.right <= composer.left + 1 || dock.bottom <= composer.top + 1;
+          const overlaps =
+            dock.left < composer.right - 1 &&
+            dock.right > composer.left + 1 &&
+            dock.top < composer.bottom - 1 &&
+            dock.bottom > composer.top + 1;
+          return !overlaps;
         }),
       )
       .toBe(true);

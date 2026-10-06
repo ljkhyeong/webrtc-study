@@ -118,36 +118,11 @@ export function MicOffIcon(props: IconProps) {
   );
 }
 
-export function PhoneOffIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <path d="M4.5 10.5c4.8-4 10.2-4 15 0M6.5 9l2.2 4-2.6 2.3a2 2 0 0 1-2.8-.2L2 13.7a2 2 0 0 1 .2-2.8L4.5 9M17.5 9l-2.2 4 2.6 2.3a2 2 0 0 0 2.8-.2l1.3-1.4a2 2 0 0 0-.2-2.8L19.5 9" />
-    </IconFrame>
-  );
-}
-
 export function SendIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
       <path d="m22 2-7 20-4-9-9-4 20-7Z" />
       <path d="M22 2 11 13" />
-    </IconFrame>
-  );
-}
-
-export function ScreenShareIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <rect x="3" y="4" width="18" height="13" rx="2" />
-      <path d="M8 21h8M12 17v4M8.5 11.5 12 8l3.5 3.5M12 8v6" />
-    </IconFrame>
-  );
-}
-
-export function UsersIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" />
     </IconFrame>
   );
 }

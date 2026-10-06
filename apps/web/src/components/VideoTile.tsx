@@ -18,6 +18,8 @@ const DEFAULT_AUDIO_OUTPUT: AudioOutputSelection = { deviceId: '' };
 
 interface VideoTileProps {
   participant: ParticipantView;
+  /** 화면에 놓인 순서대로 매기는 좌석 번호 */
+  seat?: number | undefined;
   handPosition?: number | undefined;
   qualityVisible?: boolean;
   audioOutput?: AudioOutputSelection | undefined;
@@ -49,6 +51,7 @@ export function connectionLabel(connectionState: PeerConnectionStatus) {
 
 export function VideoTile({
   participant,
+  seat,
   handPosition,
   qualityVisible = false,
   audioOutput = DEFAULT_AUDIO_OUTPUT,
@@ -164,6 +167,11 @@ export function VideoTile({
       data-peer-id={participant.peerId}
       aria-label={`${participant.displayName}${participant.isLocal ? ' (나)' : ''} 참가자`}
     >
+      {seat === undefined ? null : (
+        <span className="video-tile__seat" aria-hidden="true">
+          {String(seat).padStart(2, '0')}
+        </span>
+      )}
       <div
         ref={shareView.viewportRef}
         className={`video-tile__viewport${shareView.scale > 1 ? ' video-tile__viewport--zoomed' : ''}`}

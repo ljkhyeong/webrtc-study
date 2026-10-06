@@ -12,8 +12,6 @@ export type RoomPanel = 'chat' | 'hands' | 'people';
 const PANEL_TABS: readonly RoomPanel[] = ['chat', 'hands', 'people'];
 
 interface RoomSidePanelProps {
-  /** 넓은 화면에서는 손들기·참가자를 왼쪽 진행 열에서 보여 주므로 채팅만 연다. */
-  readonly chatOnly?: boolean;
   readonly panel: RoomPanel | null;
   readonly onSelectPanel: (panel: RoomPanel) => void;
   readonly onClose: () => void;
@@ -34,7 +32,6 @@ interface RoomSidePanelProps {
 
 // 오른쪽 패널은 채팅·손들기·참가자를 탭으로 바꿔 보여 준다. 채팅은 다른 탭에서도 초안과 읽음 상태를 유지한다.
 export function RoomSidePanel({
-  chatOnly = false,
   panel,
   onSelectPanel,
   onClose,
@@ -94,51 +91,42 @@ export function RoomSidePanel({
       onKeyDown={closeOnEscape}
     >
       <div className="side-panel__bar">
-        {chatOnly ? (
-          <h2 className="side-panel__title">채팅</h2>
-        ) : (
-          <div
-            className="side-panel__tabs"
-            role="tablist"
-            aria-label="통화 패널"
-            onKeyDown={moveTab}
+        <div className="side-panel__tabs" role="tablist" aria-label="통화 패널" onKeyDown={moveTab}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={panel === 'chat'}
+            aria-controls="room-chat-panel"
+            tabIndex={(panel ?? 'chat') === 'chat' ? 0 : -1}
+            onClick={() => onSelectPanel('chat')}
           >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={panel === 'chat'}
-              aria-controls="room-chat-panel"
-              tabIndex={(panel ?? 'chat') === 'chat' ? 0 : -1}
-              onClick={() => onSelectPanel('chat')}
-            >
-              채팅
-              {panel !== 'chat' && chatNotificationCount > 0 ? (
-                <b>{badgeCount(chatNotificationCount)}</b>
-              ) : null}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={panel === 'hands'}
-              aria-controls="room-hand-panel"
-              tabIndex={panel === 'hands' ? 0 : -1}
-              onClick={() => onSelectPanel('hands')}
-            >
-              손들기
-              {handCount > 0 ? <b>{badgeCount(handCount)}</b> : null}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={panel === 'people'}
-              aria-controls={panel === 'people' ? 'room-people-panel' : undefined}
-              tabIndex={panel === 'people' ? 0 : -1}
-              onClick={() => onSelectPanel('people')}
-            >
-              참가자 {participants.length}
-            </button>
-          </div>
-        )}
+            채팅
+            {panel !== 'chat' && chatNotificationCount > 0 ? (
+              <b>{badgeCount(chatNotificationCount)}</b>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={panel === 'hands'}
+            aria-controls="room-hand-panel"
+            tabIndex={panel === 'hands' ? 0 : -1}
+            onClick={() => onSelectPanel('hands')}
+          >
+            손들기
+            {handCount > 0 ? <b>{badgeCount(handCount)}</b> : null}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={panel === 'people'}
+            aria-controls={panel === 'people' ? 'room-people-panel' : undefined}
+            tabIndex={panel === 'people' ? 0 : -1}
+            onClick={() => onSelectPanel('people')}
+          >
+            참가자 {participants.length}
+          </button>
+        </div>
         <button
           className="side-panel__close"
           type="button"
@@ -156,20 +144,18 @@ export function RoomSidePanel({
         onNotificationChange={onNotificationChange}
         onDraftChange={onDraftChange}
       />
-      {chatOnly ? null : (
-        <section
-          id="room-hand-panel"
-          className="side-panel__section"
-          aria-labelledby="hand-queue-title"
-          hidden={panel !== 'hands'}
-        >
-          <h2 id="hand-queue-title" className="sr-only">
-            손들기 대기
-          </h2>
-          <RoomHandQueue state={handQueue} participants={participants} active={active} />
-        </section>
-      )}
-      {panel === 'people' && !chatOnly ? (
+      <section
+        id="room-hand-panel"
+        className="side-panel__section"
+        aria-labelledby="hand-queue-title"
+        hidden={panel !== 'hands'}
+      >
+        <h2 id="hand-queue-title" className="sr-only">
+          손들기 대기
+        </h2>
+        <RoomHandQueue state={handQueue} participants={participants} active={active} />
+      </section>
+      {panel === 'people' ? (
         <section
           id="room-people-panel"
           className="side-panel__section"

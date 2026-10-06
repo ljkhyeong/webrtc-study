@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitGallery } from './gallery-layout';
+import { emptySeatCount, fitGallery } from './gallery-layout';
 
 describe('fitGallery', () => {
   it('넓은 화면의 두 명은 나란히 두고 4:3보다 길쭉하게 자르지 않는다', () => {
@@ -25,5 +25,18 @@ describe('fitGallery', () => {
   it('측정 전이나 참가자가 없으면 배치를 정하지 않는다', () => {
     expect(fitGallery(0, 1232, 590, 14)).toBeNull();
     expect(fitGallery(2, 0, 590, 14)).toBeNull();
+  });
+});
+
+describe('emptySeatCount', () => {
+  it('격자 마지막 줄에 남는 칸만 빈 좌석으로 센다', () => {
+    expect(emptySeatCount(3, 2)).toBe(1);
+    expect(emptySeatCount(5, 3)).toBe(1);
+    expect(emptySeatCount(4, 2)).toBe(0);
+    expect(emptySeatCount(2, 1)).toBe(0);
+  });
+
+  it('열 수를 모르면 빈 좌석을 두지 않는다', () => {
+    expect(emptySeatCount(3, 0)).toBe(0);
   });
 });
