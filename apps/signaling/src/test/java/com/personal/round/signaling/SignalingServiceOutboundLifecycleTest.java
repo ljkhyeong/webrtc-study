@@ -207,7 +207,6 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 
 	@Test
 	void outboundByteBudgetDisconnectsBeforeAFrameCountFlood() throws Exception {
-		service.stop();
 		SignalingProperties properties = TestProperties.signaling(
 				"max-room-size=1",
 				"max-frames-per-session-window=100",
@@ -217,8 +216,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 				"max-bytes-per-client-window=2000000",
 				"max-bytes-global-window=4000000",
 				"max-outbound-queue-bytes=" + 64 * 1024);
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		CountDownLatch firstSendEntered = new CountDownLatch(1);
 		CountDownLatch releaseFirstSend = new CountDownLatch(1);
 		TestPeer slow = peer("byte-overflow", firstSendEntered, releaseFirstSend);
@@ -269,7 +267,6 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	@Test
 	void globalOutboundByteBudgetEvictsTheLargestReleasableSlowPeer()
 			throws Exception {
-		service.stop();
 		SignalingProperties properties = TestProperties.signaling(
 				"max-room-size=2",
 				"max-frames-per-session-window=100",
@@ -280,8 +277,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 				"max-bytes-global-window=4000000",
 				"max-outbound-queue-bytes=" + 128 * 1024,
 				"max-outbound-queue-bytes-global=" + 160 * 1024);
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		CountDownLatch firstSendEntered = new CountDownLatch(1);
 		CountDownLatch releaseFirstSend = new CountDownLatch(1);
 		CountDownLatch secondSendEntered = new CountDownLatch(1);
@@ -330,7 +326,6 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	@Test
 	void globalOutboundBudgetEvictsEnoughQueuedConsumersBeforeAdmittingAHealthyPeer()
 			throws Exception {
-		service.stop();
 		SignalingProperties properties = TestProperties.signaling(
 				"max-room-size=3",
 				"max-frames-per-session-window=100",
@@ -341,8 +336,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 				"max-bytes-global-window=4000000",
 				"max-outbound-queue-bytes=" + 64 * 1024,
 				"max-outbound-queue-bytes-global=" + 120 * 1024);
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		CountDownLatch firstSendEntered = new CountDownLatch(1);
 		CountDownLatch releaseFirstSend = new CountDownLatch(1);
 		CountDownLatch secondSendEntered = new CountDownLatch(1);
@@ -389,7 +383,6 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	@Test
 	void globalQueuePressureDuringJoinSendsTheSnapshotBeforeTheInducedPeerLeft()
 			throws Exception {
-		service.stop();
 		String fixturePeerId = "p".repeat(36);
 		String slowName = "Slow member";
 		String newcomerName = "New member";
@@ -430,8 +423,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 				"max-bytes-global-window=4000000",
 				"max-outbound-queue-bytes=" + maxPeerQueueBytes,
 				"max-outbound-queue-bytes-global=" + globalQueueBytes);
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		CountDownLatch slowSendEntered = new CountDownLatch(1);
 		CountDownLatch releaseSlowSend = new CountDownLatch(1);
 		TestPeer slow = peer("join-pressure-slow", slowSendEntered, releaseSlowSend);
@@ -470,7 +462,6 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	@Test
 	void joinAbortsWhenAnInducedDepartureEvictsTheNewcomerAfterSnapshotAdmission()
 			throws Exception {
-		service.stop();
 		String fixturePeerId = "p".repeat(36);
 		String victimName = "Victim";
 		String observerName = "Observer";
@@ -533,8 +524,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 				"max-bytes-global-window=4000000",
 				"max-outbound-queue-bytes=" + maxPeerQueueBytes,
 				"max-outbound-queue-bytes-global=" + globalQueueBytes);
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		CountDownLatch ballastSendEntered = new CountDownLatch(1);
 		CountDownLatch releaseBallastSend = new CountDownLatch(1);
 		CountDownLatch victimSendEntered = new CountDownLatch(1);
@@ -593,7 +583,6 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	@Test
 	void globalQueuePressureDuringLeaveKeepsTheCausalPeerLeftOrder()
 			throws Exception {
-		service.stop();
 		String fixturePeerId = "p".repeat(36);
 		String leaverName = "Leaver";
 		String victimName = "Slow victim";
@@ -653,8 +642,7 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 				"max-bytes-global-window=4000000",
 				"max-outbound-queue-bytes=" + maxPeerQueueBytes,
 				"max-outbound-queue-bytes-global=" + globalQueueBytes);
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		CountDownLatch leaverSendEntered = new CountDownLatch(1);
 		CountDownLatch releaseLeaverSend = new CountDownLatch(1);
 		CountDownLatch victimSendEntered = new CountDownLatch(1);
@@ -811,11 +799,9 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 
 	@Test
 	void shutdownDeadlineIncludesCloseTasksThatIgnoreInterrupts() throws Exception {
-		service.stop();
 		SignalingProperties properties =
 				TestProperties.signaling("shutdown-close-timeout=100ms");
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		int peerCount = 4;
 		CountDownLatch closeEntered = new CountDownLatch(peerCount);
 		CountDownLatch releaseClose = new CountDownLatch(1);

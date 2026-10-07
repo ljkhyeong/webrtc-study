@@ -6,7 +6,6 @@ import static org.awaitility.Awaitility.await;
 import com.personal.round.config.SignalingProperties;
 import com.personal.round.config.TestProperties;
 import com.personal.round.protocol.ProtocolParser;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -128,15 +127,13 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 	@Test
 	void forwardWallClockMovementDoesNotResetAnInboundQuotaWindow() throws Exception {
-		service.stop();
 		SignalingProperties properties =
 				TestProperties.signaling(
 						"max-room-size=1",
 						"max-frames-per-session-window=1",
 						"max-frames-per-client-window=2",
 						"max-frames-global-window=4");
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		TestPeer peer = peer("clock-forward");
 		connect(peer);
 
@@ -151,15 +148,13 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 	@Test
 	void monotonicElapsedWindowResetsAfterTheWallClockRollsBack() throws Exception {
-		service.stop();
 		SignalingProperties properties =
 				TestProperties.signaling(
 						"max-room-size=1",
 						"max-frames-per-session-window=1",
 						"max-frames-per-client-window=2",
 						"max-frames-global-window=4");
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		TestPeer peer = peer("clock-rollback");
 		connect(peer);
 
@@ -174,14 +169,12 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 	@Test
 	void dropsAnExhaustedClientWithoutClosingItsSessionsOrSpendingAnotherClientQuota()
 			throws Exception {
-		service.stop();
 		SignalingProperties properties =
 				TestProperties.signaling(
 						"max-frames-per-session-window=4",
 						"max-frames-per-client-window=6",
 						"max-frames-global-window=20");
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
 		TestPeer first = peer("client-first");
 		TestPeer second = peer("client-second");
@@ -225,14 +218,12 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 	@Test
 	void rejectedSessionAndClientFramesDoNotConsumeGlobalQuota() throws Exception {
-		service.stop();
 		SignalingProperties properties =
 				TestProperties.signaling(
 						"max-frames-per-session-window=2",
 						"max-frames-per-client-window=2",
 						"max-frames-global-window=4");
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
 		TestPeer exhaustedSession = peer("quota-session");
 		TestPeer exhaustedClient = peer("quota-client");
@@ -256,14 +247,12 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 	@Test
 	void preservesClientQuotaAcrossDisconnectAndReconnectWithinTheWindow() throws Exception {
-		service.stop();
 		SignalingProperties properties =
 				TestProperties.signaling(
 						"max-frames-per-session-window=2",
 						"max-frames-per-client-window=2",
 						"max-frames-global-window=6");
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
 		TestPeer first = peer("reconnect-first");
 		connectFrom(policy, "192.0.2.20", first);
@@ -337,7 +326,6 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 	@Test
 	void boundsClientWindowsByEvictingOnlyInactiveState() throws Exception {
-		service.stop();
 		SignalingProperties properties =
 				TestProperties.signaling(
 						"max-room-size=1",
@@ -346,8 +334,7 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 						"max-frames-per-session-window=2",
 						"max-frames-per-client-window=2",
 						"max-frames-global-window=6");
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
 		TestPeer active = peer("bounded-active");
 		TestPeer inactive = peer("bounded-inactive");
@@ -387,14 +374,12 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 	@Test
 	void dropsGlobalOverloadWithoutClosingAnArbitrarySession() throws Exception {
-		service.stop();
 		SignalingProperties properties =
 				TestProperties.signaling(
 						"max-frames-per-session-window=10",
 						"max-frames-per-client-window=10",
 						"max-frames-global-window=20");
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
 		TestPeer first = peer("global-first");
 		TestPeer second = peer("global-second");
@@ -434,7 +419,6 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 	@Test
 	void closesOnlyTheSessionThatExhaustsItsInboundByteBudget() throws Exception {
-		service.stop();
 		SignalingProperties properties = TestProperties.signaling(
 				"max-room-size=2",
 				"max-frames-per-session-window=100",
@@ -444,8 +428,7 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 				"max-bytes-per-client-window=100",
 				"max-bytes-global-window=200",
 				"max-outbound-queue-bytes=" + 64 * 1024);
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		TestPeer offender = peer("session-byte-offender");
 		TestPeer healthy = peer("session-byte-healthy");
 		connect(offender, healthy);
@@ -469,7 +452,6 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 	@Test
 	void sharesInboundByteBudgetAcrossConnectionsFromOneClient() throws Exception {
-		service.stop();
 		SignalingProperties properties = TestProperties.signaling(
 				"max-room-size=2",
 				"max-frames-per-session-window=100",
@@ -479,8 +461,7 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 				"max-bytes-per-client-window=10",
 				"max-bytes-global-window=100",
 				"max-outbound-queue-bytes=" + 64 * 1024);
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
 		TestPeer first = peer("client-byte-first");
 		TestPeer second = peer("client-byte-second");
@@ -499,7 +480,6 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 	@Test
 	void globalInboundByteBudgetDropsLoadWithoutClosingAnArbitraryPeer() throws Exception {
-		service.stop();
 		SignalingProperties properties = TestProperties.signaling(
 				"max-room-size=3",
 				"max-frames-per-session-window=100",
@@ -509,8 +489,7 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 				"max-bytes-per-client-window=100",
 				"max-bytes-global-window=200",
 				"max-outbound-queue-bytes=" + 64 * 1024);
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties);
 		TestPeer first = peer("global-byte-first");
 		TestPeer second = peer("global-byte-second");
@@ -534,15 +513,13 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 	@Test
 	void globalOverloadDoesNotTurnAValidPongIntoAHeartbeatTimeout() throws Exception {
-		service.stop();
 		SignalingProperties properties =
 				TestProperties.signaling(
 						"max-room-size=3",
 						"max-frames-per-session-window=1",
 						"max-frames-per-client-window=1",
 						"max-frames-global-window=2");
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
 				new ProtocolParser(objectMapper),
 				service);
@@ -608,15 +585,13 @@ class SignalingServiceInboundQuotaHeartbeatTest extends SignalingServiceTestSupp
 
 	@Test
 	void pongStillDisconnectsTheSessionThatExceedsItsOwnFrameWindow() throws Exception {
-		service.stop();
 		SignalingProperties properties =
 				TestProperties.signaling(
 						"max-room-size=1",
 						"max-frames-per-session-window=1",
 						"max-frames-per-client-window=1",
 						"max-frames-global-window=2");
-		meterRegistry = new SimpleMeterRegistry();
-		service = service(properties, meterRegistry);
+		replaceService(properties);
 		SignalingWebSocketHandler handler = new SignalingWebSocketHandler(
 				new ProtocolParser(objectMapper),
 				service);

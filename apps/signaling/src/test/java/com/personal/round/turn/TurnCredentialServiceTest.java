@@ -34,12 +34,13 @@ class TurnCredentialServiceTest {
 			"turn:turn.example.com:3478?transport=udp",
 			"turns:turn.example.com:5349?transport=tcp");
 
+	private final MutableClock clock = new MutableClock(1_800_000_000);
+	private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
 	@Test
 	void returnsUniqueCloudflareCredentialsForClientsBehindTheSameNat() {
 		TurnProperties properties = enabledProperties();
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
-		TurnCredentialService service = service(properties, clock, registry);
+		TurnCredentialService service = service(properties);
 
 		TurnCredentials first = issued(service.issueFor("192.0.2.10"));
 		TurnCredentials sameNatClient = issued(service.issueFor("192.0.2.10"));
@@ -60,9 +61,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void neverIssuesAProtectedCredentialBeyondTheGrantExpiry() {
 		TurnProperties properties = enabledProperties();
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
-		TurnCredentialService service = service(properties, clock, registry);
+		TurnCredentialService service = service(properties);
 
 		TurnCredentials credentials = issued(service.issueFor(
 				"192.0.2.10",
@@ -89,9 +88,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void allowsSixSameNatParticipantsToRefreshAtEightMinutesAndLimitsTheThirteenthIssue() {
 		TurnProperties properties = enabledProperties();
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
-		TurnCredentialService service = service(properties, clock, registry);
+		TurnCredentialService service = service(properties);
 
 		for (int participant = 0; participant < 6; participant++) {
 			issued(service.issueFor("192.0.2.10"));
@@ -113,9 +110,7 @@ class TurnCredentialServiceTest {
 	@Test
 	void isDisabledWhenTurnConfigurationIsAbsent() {
 		TurnProperties disabled = TestProperties.turn();
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
-		TurnCredentialService service = service(disabled, clock, registry);
+		TurnCredentialService service = service(disabled);
 
 		assertThat(service.issueFor("192.0.2.10"))
 				.isSameAs(TurnCredentialService.Disabled.INSTANCE);
@@ -126,11 +121,9 @@ class TurnCredentialServiceTest {
 		TurnProperties properties = enabledProperties(
 				"rate-limit-max-requests=1",
 				"rate-limit-global-max-requests=2");
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		CloudflareTurnClient client = mock(CloudflareTurnClient.class);
 		when(client.issue(anyLong())).thenThrow(new RestClientException("provider unavailable"));
-		MutableClock clock = new MutableClock(1_800_000_000);
-		TurnCredentialService service = service(properties, clock, registry, client);
+		TurnCredentialService service = service(properties, client);
 
 		assertThat(service.issueFor("192.0.2.10"))
 				.isSameAs(TurnCredentialService.ProviderUnavailable.INSTANCE);
@@ -150,9 +143,7 @@ class TurnCredentialServiceTest {
 		TurnProperties properties = enabledProperties(
 				"rate-limit-max-requests=2",
 				"rate-limit-global-max-requests=8");
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
-		TurnCredentialService service = service(properties, clock, registry);
+		TurnCredentialService service = service(properties);
 
 		TurnCredentials first = issued(service.issueFor("198.51.100.10"));
 		TurnCredentials second = issued(service.issueFor("198.51.100.10"));
@@ -182,10 +173,8 @@ class TurnCredentialServiceTest {
 				"rate-limit-participant-max-requests=1",
 				"rate-limit-global-max-requests=4",
 				"rate-limit-max-participants=1");
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service =
-				service(properties, clock, registry);
+				service(properties);
 
 		issued(service.issueFor("198.51.100.10"));
 		issued(service.issueFor("198.51.100.10"));
@@ -193,7 +182,7 @@ class TurnCredentialServiceTest {
 		rateLimited(service.issueFor("198.51.100.10"));
 		issued(service.issueFor(
 				"198.51.100.11",
-				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1")));
 		assertThat(registry.get("round.turn.credentials.rate_limited")
 				.tag("scope", "client")
 				.counter()
@@ -206,9 +195,8 @@ class TurnCredentialServiceTest {
 		TurnProperties properties = enabledProperties(
 				"rate-limit-max-requests=1",
 				"rate-limit-global-max-requests=2");
-		MutableClock clock = new MutableClock(1_800_000_000);
 		TurnCredentialService service =
-				service(properties, clock, new SimpleMeterRegistry());
+				service(properties);
 
 		issued(service.issueFor("198.51.100.10"));
 		clock.advanceWallClockSeconds(-1);
@@ -222,9 +210,8 @@ class TurnCredentialServiceTest {
 		TurnProperties properties = enabledProperties(
 				"rate-limit-max-requests=1",
 				"rate-limit-global-max-requests=2");
-		MutableClock clock = new MutableClock(1_800_000_000);
 		TurnCredentialService service =
-				service(properties, clock, new SimpleMeterRegistry());
+				service(properties);
 
 		issued(service.issueFor("198.51.100.10"));
 		clock.advanceWallClockSeconds(3_600);
@@ -245,10 +232,7 @@ class TurnCredentialServiceTest {
 		TurnProperties properties = enabledProperties(
 				"rate-limit-max-requests=1",
 				"rate-limit-global-max-requests=8");
-		TurnCredentialService service = service(
-				properties,
-				new MutableClock(1_800_000_000),
-				new SimpleMeterRegistry());
+		TurnCredentialService service = service(properties);
 
 		issued(service.issueFor("2001:db8:abcd:12::1"));
 
@@ -263,9 +247,7 @@ class TurnCredentialServiceTest {
 		TurnProperties properties = enabledProperties(
 				"rate-limit-max-requests=1",
 				"rate-limit-global-max-requests=2");
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
-		TurnCredentialService service = service(properties, clock, registry);
+		TurnCredentialService service = service(properties);
 
 		issued(service.issueFor("198.51.100.10"));
 		issued(service.issueFor("198.51.100.11"));
@@ -291,12 +273,7 @@ class TurnCredentialServiceTest {
 				"rate-limit-max-requests=1",
 				"rate-limit-global-max-requests=8",
 				"rate-limit-max-clients=2");
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
-		TurnCredentialService service = service(
-				properties,
-				clock,
-				registry);
+		TurnCredentialService service = service(properties);
 
 		issued(service.issueFor("198.51.100.1"));
 		clock.advanceSeconds(60);
@@ -320,26 +297,24 @@ class TurnCredentialServiceTest {
 	@Test
 	void rateLimitsOneParticipantAcrossNewTicketsAndClientAddresses() {
 		TurnProperties properties = enabledProperties("rate-limit-participant-max-requests=2");
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
-		TurnCredentialService service = service(properties, clock, registry);
+		TurnCredentialService service = service(properties);
 
 		issued(service.issueFor(
 				"198.51.100.10",
-				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1")));
 		issued(service.issueFor(
 				"198.51.100.11",
-				grant("abcd-efgh-jkmp", "member-1", "ticket-2", clock)));
+				grant("abcd-efgh-jkmp", "member-1", "ticket-2")));
 
 		TurnCredentialService.RateLimited limited = rateLimited(service.issueFor(
 				"198.51.100.12",
-				grant("abcd-efgh-jkmp", "member-1", "ticket-3", clock)));
+				grant("abcd-efgh-jkmp", "member-1", "ticket-3")));
 		issued(service.issueFor(
 				"198.51.100.12",
-				grant("qrst-uvwx-yz23", "member-1", "ticket-4", clock)));
+				grant("qrst-uvwx-yz23", "member-1", "ticket-4")));
 		issued(service.issueFor(
 				"198.51.100.13",
-				grant("abcd-efgh-jkmp", "member-2", "ticket-5", clock)));
+				grant("abcd-efgh-jkmp", "member-2", "ticket-5")));
 
 		assertThat(limited.retryAfterSeconds()).isEqualTo(600);
 		assertThat(registry.get("round.turn.credentials.rate_limited")
@@ -357,31 +332,29 @@ class TurnCredentialServiceTest {
 				"rate-limit-max-requests=2",
 				"rate-limit-participant-max-requests=1",
 				"rate-limit-global-max-requests=4");
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service =
-				service(properties, clock, registry);
+				service(properties);
 
 		issued(service.issueFor(
 				"198.51.100.1",
-				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1")));
 		rateLimited(service.issueFor(
 				"198.51.100.2",
-				grant("abcd-efgh-jkmp", "member-1", "ticket-2", clock)));
+				grant("abcd-efgh-jkmp", "member-1", "ticket-2")));
 
 		issued(service.issueFor(
 				"198.51.100.2",
-				grant("abcd-efgh-jkmp", "member-2", "ticket-3", clock)));
+				grant("abcd-efgh-jkmp", "member-2", "ticket-3")));
 		issued(service.issueFor(
 				"198.51.100.2",
-				grant("abcd-efgh-jkmp", "member-3", "ticket-4", clock)));
+				grant("abcd-efgh-jkmp", "member-3", "ticket-4")));
 		issued(service.issueFor(
 				"198.51.100.3",
-				grant("abcd-efgh-jkmp", "member-4", "ticket-5", clock)));
+				grant("abcd-efgh-jkmp", "member-4", "ticket-5")));
 
 		rateLimited(service.issueFor(
 				"198.51.100.4",
-				grant("abcd-efgh-jkmp", "member-5", "ticket-6", clock)));
+				grant("abcd-efgh-jkmp", "member-5", "ticket-6")));
 		assertThat(registry.get("round.turn.credentials.rate_limited")
 				.tag("scope", "participant")
 				.counter()
@@ -397,29 +370,27 @@ class TurnCredentialServiceTest {
 	@Test
 	void refusesUntrackedParticipantsWhenLiveWindowCapacityIsFull() {
 		TurnProperties properties = enabledProperties("rate-limit-max-participants=2");
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
-		TurnCredentialService service = service(properties, clock, registry);
+		TurnCredentialService service = service(properties);
 
 		issued(service.issueFor(
 				"198.51.100.1",
-				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1")));
 		clock.advanceSeconds(60);
 		issued(service.issueFor(
 				"198.51.100.2",
-				grant("abcd-efgh-jkmp", "member-2", "ticket-2", clock)));
+				grant("abcd-efgh-jkmp", "member-2", "ticket-2")));
 
 		TurnCredentialService.RateLimited limited = rateLimited(service.issueFor(
 				"198.51.100.3",
-				grant("abcd-efgh-jkmp", "member-3", "ticket-3", clock)));
+				grant("abcd-efgh-jkmp", "member-3", "ticket-3")));
 		assertThat(limited.retryAfterSeconds()).isEqualTo(540);
 		issued(service.issueFor(
 				"198.51.100.1",
-				grant("abcd-efgh-jkmp", "member-1", "ticket-4", clock)));
+				grant("abcd-efgh-jkmp", "member-1", "ticket-4")));
 		clock.advanceSeconds(540);
 		issued(service.issueFor(
 				"198.51.100.3",
-				grant("abcd-efgh-jkmp", "member-3", "ticket-5", clock)));
+				grant("abcd-efgh-jkmp", "member-3", "ticket-5")));
 
 		assertThat(registry.get("round.turn.credentials.rate_limited")
 				.tag("scope", "participant_state_capacity")
@@ -432,12 +403,10 @@ class TurnCredentialServiceTest {
 	void atomicallyLimitsConcurrentParticipantRequestsWithVirtualThreads()
 			throws Exception {
 		TurnProperties properties = enabledProperties();
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		TurnCredentialService service =
-				service(properties, clock, registry);
+				service(properties);
 		ParticipationGrant grant =
-				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock);
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1");
 		CountDownLatch ready = new CountDownLatch(40);
 		CountDownLatch start = new CountDownLatch(1);
 		List<Callable<TurnCredentialService.IssueResult>> requests = IntStream
@@ -486,27 +455,25 @@ class TurnCredentialServiceTest {
 				"rate-limit-max-requests=2",
 				"rate-limit-participant-max-requests=1",
 				"rate-limit-global-max-requests=4");
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
-		TurnCredentialService service = service(properties, clock, registry);
+		TurnCredentialService service = service(properties);
 
 		issued(service.issueFor(
 				"198.51.100.1",
-				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1")));
 		clock.advanceSeconds(60);
 		issued(service.issueFor(
 				"198.51.100.2",
-				grant("abcd-efgh-jkmp", "member-2", "ticket-2", clock)));
+				grant("abcd-efgh-jkmp", "member-2", "ticket-2")));
 		issued(service.issueFor(
 				"198.51.100.3",
-				grant("abcd-efgh-jkmp", "member-3", "ticket-3", clock)));
+				grant("abcd-efgh-jkmp", "member-3", "ticket-3")));
 		issued(service.issueFor(
 				"198.51.100.4",
-				grant("abcd-efgh-jkmp", "member-4", "ticket-4", clock)));
+				grant("abcd-efgh-jkmp", "member-4", "ticket-4")));
 
 		TurnCredentialService.RateLimited limited = rateLimited(service.issueFor(
 				"198.51.100.5",
-				grant("abcd-efgh-jkmp", "member-2", "ticket-5", clock)));
+				grant("abcd-efgh-jkmp", "member-2", "ticket-5")));
 
 		assertThat(limited.retryAfterSeconds()).isEqualTo(600);
 		assertThat(registry.get("round.turn.credentials.rate_limited")
@@ -527,26 +494,23 @@ class TurnCredentialServiceTest {
 				"rate-limit-max-requests=2",
 				"rate-limit-participant-max-requests=1",
 				"rate-limit-global-max-requests=4");
-		MutableClock clock = new MutableClock(1_800_000_000);
-		SimpleMeterRegistry registry = new SimpleMeterRegistry();
-		TurnCredentialService service = service(properties, clock, registry);
+		TurnCredentialService service = service(properties);
 
 		issued(service.issueFor(
 				"198.51.100.1",
-				grant("abcd-efgh-jkmp", "member-1", "ticket-1", clock)));
+				grant("abcd-efgh-jkmp", "member-1", "ticket-1")));
 		for (int participant = 2; participant <= 4; participant++) {
 			issued(service.issueFor(
 					"198.51.100." + participant,
 					grant(
 							"abcd-efgh-jkmp",
 							"member-" + participant,
-							"ticket-" + participant,
-							clock)));
+							"ticket-" + participant)));
 		}
 
 		TurnCredentialService.RateLimited limited = rateLimited(service.issueFor(
 				"198.51.100.5",
-				grant("abcd-efgh-jkmp", "member-1", "ticket-5", clock)));
+				grant("abcd-efgh-jkmp", "member-1", "ticket-5")));
 
 		assertThat(limited.retryAfterSeconds()).isEqualTo(600);
 		assertThat(registry.get("round.turn.credentials.rate_limited")
@@ -570,11 +534,7 @@ class TurnCredentialServiceTest {
 		return TestProperties.turn(overrides);
 	}
 
-	private static ParticipationGrant grant(
-			String roomId,
-			String subject,
-			String tokenId,
-			MutableClock clock) {
+	private ParticipationGrant grant(String roomId, String subject, String tokenId) {
 		return grant(
 				roomId,
 				subject,
@@ -595,10 +555,7 @@ class TurnCredentialServiceTest {
 				expiresAt);
 	}
 
-	private static TurnCredentialService service(
-			TurnProperties properties,
-			MutableClock clock,
-			SimpleMeterRegistry registry) {
+	private TurnCredentialService service(TurnProperties properties) {
 		CloudflareTurnClient client = mock(CloudflareTurnClient.class);
 		AtomicLong sequence = new AtomicLong();
 		when(client.issue(anyLong())).thenAnswer(ignored -> {
@@ -608,14 +565,10 @@ class TurnCredentialServiceTest {
 					"provider-user-" + value,
 					"provider-credential-" + value);
 		});
-		return service(properties, clock, registry, client);
+		return service(properties, client);
 	}
 
-	private static TurnCredentialService service(
-			TurnProperties properties,
-			MutableClock clock,
-			SimpleMeterRegistry registry,
-			CloudflareTurnClient client) {
+	private TurnCredentialService service(TurnProperties properties, CloudflareTurnClient client) {
 		return new TurnCredentialService(
 				properties,
 				clock,

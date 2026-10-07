@@ -42,15 +42,10 @@ final class ParticipationGrantTestFixtures {
 	}
 
 	static Jwt jwtWithLifetime(Instant issuedAt, Instant expiresAt) {
+		// 참여권 수명 검증기는 발급·만료 시각만 읽는다.
 		Jwt jwt = mock(Jwt.class);
-		when(jwt.getSubject()).thenReturn(ACCOUNT_ID);
-		when(jwt.getClaimAsString("study_id")).thenReturn("study-7");
-		when(jwt.getClaimAsString("room_id")).thenReturn(ROOM_ID);
-		when(jwt.getId()).thenReturn("ticket-123");
-		when(jwt.getClaimAsString("role")).thenReturn("participant");
 		when(jwt.getIssuedAt()).thenReturn(issuedAt);
 		when(jwt.getExpiresAt()).thenReturn(expiresAt);
-		when(jwt.getAudience()).thenReturn(List.of("round"));
 		return jwt;
 	}
 

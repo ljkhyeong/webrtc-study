@@ -22,14 +22,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 		batonService.start();
 		try {
 			TestPeer peer = peer("baton-leave-reservation");
-			attachReservation(
-					peer,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.40",
-							grant)));
-			peer.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					grant);
+			attachGrantReservation(peer, batonAdmissionPolicy, "192.0.2.40", grant);
 
 			assertThat(batonService.connect(peer.session())).isTrue();
 			batonService.handle(peer.session(), join("Ada"));
@@ -103,24 +96,10 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 		batonService.start();
 		try {
 			TestPeer accepted = peer("grant-exp-minus-one");
-			attachReservation(
-					accepted,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.61",
-							stillValid)));
-			accepted.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					stillValid);
+			attachGrantReservation(accepted, batonAdmissionPolicy, "192.0.2.61", stillValid);
 
 			TestPeer rejected = peer("grant-at-exp");
-			attachReservation(
-					rejected,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.62",
-							expired)));
-			rejected.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					expired);
+			attachGrantReservation(rejected, batonAdmissionPolicy, "192.0.2.62", expired);
 
 			assertThat(batonService.connect(accepted.session())).isTrue();
 			assertThat(batonService.connect(rejected.session())).isFalse();
@@ -159,14 +138,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 					"inbound-expired-token",
 					clock.instant().plusMillis(1));
 			TestPeer inbound = peer("expired-at-inbound");
-			attachReservation(
-					inbound,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.63",
-							inboundGrant)));
-			inbound.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					inboundGrant);
+			attachGrantReservation(inbound, batonAdmissionPolicy, "192.0.2.63", inboundGrant);
 			assertThat(batonService.connect(inbound.session())).isTrue();
 
 			clock.advanceMillis(1);
@@ -182,14 +154,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 					"handle-expired-token",
 					clock.instant().plusMillis(1));
 			TestPeer handleRace = peer("expired-between-inbound-and-handle");
-			attachReservation(
-					handleRace,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.64",
-							handleGrant)));
-			handleRace.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					handleGrant);
+			attachGrantReservation(handleRace, batonAdmissionPolicy, "192.0.2.64", handleGrant);
 			assertThat(batonService.connect(handleRace.session())).isTrue();
 			assertThat(batonService.acceptInboundFrame(handleRace.session(), 0)).isTrue();
 
@@ -346,22 +311,8 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 		try {
 			TestPeer sender = peer("grant-sender");
 			TestPeer target = peer("grant-target");
-			attachReservation(
-					sender,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.69",
-							senderGrant)));
-			sender.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					senderGrant);
-			attachReservation(
-					target,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.70",
-							targetGrant)));
-			target.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					targetGrant);
+			attachGrantReservation(sender, batonAdmissionPolicy, "192.0.2.69", senderGrant);
+			attachGrantReservation(target, batonAdmissionPolicy, "192.0.2.70", targetGrant);
 			assertThat(batonService.connect(sender.session())).isTrue();
 			assertThat(batonService.connect(target.session())).isTrue();
 			batonService.handle(sender.session(), join("Sender"));
@@ -414,14 +365,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 		batonService.start();
 		try {
 			TestPeer peer = peer("grant-heartbeat");
-			attachReservation(
-					peer,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.71",
-							grant)));
-			peer.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					grant);
+			attachGrantReservation(peer, batonAdmissionPolicy, "192.0.2.71", grant);
 			assertThat(batonService.connect(peer.session())).isTrue();
 
 			clock.advanceMillis(1);
@@ -464,22 +408,8 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 		try {
 			TestPeer first = peer("old-grant-first");
 			TestPeer second = peer("old-grant-second");
-			attachReservation(
-					first,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.72",
-							oldFirst)));
-			first.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					oldFirst);
-			attachReservation(
-					second,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.73",
-							oldSecond)));
-			second.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					oldSecond);
+			attachGrantReservation(first, batonAdmissionPolicy, "192.0.2.72", oldFirst);
+			attachGrantReservation(second, batonAdmissionPolicy, "192.0.2.73", oldSecond);
 			assertThat(batonService.connect(first.session())).isTrue();
 			assertThat(batonService.connect(second.session())).isTrue();
 			assertThat(batonAdmissionPolicy.activeParticipantRoomReservationCount(
@@ -499,14 +429,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 					"fresh-token",
 					clock.instant().plusSeconds(120));
 			TestPeer reconnect = peer("fresh-grant");
-			attachReservation(
-					reconnect,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.74",
-							fresh)));
-			reconnect.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					fresh);
+			attachGrantReservation(reconnect, batonAdmissionPolicy, "192.0.2.74", fresh);
 
 			assertThat(batonService.connect(reconnect.session())).isTrue();
 			assertThat(batonAdmissionPolicy.activeParticipantRoomReservationCount(
@@ -535,14 +458,7 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 		batonService.start();
 		try {
 			TestPeer peer = peer("grant-clock-rollback");
-			attachReservation(
-					peer,
-					acceptedReservation(batonAdmissionPolicy.reserve(
-							"192.0.2.75",
-							grant)));
-			peer.session().getAttributes().put(
-					ParticipationGrant.SESSION_ATTRIBUTE,
-					grant);
+			attachGrantReservation(peer, batonAdmissionPolicy, "192.0.2.75", grant);
 			assertThat(batonService.connect(peer.session())).isTrue();
 
 			clock.advanceMillis(-60_000);

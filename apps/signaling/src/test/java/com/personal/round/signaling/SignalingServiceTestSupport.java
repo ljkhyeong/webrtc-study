@@ -141,6 +141,13 @@ abstract class SignalingServiceTestSupport {
 		return TestProperties.signaling("max-room-size=" + maxRoomSize);
 	}
 
+	/** 기본 서비스를 멈추고 새 지표 레지스트리와 주어진 설정으로 다시 시작한다. */
+	void replaceService(SignalingProperties properties) {
+		service.stop();
+		meterRegistry = new SimpleMeterRegistry();
+		service = service(properties, meterRegistry);
+	}
+
 	SignalingService service(
 			SignalingProperties properties,
 			SimpleMeterRegistry registry) {

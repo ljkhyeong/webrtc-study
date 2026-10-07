@@ -165,6 +165,31 @@ class ConfigurationPropertiesBindingTest {
 				});
 	}
 
+	@Test
+	void appendsUnitsToUnitlessEnvironmentValuesBeforeDurationBinding() {
+		// BATON 운영 compose가 단위 없는 숫자로 넘기는 환경변수 이름이다.
+		contextRunner
+				.withPropertyValues(
+						"HEARTBEAT_INTERVAL_MS=45000",
+						"UNJOINED_SOCKET_TIMEOUT_MS=20000",
+						"UNJOINED_SOCKET_SWEEP_MS=750",
+						"SIGNALING_ABUSE_WINDOW_MS=12000",
+						"TURN_CREDENTIAL_TTL_SECONDS=900",
+						"TURN_CREDENTIAL_RATE_LIMIT_WINDOW_SECONDS=45")
+				.run(context -> {
+					assertThat(context.getStartupFailure()).isNull();
+					SignalingProperties signaling = context.getBean(SignalingProperties.class);
+					TurnProperties turn = context.getBean(TurnProperties.class);
+
+					assertThat(signaling.heartbeatInterval()).isEqualTo(Duration.ofSeconds(45));
+					assertThat(signaling.unjoinedTimeout()).isEqualTo(Duration.ofSeconds(20));
+					assertThat(signaling.unjoinedSweepInterval()).isEqualTo(Duration.ofMillis(750));
+					assertThat(signaling.abuseWindow()).isEqualTo(Duration.ofSeconds(12));
+					assertThat(turn.credentialTtl()).isEqualTo(Duration.ofMinutes(15));
+					assertThat(turn.rateLimitWindow()).isEqualTo(Duration.ofSeconds(45));
+				});
+	}
+
 	static Stream<Arguments> singleFieldLimits() {
 		return Stream.of(
 				Arguments.of(

@@ -9,16 +9,17 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.personal.round.auth.RoundAuthProperties;
 import com.personal.round.signaling.ConnectionAdmissionPolicy;
 import com.personal.round.signaling.SignalingService;
 import com.personal.round.signaling.SignalingWebSocketHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistration;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
-import org.springframework.web.socket.server.HandshakeHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 import tools.jackson.databind.ObjectMapper;
 
@@ -27,12 +28,14 @@ class WebSocketConfigTest {
 	private SignalingWebSocketHandler webSocketHandler;
 	private SignalingService signalingService;
 	private ConnectionAdmissionPolicy admissionPolicy;
+	private WebSocketHandlerRegistry registry;
 
 	@BeforeEach
 	void setUp() {
 		webSocketHandler = mock(SignalingWebSocketHandler.class);
 		signalingService = mock(SignalingService.class);
 		admissionPolicy = mock(ConnectionAdmissionPolicy.class);
+		registry = mock(WebSocketHandlerRegistry.class);
 	}
 
 	@Test
@@ -53,59 +56,37 @@ class WebSocketConfigTest {
 
 	@Test
 	void registersOriginCheckAndAdmissionHandlerWithoutDuplicateAdmissionInterceptor() {
-		WebSocketHandlerRegistry registry = mock(WebSocketHandlerRegistry.class);
-		WebSocketHandlerRegistration registration = mock(WebSocketHandlerRegistration.class);
-		when(registry.addHandler(same(webSocketHandler), any(String[].class)))
-				.thenReturn(registration);
-		when(registration.addInterceptors(any(HandshakeInterceptor[].class)))
-				.thenReturn(registration);
-		when(registration.setHandshakeHandler(any(HandshakeHandler.class)))
-				.thenReturn(registration);
-		when(registration.setAllowedOrigins(any(String[].class)))
-				.thenReturn(registration);
-		WebSocketConfig config = new WebSocketConfig(
-				webSocketHandler,
-				signalingService,
-				admissionPolicy,
-				TestProperties.signaling(),
-				TestProperties.standaloneAuth(),
-				new MockEnvironment(), new ObjectMapper());
+		WebSocketHandlerRegistration registration = register(TestProperties.standaloneAuth());
 
-		config.registerWebSocketHandlers(registry);
-
-		ArgumentCaptor<HandshakeInterceptor[]> interceptors =
-				ArgumentCaptor.forClass(HandshakeInterceptor[].class);
-		verify(registration).addInterceptors(interceptors.capture());
-		assertThat(interceptors.getValue())
-				.extracting(Object::getClass)
-				.containsExactly(ClientCompatibilityHandshakeInterceptor.class);
-		verify(registration).setAllowedOrigins(TestProperties.signaling().allowedOrigins().toArray(String[]::new));
 		verify(registry).addHandler(same(webSocketHandler), eq(new String[] {"/signal"}));
-		verify(registration).setHandshakeHandler(
-				any(ConnectionAdmissionHandshakeHandler.class));
+		verify(registration).setAllowedOrigins(
+				TestProperties.signaling().allowedOrigins().toArray(String[]::new));
+		verify(registration).setHandshakeHandler(any(ConnectionAdmissionHandshakeHandler.class));
 	}
 
 	@Test
 	void batonModeRegistersOnlyTheRoomScopedEndpoint() {
-		WebSocketHandlerRegistry registry = mock(WebSocketHandlerRegistry.class);
-		WebSocketHandlerRegistration registration = mock(WebSocketHandlerRegistration.class);
+		register(TestProperties.batonAuth());
+
+		verify(registry).addHandler(
+				same(webSocketHandler),
+				eq(new String[] {"/rooms/{roomId}/signal"}));
+	}
+
+	// 등록 체인의 설정 메서드는 RETURNS_SELF로 같은 등록 객체를 돌려준다.
+	private WebSocketHandlerRegistration register(RoundAuthProperties authProperties) {
+		WebSocketHandlerRegistration registration =
+				mock(WebSocketHandlerRegistration.class, Answers.RETURNS_SELF);
 		when(registry.addHandler(same(webSocketHandler), any(String[].class)))
 				.thenReturn(registration);
-		when(registration.addInterceptors(any(HandshakeInterceptor[].class)))
-				.thenReturn(registration);
-		when(registration.setHandshakeHandler(any(HandshakeHandler.class)))
-				.thenReturn(registration);
-		when(registration.setAllowedOrigins(any(String[].class)))
-				.thenReturn(registration);
-		WebSocketConfig config = new WebSocketConfig(
+		new WebSocketConfig(
 				webSocketHandler,
 				signalingService,
 				admissionPolicy,
 				TestProperties.signaling(),
-				TestProperties.batonAuth(),
-				new MockEnvironment(), new ObjectMapper());
-
-		config.registerWebSocketHandlers(registry);
+				authProperties,
+				new MockEnvironment(), new ObjectMapper())
+				.registerWebSocketHandlers(registry);
 
 		ArgumentCaptor<HandshakeInterceptor[]> interceptors =
 				ArgumentCaptor.forClass(HandshakeInterceptor[].class);
@@ -113,8 +94,6 @@ class WebSocketConfigTest {
 		assertThat(interceptors.getValue())
 				.extracting(Object::getClass)
 				.containsExactly(ClientCompatibilityHandshakeInterceptor.class);
-		verify(registry).addHandler(
-				same(webSocketHandler),
-				eq(new String[] {"/rooms/{roomId}/signal"}));
+		return registration;
 	}
 }

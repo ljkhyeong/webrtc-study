@@ -1,5 +1,6 @@
 package com.personal.round.signaling;
 
+import static com.personal.round.signaling.SignalingServiceTestSupport.acceptedReservation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.personal.round.auth.ParticipationGrant;
@@ -91,11 +92,7 @@ class ConnectionAdmissionPolicyTest {
 	void rejectsConcurrentReuseOfTheSameParticipationToken() {
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		ConnectionAdmissionPolicy policy = policy(4, 4, registry);
-		ParticipationGrant grant = grant(
-				"member-42",
-				"study-7",
-				"abcd-efgh-jkmp",
-				"ticket-1");
+		ParticipationGrant grant = sameParticipantGrant("ticket-1");
 
 		ConnectionAdmissionPolicy.Reservation first = acceptedReservation(
 				policy.reserve(FIRST_CLIENT, grant));
@@ -124,21 +121,9 @@ class ConnectionAdmissionPolicyTest {
 	void allowsOneFreshGrantReconnectOverlapAndRejectsAThirdParticipantSocket() {
 		SimpleMeterRegistry registry = new SimpleMeterRegistry();
 		ConnectionAdmissionPolicy policy = policy(6, 6, registry);
-		ParticipationGrant firstGrant = grant(
-				"member-42",
-				"study-7",
-				"abcd-efgh-jkmp",
-				"ticket-1");
-		ParticipationGrant reconnectGrant = grant(
-				"member-42",
-				"study-8",
-				"abcd-efgh-jkmp",
-				"ticket-2");
-		ParticipationGrant excessGrant = grant(
-				"member-42",
-				"study-9",
-				"abcd-efgh-jkmp",
-				"ticket-3");
+		ParticipationGrant firstGrant = sameParticipantGrant("ticket-1");
+		ParticipationGrant reconnectGrant = sameParticipantGrant("ticket-2");
+		ParticipationGrant excessGrant = sameParticipantGrant("ticket-3");
 
 		ConnectionAdmissionPolicy.Reservation first = acceptedReservation(
 				policy.reserve(FIRST_CLIENT, firstGrant));
@@ -205,11 +190,7 @@ class ConnectionAdmissionPolicyTest {
 					start.await();
 					return policy.reserve(
 							"192.0.2." + (attempt + 1),
-							grant(
-									"member-42",
-									"study-7",
-									"abcd-efgh-jkmp",
-									"ticket-" + attempt));
+							sameParticipantGrant("ticket-" + attempt));
 				}));
 			}
 
@@ -259,20 +240,11 @@ class ConnectionAdmissionPolicyTest {
 		assertThat(admission).isInstanceOf(ConnectionAdmissionPolicy.Accepted.class);
 	}
 
-	private static ConnectionAdmissionPolicy.Reservation acceptedReservation(
-			ConnectionAdmissionPolicy.Admission admission) {
-		assertAccepted(admission);
-		return ((ConnectionAdmissionPolicy.Accepted) admission).reservation();
-	}
-
-	private static ParticipationGrant grant(
-			String subject,
-			String studyId,
-			String roomId,
-			String tokenId) {
+	// 같은 BATON 사용자가 같은 방에 대해 받은 참여권이다. 참여권마다 tokenId만 다르다.
+	private static ParticipationGrant sameParticipantGrant(String tokenId) {
 		return new ParticipationGrant(
-				subject,
-				roomId,
+				"member-42",
+				"abcd-efgh-jkmp",
 				ParticipationGrant.Role.PARTICIPANT,
 				tokenId,
 				Instant.parse("2026-07-30T00:05:00Z"));

@@ -84,16 +84,14 @@ class SignalingServiceConnectionAdmissionCapacityTest extends SignalingServiceTe
 			throws Exception {
 		ConnectionAdmissionPolicy policy = admissionPolicy(properties(6));
 		TestPeer accepted = peer("reserved-accepted");
-		attachReservation(accepted, acceptedReservation(policy.reserve("192.0.2.30", null)));
-		assertThat(service.connect(accepted.session())).isTrue();
+		connectFrom(policy, "192.0.2.30", accepted);
 
 		service.disconnect(accepted.session());
 		service.disconnect(accepted.session());
 		assertThat(policy.activeReservationCount()).isZero();
 
 		TestPeer stoppedPeer = peer("reserved-stop");
-		attachReservation(stoppedPeer, acceptedReservation(policy.reserve("192.0.2.32", null)));
-		assertThat(service.connect(stoppedPeer.session())).isTrue();
+		connectFrom(policy, "192.0.2.32", stoppedPeer);
 		service.stop();
 		assertThat(policy.activeReservationCount()).isZero();
 
