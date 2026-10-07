@@ -87,8 +87,8 @@ final class SignalingOutboundDispatcher<P extends SignalingOutboundDispatcher.Ta
 		return victims;
 	}
 
-	boolean enqueueLocked(P peer, WebSocketMessage<?> message) {
-		int messageBytes = message.getPayloadLength();
+	// 한도 검사에 쓴 길이를 그대로 받는다. TextMessage는 길이를 구할 때마다 UTF-8로 다시 인코딩한다.
+	boolean enqueueLocked(P peer, WebSocketMessage<?> message, int messageBytes) {
 		QueueState queue = queues.computeIfAbsent(peer, ignored -> new QueueState());
 		queue.frames.addLast(new OutboundFrame(message, messageBytes));
 		queue.outboundBytes += messageBytes;

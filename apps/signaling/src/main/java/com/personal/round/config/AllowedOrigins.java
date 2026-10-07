@@ -16,13 +16,17 @@ final class AllowedOrigins {
 	private AllowedOrigins() {
 	}
 
-	static List<String> validate(List<String> configuredOrigins, SecurityMode securityMode) {
+	/**
+	 * @param production {@code production} Spring 프로필이 켜져 있는지
+	 * @param batonMode BATON 참여권 인증 모드인지
+	 */
+	static List<String> validate(List<String> configuredOrigins, boolean production, boolean batonMode) {
 		if (configuredOrigins.isEmpty()) {
 			throw new IllegalArgumentException("At least one allowed origin is required");
 		}
 		for (String origin : configuredOrigins) {
 			if ("*".equals(origin) || "null".equals(origin)) {
-				if (securityMode != SecurityMode.DEVELOPMENT) {
+				if (production || batonMode) {
 					throw new IllegalArgumentException(
 							("*".equals(origin) ? "Wildcard origins" : "The null origin")
 									+ " are forbidden in production and BATON modes");
@@ -31,10 +35,11 @@ final class AllowedOrigins {
 			}
 			URI uri = parse(origin);
 			boolean https = "https".equalsIgnoreCase(uri.getScheme());
-			if (securityMode.requiresHttps() && !https) {
+			if (production && !https) {
 				throw new IllegalArgumentException("Production origins must use HTTPS");
 			}
-			if (securityMode == SecurityMode.BATON_DEVELOPMENT
+			if (batonMode
+					&& !production
 					&& !https
 					&& !LOOPBACK_HOSTS.contains(uri.getHost())) {
 				throw new IllegalArgumentException("BATON origins must use HTTPS or loopback HTTP");
@@ -59,24 +64,6 @@ final class AllowedOrigins {
 		}
 		catch (URISyntaxException exception) {
 			throw new IllegalArgumentException("Allowed origin is not a valid URI", exception);
-		}
-	}
-
-	enum SecurityMode {
-		DEVELOPMENT,
-		STANDALONE_PRODUCTION,
-		BATON_DEVELOPMENT,
-		BATON_PRODUCTION;
-
-		static SecurityMode from(boolean production, boolean batonMode) {
-			if (batonMode) {
-				return production ? BATON_PRODUCTION : BATON_DEVELOPMENT;
-			}
-			return production ? STANDALONE_PRODUCTION : DEVELOPMENT;
-		}
-
-		private boolean requiresHttps() {
-			return this == STANDALONE_PRODUCTION || this == BATON_PRODUCTION;
 		}
 	}
 }

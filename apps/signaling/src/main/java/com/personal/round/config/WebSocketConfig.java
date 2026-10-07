@@ -41,8 +41,8 @@ public class WebSocketConfig implements WebSocketConfigurer {
 		this.handler = handler;
 		boolean production = environment.acceptsProfiles(Profiles.of("production"));
 		boolean batonMode = authProperties.batonMode();
-		List<String> allowedOrigins = AllowedOrigins.validate(properties.allowedOrigins(),
-				AllowedOrigins.SecurityMode.from(production, batonMode));
+		List<String> allowedOrigins =
+				AllowedOrigins.validate(properties.allowedOrigins(), production, batonMode);
 		this.allowedOrigins = allowedOrigins.toArray(String[]::new);
 		this.compatibilityInterceptor = new ClientCompatibilityHandshakeInterceptor(allowedOrigins, objectMapper);
 		this.admissionHandler =

@@ -934,7 +934,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 			return false;
 		}
 
-		if (outboundDispatcher.enqueueLocked(peer, message)) {
+		if (outboundDispatcher.enqueueLocked(peer, message, messageBytes)) {
 			workPlan.drain(peer);
 		}
 		return true;
