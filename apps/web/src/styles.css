@@ -2757,6 +2757,22 @@ textarea:focus-visible {
 .client-release-notice p {
   margin: 0;
 }
+.room-study-completion {
+  flex-wrap: wrap;
+}
+.room-study-completion__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.room-study-completion .room-study-completion__next {
+  border-color: var(--c-accent);
+  color: var(--c-on-accent);
+  background: var(--c-accent);
+}
+.room-study-completion .room-study-completion__next:disabled {
+  opacity: 0.45;
+}
 .room-study-completion button,
 .client-release-notice button {
   flex-shrink: 0;

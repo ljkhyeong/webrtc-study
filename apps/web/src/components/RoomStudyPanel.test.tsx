@@ -95,6 +95,46 @@ describe('타이머 종료 안내', () => {
     expect(createTimerChime).not.toHaveBeenCalled();
   });
 
+  it('방장은 종료 안내에서 다음 휴식·집중을 바로 시작하고 일반 참가자는 확인만 한다', () => {
+    const button = (text: string) =>
+      [...container.querySelectorAll('.room-study-completion button')].find(
+        (element) => element.textContent === text,
+      ) as HTMLButtonElement | undefined;
+    const finish = (changes: object, canControl: boolean) => {
+      render({ ...changes, running: true, remainingMs: 2000, sampledAt: now }, canControl);
+      now += 2000;
+      act(() => vi.advanceTimersByTime(2000));
+      render({ ...changes, running: false, remainingMs: 0, sampledAt: now }, canControl);
+    };
+
+    finish({}, false);
+    expect(container.querySelector('.room-study-completion')).not.toBeNull();
+    expect(button('휴식 5분 시작')).toBeUndefined();
+    act(() => button('확인')!.click());
+
+    finish({ revision: 2 }, true);
+    onCommand.mockReturnValueOnce(false);
+    act(() => button('휴식 5분 시작')!.click());
+    expect(container.querySelector('.room-study-completion [role="alert"]')?.textContent).toContain(
+      '타이머나 주제를 변경하지 못했습니다',
+    );
+    act(() => button('휴식 5분 시작')!.click());
+    expect(onCommand).toHaveBeenLastCalledWith({
+      action: 'start',
+      mode: 'break',
+      durationSeconds: 300,
+    });
+    expect(container.querySelector('.room-study-completion')).toBeNull();
+
+    finish({ revision: 3, mode: 'break', durationSeconds: 300 }, true);
+    act(() => button('집중 1분 시작')!.click());
+    expect(onCommand).toHaveBeenLastCalledWith({
+      action: 'start',
+      mode: 'focus',
+      durationSeconds: 60,
+    });
+  });
+
   it('사용자가 켠 알림음만 재생하고 퇴장할 때 오디오 자원을 닫는다', async () => {
     const chime = { ready: Promise.resolve(), play: vi.fn(() => true), close: vi.fn() };
     vi.mocked(createTimerChime).mockReturnValue(chime);

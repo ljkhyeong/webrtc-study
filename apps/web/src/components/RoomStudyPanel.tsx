@@ -41,6 +41,11 @@ export function RoomStudyPanel({
   const [minutes, setMinutes] = useState('25');
   const [error, setError] = useState('');
   const [completion, setCompletion] = useState('');
+  // 휴식이 끝나면 방에서 마지막으로 진행한 집중 시간을 다시 제안한다.
+  const [lastFocusSeconds, setLastFocusSeconds] = useState(25 * 60);
+  useEffect(() => {
+    if (state?.mode === 'focus') setLastFocusSeconds(state.durationSeconds);
+  }, [state?.mode, state?.durationSeconds]);
   const chime = useTimerChime();
   const { play: playChime } = chime;
   const desktopNotification = useTimerNotifications();
@@ -181,6 +186,22 @@ export function RoomStudyPanel({
           ? `${value.mode === 'focus' ? '집중' : '휴식'} ${value.durationSeconds / 60}분 타이머를 새로 시작합니다.`
           : `현재 타이머를 ${state.durationSeconds / 60}분으로 되돌리고 정지합니다.`,
     });
+  };
+  // 서버가 종료를 확인한 타이머는 진행 시간이 없으므로 확인 없이 다음 집중·휴식을 시작한다.
+  const nextTimer: Extract<StudyCommand, { action: 'start' }> | null =
+    state === null
+      ? null
+      : state.mode === 'focus'
+        ? { action: 'start', mode: 'break', durationSeconds: 5 * 60 }
+        : { action: 'start', mode: 'focus', durationSeconds: lastFocusSeconds };
+  const startNextTimer = () => {
+    if (nextTimer === null || disabled || !canControl) return;
+    if (onCommand(nextTimer)) {
+      setError('');
+      setCompletion('');
+    } else {
+      setError('타이머나 주제를 변경하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.');
+    }
   };
   const confirmTimerChange = () => {
     if (!pendingChange || changeConfirmed.current) return;
@@ -391,9 +412,22 @@ export function RoomStudyPanel({
       {completion ? (
         <aside className="room-study-completion" aria-label="타이머 종료 알림">
           <p role="status">{completion}.</p>
-          <button type="button" onClick={() => setCompletion('')}>
-            확인
-          </button>
+          {canControl && error ? <p role="alert">{error}</p> : null}
+          <div className="room-study-completion__actions">
+            {canControl && nextTimer !== null ? (
+              <button
+                className="room-study-completion__next"
+                type="button"
+                disabled={disabled}
+                onClick={startNextTimer}
+              >
+                {`${nextTimer.mode === 'focus' ? '집중' : '휴식'} ${nextTimer.durationSeconds / 60}분 시작`}
+              </button>
+            ) : null}
+            <button type="button" onClick={() => setCompletion('')}>
+              확인
+            </button>
+          </div>
         </aside>
       ) : null}
     </div>
