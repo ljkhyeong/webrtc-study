@@ -17,6 +17,14 @@ test('모바일에서 방 입장과 채팅 제어가 화면 안에 유지된다'
 
   const controlDock = page.getByRole('contentinfo', { name: '통화 제어' });
   await expect(controlDock).toBeVisible();
+  // 통화 화면에서는 끝까지 당겨도 브라우저의 당겨서 새로고침으로 이어지지 않는다.
+  expect(
+    await page.evaluate(() =>
+      [document.documentElement, document.body].map(
+        (element) => getComputedStyle(element).overscrollBehaviorY,
+      ),
+    ),
+  ).toEqual(['none', 'none']);
   const moreMenu = page.locator('summary', { hasText: '더보기' });
   await moreMenu.click();
   await page.locator('summary', { hasText: '진단' }).click();

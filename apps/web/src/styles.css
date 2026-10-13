@@ -102,6 +102,12 @@ body {
   margin: 0;
 }
 
+/* 통화 중 채팅 목록·영상 영역을 끝까지 당겨도 당겨서 새로고침으로 통화가 끊기지 않게 한다. */
+html:has(.room-shell),
+body:has(.room-shell) {
+  overscroll-behavior-y: none;
+}
+
 button,
 input,
 select,
