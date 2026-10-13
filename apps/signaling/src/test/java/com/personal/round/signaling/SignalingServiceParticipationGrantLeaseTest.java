@@ -6,6 +6,7 @@ import com.personal.round.auth.ParticipationGrant;
 import com.personal.round.protocol.ClientMessage;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.CloseStatus;
 import tools.jackson.databind.JsonNode;
@@ -284,6 +285,165 @@ class SignalingServiceParticipationGrantLeaseTest extends SignalingServiceTestSu
 					.counter()
 					.count()).isEqualTo(3);
 			observer.assertNoTextMessageFor(Duration.ofMillis(100));
+		}
+		finally {
+			batonService.stop();
+			assertThat(batonAdmissionPolicy.activeReservationCount()).isZero();
+		}
+	}
+
+	@Test
+	void keepsTheSameParticipantJoinedUntilTheRenewedGrantExpires() throws Exception {
+		SimpleMeterRegistry batonRegistry = new SimpleMeterRegistry();
+		SignalingService batonService = newBatonService(batonRegistry);
+		ConnectionAdmissionPolicy batonAdmissionPolicy =
+				admissionPolicy(properties(6));
+		ParticipationGrant connectedGrant = grantFor(
+				ROOM_ID,
+				"renewing-user",
+				"renewing-token-1",
+				clock.instant().plusSeconds(1));
+		ParticipationGrant refreshedGrant = grantFor(
+				ROOM_ID,
+				"renewing-user",
+				"renewing-token-2",
+				clock.instant().plusSeconds(120));
+		ParticipationGrant earlierGrant = grantFor(
+				ROOM_ID,
+				"renewing-user",
+				"renewing-token-0",
+				clock.instant().plusSeconds(60));
+		batonService.start();
+		try {
+			TestPeer peer = peer("grant-renewed");
+			attachGrantReservation(peer, batonAdmissionPolicy, "192.0.2.72", connectedGrant);
+			assertThat(batonService.connect(peer.session())).isTrue();
+			batonService.handle(peer.session(), join("Renewing"));
+			String peerId = peer.nextJson().at("/payload/peerId").asString();
+
+			assertThat(batonService.renewParticipationLease(peerId, refreshedGrant))
+					.isEqualTo(SignalingService.LeaseRenewal.RENEWED);
+			// 늦게 도착한 이전 참여권은 연장한 만료 시각을 앞당기지 않는다.
+			assertThat(batonService.renewParticipationLease(peerId, earlierGrant))
+					.isEqualTo(SignalingService.LeaseRenewal.RENEWED);
+
+			clock.advanceMillis(60_000);
+			monotonicTicker.advanceMillis(60_000);
+			batonService.expireUnjoinedSessions();
+
+			assertThat(peer.closeStatus().get()).isNull();
+			assertThat(batonService.participantCount(ROOM_ID)).isOne();
+
+			clock.advanceMillis(60_000);
+			monotonicTicker.advanceMillis(60_000);
+			batonService.expireUnjoinedSessions();
+
+			peer.awaitClosed();
+			assertThat(peer.closeStatus().get())
+					.isEqualTo(new CloseStatus(4001, "Participation grant expired"));
+			assertThat(batonService.roomCount()).isZero();
+			assertThat(batonRegistry.get("round.signaling.authorization.closes")
+					.counter()
+					.count()).isOne();
+		}
+		finally {
+			batonService.stop();
+			assertThat(batonAdmissionPolicy.activeReservationCount()).isZero();
+		}
+	}
+
+	@Test
+	void rejectsLeaseRenewalForAnotherParticipantRoleOrRoom() throws Exception {
+		SimpleMeterRegistry batonRegistry = new SimpleMeterRegistry();
+		SignalingService batonService = newBatonService(batonRegistry);
+		ConnectionAdmissionPolicy batonAdmissionPolicy =
+				admissionPolicy(properties(6));
+		ParticipationGrant connectedGrant = grantFor(
+				ROOM_ID,
+				"lease-owner",
+				"lease-owner-token-1",
+				clock.instant().plusSeconds(1));
+		batonService.start();
+		try {
+			TestPeer peer = peer("grant-renewal-rejected");
+			attachGrantReservation(peer, batonAdmissionPolicy, "192.0.2.73", connectedGrant);
+			assertThat(batonService.connect(peer.session())).isTrue();
+			batonService.handle(peer.session(), join("Owner"));
+			String peerId = peer.nextJson().at("/payload/peerId").asString();
+			Instant later = clock.instant().plusSeconds(120);
+
+			assertThat(batonService.renewParticipationLease(
+					peerId,
+					grantFor(ROOM_ID, "other-user", "other-user-token", later)))
+					.isEqualTo(SignalingService.LeaseRenewal.FORBIDDEN);
+			assertThat(batonService.renewParticipationLease(
+					peerId,
+					grantFor(
+							ROOM_ID,
+							"lease-owner",
+							"lease-owner-host-token",
+							later,
+							ParticipationGrant.Role.HOST)))
+					.isEqualTo(SignalingService.LeaseRenewal.FORBIDDEN);
+			assertThat(batonService.renewParticipationLease(
+					peerId,
+					grantFor(OTHER_ROOM_ID, "lease-owner", "lease-owner-other-room", later)))
+					.isEqualTo(SignalingService.LeaseRenewal.NOT_JOINED);
+			assertThat(batonService.renewParticipationLease(
+					"unknown-peer",
+					grantFor(ROOM_ID, "lease-owner", "lease-owner-token-2", later)))
+					.isEqualTo(SignalingService.LeaseRenewal.NOT_JOINED);
+
+			clock.advanceMillis(1_000);
+			monotonicTicker.advanceMillis(1_000);
+			batonService.expireUnjoinedSessions();
+
+			peer.awaitClosed();
+			assertThat(peer.closeStatus().get())
+					.isEqualTo(new CloseStatus(4001, "Participation grant expired"));
+		}
+		finally {
+			batonService.stop();
+			assertThat(batonAdmissionPolicy.activeReservationCount()).isZero();
+		}
+	}
+
+	@Test
+	void closesInsteadOfRenewingAConnectionThatAlreadyExpired() throws Exception {
+		SimpleMeterRegistry batonRegistry = new SimpleMeterRegistry();
+		SignalingService batonService = newBatonService(batonRegistry);
+		ConnectionAdmissionPolicy batonAdmissionPolicy =
+				admissionPolicy(properties(6));
+		ParticipationGrant connectedGrant = grantFor(
+				ROOM_ID,
+				"late-renewal-user",
+				"late-renewal-token-1",
+				clock.instant().plusMillis(1));
+		batonService.start();
+		try {
+			TestPeer peer = peer("grant-late-renewal");
+			attachGrantReservation(peer, batonAdmissionPolicy, "192.0.2.74", connectedGrant);
+			assertThat(batonService.connect(peer.session())).isTrue();
+			batonService.handle(peer.session(), join("Late"));
+			String peerId = peer.nextJson().at("/payload/peerId").asString();
+
+			clock.advanceMillis(1);
+			assertThat(batonService.renewParticipationLease(
+					peerId,
+					grantFor(
+							ROOM_ID,
+							"late-renewal-user",
+							"late-renewal-token-2",
+							clock.instant().plusSeconds(120))))
+					.isEqualTo(SignalingService.LeaseRenewal.NOT_JOINED);
+
+			peer.awaitClosed();
+			assertThat(peer.closeStatus().get())
+					.isEqualTo(new CloseStatus(4001, "Participation grant expired"));
+			assertThat(batonService.roomCount()).isZero();
+			assertThat(batonRegistry.get("round.signaling.authorization.closes")
+					.counter()
+					.count()).isOne();
 		}
 		finally {
 			batonService.stop();

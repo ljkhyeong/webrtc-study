@@ -148,6 +148,55 @@ class BatonAuthBoundaryIntegrationTest {
 	}
 
 	@Test
+	void renewsOnlyTheSameParticipantsJoinedConnectionWithoutOpeningAnother() throws Exception {
+		CompletableFuture<String> joinedMessage = new CompletableFuture<>();
+		TextWebSocketHandler handler = new TextWebSocketHandler() {
+			@Override
+			protected void handleTextMessage(
+					WebSocketSession session,
+					TextMessage message) {
+				joinedMessage.complete(message.getPayload());
+			}
+		};
+		String otherAccountToken = BATON_ISSUER.issue(
+				ROOM_ID,
+				"ticket-other-account",
+				TestBatonIssuer.KEY_ID,
+				claims -> claims.subject("9b2f6a1e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"));
+
+		WebSocketSession session = connect(
+				handler,
+				"/rooms/" + ROOM_ID + "/signal",
+				MATCHING_TOKEN);
+		try {
+			session.sendMessage(new TextMessage("""
+					{"v":3,"type":"room.join","roomId":"%s","requestId":"join-lease","payload":{"displayName":"스터디원"}}
+					""".formatted(ROOM_ID).trim()));
+			String peerId = objectMapper.readTree(joinedMessage.get(2, TimeUnit.SECONDS))
+					.at("/payload/peerId")
+					.asString();
+			String path = "/rooms/" + ROOM_ID + "/signal?lease=" + peerId;
+
+			assertThat(get(path, null).statusCode()).isEqualTo(401);
+			assertThat(get(path, OTHER_ROOM_TOKEN).statusCode()).isEqualTo(403);
+			assertThat(get(path, otherAccountToken).statusCode()).isEqualTo(403);
+			assertThat(get("/rooms/" + ROOM_ID + "/signal?lease=unknown-peer", RECONNECT_TOKEN)
+					.statusCode())
+					.isEqualTo(404);
+			HttpResponse<String> renewed = get(path, RECONNECT_TOKEN);
+			assertThat(renewed.statusCode()).isEqualTo(204);
+			assertThat(renewed.headers().firstValue("cache-control").orElseThrow())
+					.contains("no-store");
+			assertThat(renewed.body()).isEmpty();
+			assertThat(signalingService.connectedPeerCount()).isOne();
+		}
+		finally {
+			session.close();
+		}
+		awaitConnectedPeers(0);
+	}
+
+	@Test
 	void keepsHealthPublicEvenWhenTheParticipationCookieIsMissingOrInvalid() throws Exception {
 		HttpResponse<String> withoutCookie = get("/healthz", null);
 		HttpResponse<String> withInvalidCookie = get("/healthz", INVALID_TOKEN);

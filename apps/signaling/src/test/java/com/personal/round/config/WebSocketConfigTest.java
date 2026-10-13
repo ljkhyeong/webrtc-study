@@ -56,7 +56,9 @@ class WebSocketConfigTest {
 
 	@Test
 	void registersOriginCheckAndAdmissionHandlerWithoutDuplicateAdmissionInterceptor() {
-		WebSocketHandlerRegistration registration = register(TestProperties.standaloneAuth());
+		WebSocketHandlerRegistration registration = register(
+				TestProperties.standaloneAuth(),
+				ClientCompatibilityHandshakeInterceptor.class);
 
 		verify(registry).addHandler(same(webSocketHandler), eq(new String[] {"/signal"}));
 		verify(registration).setAllowedOrigins(
@@ -66,7 +68,10 @@ class WebSocketConfigTest {
 
 	@Test
 	void batonModeRegistersOnlyTheRoomScopedEndpoint() {
-		register(TestProperties.batonAuth());
+		register(
+				TestProperties.batonAuth(),
+				ParticipationLeaseHandshakeInterceptor.class,
+				ClientCompatibilityHandshakeInterceptor.class);
 
 		verify(registry).addHandler(
 				same(webSocketHandler),
@@ -74,7 +79,9 @@ class WebSocketConfigTest {
 	}
 
 	// 등록 체인의 설정 메서드는 RETURNS_SELF로 같은 등록 객체를 돌려준다.
-	private WebSocketHandlerRegistration register(RoundAuthProperties authProperties) {
+	private WebSocketHandlerRegistration register(
+			RoundAuthProperties authProperties,
+			Class<?>... expectedInterceptors) {
 		WebSocketHandlerRegistration registration =
 				mock(WebSocketHandlerRegistration.class, Answers.RETURNS_SELF);
 		when(registry.addHandler(same(webSocketHandler), any(String[].class)))
@@ -93,7 +100,7 @@ class WebSocketConfigTest {
 		verify(registration).addInterceptors(interceptors.capture());
 		assertThat(interceptors.getValue())
 				.extracting(Object::getClass)
-				.containsExactly(ClientCompatibilityHandshakeInterceptor.class);
+				.containsExactly(expectedInterceptors);
 		return registration;
 	}
 }

@@ -42,6 +42,39 @@ function refreshCallCount(fetcher: ReturnType<typeof vi.fn>): number {
 }
 
 describe('BATON participation grant lease manager', () => {
+  it('counts only newly issued grants', async () => {
+    let refreshStatus = 200;
+    const fetcher = authenticatedFetcher(async () =>
+      response(refreshStatus, {
+        expiresAt: 1_780_000_000,
+        refreshAfterSeconds: 240,
+      }),
+    );
+    let nowMs = 10_000;
+    const manager = new ParticipationGrantLeaseManager({
+      endpoint: ENDPOINT,
+      fetcher: fetcher as typeof fetch,
+      now: () => nowMs,
+      roomId: ROOM_ID,
+      storage: null,
+    });
+
+    expect(manager.issuedGrantCount).toBe(0);
+    await manager.ensureFresh();
+    expect(manager.issuedGrantCount).toBe(1);
+    await manager.ensureFresh();
+    expect(manager.issuedGrantCount).toBe(1);
+
+    nowMs += 240_000;
+    refreshStatus = 503;
+    await expect(manager.ensureFresh()).rejects.toThrow('503');
+    expect(manager.issuedGrantCount).toBe(1);
+    refreshStatus = 200;
+    await manager.ensureFresh();
+    expect(manager.issuedGrantCount).toBe(2);
+    expect(refreshCallCount(fetcher)).toBe(3);
+  });
+
   it('loads a dynamic CSRF credential before the exact same-origin refresh POST', async () => {
     const fetcher = authenticatedFetcher(async () =>
       response(200, {

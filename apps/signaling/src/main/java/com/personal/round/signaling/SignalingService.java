@@ -368,6 +368,45 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 		execute(workPlan);
 	}
 
+	/**
+	 * BATON 참여권을 갱신한 같은 참가자의 입장 연결을 새 참여권의 만료 시각까지 유지한다.
+	 * 다른 사용자나 역할의 참여권으로는 늦추지 않으며, 이미 만료된 연결은 기존처럼 닫는다.
+	 */
+	public LeaseRenewal renewParticipationLease(String peerId, ParticipationGrant grant) {
+		WorkPlan workPlan = new WorkPlan();
+		LeaseRenewal result;
+		synchronized (monitor) {
+			Map<String, Peer> room = rooms.get(grant.roomId());
+			Peer peer = room == null ? null : room.get(peerId);
+			long nowMillis = clock.millis();
+			long nowNanos = monotonicTicker.getAsLong();
+			if (peer == null
+					|| closeForExpiredAuthorizationLocked(peer, nowMillis, nowNanos, workPlan, null)) {
+				result = LeaseRenewal.NOT_JOINED;
+			}
+			else if (!(peer.roomAccess instanceof ParticipationGrant current)
+					|| !current.subject().equals(grant.subject())
+					|| peer.role != grant.role()) {
+				result = LeaseRenewal.FORBIDDEN;
+			}
+			else {
+				RoomAccess.Lease renewed = grant.openLease(nowMillis, nowNanos);
+				if (renewed.wallClockDeadlineMillis() > peer.accessLease.wallClockDeadlineMillis()) {
+					peer.accessLease = renewed;
+				}
+				result = LeaseRenewal.RENEWED;
+			}
+		}
+		execute(workPlan);
+		return result;
+	}
+
+	public enum LeaseRenewal {
+		RENEWED,
+		NOT_JOINED,
+		FORBIDDEN
+	}
+
 	int participantCount(String roomId) {
 		synchronized (monitor) {
 			Map<String, Peer> room = rooms.get(roomId);
@@ -1097,7 +1136,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 		private long unjoinedSinceNanos;
 		private final ConnectionAdmissionPolicy.Reservation reservation;
 		private final RoomAccess roomAccess;
-		private final RoomAccess.Lease accessLease;
+		private RoomAccess.Lease accessLease;
 		private final SessionCloseDecision closeDecision;
 		private final SignalingInboundLimiter.Connection inboundLimit;
 

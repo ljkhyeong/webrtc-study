@@ -69,6 +69,7 @@ export class ParticipationGrantLeaseManager {
   readonly #timeoutMs: number;
 
   #refreshDueAtMs: number | null = null;
+  #issuedGrantCount = 0;
   #refreshing: Promise<void> | null = null;
   #refreshController: AbortController | null = null;
   #closed = false;
@@ -108,6 +109,11 @@ export class ParticipationGrantLeaseManager {
     });
     this.#refreshing = refreshing;
     return refreshing;
+  }
+
+  /** 새 참여권을 받을 때마다 늘어난다. 통화 중에는 늘어난 경우에만 기존 연결 연장을 요청한다. */
+  get issuedGrantCount(): number {
+    return this.#issuedGrantCount;
   }
 
   refreshDelayMs(): number | null {
@@ -177,6 +183,7 @@ export class ParticipationGrantLeaseManager {
       const lease = validateLease(await response.json());
       this.#assertOpen();
       this.#refreshDueAtMs = this.#now() + lease.refreshAfterSeconds * 1_000;
+      this.#issuedGrantCount += 1;
     } catch (error) {
       if (
         error instanceof DOMException &&

@@ -1,4 +1,4 @@
-export type RoomRefreshTimer = 'participation-grant' | 'turn';
+export type RoomRefreshTimer = 'participation-grant' | 'turn' | 'signaling-lease';
 
 /** 화면에 연결된 활성 방 세션의 백그라운드 갱신 타이머를 관리한다. */
 export class RoomRefreshLifetime {

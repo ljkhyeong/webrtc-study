@@ -153,6 +153,10 @@ export function ActiveRoom({
       ...(onParticipationGrantAccessFailure === undefined
         ? {}
         : { onParticipationGrantAccessFailure }),
+      currentSignalingPeerId: () => {
+        const snapshot = sessionRef.current?.getSnapshot();
+        return snapshot?.status === 'active' ? snapshot.selfId : null;
+      },
     });
     refreshCoordinatorRef.current = refreshCoordinator;
     const ensureFreshParticipationGrant = () => refreshCoordinator.ensureFreshParticipationGrant();
@@ -176,6 +180,7 @@ export function ActiveRoom({
               throw new RoomStartupFailure('endpoint-configuration', error);
             }
             refreshCoordinator.setTurnCredentialsUrl(resolvedEndpoints.turnCredentialsUrl);
+            refreshCoordinator.setSignalingUrl(resolvedEndpoints.signalingUrl);
 
             if (resolvedEndpoints.participationGrantRefreshUrl !== null) {
               try {
