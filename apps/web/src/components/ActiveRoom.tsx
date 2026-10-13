@@ -398,7 +398,8 @@ export function ActiveRoom({
     onLeave();
   };
 
-  const handleSendMessage = (text: string): boolean => {
+  // 채팅 실패는 영상 위 안내 대신 채팅 입력창 아래에 보여 준다.
+  const handleSendMessage = (text: string): string | undefined => {
     try {
       const session = sessionRef.current;
       if (session === null) {
@@ -406,10 +407,9 @@ export function ActiveRoom({
       }
       session.sendChat(text);
       setActionNotice(null);
-      return true;
+      return undefined;
     } catch (error) {
-      setActionNotice({ tone: 'error', message: chatErrorMessage(error) });
-      return false;
+      return chatErrorMessage(error);
     }
   };
 

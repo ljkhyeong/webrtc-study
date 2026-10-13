@@ -20,11 +20,12 @@ interface RoomSidePanelProps {
   readonly participants: readonly ParticipantView[];
   readonly handQueue: HandQueueState | null;
   readonly active: boolean;
+  readonly reconnecting: boolean;
   readonly canModerateMedia: boolean;
   readonly onDisableParticipantAudio: (peerId: string) => void;
   readonly onDisableParticipantVideo: (peerId: string) => void;
   readonly messages: readonly ChatMessage[];
-  readonly onSendMessage: (text: string) => boolean;
+  readonly onSendMessage: (text: string) => string | undefined;
   readonly onRetryMessage?: ((messageId: string, peerId: string) => void) | undefined;
   readonly onNotificationChange: (summary: ChatNotificationSummary) => void;
   readonly onDraftChange: (hasDraft: boolean) => void;
@@ -40,6 +41,7 @@ export function RoomSidePanel({
   participants,
   handQueue,
   active,
+  reconnecting,
   canModerateMedia,
   onDisableParticipantAudio,
   onDisableParticipantVideo,
@@ -140,6 +142,8 @@ export function RoomSidePanel({
         onRetryMessage={onRetryMessage}
         open={panel === 'chat'}
         messages={messages}
+        connection={active ? 'active' : reconnecting ? 'reconnecting' : 'unavailable'}
+        hasRecipients={participants.some((participant) => !participant.isLocal)}
         onSendMessage={onSendMessage}
         onNotificationChange={onNotificationChange}
         onDraftChange={onDraftChange}

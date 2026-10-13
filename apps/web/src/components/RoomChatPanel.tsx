@@ -22,8 +22,13 @@ export interface ChatNotificationSummary {
 interface RoomChatPanelProps {
   readonly open: boolean;
   readonly messages: readonly ChatMessage[];
+  /** 통화 연결 상태다. 연결되지 않았으면 초안을 두고 전송을 막는다. */
+  readonly connection?: 'active' | 'reconnecting' | 'unavailable';
+  /** 메시지를 받을 다른 참가자가 지금 방에 있는지다. */
+  readonly hasRecipients?: boolean;
   readonly onRetryMessage?: ((messageId: string, peerId: string) => void) | undefined;
-  readonly onSendMessage: (text: string) => boolean;
+  /** 보내면 `undefined`, 보내지 못하면 입력창 아래에 보여 줄 안내를 돌려준다. */
+  readonly onSendMessage: (text: string) => string | undefined;
   readonly onNotificationChange: (summary: ChatNotificationSummary) => void;
   readonly onDraftChange?: (hasDraft: boolean) => void;
 }
@@ -125,6 +130,8 @@ export function countNewLocalDeliveryIssues(
 export function RoomChatPanel({
   open,
   messages,
+  connection = 'active',
+  hasRecipients = true,
   onSendMessage,
   onRetryMessage,
   onNotificationChange,
@@ -132,6 +139,17 @@ export function RoomChatPanel({
 }: RoomChatPanelProps) {
   const [message, setMessage] = useState('');
   const [pasteNotice, setPasteNotice] = useState('');
+  const [sendFailure, setSendFailure] = useState('');
+  // 모바일에서는 채팅 창이 영상 위의 연결 안내를 가리므로 입력창 아래에서 알린다.
+  const connectionNotice =
+    connection === 'reconnecting'
+      ? '연결을 복구하는 중입니다. 복구되면 메시지를 보낼 수 있습니다.'
+      : connection === 'unavailable'
+        ? '통화에 연결되면 메시지를 보낼 수 있습니다.'
+        : '';
+  useEffect(() => {
+    setSendFailure('');
+  }, [connection]);
   const [copying, setCopying] = useState(false);
   const [copyResult, setCopyResult] = useState<{ message: string; error: boolean } | null>(null);
   const copyConversation = async () => {
@@ -311,14 +329,22 @@ export function RoomChatPanel({
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (!message.trim()) return;
-    if (onSendMessage(message)) {
-      setMessage('');
-      setPasteNotice('');
-      showLatestMessages();
-      composerRef.current?.focus();
-    }
+    if (!message.trim() || connectionNotice) return;
+    const failure = onSendMessage(message);
+    setSendFailure(failure ?? '');
+    if (failure !== undefined) return;
+    setMessage('');
+    setPasteNotice('');
+    showLatestMessages();
+    composerRef.current?.focus();
   };
+  const inputNotice =
+    pasteNotice ||
+    (message.length >= MAX_COMPOSER_LENGTH ? '입력 한도 1,000자에 도달했습니다.' : '');
+  const recipientNotice =
+    connection === 'active' && !hasRecipients
+      ? '아직 다른 참가자가 없습니다. 지금 보낸 메시지는 나중에 입장한 참가자에게 보이지 않습니다.'
+      : '';
 
   return (
     <>
@@ -498,6 +524,7 @@ export function RoomChatPanel({
             onChange={(event) => {
               setMessage(event.target.value);
               setPasteNotice('');
+              setSendFailure('');
             }}
             onPaste={(event) => {
               const input = event.currentTarget;
@@ -533,7 +560,11 @@ export function RoomChatPanel({
               event.currentTarget.form?.requestSubmit();
             }}
           />
-          <button type="submit" aria-label="메시지 보내기" disabled={!message.trim()}>
+          <button
+            type="submit"
+            aria-label="메시지 보내기"
+            disabled={!message.trim() || Boolean(connectionNotice)}
+          >
             <SendIcon />
           </button>
           <div
@@ -549,9 +580,23 @@ export function RoomChatPanel({
               {message.length.toLocaleString('ko-KR')} / 1,000자
             </span>
           </div>
-          <p id="chat-composer-notice" className="chat-composer__notice" role="status">
-            {pasteNotice ||
-              (message.length >= MAX_COMPOSER_LENGTH ? '입력 한도 1,000자에 도달했습니다.' : '')}
+          {sendFailure && !connectionNotice ? (
+            <p className="chat-composer__notice" role="alert">
+              {sendFailure}
+            </p>
+          ) : null}
+          <p
+            id="chat-composer-notice"
+            className={`chat-composer__notice${
+              connectionNotice
+                ? ' chat-composer__notice--warning'
+                : inputNotice
+                  ? ''
+                  : ' chat-composer__notice--info'
+            }`}
+            role="status"
+          >
+            {connectionNotice || inputNotice || recipientNotice}
           </p>
         </form>
       </section>

@@ -2180,6 +2180,14 @@ textarea:focus-visible {
   display: none;
 }
 
+.chat-composer__notice--warning {
+  color: var(--c-warn-ink);
+}
+
+.chat-composer__notice--info {
+  color: var(--c-ink-soft);
+}
+
 .chat-composer button {
   display: grid;
   width: 44px;

@@ -27,7 +27,7 @@ function roomViewProps(): Parameters<typeof RoomView>[0] {
     onSetHandRaised: vi.fn(),
     onDisableParticipantAudio: vi.fn(),
     onDisableParticipantVideo: vi.fn(),
-    onSendMessage: vi.fn(() => true),
+    onSendMessage: vi.fn((): string | undefined => undefined),
     onCollectConnectionDiagnostics: vi.fn(async () => ({
       status: 'active' as const,
       connections: [],

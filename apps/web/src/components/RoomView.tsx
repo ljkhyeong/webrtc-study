@@ -74,7 +74,7 @@ interface RoomViewProps {
   onDisableParticipantAudio: (peerId: string) => void;
   onDisableParticipantVideo: (peerId: string) => void;
   onRetryMessage?: ((messageId: string, peerId: string) => void) | undefined;
-  onSendMessage: (text: string) => boolean;
+  onSendMessage: (text: string) => string | undefined;
   onCollectConnectionDiagnostics: () => Promise<RoomConnectionDiagnostics>;
   onSelectDevices: () => void;
   onReconnect: () => void;
@@ -452,6 +452,7 @@ export function RoomView({
           participants={participants}
           handQueue={handQueue}
           active={isActive}
+          reconnecting={status === 'reconnecting'}
           canModerateMedia={canModerateMedia}
           onDisableParticipantAudio={onDisableParticipantAudio}
           onDisableParticipantVideo={onDisableParticipantVideo}

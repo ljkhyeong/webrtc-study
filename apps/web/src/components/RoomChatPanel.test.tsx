@@ -9,7 +9,7 @@ describe('방 안의 채팅 입력과 검색', () => {
   let root: Root;
   let container: HTMLDivElement;
   const notifications = vi.fn();
-  const sendMessage = vi.fn(() => true);
+  const sendMessage = vi.fn((_text: string): string | undefined => undefined);
   const message = (senderId: string, id: string, text: string): ChatMessage => ({
     senderId,
     id,
@@ -21,17 +21,36 @@ describe('방 안의 채팅 입력과 검색', () => {
   });
   const first = message('a', 'same', '자료 https://example.com/GUIDE');
   const second = message('b', 'same', '다음 guide 설명');
-  const render = (messages: ChatMessage[]) =>
+  const render = (
+    messages: ChatMessage[],
+    connection: 'active' | 'reconnecting' | 'unavailable' = 'active',
+    hasRecipients = true,
+  ) =>
     act(() =>
       root.render(
         <RoomChatPanel
           open
           messages={messages}
+          connection={connection}
+          hasRecipients={hasRecipients}
           onSendMessage={sendMessage}
           onNotificationChange={notifications}
         />,
       ),
     );
+  const type = (text: string) =>
+    act(() => {
+      const input = container.querySelector<HTMLTextAreaElement>('#chat-message')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+        input,
+        text,
+      );
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  const submit = () =>
+    act(() => {
+      container.querySelector<HTMLTextAreaElement>('#chat-message')!.form!.requestSubmit();
+    });
   const search = (text: string) =>
     act(() => {
       const input = container.querySelector<HTMLInputElement>('#chat-search')!;
@@ -214,6 +233,58 @@ describe('방 안의 채팅 입력과 검색', () => {
     expect(document.activeElement).toBe(input);
     expect(container.querySelector('#chat-composer-count')?.textContent).toBe('0 / 1,000자');
     expect(container.querySelector('#chat-composer-notice')?.textContent).toBe('');
+  });
+
+  it('연결을 복구하는 동안 초안을 두고 전송을 막으며 입력창 아래에 이유를 알린다', () => {
+    render([], 'reconnecting');
+    type('복구 중에 쓴 질문');
+    submit();
+    const notice = container.querySelector('#chat-composer-notice')!;
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(
+      container.querySelector<HTMLButtonElement>('[aria-label="메시지 보내기"]')!.disabled,
+    ).toBe(true);
+    expect(notice.textContent).toBe(
+      '연결을 복구하는 중입니다. 복구되면 메시지를 보낼 수 있습니다.',
+    );
+    expect(notice.className).toContain('chat-composer__notice--warning');
+
+    render([], 'active');
+    expect(notice.textContent).toBe('');
+    submit();
+    expect(sendMessage).toHaveBeenCalledExactlyOnceWith('복구 중에 쓴 질문');
+    expect(container.querySelector<HTMLTextAreaElement>('#chat-message')!.value).toBe('');
+  });
+
+  it('보내지 못하면 입력창 아래에 이유를 알리고 초안을 두며 고쳐 쓰면 안내를 지운다', () => {
+    render([]);
+    sendMessage.mockReturnValueOnce(
+      '연결된 참가자가 없어 메시지를 보내지 못했습니다. 입력한 내용은 그대로 두었습니다.',
+    );
+    type('다시 보낼 질문');
+    submit();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      '연결된 참가자가 없어 메시지를 보내지 못했습니다. 입력한 내용은 그대로 두었습니다.',
+    );
+    expect(container.querySelector<HTMLTextAreaElement>('#chat-message')!.value).toBe(
+      '다시 보낼 질문',
+    );
+    type('다시 보낼 질문입니다');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('다른 참가자가 없으면 나중에 입장한 참가자에게 보이지 않는다고 알리고 전송은 허용한다', () => {
+    render([], 'active', false);
+    const notice = container.querySelector('#chat-composer-notice')!;
+    expect(notice.textContent).toBe(
+      '아직 다른 참가자가 없습니다. 지금 보낸 메시지는 나중에 입장한 참가자에게 보이지 않습니다.',
+    );
+    expect(notice.className).toContain('chat-composer__notice--info');
+    type('메모');
+    submit();
+    expect(sendMessage).toHaveBeenCalledWith('메모');
+    render([], 'active', true);
+    expect(notice.textContent).toBe('');
   });
 
   it('한도 초과 붙여넣기는 초안·선택을 유지하고 선택 영역 교체와 줄바꿈 길이를 반영한다', () => {
