@@ -228,6 +228,35 @@ export function RoomView({
     onVideo: onToggleVideo,
     onHand: () => onSetHandRaised(!handRaised),
   });
+  // 단축키·브라우저 통화 조작으로 바꾸면 초점이 버튼에 없으므로 내 마이크·카메라 변화를 읽어 준다.
+  // 첫 표시와 장치 연결·분리, 화면 공유 전환은 알리지 않고 방장이 끈 경우는 방장 안내가 대신 읽힌다.
+  const [mediaAnnouncement, setMediaAnnouncement] = useState('');
+  const announcedMedia = useRef({ audioAvailable, audioEnabled, videoAvailable, videoEnabled });
+  useEffect(() => {
+    const previous = announcedMedia.current;
+    announcedMedia.current = { audioAvailable, audioEnabled, videoAvailable, videoEnabled };
+    if (audioAvailable && previous.audioAvailable && audioEnabled !== previous.audioEnabled) {
+      if (audioEnabled || !moderationNotice)
+        setMediaAnnouncement(audioEnabled ? '마이크를 켰습니다.' : '마이크를 껐습니다.');
+    } else if (
+      videoAvailable &&
+      previous.videoAvailable &&
+      videoEnabled !== previous.videoEnabled &&
+      !screenSharing &&
+      screenSharePending === null &&
+      (videoEnabled || !moderationNotice)
+    ) {
+      setMediaAnnouncement(videoEnabled ? '카메라를 켰습니다.' : '카메라를 껐습니다.');
+    }
+  }, [
+    audioAvailable,
+    audioEnabled,
+    videoAvailable,
+    videoEnabled,
+    screenSharing,
+    screenSharePending,
+    moderationNotice,
+  ]);
   const raisedHandNames = participants
     .filter((participant) => participant.handRaised)
     .map((participant) => `${participant.displayName}${participant.isLocal ? ' (나)' : ''}`);
@@ -333,6 +362,9 @@ export function RoomView({
       ) : null}
 
       <main className="room-workspace">
+        <p className="sr-only" aria-live="polite" aria-atomic="true">
+          {mediaAnnouncement}
+        </p>
         <p className="sr-only" aria-live="polite" aria-atomic="true">
           {raisedHandNames.length > 0
             ? `손 든 참가자: ${raisedHandNames.join(', ')}`

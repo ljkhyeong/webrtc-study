@@ -660,6 +660,42 @@ describe('RoomView 브라우저 동작', () => {
     expect(slider().value).toBe('100');
   });
 
+  it('바꾼 내 마이크·카메라 상태를 낭독 영역에 알리고 첫 표시·방장 끄기·장치 분리는 알리지 않는다', () => {
+    const props = roomViewProps();
+    const render = (changes: Partial<Parameters<typeof RoomView>[0]>) =>
+      act(() =>
+        root.render(
+          <RoomView
+            {...props}
+            audioAvailable
+            audioEnabled
+            videoAvailable
+            videoEnabled
+            {...changes}
+          />,
+        ),
+      );
+    const announcement = () => container.querySelector('.room-workspace > p.sr-only')?.textContent;
+
+    render({});
+    expect(announcement()).toBe('');
+    render({ audioEnabled: false });
+    expect(announcement()).toBe('마이크를 껐습니다.');
+    render({ audioEnabled: false, videoEnabled: false });
+    expect(announcement()).toBe('카메라를 껐습니다.');
+    render({ videoEnabled: false });
+    expect(announcement()).toBe('마이크를 켰습니다.');
+    render({
+      audioEnabled: false,
+      videoEnabled: false,
+      moderationNotice: '방장이 마이크를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.',
+    });
+    expect(announcement()).toBe('마이크를 켰습니다.');
+    render({ audioAvailable: false, audioEnabled: false, videoEnabled: false });
+    render({ audioEnabled: false, videoEnabled: false });
+    expect(announcement()).toBe('마이크를 켰습니다.');
+  });
+
   it('채팅 패널을 닫으면 하단 채팅 버튼으로 포커스를 복원한다', async () => {
     act(() => root.render(<RoomView {...roomViewProps()} />));
     const toggle = container.querySelector<HTMLButtonElement>('button[aria-label="채팅 열기"]');
