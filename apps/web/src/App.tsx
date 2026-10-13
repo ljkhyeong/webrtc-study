@@ -76,6 +76,12 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
   const [initialInputEnabled, setInitialInputEnabled] =
     useState<RoomSessionOptions['initialInputEnabled']>();
   const [batonEntryGeneration, setBatonEntryGeneration] = useState(0);
+  // 방 다시 입장으로 같은 방의 입장 준비에 돌아오면 마지막 켜기·끄기 선택으로 장치 확인을 시작한다.
+  // 장치는 사용자가 다시 켤 때만 요청하며 선택은 페이지 메모리에만 둔다.
+  const [retryInput, setRetryInput] = useState<{
+    readonly roomId: string;
+    readonly inputEnabled: NonNullable<RoomSessionOptions['initialInputEnabled']>;
+  } | null>(null);
   const preparedMediaStreamRef = useRef<MediaStream | null>(null);
 
   const takePreparedMediaStream = useCallback(() => {
@@ -108,13 +114,16 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
     stopUnclaimedPreparedMedia();
     setActiveRoomKey(null);
     setActiveHostCapability(undefined);
+    setRetryInput(null);
     navigateToOwningHome(authMode, navigate);
   };
 
-  const retryCurrentRoom = () => {
+  // 세션을 만들기 전에 실패했으면 입장 준비에서 고른 선택을 이어 쓴다.
+  const retryCurrentRoom = (inputEnabled = initialInputEnabled) => {
     stopUnclaimedPreparedMedia();
     setActiveRoomKey(null);
     setActiveHostCapability(undefined);
+    setRetryInput(roomId === null || inputEnabled === undefined ? null : { roomId, inputEnabled });
     if (authMode === 'baton') {
       setBatonEntryGeneration((generation) => generation + 1);
     }
@@ -153,6 +162,7 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
           roomId={roomId}
           backLabel={authMode === 'baton' ? 'BATON으로 돌아가기' : '다른 방 선택'}
           showHostCapabilityInput={authMode !== 'baton'}
+          initialInputEnabled={retryInput?.roomId === roomId ? retryInput.inputEnabled : undefined}
           authorizeBeforeEntryAction={authorizeBeforeEntryAction}
           beforeJoin={async () => {
             if ((await release.check()) !== 'current') return false;
@@ -174,6 +184,7 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
             preparedMediaStreamRef.current = preparedMediaStream;
             setActiveHostCapability(hostCapability);
             setInitialInputEnabled(inputEnabled);
+            setRetryInput(null);
             setActiveRoomKey(`${roomId}:${nextDisplayName}`);
           }}
         />

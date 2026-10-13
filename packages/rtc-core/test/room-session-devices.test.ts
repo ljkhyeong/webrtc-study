@@ -36,6 +36,38 @@ afterEach(async () => {
   for (const harness of sessions.splice(0)) await harness.session.leave();
 });
 
+describe('방 다시 입장 때 넘길 켜기·끄기 선택', () => {
+  it('직접 끄기와 방장 끄기를 반영하고 퇴장한 뒤에도 마지막 선택을 돌려준다', async () => {
+    const h = deviceHarness();
+    expect(h.session.getInputEnabled()).toEqual({ audio: true, video: true });
+    await joinSession(h, [{ peerId: 'host-peer', displayName: '방장', role: 'host' }]);
+
+    h.session.toggleAudio();
+    expect(h.session.getInputEnabled()).toEqual({ audio: false, video: true });
+    h.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'moderation.media.disabled',
+      roomId: ROOM_ID,
+      from: 'host-peer',
+      payload: { targetPeerId: 'self', kind: 'video' },
+    });
+    await flushMicrotasks();
+    expect(h.session.getInputEnabled()).toEqual({ audio: false, video: false });
+
+    await h.session.leave();
+    expect(h.session.getInputEnabled()).toEqual({ audio: false, video: false });
+  });
+
+  it('장치 없이 입장해도 입장 준비에서 받은 선택을 그대로 돌려준다', () => {
+    const h = createHarness({
+      preparedMediaStream: null,
+      initialInputEnabled: { audio: false, video: true },
+    });
+    sessions.push(h);
+    expect(h.session.getInputEnabled()).toEqual({ audio: false, video: true });
+  });
+});
+
 describe('통화 중 입력 장치 교체', () => {
   it.each(['audio', 'video'] as const)(
     '%s 장치를 바꿔도 음소거·연결·채팅을 유지한다',

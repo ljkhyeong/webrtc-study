@@ -55,6 +55,11 @@ export class LocalInputLifecycle {
     this.#attachTrackEndedListeners(stream?.getTracks() ?? []);
   }
 
+  /** 사용자가 마지막으로 정한 켜기·끄기다. 장치가 없거나 세션이 끝난 뒤에도 유지한다. */
+  getDesiredEnabled(): Readonly<Record<InputKind, boolean>> {
+    return { ...this.#lastEnabled };
+  }
+
   setDesiredEnabled(kind: InputKind, enabled: boolean): void {
     this.#lastEnabled[kind] = enabled;
     if (this.#change?.kind === kind) {

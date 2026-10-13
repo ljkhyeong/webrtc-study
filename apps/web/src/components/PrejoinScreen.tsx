@@ -13,6 +13,8 @@ interface PrejoinScreenProps {
   roomId: string;
   backLabel: string;
   showHostCapabilityInput: boolean;
+  /** 장치 확인 뒤 새 트랙에 적용할 처음 켜기·끄기다. 방 다시 입장 때 직전 선택을 받는다. */
+  initialInputEnabled?: RoomSessionOptions['initialInputEnabled'];
   authorizeBeforeEntryAction?: (() => Promise<boolean>) | undefined;
   beforeJoin?: (() => Promise<boolean>) | undefined;
   onBack: () => void;
@@ -49,6 +51,7 @@ export function PrejoinScreen({
   roomId,
   backLabel,
   showHostCapabilityInput,
+  initialInputEnabled,
   authorizeBeforeEntryAction,
   beforeJoin,
   onBack,
@@ -85,6 +88,7 @@ export function PrejoinScreen({
     const controller = new PrejoinMedia({
       audioConstraints: DEFAULT_AUDIO_CONSTRAINTS,
       videoConstraints: DEFAULT_VIDEO_CONSTRAINTS,
+      initialInputEnabled,
     });
     controllerRef.current = controller;
     controller.subscribe(setSnapshot);
@@ -161,13 +165,15 @@ export function PrejoinScreen({
       if (!actionLifetimeRef.current) return;
       const controller = controllerRef.current;
       if (withMedia) {
-        const initialInputEnabled = controller?.getInputEnabled();
+        const inputEnabled = controller?.getInputEnabled();
         const stream = controller?.takeStream() ?? null;
-        onJoin(safeName, stream, normalizedHostCapability, initialInputEnabled);
+        onJoin(safeName, stream, normalizedHostCapability, inputEnabled);
       } else {
+        // 장치 없이 입장해도 나중에 켠 장치가 이 화면의 마지막 켜기·끄기 선택을 따르게 한다.
+        const inputEnabled = controller?.getInputEnabled() ?? initialInputEnabled;
         controller?.dispose();
         controllerRef.current = null;
-        onJoin(safeName, null, normalizedHostCapability);
+        onJoin(safeName, null, normalizedHostCapability, inputEnabled);
       }
       actionLifetimeRef.current = false;
     });

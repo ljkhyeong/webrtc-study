@@ -256,6 +256,47 @@ describe('PrejoinScreen', () => {
     }
   });
 
+  it('방 다시 입장으로 받은 켜기·끄기를 장치 없이 입장할 때도 세션에 넘긴다', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const getUserMedia = vi.fn();
+    vi.stubGlobal('navigator', {
+      mediaDevices: { addEventListener: vi.fn(), removeEventListener: vi.fn(), getUserMedia },
+    });
+    const onJoin = vi.fn();
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          <PrejoinScreen
+            initialDisplayName="림"
+            backLabel="BATON으로 돌아가기"
+            roomId="abcd-efgh-jkmp"
+            showHostCapabilityInput={false}
+            initialInputEnabled={{ audio: false, video: false }}
+            onBack={vi.fn()}
+            onJoin={onJoin}
+          />,
+        ),
+      );
+      await act(async () =>
+        [...container.querySelectorAll('button')]
+          .find((button) => button.textContent?.trim() === '카메라·마이크 없이 입장')!
+          .click(),
+      );
+      expect(getUserMedia).not.toHaveBeenCalled();
+      expect(onJoin).toHaveBeenCalledExactlyOnceWith('림', null, undefined, {
+        audio: false,
+        video: false,
+      });
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('호환성을 확인한 뒤에만 입장하고 실패 안내와 재시도를 제공한다', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     const beforeJoin = vi

@@ -272,6 +272,39 @@ describe('PrejoinMedia', () => {
     },
   );
 
+  it('처음 켜기·끄기를 받으면 장치를 요청하지 않고 기다렸다가 새 트랙을 그 상태로 시작한다', async () => {
+    const getUserMedia = vi.fn(
+      async (constraints: MediaStreamConstraints) =>
+        new FakeMediaStream([
+          new FakeTrack(constraints.audio !== false ? 'audio' : 'video', 'default'),
+        ]) as unknown as MediaStream,
+    );
+    const controller = new PrejoinMedia({
+      initialInputEnabled: { audio: false, video: true },
+      mediaDevices: {
+        ...mediaDeviceEventTarget(),
+        getUserMedia,
+        enumerateDevices: vi.fn(async () => []),
+      },
+      mediaStreamFactory: () => new FakeMediaStream() as unknown as MediaStream,
+    });
+
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(controller.getInputEnabled()).toEqual({ audio: false, video: true });
+
+    const snapshot = await controller.checkDevices();
+
+    expect(snapshot.localMedia).toEqual({
+      audioAvailable: true,
+      audioEnabled: false,
+      videoAvailable: true,
+      videoEnabled: true,
+    });
+    expect(controller.toggle('audio')).toBe(true);
+    expect(controller.getInputEnabled()).toEqual({ audio: true, video: true });
+    controller.dispose();
+  });
+
   it('waits for an explicit check and keeps audio when video is busy', async () => {
     const audioTrack = new FakeTrack('audio', 'mic-default');
     const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints) => {

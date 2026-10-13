@@ -59,7 +59,8 @@ interface ActiveRoomProps {
   onParticipationGrantAccessFailure?: ((error: ParticipationGrantAccessError) => void) | undefined;
   releasePreparedMediaStream: () => void;
   takePreparedMediaStream: () => MediaStream | null;
-  onReconnect: () => void;
+  /** 방 다시 입장 때 통화 중 마지막 마이크·카메라 켜기·끄기를 함께 넘긴다. 세션이 없으면 생략한다. */
+  onReconnect: (inputEnabled?: RoomSessionOptions['initialInputEnabled']) => void;
   onLeave: () => void;
   registerLeaveGuard?: RegisterLeaveGuard | undefined;
 }
@@ -560,7 +561,7 @@ export function ActiveRoom({
           return session.collectConnectionDiagnostics();
         }}
         onSelectDevices={() => setDeviceSettingsOpen(true)}
-        onReconnect={onReconnect}
+        onReconnect={() => onReconnect(sessionRef.current?.getInputEnabled())}
         onLeave={handleLeave}
         registerLeaveGuard={registerLeaveGuard}
       />

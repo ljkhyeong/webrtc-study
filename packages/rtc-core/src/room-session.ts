@@ -721,6 +721,11 @@ export class RoomSession {
     return this.#localInput.toggle('audio');
   }
 
+  /** 마지막 마이크·카메라 켜기·끄기 선택이다. 방에 다시 입장할 때 입장 준비가 이어받는다. */
+  getInputEnabled(): Readonly<Record<'audio' | 'video', boolean>> {
+    return this.#localInput.getDesiredEnabled();
+  }
+
   toggleVideo(): boolean {
     return this.#localInput.toggle('video');
   }

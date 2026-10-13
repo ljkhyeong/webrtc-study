@@ -229,6 +229,63 @@ describe('BATON room entry boundary', () => {
     },
   );
 
+  it('방 다시 입장하면 통화 중 마지막 마이크·카메라 켜기·끄기로 입장 준비를 다시 시작한다', async () => {
+    const defaultSession = rtcCoreMock.RoomSession.getMockImplementation()!;
+    rtcCoreMock.RoomSession.mockImplementation(function (options: RoomSessionOptions) {
+      const session = defaultSession(options) as RoomSession;
+      if (rtcCoreMock.RoomSession.mock.calls.length > 1) return session;
+      // 첫 세션은 통화 중 마이크를 끈 뒤 입장을 마치지 못한 상태다.
+      const failed: RoomSessionSnapshot = {
+        ...activeRoomSnapshot(),
+        status: 'error',
+        selfId: null,
+        error: { code: 'join-failed', message: 'join failed' },
+      };
+      return Object.assign(session, {
+        getSnapshot: () => failed,
+        getInputEnabled: () => ({ audio: false, video: true }),
+      });
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (input === '/api/v1/auth/session') return authenticatedSession();
+        if (input === GRANT_ENDPOINT)
+          return response(200, { expiresAt: 1_800_000_000, refreshAfterSeconds: 240 });
+        if (input === TURN_ENDPOINT)
+          return response(200, {
+            urls: ['turns:turn.example.test:5349'],
+            username: 'round-user',
+            credential: 'round-credential',
+            expiresAt: 1_800_000_000,
+            refreshAfterSeconds: 480,
+          });
+        throw new Error(`예상하지 않은 요청: ${String(input)}`);
+      }),
+    );
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await fillPrejoinName(container);
+    await act(async () => buttonWithText(container, '카메라·마이크 없이 입장')?.click());
+    await waitForState(() => expect(buttonWithText(container, '방 다시 입장')).not.toBeNull());
+
+    await act(async () => buttonWithText(container, '방 다시 입장')?.click());
+    await waitForState(() =>
+      expect(container.querySelector<HTMLInputElement>('#display-name')?.value).toBe('림'),
+    );
+    expect(getUserMedia).not.toHaveBeenCalled();
+
+    await act(async () => buttonWithText(container, '카메라·마이크 켜기')?.click());
+    await waitForState(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    await act(async () => buttonWithText(container, '카메라·마이크 없이 입장')?.click());
+    await waitForState(() => expect(rtcCoreMock.RoomSession).toHaveBeenCalledTimes(2));
+    expect(
+      (rtcCoreMock.RoomSession.mock.calls[1]![0] as RoomSessionOptions).initialInputEnabled,
+    ).toEqual({ audio: false, video: true });
+  });
+
   it('completes session and room authorization before rendering prejoin or requesting media', async () => {
     let resolveGrant!: (value: Response) => void;
     const grantResponse = new Promise<Response>((resolve) => {

@@ -36,6 +36,8 @@ type PrejoinMediaDevices = Pick<
 export interface PrejoinMediaOptions {
   readonly audioConstraints?: MediaTrackConstraints;
   readonly videoConstraints?: MediaTrackConstraints;
+  /** 새로 얻은 트랙에 적용할 처음 켜기·끄기다. 없으면 둘 다 켠다. */
+  readonly initialInputEnabled?: Readonly<Record<'audio' | 'video', boolean>> | undefined;
   readonly mediaDevices?: PrejoinMediaDevices;
   readonly mediaStreamFactory?: () => MediaStream;
 }
@@ -135,6 +137,7 @@ export class PrejoinMedia {
       options.mediaDevices ??
       (typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined);
     this.#mediaStreamFactory = options.mediaStreamFactory ?? (() => new MediaStream());
+    Object.assign(this.#desiredEnabled, options.initialInputEnabled);
     this.#snapshot = this.#buildSnapshot();
     this.#mediaDevices?.addEventListener(
       'devicechange',
