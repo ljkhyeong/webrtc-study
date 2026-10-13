@@ -13,7 +13,13 @@ import type {
   HandQueueState,
 } from '@round/rtc-core';
 import { CheckIcon, CloseIcon, CopyIcon } from './Icons';
-import { type AudioOutputSelection, type ParticipantView, VideoTile } from './VideoTile';
+import {
+  type AudioOutputSelection,
+  type ParticipantView,
+  type TileViewPreference,
+  tilePreferenceKey,
+  VideoTile,
+} from './VideoTile';
 import { canonicalRoomUrl } from '../lib/room';
 import type { ChatNotificationSummary } from './RoomChatPanel';
 import { useRoomShortcuts } from '../lib/use-room-shortcuts';
@@ -137,6 +143,16 @@ export function RoomView({
     onReconnect,
   });
   const [pinnedPeerId, setPinnedPeerId] = useState<string | null>(null);
+  // 내 연결을 다시 맺는 동안 참가자 목록이 비어 타일을 새로 만든다. 남은 참가자의 보기·소리 설정은
+  // 이어 쓰고, 연결된 상태에서 목록에 없는 참가자의 설정은 지운다.
+  const [tilePreferences] = useState(() => new Map<string, TileViewPreference>());
+  useEffect(() => {
+    if (status !== 'active') return;
+    const present = new Set(participants.map(tilePreferenceKey));
+    for (const key of tilePreferences.keys()) {
+      if (!present.has(key)) tilePreferences.delete(key);
+    }
+  }, [status, participants, tilePreferences]);
   const stageRef = useRef<HTMLElement>(null);
   const activePinnedPeerId =
     participants.find(
@@ -334,6 +350,7 @@ export function RoomView({
               onRetryPeer={status === 'active' ? onRetryPeer : undefined}
               key={participant.peerId}
               participant={participant}
+              preferences={tilePreferences}
               handPosition={
                 handQueue?.peerIds.includes(participant.peerId)
                   ? handQueue.peerIds.indexOf(participant.peerId) + 1

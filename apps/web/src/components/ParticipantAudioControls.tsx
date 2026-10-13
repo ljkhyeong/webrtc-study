@@ -7,6 +7,8 @@ interface ParticipantAudioControlsProps {
   stream: MediaStream | undefined;
   muted: boolean;
   onToggleMuted: () => void;
+  volume: number;
+  onVolumeChange: (volume: number) => void;
 }
 
 export function ParticipantAudioControls({
@@ -15,8 +17,9 @@ export function ParticipantAudioControls({
   stream,
   muted,
   onToggleMuted,
+  volume,
+  onVolumeChange,
 }: ParticipantAudioControlsProps) {
-  const [volume, setVolume] = useState(100);
   const [supported, setSupported] = useState<boolean | null>(null);
   const [panelHeight, setPanelHeight] = useState(165);
 
@@ -71,7 +74,7 @@ export function ParticipantAudioControls({
             value={supported === false ? 100 : volume}
             disabled={!supported}
             aria-label={`내가 듣는 ${name}의 음량`}
-            onChange={(event) => setVolume(Number(event.target.value))}
+            onChange={(event) => onVolumeChange(Number(event.target.value))}
           />
         </label>
         <button

@@ -16,6 +16,18 @@ export interface AudioOutputSelection {
 
 const DEFAULT_AUDIO_OUTPUT: AudioOutputSelection = { deviceId: '' };
 
+/** 내 쪽에서만 바꾸는 타일 보기·소리 설정이다. 서버로 보내거나 저장하지 않는다. */
+export interface TileViewPreference {
+  readonly mutedLocally: boolean;
+  readonly previewHidden: boolean;
+  readonly volume: number;
+}
+
+/** 내 연결을 다시 맺으면 내 참가자 ID가 바뀌므로 내 타일은 고정 키로 설정을 이어 쓴다. */
+export function tilePreferenceKey(participant: Pick<ParticipantSnapshot, 'isLocal' | 'peerId'>) {
+  return participant.isLocal ? 'local' : participant.peerId;
+}
+
 interface VideoTileProps {
   participant: ParticipantView;
   handPosition?: number | undefined;
@@ -28,6 +40,8 @@ interface VideoTileProps {
   onRetryPeer?: ((peerId: string) => boolean) | undefined;
   onDisableAudio?: ((peerId: string) => void) | undefined;
   onDisableVideo?: ((peerId: string) => void) | undefined;
+  /** 타일을 다시 만들 때 이어받을 설정 보관소다. 바뀐 설정도 여기에 기록한다. */
+  preferences?: Map<string, TileViewPreference> | undefined;
 }
 
 function initials(name: string) {
@@ -59,6 +73,7 @@ export function VideoTile({
   onDisableAudio,
   onDisableVideo,
   onRetryPeer,
+  preferences,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const tileRef = useRef<HTMLElement>(null);
@@ -66,8 +81,14 @@ export function VideoTile({
   const playbackAttemptRef = useRef(0);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [outputStatus, setOutputStatus] = useState<'pending' | 'ready' | 'error'>('pending');
-  const [mutedLocally, setMutedLocally] = useState(false);
-  const [previewHidden, setPreviewHidden] = useState(false);
+  const preferenceKey = tilePreferenceKey(participant);
+  const [initialPreference] = useState(() => preferences?.get(preferenceKey));
+  const [mutedLocally, setMutedLocally] = useState(initialPreference?.mutedLocally ?? false);
+  const [previewHidden, setPreviewHidden] = useState(initialPreference?.previewHidden ?? false);
+  const [volume, setVolume] = useState(initialPreference?.volume ?? 100);
+  useEffect(() => {
+    preferences?.set(preferenceKey, { mutedLocally, previewHidden, volume });
+  }, [preferences, preferenceKey, mutedLocally, previewHidden, volume]);
   const [retryError, setRetryError] = useState(false);
   const outputChange = useRef(Promise.resolve());
 
@@ -412,6 +433,8 @@ export function VideoTile({
             stream={participant.stream}
             muted={mutedLocally}
             onToggleMuted={() => setMutedLocally((muted) => !muted)}
+            volume={volume}
+            onVolumeChange={setVolume}
           />
         ) : hasStream || previewHidden ? (
           <button

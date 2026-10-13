@@ -601,6 +601,65 @@ describe('RoomView 브라우저 동작', () => {
     expect(document.activeElement).toBe(more);
   });
 
+  it('내 연결을 다시 맺어도 내 영상 숨김과 남아 있는 참가자의 소리 설정을 이어 쓴다', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const participant = (peerId: string, displayName: string, isLocal: boolean) => ({
+      peerId,
+      displayName,
+      role: 'participant' as const,
+      isLocal,
+      connectionState: 'connected' as const,
+      audioEnabled: true,
+      videoEnabled: true,
+      videoSource: 'camera' as const,
+      handRaised: false,
+      stream: {} as MediaStream,
+    });
+    const props = roomViewProps();
+    const render = (
+      participants: ReturnType<typeof participant>[],
+      status: 'active' | 'reconnecting' = 'active',
+    ) =>
+      act(async () =>
+        root.render(
+          <RoomView
+            {...props}
+            status={status}
+            statusLabel={status === 'active' ? '통화 연결됨' : '연결 복구 중'}
+            participants={participants}
+          />,
+        ),
+      );
+    const button = (label: string) =>
+      container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+    const slider = () =>
+      container.querySelector<HTMLInputElement>('input[aria-label="내가 듣는 나래의 음량"]')!;
+
+    await render([participant('self-1', '가온', true), participant('peer-b', '나래', false)]);
+    await act(async () => button('내 영상 숨기기')!.click());
+    await act(async () => button('내가 듣는 나래의 소리 끄기')!.click());
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        slider(),
+        '35',
+      );
+      slider().dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await render([], 'reconnecting');
+    expect(container.querySelector('.video-tile')).toBeNull();
+    await render([participant('self-2', '가온', true), participant('peer-b', '나래', false)]);
+    expect(button('내 영상 다시 보기')?.getAttribute('aria-pressed')).toBe('true');
+    expect(button('내가 듣는 나래의 소리 켜기')?.getAttribute('aria-pressed')).toBe('true');
+    expect(slider().value).toBe('35');
+
+    // 나간 참가자의 설정은 지우므로 새 연결로 들어온 참가자는 기본값으로 듣는다.
+    await render([participant('self-2', '가온', true)]);
+    await render([participant('self-2', '가온', true), participant('peer-c', '나래', false)]);
+    expect(button('내가 듣는 나래의 소리 끄기')?.getAttribute('aria-pressed')).toBe('false');
+    expect(slider().value).toBe('100');
+  });
+
   it('채팅 패널을 닫으면 하단 채팅 버튼으로 포커스를 복원한다', async () => {
     act(() => root.render(<RoomView {...roomViewProps()} />));
     const toggle = container.querySelector<HTMLButtonElement>('button[aria-label="채팅 열기"]');
