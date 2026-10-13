@@ -463,6 +463,34 @@ describe('BATON room entry boundary', () => {
     );
   });
 
+  it('입장 때 TURN 발급 한도에 걸리면 네트워크 대신 서버가 알려 준 대기 시간을 안내한다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (input === '/api/v1/auth/session') return authenticatedSession();
+        if (input === GRANT_ENDPOINT)
+          return response(200, { expiresAt: 1_800_000_000, refreshAfterSeconds: 240 });
+        if (input === TURN_ENDPOINT)
+          return new Response(null, { status: 429, headers: { 'Retry-After': '125' } });
+        throw new Error(`예상하지 않은 요청: ${String(input)}`);
+      }),
+    );
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await fillPrejoinName(container);
+    await act(async () => buttonWithText(container, '카메라·마이크 없이 입장')?.click());
+
+    await waitForState(() =>
+      expect(container.textContent).toContain(
+        '통화 중계 요청이 많아 지금은 입장할 수 없습니다. 약 3분 뒤 ‘방 다시 입장’을 눌러 주세요.',
+      ),
+    );
+    expect(container.textContent).not.toContain('네트워크를 확인하고');
+    expect(rtcCoreMock.RoomSession).not.toHaveBeenCalled();
+  });
+
   it('stops active-room retries and returns to login when a scheduled refresh loses its session', async () => {
     vi.useFakeTimers();
     let grantRequests = 0;

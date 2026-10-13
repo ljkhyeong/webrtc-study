@@ -14,7 +14,17 @@ export const PEER_CONNECTION_FAILURE_MESSAGE =
 type RoomIssueMessages = Readonly<Record<'error' | 'warning', string>>;
 
 export type RoomStartupErrorCode =
-  'endpoint-configuration' | 'participation-grant' | 'turn-configuration' | 'session-start';
+  | 'endpoint-configuration'
+  | 'participation-grant'
+  | 'turn-configuration'
+  | 'turn-rate-limited'
+  | 'session-start';
+
+export interface RoomStartupError {
+  readonly code: RoomStartupErrorCode;
+  /** 서버가 `Retry-After`로 알려 준 다시 시도까지의 시간이다. */
+  readonly retryAfterMs?: number;
+}
 
 const ROOM_STARTUP_ERROR_MESSAGES = {
   'endpoint-configuration':
@@ -22,6 +32,8 @@ const ROOM_STARTUP_ERROR_MESSAGES = {
   'participation-grant':
     '스터디 참여 권한을 확인하지 못했습니다. 잠시 후 다시 시도하거나 BATON에서 다시 입장해 주세요.',
   'turn-configuration': '통화 중계 정보를 받지 못했습니다. 네트워크를 확인하고 다시 시도해 주세요.',
+  'turn-rate-limited':
+    '통화 중계 요청이 많아 지금은 입장할 수 없습니다. 잠시 후 ‘방 다시 입장’을 눌러 주세요.',
   'session-start': '스터디룸 연결을 시작하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
 } satisfies Record<RoomStartupErrorCode, string>;
 
@@ -270,10 +282,19 @@ export function buildRoomSystemNotices({
   return notices.filter((notice) => notice.message);
 }
 
+function roomStartupErrorMessage({ code, retryAfterMs }: RoomStartupError): string {
+  // 다시 눌러도 같은 이유로 거부되므로 서버가 알려 준 대기 시간을 분 단위로 올려 안내한다.
+  if (code === 'turn-rate-limited' && retryAfterMs !== undefined && retryAfterMs > 0) {
+    const minutes = Math.ceil(retryAfterMs / 60_000);
+    return `통화 중계 요청이 많아 지금은 입장할 수 없습니다. 약 ${minutes}분 뒤 ‘방 다시 입장’을 눌러 주세요.`;
+  }
+  return ROOM_STARTUP_ERROR_MESSAGES[code];
+}
+
 interface ActiveRoomTerminalStateInput {
   readonly snapshotStatus?: RoomSessionStatus | undefined;
   readonly sessionError?: string | undefined;
-  readonly startupError: RoomStartupErrorCode | null;
+  readonly startupError: RoomStartupError | null;
 }
 
 interface ActiveRoomTerminalState {
@@ -287,10 +308,7 @@ export function resolveActiveRoomTerminalState({
   startupError,
 }: ActiveRoomTerminalStateInput): ActiveRoomTerminalState {
   if (startupError !== null) {
-    return {
-      status: 'error',
-      terminalErrorMessage: ROOM_STARTUP_ERROR_MESSAGES[startupError],
-    };
+    return { status: 'error', terminalErrorMessage: roomStartupErrorMessage(startupError) };
   }
   const status = snapshotStatus ?? 'idle';
   return {

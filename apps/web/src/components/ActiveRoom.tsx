@@ -32,15 +32,20 @@ import {
   roomWarningMessage,
   screenShareStartNotice,
   type RoomActionNotice,
+  type RoomStartupError,
   type RoomStartupErrorCode,
 } from '../lib/room-presentation';
+import { TurnCredentialRateLimitError } from '../lib/turn';
 class RoomStartupFailure extends Error {
-  constructor(
-    readonly code: RoomStartupErrorCode,
-    cause: unknown,
-  ) {
+  readonly startupError: RoomStartupError;
+
+  constructor(code: RoomStartupErrorCode, cause: unknown) {
     super(code, { cause });
     this.name = 'RoomStartupFailure';
+    this.startupError =
+      cause instanceof TurnCredentialRateLimitError
+        ? { code, retryAfterMs: cause.retryAfterMs }
+        : { code };
   }
 }
 
@@ -78,7 +83,7 @@ export function ActiveRoom({
   const refreshCoordinatorRef = useRef<RoomRefreshCoordinator | null>(null);
   const ensureFreshParticipationGrantRef = useRef<() => Promise<void>>(async () => {});
   const [subscribedSession, setSubscribedSession] = useState<RoomSession | null>(null);
-  const [startupError, setStartupError] = useState<RoomStartupErrorCode | null>(null);
+  const [startupError, setStartupError] = useState<RoomStartupError | null>(null);
   const [actionNotice, setActionNotice] = useState<RoomActionNotice | null>(null);
   const [participationGrantRefreshWarning, setParticipationGrantRefreshWarning] = useState('');
   const [turnRefreshWarning, setTurnRefreshWarning] = useState('');
@@ -201,7 +206,12 @@ export function ActiveRoom({
                 refreshCoordinator.turnRequestSignal,
               );
             } catch (error) {
-              throw new RoomStartupFailure('turn-configuration', error);
+              throw new RoomStartupFailure(
+                error instanceof TurnCredentialRateLimitError
+                  ? 'turn-rate-limited'
+                  : 'turn-configuration',
+                error,
+              );
             }
             if (!isCurrentLifecycle()) {
               return;
@@ -250,7 +260,9 @@ export function ActiveRoom({
         if (isCurrentLifecycle()) {
           const sessionStatus = sessionRef.current?.getSnapshot().status;
           if (sessionStatus !== 'error') {
-            setStartupError(error instanceof RoomStartupFailure ? error.code : 'session-start');
+            setStartupError(
+              error instanceof RoomStartupFailure ? error.startupError : { code: 'session-start' },
+            );
           }
         }
       }

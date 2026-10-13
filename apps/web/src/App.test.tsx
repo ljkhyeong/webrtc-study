@@ -268,12 +268,28 @@ describe('App pre-join boundary', () => {
     const terminal = resolveActiveRoomTerminalState({
       snapshotStatus: undefined,
       sessionError: undefined,
-      startupError: 'turn-configuration',
+      startupError: { code: 'turn-configuration' },
     });
 
     expect(terminal.status).toBe('error');
     expect(terminal.terminalErrorMessage).toContain('통화 중계 정보');
     expect(terminal.terminalErrorMessage).not.toContain('credential request failed');
+  });
+
+  it('안내하는 TURN 발급 한도 대기 시간을 분 단위로 올리고 없으면 일반 안내를 쓴다', () => {
+    expect(
+      resolveActiveRoomTerminalState({
+        startupError: { code: 'turn-rate-limited', retryAfterMs: 125_000 },
+      }).terminalErrorMessage,
+    ).toBe(
+      '통화 중계 요청이 많아 지금은 입장할 수 없습니다. 약 3분 뒤 ‘방 다시 입장’을 눌러 주세요.',
+    );
+    expect(
+      resolveActiveRoomTerminalState({ startupError: { code: 'turn-rate-limited' } })
+        .terminalErrorMessage,
+    ).toBe(
+      '통화 중계 요청이 많아 지금은 입장할 수 없습니다. 잠시 후 ‘방 다시 입장’을 눌러 주세요.',
+    );
   });
 
   it('shows a terminal join error once without the raw exception detail', () => {
