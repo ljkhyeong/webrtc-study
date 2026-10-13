@@ -139,6 +139,7 @@ describe('PrejoinScreen', () => {
         return snapshot;
       });
       const container = document.createElement('div');
+      document.body.append(container);
       const root = createRoot(container);
       try {
         act(() =>
@@ -170,11 +171,90 @@ describe('PrejoinScreen', () => {
         expect(container.textContent).toContain('입장하기');
       } finally {
         act(() => root.unmount());
+        container.remove();
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
       }
     },
   );
+
+  it('Enter로 지금 보이는 주 동작을 실행하고 이름이 없으면 입장하지 않는다', async () => {
+    const ready: PrejoinMediaSnapshot = {
+      status: 'ready',
+      audioInputs: [],
+      videoInputs: [],
+      selectedAudioInputId: null,
+      selectedVideoInputId: null,
+      localMedia: {
+        audioAvailable: true,
+        audioEnabled: true,
+        videoAvailable: false,
+        videoEnabled: false,
+      },
+      audioIssue: null,
+      videoIssue: null,
+    };
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    vi.stubGlobal('navigator', {
+      mediaDevices: { addEventListener: vi.fn(), removeEventListener: vi.fn() },
+    });
+    let publish!: (value: PrejoinMediaSnapshot) => void;
+    vi.spyOn(PrejoinMedia.prototype, 'subscribe').mockImplementation((listener) => {
+      publish = listener;
+      return () => {};
+    });
+    const checkDevices = vi
+      .spyOn(PrejoinMedia.prototype, 'checkDevices')
+      .mockImplementation(async () => {
+        publish(ready);
+        return ready;
+      });
+    const onJoin = vi.fn();
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          <PrejoinScreen
+            initialDisplayName=""
+            backLabel="BATON으로 돌아가기"
+            roomId="abcd-efgh-jkmp"
+            showHostCapabilityInput={false}
+            onBack={vi.fn()}
+            onJoin={onJoin}
+          />,
+        ),
+      );
+      const name = container.querySelector<HTMLInputElement>('#display-name')!;
+      expect(name.getAttribute('enterkeyhint')).toBe('go');
+
+      await act(async () => name.form!.requestSubmit());
+      expect(checkDevices).toHaveBeenCalledOnce();
+      expect(onJoin).not.toHaveBeenCalled();
+
+      await act(async () => name.form!.requestSubmit());
+      expect(onJoin).not.toHaveBeenCalled();
+      expect(name.getAttribute('aria-invalid')).toBe('true');
+      expect(document.activeElement).toBe(name);
+
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, '림');
+        name.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await act(async () => name.form!.requestSubmit());
+      expect(checkDevices).toHaveBeenCalledOnce();
+      expect(onJoin).toHaveBeenCalledExactlyOnceWith('림', null, undefined, {
+        audio: true,
+        video: true,
+      });
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    }
+  });
 
   it('호환성을 확인한 뒤에만 입장하고 실패 안내와 재시도를 제공한다', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);

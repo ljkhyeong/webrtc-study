@@ -379,13 +379,24 @@ export function PrejoinScreen({
           </section>
         </div>
 
-        <section className="prejoin-settings" aria-labelledby="prejoin-title">
+        {/* Enter와 모바일 키보드의 이동 키는 지금 보이는 주 동작(장치 켜기 또는 입장)을 실행한다. */}
+        <form
+          className="prejoin-settings"
+          aria-labelledby="prejoin-title"
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (isIdle) handleCheckDevices();
+            else handleJoin(true);
+          }}
+        >
           <div className="prejoin-name">
             <label htmlFor="display-name">내 이름</label>
             <input
               ref={nameInputRef}
               id="display-name"
               autoComplete="nickname"
+              enterKeyHint="go"
               maxLength={DISPLAY_NAME_MAX_LENGTH}
               placeholder="스터디에서 사용할 이름"
               value={displayName}
@@ -408,9 +419,8 @@ export function PrejoinScreen({
             {isIdle ? (
               <button
                 className="prejoin-primary-action"
-                type="button"
+                type="submit"
                 disabled={authorizationPending}
-                onClick={handleCheckDevices}
               >
                 카메라·마이크 켜기
                 <ArrowIcon />
@@ -418,9 +428,8 @@ export function PrejoinScreen({
             ) : (
               <button
                 className="prejoin-primary-action"
-                type="button"
+                type="submit"
                 disabled={isChecking || hostCapabilityInvalid || authorizationPending}
-                onClick={() => handleJoin(true)}
               >
                 {hasAnyMedia ? '입장하기' : '카메라·마이크 없이 입장'}
                 <ArrowIcon />
@@ -478,7 +487,7 @@ export function PrejoinScreen({
           <button className="prejoin-back-action" type="button" onClick={handleBack}>
             {backLabel}
           </button>
-        </section>
+        </form>
       </main>
     </div>
   );
