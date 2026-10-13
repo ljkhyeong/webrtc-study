@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useModalDialog } from '../lib/use-modal-dialog';
 import { CloseIcon } from './Icons';
 
 export function InviteDialog({
@@ -17,11 +18,7 @@ export function InviteDialog({
   const [qrFailed, setQrFailed] = useState(false);
   const [shareState, setShareState] = useState<'idle' | 'sharing' | 'success' | 'error'>('idle');
 
-  useEffect(() => {
-    const dialog = dialogRef.current!;
-    dialog.showModal();
-    return () => dialog.close();
-  }, []);
+  useModalDialog(dialogRef);
 
   useEffect(() => {
     let active = true;

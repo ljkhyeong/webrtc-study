@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VideoQualityMode, ScreenShareQuality } from '@round/rtc-core';
+import { useModalDialog } from '../lib/use-modal-dialog';
 import { AudioOutputControls } from './AudioOutputControls';
 import { MicrophoneLevel } from './MicrophoneLevel';
 import type { ScreenWakeLockControl } from '../lib/use-screen-wake-lock';
@@ -66,18 +67,14 @@ export function MediaDeviceDialog({
     };
   }, []);
 
+  useModalDialog(dialogRef, open);
   useEffect(() => {
-    if (!open) {
-      setAudio(null);
-      setVideo(null);
-      setQuality(null);
-      setNotice('');
-      setError('');
-      return;
-    }
-    const dialog = dialogRef.current!;
-    dialog.showModal();
-    return () => dialog.close();
+    if (open) return;
+    setAudio(null);
+    setVideo(null);
+    setQuality(null);
+    setNotice('');
+    setError('');
   }, [open]);
 
   useEffect(() => {

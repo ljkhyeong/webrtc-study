@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
+import { useModalDialog } from '../lib/use-modal-dialog';
 
 export function LeaveRoomDialog({
   action,
@@ -14,11 +15,7 @@ export function LeaveRoomDialog({
   onConfirm: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = dialogRef.current!;
-    dialog.showModal();
-    return () => dialog.close();
-  }, []);
+  useModalDialog(dialogRef);
   return (
     <dialog
       ref={dialogRef}

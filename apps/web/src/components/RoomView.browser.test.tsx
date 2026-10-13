@@ -564,6 +564,43 @@ describe('RoomView 브라우저 동작', () => {
     },
   );
 
+  it('퇴장 확인창과 더보기에서 연 창을 닫으면 연 버튼으로 초점을 돌려준다', async () => {
+    const props = roomViewProps();
+    act(() => root.render(<RoomView {...props} screenSharing />));
+    const leave = container.querySelector<HTMLButtonElement>('.control-button--leave')!;
+    leave.focus();
+    act(() => leave.click());
+    const keep = container.querySelector<HTMLButtonElement>('dialog button')!;
+    keep.focus();
+    act(() => keep.click());
+    expect(container.querySelector('dialog')).toBeNull();
+    expect(document.activeElement).toBe(leave);
+    expect(props.onLeave).not.toHaveBeenCalled();
+
+    const menu = container.querySelector<HTMLDetailsElement>('.more-menu')!;
+    const more = menu.querySelector('summary')!;
+    menu.open = true;
+    const devices = menu.querySelector<HTMLButtonElement>('[aria-label="마이크·카메라 바꾸기"]')!;
+    devices.focus();
+    act(() => devices.click());
+    expect(props.onSelectDevices).toHaveBeenCalledOnce();
+    expect(menu.open).toBe(false);
+    expect(document.activeElement).toBe(more);
+
+    menu.open = true;
+    await act(async () =>
+      menu.querySelector<HTMLButtonElement>('[aria-label="초대 링크 보내기"]')!.click(),
+    );
+    const invite = container.querySelector<HTMLDialogElement>('.invite-dialog')!;
+    expect(invite.open).toBe(true);
+    invite.querySelector<HTMLButtonElement>('[aria-label="초대 닫기"]')!.focus();
+    await act(async () =>
+      invite.querySelector<HTMLButtonElement>('[aria-label="초대 닫기"]')!.click(),
+    );
+    expect(container.querySelector('.invite-dialog')).toBeNull();
+    expect(document.activeElement).toBe(more);
+  });
+
   it('채팅 패널을 닫으면 하단 채팅 버튼으로 포커스를 복원한다', async () => {
     act(() => root.render(<RoomView {...roomViewProps()} />));
     const toggle = container.querySelector<HTMLButtonElement>('button[aria-label="채팅 열기"]');

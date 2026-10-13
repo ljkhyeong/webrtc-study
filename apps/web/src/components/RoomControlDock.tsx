@@ -267,8 +267,12 @@ export function RoomControlDock({
 // 자주 쓰지 않는 기능을 모은 메뉴. 바깥을 누르거나 Esc를 누르면 닫는다.
 function RoomMoreMenu({ children }: { children: (close: () => void) => ReactNode }) {
   const menuRef = useRef<HTMLDetailsElement>(null);
+  // 누른 항목이 메뉴와 함께 숨겨지므로 초점을 더보기 버튼에 둔다. 이어서 연 창을 닫으면 이 버튼으로 돌아온다.
   const close = () => {
-    if (menuRef.current) menuRef.current.open = false;
+    const menu = menuRef.current;
+    if (!menu) return;
+    menu.querySelector('summary')?.focus();
+    menu.open = false;
   };
   useEffect(() => {
     const closeOnOutsidePointer = (event: PointerEvent) => {
@@ -302,14 +306,7 @@ function RoomMoreMenu({ children }: { children: (close: () => void) => ReactNode
       </summary>
       <div className="more-menu__panel">
         {children(close)}
-        <button
-          className="more-menu__close"
-          type="button"
-          onClick={() => {
-            close();
-            menuRef.current?.querySelector('summary')?.focus();
-          }}
-        >
+        <button className="more-menu__close" type="button" onClick={close}>
           닫기
         </button>
       </div>

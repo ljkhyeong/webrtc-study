@@ -54,6 +54,18 @@ export function RoomStudyPanel({
     description: string;
   } | null>(null);
   const changeConfirmed = useRef(false);
+  const regionRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    // 더보기 메뉴처럼 바깥을 누르면 설정 창을 닫는다. 변경 확인창과 종료 안내는 같은 영역에 있다.
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const panel = panelRef.current;
+      if (panel?.open && event.target instanceof Node && !regionRef.current?.contains(event.target))
+        panel.open = false;
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+  }, []);
   useEffect(() => {
     if (!pendingChange) return;
     if (!active || !canControl || pending || state?.revision !== pendingChange.revision) {
@@ -181,8 +193,19 @@ export function RoomStudyPanel({
     command(pendingChange.command, pendingChange.revision);
   };
   return (
-    <div className="room-study-region">
-      <details className="room-study" data-mode={state?.mode ?? 'focus'}>
+    <div className="room-study-region" ref={regionRef}>
+      <details
+        ref={panelRef}
+        className="room-study"
+        data-mode={state?.mode ?? 'focus'}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape' || event.nativeEvent.isComposing || !event.currentTarget.open)
+            return;
+          event.stopPropagation();
+          event.currentTarget.open = false;
+          event.currentTarget.querySelector('summary')?.focus();
+        }}
+      >
         <summary>
           <span className="room-study__mode">
             {state?.mode === 'break' ? '휴식' : '집중'}

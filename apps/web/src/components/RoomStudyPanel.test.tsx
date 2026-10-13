@@ -169,6 +169,53 @@ describe('타이머 종료 안내', () => {
     expect(container.querySelector('dialog')).toBeNull();
   });
 
+  it('설정 창은 Esc와 바깥 누르기로 닫고 변경 확인을 취소하면 누른 버튼으로 초점을 돌려준다', () => {
+    render({ remainingMs: 40_000 }, true);
+    const panel = container.querySelector<HTMLDetailsElement>('.room-study')!;
+    const summary = panel.querySelector('summary')!;
+    const topic = panel.querySelector<HTMLInputElement>('input[placeholder="예: 3장 코드 리뷰"]')!;
+    const escape = (target: Element, isComposing = false) =>
+      act(() => {
+        target.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', isComposing, bubbles: true }),
+        );
+      });
+    const pointerDown = (target: EventTarget) =>
+      act(() => {
+        target.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      });
+
+    panel.open = true;
+    topic.focus();
+    escape(topic, true);
+    expect(panel.open).toBe(true);
+    escape(topic);
+    expect(panel.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
+
+    panel.open = true;
+    pointerDown(topic);
+    expect(panel.open).toBe(true);
+    pointerDown(document.body);
+    expect(panel.open).toBe(false);
+
+    panel.open = true;
+    const reset = [...panel.querySelectorAll('button')].find((el) => el.textContent === '초기화')!;
+    reset.focus();
+    act(() => reset.click());
+    const dialog = container.querySelector('dialog')!;
+    pointerDown(dialog);
+    expect(panel.open).toBe(true);
+    const keep = [...dialog.querySelectorAll('button')].find(
+      (el) => el.textContent === '기존 타이머 유지',
+    )!;
+    keep.focus();
+    act(() => keep.click());
+    expect(container.querySelector('dialog')).toBeNull();
+    expect(document.activeElement).toBe(reset);
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
   it('일시정지한 진행 시간도 보호하고 확인 중 다른 변경이 오면 취소하며 첫 시작은 바로 적용한다', () => {
     const reset = () =>
       [...container.querySelectorAll('button')].find((el) => el.textContent === '초기화')!;

@@ -51,6 +51,25 @@ describe('통화 장치 설정', () => {
     vi.unstubAllGlobals();
   });
 
+  it('설정창을 닫으면 창을 연 요소로 초점을 돌려준다', async () => {
+    document.body.append(container);
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    const input = props();
+    try {
+      await act(async () => root.render(<MediaDeviceDialog {...input} />));
+      const close = container.querySelector<HTMLButtonElement>('[aria-label="장치 설정 닫기"]')!;
+      close.focus();
+      await act(async () => root.render(<MediaDeviceDialog {...input} open={false} />));
+      expect(container.querySelector('dialog')).toBeNull();
+      expect(document.activeElement).toBe(opener);
+    } finally {
+      opener.remove();
+      container.remove();
+    }
+  });
+
   it('꺼진 마이크와 종료된 통화에서는 입력 표시를 위해 장치를 요청하거나 분석하지 않는다', async () => {
     const AudioContext = vi.fn();
     vi.stubGlobal('AudioContext', AudioContext);
