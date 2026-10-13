@@ -3864,6 +3864,11 @@ textarea:focus-visible {
   transform: scaleX(-1);
 }
 
+/* 후면 카메라는 반전하면 글자가 뒤집혀 보이므로 원래 방향으로 보여 준다. */
+.prejoin-preview video.prejoin-preview__video--rear {
+  transform: none;
+}
+
 .prejoin-preview__placeholder,
 .prejoin-preview__checking {
   position: absolute;

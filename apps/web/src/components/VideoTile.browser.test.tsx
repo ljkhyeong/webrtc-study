@@ -400,7 +400,9 @@ describe('VideoTile browser behavior', () => {
 
   it('내 영상을 숨겨도 영상 요소와 송신 상태를 유지하고 장치 교체 뒤 다시 보여 준다', async () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
-    const participant = { ...remoteParticipant({} as MediaStream), isLocal: true };
+    const cameraStream = () =>
+      ({ getVideoTracks: () => [{ getSettings: () => ({}) }] }) as unknown as MediaStream;
+    const participant = { ...remoteParticipant(cameraStream()), isLocal: true };
     const root = createRoot(document.body);
     try {
       await act(async () => root.render(<VideoTile participant={participant} />));
@@ -412,7 +414,7 @@ describe('VideoTile browser behavior', () => {
       expect(video.srcObject).toBe(participant.stream);
       expect(participant.videoEnabled).toBe(true);
       expect(play).toHaveBeenCalledOnce();
-      const stream = {} as MediaStream;
+      const stream = cameraStream();
       await act(async () => root.render(<VideoTile participant={{ ...participant, stream }} />));
       expect(video.srcObject).toBe(stream);
       expect(video.getAttribute('aria-hidden')).toBe('true');

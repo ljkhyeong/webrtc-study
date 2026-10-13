@@ -613,7 +613,7 @@ describe('RoomView 브라우저 동작', () => {
       videoEnabled: true,
       videoSource: 'camera' as const,
       handRaised: false,
-      stream: {} as MediaStream,
+      stream: { getVideoTracks: () => [] } as unknown as MediaStream,
     });
     const props = roomViewProps();
     const render = (

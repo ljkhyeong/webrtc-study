@@ -213,7 +213,18 @@ export function PrejoinScreen({
 
         <div className="prejoin-stage">
           <section className="prejoin-preview" aria-label="내 카메라 미리보기">
-            <video ref={previewRef} autoPlay muted playsInline />
+            <video
+              ref={previewRef}
+              className={
+                controllerRef.current?.getStream()?.getVideoTracks()[0]?.getSettings()
+                  .facingMode === 'environment'
+                  ? 'prejoin-preview__video--rear'
+                  : undefined
+              }
+              autoPlay
+              muted
+              playsInline
+            />
             {!snapshot.localMedia.videoEnabled ? (
               <div className="prejoin-preview__placeholder">
                 <CameraOffIcon />

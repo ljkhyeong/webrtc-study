@@ -69,14 +69,19 @@ describe('VideoTile', () => {
     expect(markup).toContain('스터디원의 화면 공유 전체 화면으로 보기');
   });
 
-  it('통화 중 내 카메라만 좌우 반전하고 화면 공유와 상대 영상은 원본 방향으로 표시한다', () => {
+  it('통화 중 내 전면 카메라만 좌우 반전하고 후면 카메라·화면 공유·상대 영상은 원본 방향으로 표시한다', () => {
+    const camera = (facingMode?: string) =>
+      ({
+        getVideoTracks: () => [{ getSettings: () => ({ facingMode }) }],
+      }) as unknown as MediaStream;
     const localCamera = renderToStaticMarkup(
-      <VideoTile
-        participant={participant({
-          isLocal: true,
-          stream: {} as MediaStream,
-        })}
-      />,
+      <VideoTile participant={participant({ isLocal: true, stream: camera('user') })} />,
+    );
+    const localUnknownCamera = renderToStaticMarkup(
+      <VideoTile participant={participant({ isLocal: true, stream: camera() })} />,
+    );
+    const localRearCamera = renderToStaticMarkup(
+      <VideoTile participant={participant({ isLocal: true, stream: camera('environment') })} />,
     );
     const localScreen = renderToStaticMarkup(
       <VideoTile
@@ -92,6 +97,8 @@ describe('VideoTile', () => {
     );
 
     expect(localCamera).toContain('video-tile__media--mirrored');
+    expect(localUnknownCamera).toContain('video-tile__media--mirrored');
+    expect(localRearCamera).not.toContain('video-tile__media--mirrored');
     expect(localScreen).not.toContain('video-tile__media--mirrored');
     expect(remoteCamera).not.toContain('video-tile__media--mirrored');
   });

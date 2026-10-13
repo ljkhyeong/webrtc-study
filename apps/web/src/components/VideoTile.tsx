@@ -140,7 +140,11 @@ export function VideoTile({
   const hasStream = Boolean(participant.stream);
   const hasVisibleVideo = participant.videoEnabled && hasStream;
   const showPreview = hasVisibleVideo && !(participant.isLocal && previewHidden);
-  const mirrorLocalCamera = participant.isLocal && participant.videoSource === 'camera';
+  // 후면 카메라는 반전하면 노트·책 글자가 뒤집혀 보이므로 원래 방향으로 보여 준다.
+  const mirrorLocalCamera =
+    participant.isLocal &&
+    participant.videoSource === 'camera' &&
+    participant.stream?.getVideoTracks()[0]?.getSettings().facingMode !== 'environment';
   const isRemoteScreenShare =
     !participant.isLocal && participant.videoSource === 'screen' && hasVisibleVideo;
   const shareView = useScreenShareView(isRemoteScreenShare, participant.stream, videoRef);
