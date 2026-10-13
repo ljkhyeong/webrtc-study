@@ -996,6 +996,11 @@ describe('RoomSession', () => {
     });
 
     expect(harness.session.toggleAudio()).toBe(true);
+    expect(harness.session.getSnapshot().lastModerationNotice).toBeNull();
+    expect(harness.session.toggleAudio()).toBe(false);
+    // 사용자가 직접 끈 경우에는 방장 안내를 다시 표시하지 않는다.
+    expect(harness.session.getSnapshot().lastModerationNotice).toBeNull();
+    expect(harness.session.toggleAudio()).toBe(true);
     harness.socket.serverMessage({
       v: PROTOCOL_VERSION,
       type: 'moderation.media.disabled',
@@ -1061,6 +1066,9 @@ describe('RoomSession', () => {
       videoEnabled: false,
       videoSource: 'camera',
     });
+
+    expect(harness.session.toggleVideo()).toBe(true);
+    expect(harness.session.getSnapshot().lastModerationNotice).toBeNull();
     await harness.session.leave();
   });
 

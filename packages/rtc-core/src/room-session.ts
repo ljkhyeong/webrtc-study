@@ -322,6 +322,14 @@ export class RoomSession {
       requestLocalRenegotiation: (peer) => this.#peerNegotiation.requestRenegotiation(peer),
       onStateChanged: () => {
         this.#syncLocalParticipantMedia();
+        // 방장이 끈 장치를 사용자가 다시 켜면 지난 안내를 지운다.
+        const moderatedKind = this.#lastModerationNotice?.kind;
+        if (
+          moderatedKind !== undefined &&
+          this.#getLocalMediaSnapshot()[moderatedKind === 'audio' ? 'audioEnabled' : 'videoEnabled']
+        ) {
+          this.#lastModerationNotice = null;
+        }
         this.#broadcastMediaState();
         this.#emit();
       },
