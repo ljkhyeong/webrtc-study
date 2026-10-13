@@ -403,6 +403,66 @@ describe('BATON room entry boundary', () => {
     expect(getUserMedia).not.toHaveBeenCalled();
   });
 
+  it('입장 준비 중 참여권 갱신이 일시적으로 실패해도 이름을 유지하고 다시 시도할 수 있다', async () => {
+    let nowMs = 0;
+    let grantRequests = 0;
+    vi.stubGlobal('performance', { now: () => nowMs });
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (input === '/api/v1/auth/session') {
+        return authenticatedSession();
+      }
+      if (input === GRANT_ENDPOINT) {
+        grantRequests += 1;
+        return grantRequests === 2
+          ? response(503, { internal: 'temporarily unavailable' })
+          : response(200, {
+              expiresAt: 1_800_000_000,
+              refreshAfterSeconds: 1,
+            });
+      }
+      if (input === TURN_ENDPOINT) {
+        return response(200, {
+          urls: ['turns:turn.example.test:5349'],
+          username: 'round-user',
+          credential: 'round-credential',
+          expiresAt: 1_800_000_000,
+          refreshAfterSeconds: 480,
+        });
+      }
+      return Promise.reject(new Error(`Unexpected request: ${String(input)}`));
+    });
+    vi.stubGlobal('fetch', fetcher);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await fillPrejoinName(container, '임시 이름');
+
+    nowMs = 1_001;
+    await act(async () => {
+      buttonWithText(container, '카메라·마이크 없이 입장')?.click();
+    });
+    await waitForState(() => {
+      expect(grantRequests).toBe(2);
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        '스터디 참여 권한을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      );
+    });
+    expect(container.querySelector<HTMLInputElement>('#display-name')?.value).toBe('임시 이름');
+    expect(container.textContent).not.toContain('temporarily unavailable');
+    expect(rtcCoreMock.RoomSession).not.toHaveBeenCalled();
+
+    await act(async () => {
+      buttonWithText(container, '카메라·마이크 없이 입장')?.click();
+    });
+    await waitForState(() => expect(rtcCoreMock.RoomSession).toHaveBeenCalledOnce());
+    expect(grantRequests).toBe(3);
+    expect((rtcCoreMock.RoomSession.mock.calls[0]![0] as RoomSessionOptions).displayName).toBe(
+      '임시 이름',
+    );
+  });
+
   it('stops active-room retries and returns to login when a scheduled refresh loses its session', async () => {
     vi.useFakeTimers();
     let grantRequests = 0;

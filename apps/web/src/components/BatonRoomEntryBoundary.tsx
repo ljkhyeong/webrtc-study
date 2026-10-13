@@ -77,12 +77,28 @@ export function BatonRoomEntryBoundary({ roomId, children }: BatonRoomEntryBound
         return false;
       }
     };
+    // 입장 준비 중에는 접근 거부만 경계 화면으로 바꾼다. 일시 오류는 준비 화면이 안내하고
+    // 관리자를 닫지 않아 이름·장치 설정을 그대로 둔 채 다시 시도할 수 있다.
+    const authorizeBeforeEntryAction = async () => {
+      try {
+        await activeManager.ensureFresh();
+        return true;
+      } catch (error) {
+        if (error instanceof ParticipationGrantAccessError) {
+          onAccessFailure(error);
+          return false;
+        }
+        throw new Error('스터디 참여 권한을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.', {
+          cause: error,
+        });
+      }
+    };
     void authorize().then((authorized) => {
       if (active && authorized) {
         setState({
           status: 'ready',
           manager: activeManager,
-          authorizeBeforeEntryAction: authorize,
+          authorizeBeforeEntryAction,
           onAccessFailure,
         });
       }
