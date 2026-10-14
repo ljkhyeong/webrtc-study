@@ -1142,6 +1142,11 @@ textarea:focus-visible {
   background: #09090a;
 }
 
+/* 세로 카메라 영상은 타일을 채우면 위아래가 크게 잘리므로 전체를 보여 준다. */
+.video-tile video.video-tile__media--portrait {
+  object-fit: contain;
+}
+
 .video-tile video.video-tile__media--mirrored {
   transform: scaleX(-1);
 }

@@ -398,6 +398,35 @@ describe('VideoTile browser behavior', () => {
     }
   });
 
+  it('세로로 든 휴대폰 카메라 영상은 잘리지 않게 맞추고 가로 영상과 화면 공유는 그대로 둔다', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const root = createRoot(document.body);
+    const frame = (video: HTMLVideoElement, width: number, height: number, type: string) => {
+      Object.defineProperty(video, 'videoWidth', { configurable: true, value: width });
+      Object.defineProperty(video, 'videoHeight', { configurable: true, value: height });
+      video.dispatchEvent(new Event(type));
+    };
+    try {
+      await act(async () =>
+        root.render(<VideoTile participant={remoteParticipant({} as MediaStream)} />),
+      );
+      const video = document.querySelector('video')!;
+      act(() => frame(video, 360, 640, 'loadedmetadata'));
+      expect(video.classList.contains('video-tile__media--portrait')).toBe(true);
+      act(() => frame(video, 640, 360, 'resize'));
+      expect(video.classList.contains('video-tile__media--portrait')).toBe(false);
+
+      act(() => frame(video, 360, 640, 'resize'));
+      await act(async () =>
+        root.render(<VideoTile participant={remoteParticipant({} as MediaStream, 'screen')} />),
+      );
+      expect(video.classList.contains('video-tile__media--portrait')).toBe(false);
+      expect(video.classList.contains('video-tile__media--screen')).toBe(true);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
   it('내 영상을 숨겨도 영상 요소와 송신 상태를 유지하고 장치 교체 뒤 다시 보여 준다', async () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
     const cameraStream = () =>

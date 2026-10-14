@@ -90,6 +90,8 @@ export function VideoTile({
     preferences?.set(preferenceKey, { mutedLocally, previewHidden, volume });
   }, [preferences, preferenceKey, mutedLocally, previewHidden, volume]);
   const [retryError, setRetryError] = useState(false);
+  // 세로로 든 휴대폰 영상을 가로 타일에 꽉 채우면 머리까지 잘리므로 세로 영상은 잘리지 않게 맞춘다.
+  const [portraitVideo, setPortraitVideo] = useState(false);
   const outputChange = useRef(Promise.resolve());
 
   useEffect(() => {
@@ -207,6 +209,9 @@ export function VideoTile({
               [
                 showPreview ? '' : 'video-tile__media--hidden',
                 participant.videoSource === 'screen' ? 'video-tile__media--screen' : '',
+                participant.videoSource === 'camera' && portraitVideo
+                  ? 'video-tile__media--portrait'
+                  : '',
                 mirrorLocalCamera ? 'video-tile__media--mirrored' : '',
               ]
                 .filter(Boolean)
@@ -215,6 +220,12 @@ export function VideoTile({
             autoPlay
             muted
             playsInline
+            onLoadedMetadata={(event) =>
+              setPortraitVideo(event.currentTarget.videoHeight > event.currentTarget.videoWidth)
+            }
+            onResize={(event) =>
+              setPortraitVideo(event.currentTarget.videoHeight > event.currentTarget.videoWidth)
+            }
             onPause={(event) => {
               if (event.currentTarget.srcObject && event.currentTarget.paused) {
                 setPlaybackBlocked(true);
