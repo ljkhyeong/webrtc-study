@@ -38,6 +38,8 @@ export class RoomRefreshCoordinator {
   #turnCredentialsUrl: string | null = null;
   #signalingUrl: string | null = null;
   #leaseGrantCount: number | null = null;
+  #connectGrantCount: number | null = null;
+  #joinedGrantCount: number | null = null;
 
   constructor(options: RoomRefreshCoordinatorOptions) {
     this.#options = options;
@@ -66,12 +68,30 @@ export class RoomRefreshCoordinator {
     this.#signalingUrl = url;
   }
 
-  async ensureFreshParticipationGrant(): Promise<void> {
+  /**
+   * 시그널링 연결 직전에 호출한다. 서버는 끊긴 연결을 정리하기 전까지 같은 참여권의 두 번째
+   * 연결을 거부하므로, 방에 입장했던 연결의 참여권이면 갱신 시점 전이어도 새로 받는다.
+   */
+  async prepareSignalingConnect(): Promise<void> {
+    const manager = this.#participationGrantLeaseManager;
+    if (manager === null) return;
+    await this.ensureFreshParticipationGrant({
+      force: manager.issuedGrantCount === this.#joinedGrantCount,
+    });
+    this.#connectGrantCount = manager.issuedGrantCount;
+  }
+
+  /** 시그널링 연결이 방에 입장하면 호출한다. 그 연결에 쓴 참여권은 다음 재연결에 쓰지 않는다. */
+  markSignalingJoined(): void {
+    this.#joinedGrantCount = this.#connectGrantCount;
+  }
+
+  async ensureFreshParticipationGrant(options: { readonly force?: boolean } = {}): Promise<void> {
     const manager = this.#participationGrantLeaseManager;
     if (manager === null || !this.#canRefresh()) return;
 
     try {
-      await manager.ensureFresh();
+      await manager.ensureFresh(options);
     } catch (error) {
       if (error instanceof ParticipationGrantAccessError) {
         this.stop();

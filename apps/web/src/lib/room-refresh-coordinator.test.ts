@@ -189,6 +189,39 @@ describe('참여권 갱신 뒤 시그널링 연결 연장', () => {
     expect(leaseFetch).toHaveBeenCalledOnce();
   });
 
+  it('입장했던 연결의 참여권은 재연결 전에 갱신 시점 전이어도 새로 받는다', async () => {
+    const leaseFetch = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', leaseFetch);
+    const issueGrant = grantFetcher.getMockImplementation() as (
+      input: RequestInfo | URL,
+    ) => Promise<Response>;
+
+    // 입장 준비에서 받은 참여권은 첫 연결에 그대로 쓴다.
+    await coordinator.ensureFreshParticipationGrant();
+    await coordinator.prepareSignalingConnect();
+    expect(grantRefreshCount()).toBe(1);
+    coordinator.markSignalingJoined();
+
+    // 서버가 끊긴 연결을 아직 정리하지 않았을 수 있으므로 재연결은 새 참여권으로 한다.
+    peerId = null;
+    nowMs = 1_000;
+    grantFetcher.mockImplementation(async (input: RequestInfo | URL) =>
+      input === GRANT_ENDPOINT ? new Response(null, { status: 503 }) : issueGrant(input),
+    );
+    await expect(coordinator.prepareSignalingConnect()).rejects.toThrow('503');
+    grantFetcher.mockImplementation(issueGrant);
+    await coordinator.prepareSignalingConnect();
+    expect(grantRefreshCount()).toBe(3);
+
+    // 새 참여권으로 입장하지 못해 다시 시도할 때는 그 참여권을 그대로 쓴다.
+    await coordinator.prepareSignalingConnect();
+    expect(grantRefreshCount()).toBe(3);
+
+    coordinator.markSignalingJoined();
+    await coordinator.prepareSignalingConnect();
+    expect(grantRefreshCount()).toBe(4);
+  });
+
   it('입장 전·재연결 중에 받은 참여권과 퇴장 뒤 재시도로는 요청하지 않는다', async () => {
     const leaseFetch = vi.fn(async () => new Response(null, { status: 503 }));
     vi.stubGlobal('fetch', leaseFetch);

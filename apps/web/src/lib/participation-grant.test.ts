@@ -75,6 +75,65 @@ describe('BATON participation grant lease manager', () => {
     expect(refreshCallCount(fetcher)).toBe(3);
   });
 
+  it('replaces a grant before its refresh delay only when forced', async () => {
+    const fetcher = authenticatedFetcher(async () =>
+      response(200, {
+        expiresAt: 1_780_000_000,
+        refreshAfterSeconds: 240,
+      }),
+    );
+    let nowMs = 10_000;
+    const manager = new ParticipationGrantLeaseManager({
+      endpoint: ENDPOINT,
+      fetcher: fetcher as typeof fetch,
+      now: () => nowMs,
+      roomId: ROOM_ID,
+      storage: null,
+    });
+
+    await manager.ensureFresh();
+    nowMs += 60_000;
+    await manager.ensureFresh();
+    expect(manager.issuedGrantCount).toBe(1);
+
+    await manager.ensureFresh({ force: true });
+    expect(manager.issuedGrantCount).toBe(2);
+    expect(manager.refreshDelayMs()).toBe(240_000);
+    expect(refreshCallCount(fetcher)).toBe(2);
+  });
+
+  it('also refreshes when device time passed the delay while the monotonic clock slept', async () => {
+    const fetcher = authenticatedFetcher(async () =>
+      response(200, {
+        expiresAt: 1_780_000_000,
+        refreshAfterSeconds: 240,
+      }),
+    );
+    let nowMs = 10_000;
+    let wallMs = 1_780_000_000_000;
+    const manager = new ParticipationGrantLeaseManager({
+      endpoint: ENDPOINT,
+      fetcher: fetcher as typeof fetch,
+      now: () => nowMs,
+      wallNow: () => wallMs,
+      roomId: ROOM_ID,
+      storage: null,
+    });
+
+    await manager.ensureFresh();
+    // 기기 시각이 뒤로 가도 단조 증가 시계 기준의 갱신 시점을 늦추지 않는다.
+    wallMs -= 3_600_000;
+    nowMs += 240_000;
+    await manager.ensureFresh();
+    expect(refreshCallCount(fetcher)).toBe(2);
+
+    // 절전으로 단조 증가 시계가 1초만 흘러도 기기 시각이 갱신 시점을 지났으면 새로 받는다.
+    nowMs += 1_000;
+    wallMs += 600_000;
+    await manager.ensureFresh();
+    expect(refreshCallCount(fetcher)).toBe(3);
+  });
+
   it('loads a dynamic CSRF credential before the exact same-origin refresh POST', async () => {
     const fetcher = authenticatedFetcher(async () =>
       response(200, {

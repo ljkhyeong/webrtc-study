@@ -207,7 +207,8 @@ export function ActiveRoom({
                     ...(!refreshCoordinator.hasParticipationGrantManager()
                       ? {}
                       : {
-                          beforeSignalingConnect: () => ensureFreshParticipationGrantRef.current(),
+                          beforeSignalingConnect: () =>
+                            refreshCoordinatorRef.current?.prepareSignalingConnect(),
                         }),
                     mediaConstraints: DEFAULT_MEDIA_CONSTRAINTS,
                   }),
@@ -296,6 +297,12 @@ export function ActiveRoom({
       refreshCoordinatorRef.current?.stop();
     }
   }, [snapshot?.status, subscribedSession]);
+
+  // 연결마다 새 참가자 ID를 받으므로, 입장할 때마다 그 연결에 쓴 참여권을 재연결 전 교체 대상으로 둔다.
+  const joinedPeerId = snapshot?.status === 'active' ? snapshot.selfId : null;
+  useEffect(() => {
+    if (joinedPeerId !== null) refreshCoordinatorRef.current?.markSignalingJoined();
+  }, [joinedPeerId]);
 
   const participants = useMemo<ParticipantView[]>(() => {
     const session = subscribedSession;

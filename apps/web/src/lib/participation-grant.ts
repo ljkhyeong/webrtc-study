@@ -28,6 +28,8 @@ interface ParticipationGrantLeaseManagerOptions {
   readonly roomId: string;
   readonly fetcher?: typeof fetch;
   readonly now?: () => number;
+  /** 기기 시각이다. 경과 시간에만 쓰며 서버의 `expiresAt`과 비교하지 않는다. */
+  readonly wallNow?: () => number;
   readonly storage?: Pick<Storage, 'getItem' | 'removeItem'> | null;
   readonly timeoutMs?: number;
 }
@@ -65,10 +67,13 @@ export class ParticipationGrantLeaseManager {
   readonly #roomId: string;
   readonly #fetcher: typeof fetch;
   readonly #now: () => number;
+  readonly #wallNow: () => number;
   readonly #storage: Pick<Storage, 'getItem' | 'removeItem'> | null | undefined;
   readonly #timeoutMs: number;
 
   #refreshDueAtMs: number | null = null;
+  // 운영체제 절전 중에는 단조 증가 시계가 멈출 수 있어 기기 시각의 경과가 더 길면 그 시점에 갱신한다.
+  #refreshDueAtWallMs = 0;
   #issuedGrantCount = 0;
   #refreshing: Promise<void> | null = null;
   #refreshController: AbortController | null = null;
@@ -86,16 +91,22 @@ export class ParticipationGrantLeaseManager {
         ? configuredFetcher.bind(globalThis)
         : configuredFetcher;
     this.#now = options.now ?? (() => globalThis.performance.now());
+    this.#wallNow = options.wallNow ?? (() => Date.now());
     this.#storage = options.storage;
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
-  ensureFresh(): Promise<void> {
+  /** 갱신 시점 전에는 기존 참여권을 쓴다. `force`이면 시점과 관계없이 새 참여권을 받는다. */
+  ensureFresh(options: { readonly force?: boolean } = {}): Promise<void> {
     if (this.#closed) {
       return Promise.reject(new Error('Participation grant refresh manager is closed'));
     }
-    const nowMs = this.#now();
-    if (this.#refreshDueAtMs !== null && nowMs < this.#refreshDueAtMs) {
+    if (
+      !options.force &&
+      this.#refreshDueAtMs !== null &&
+      this.#now() < this.#refreshDueAtMs &&
+      this.#wallNow() < this.#refreshDueAtWallMs
+    ) {
       return Promise.resolve();
     }
     if (this.#refreshing !== null) {
@@ -183,6 +194,7 @@ export class ParticipationGrantLeaseManager {
       const lease = validateLease(await response.json());
       this.#assertOpen();
       this.#refreshDueAtMs = this.#now() + lease.refreshAfterSeconds * 1_000;
+      this.#refreshDueAtWallMs = this.#wallNow() + lease.refreshAfterSeconds * 1_000;
       this.#issuedGrantCount += 1;
     } catch (error) {
       if (
