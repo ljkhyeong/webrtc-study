@@ -404,7 +404,8 @@ export function ActiveRoom({
     sessionError,
     startupError,
   });
-  const screenWakeLock = useScreenWakeLock(status === 'active');
+  // 자동 연결 복구도 통화 중이므로 화면 켜짐을 풀지 않는다. 복구에 실패해 통화가 끝나면 해제한다.
+  const screenWakeLock = useScreenWakeLock(status === 'active' || status === 'reconnecting');
   const localMedia = snapshot?.localMedia ?? {
     audioAvailable: false,
     audioEnabled: false,
