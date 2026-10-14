@@ -9,6 +9,8 @@ export interface ChatMessage {
   readonly isLocal: boolean;
   readonly deliveryState: ChatDeliveryState;
   readonly recipients?: readonly ChatRecipient[];
+  /** 내 연결을 다시 맺기 전에 보낸 메시지다. 수신 측은 보낸 사람 ID로 중복을 거르므로 재전송하지 않는다. */
+  readonly fromPreviousConnection?: boolean;
 }
 
 export interface ChatRecipient {

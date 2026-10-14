@@ -1893,6 +1893,7 @@ export class RoomSession {
                   this.#peers.get(recipient.peerId)?.data.isOpen() === true &&
                   this.#peers.get(recipient.peerId)?.recovering === false,
               })),
+              ...(message.senderId !== this.#selfId ? { fromPreviousConnection: true } : {}),
             }
           : {}),
       })),

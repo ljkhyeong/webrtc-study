@@ -123,6 +123,7 @@ describe('참가자 재연결과 채팅 재전송', () => {
         .filter((message) => message.type === 'chat.message')
         .map((message) => message.id),
     ).toEqual([sent.id, sent.id]);
+    expect(harness.session.getSnapshot().messages[0]!.fromPreviousConnection).toBeUndefined();
     await vi.advanceTimersByTimeAsync(76_000);
     expect(harness.session.retryChat(sent.id)).toBe(false);
   });

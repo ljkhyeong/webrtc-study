@@ -492,7 +492,11 @@ export function RoomChatPanel({
                         ) : null}
                       </span>
                     ))}
-                    <small>전송 후 2분 이내, 연결된 상대에게만 재전송할 수 있습니다.</small>
+                    <small>
+                      {chatMessage.fromPreviousConnection
+                        ? '내 연결을 다시 맺기 전에 보낸 메시지는 재전송할 수 없습니다. 필요하면 복사해 다시 보내 주세요.'
+                        : '전송 후 2분 이내, 연결된 상대에게만 재전송할 수 있습니다.'}
+                    </small>
                   </div>
                 ) : null}
               </article>

@@ -287,6 +287,24 @@ describe('방 안의 채팅 입력과 검색', () => {
     expect(notice.textContent).toBe('');
   });
 
+  it('내 연결을 다시 맺기 전에 보낸 메시지는 재전송할 수 없는 이유와 복사를 안내한다', () => {
+    const mine = (fromPreviousConnection?: boolean): ChatMessage => ({
+      ...message('self', fromPreviousConnection ? 'before' : 'after', '같이 볼 자료'),
+      isLocal: true,
+      deliveryState: 'failed',
+      recipients: [{ peerId: 'peer-a', displayName: '나래', state: 'failed', canRetry: false }],
+      ...(fromPreviousConnection ? { fromPreviousConnection } : {}),
+    });
+    render([mine(true), mine()]);
+    const notes = [...container.querySelectorAll('.chat-message__recipients small')].map(
+      (note) => note.textContent,
+    );
+    expect(notes).toEqual([
+      '내 연결을 다시 맺기 전에 보낸 메시지는 재전송할 수 없습니다. 필요하면 복사해 다시 보내 주세요.',
+      '전송 후 2분 이내, 연결된 상대에게만 재전송할 수 있습니다.',
+    ]);
+  });
+
   it('한도 초과 붙여넣기는 초안·선택을 유지하고 선택 영역 교체와 줄바꿈 길이를 반영한다', () => {
     render([]);
     const input = container.querySelector<HTMLTextAreaElement>('#chat-message')!;
