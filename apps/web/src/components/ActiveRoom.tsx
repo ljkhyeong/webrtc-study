@@ -8,6 +8,7 @@ import { RoomView } from './RoomView';
 import { MediaDeviceDialog } from './MediaDeviceDialog';
 import type { RegisterLeaveGuard } from '../lib/use-room-navigation';
 import { useScreenWakeLock } from '../lib/use-screen-wake-lock';
+import { useAudioOutputPresence } from '../lib/use-audio-output-presence';
 import type { ParticipantView } from './VideoTile';
 import { DEFAULT_MEDIA_CONSTRAINTS } from '../lib/media-constraints';
 import { createWithPreparedMedia, withPreparedMediaFailureCleanup } from '../lib/prepared-media';
@@ -92,7 +93,10 @@ export function ActiveRoom({
   const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
   const [audioOutput, setAudioOutput] = useState({ deviceId: '' });
   const outputDeviceId = audioOutput.deviceId;
-  const [outputWarning, setOutputWarning] = useState('');
+  // 분리됐던 스피커가 다시 연결되면 같은 장치 선택을 새로 넘겨 모든 타일에 출력을 다시 적용한다.
+  const outputWarning = useAudioOutputPresence(outputDeviceId, () =>
+    setAudioOutput({ deviceId: outputDeviceId }),
+  );
   const subscribeToSession = useCallback(
     (onStoreChange: () => void) => subscribedSession?.subscribe(onStoreChange) ?? (() => {}),
     [subscribedSession],
@@ -102,37 +106,6 @@ export function ActiveRoom({
     [subscribedSession],
   );
   const snapshot = useSyncExternalStore(subscribeToSession, readSessionSnapshot, () => null);
-
-  useEffect(() => {
-    setOutputWarning('');
-    if (!outputDeviceId) return;
-    let disposed = false;
-    let request = 0;
-    const mediaDevices = navigator.mediaDevices;
-    const checkOutput = async () => {
-      const current = ++request;
-      try {
-        const devices = await mediaDevices.enumerateDevices();
-        if (!disposed && current === request) {
-          setOutputWarning(
-            devices.some(
-              (device) => device.kind === 'audiooutput' && device.deviceId === outputDeviceId,
-            )
-              ? ''
-              : '선택한 스피커가 연결되어 있지 않습니다. 통화 장치 설정에서 스피커를 다시 선택해 주세요.',
-          );
-        }
-      } catch {
-        // 목록 조회 실패만으로 사용 중인 출력 장치를 바꾸지 않는다.
-      }
-    };
-    mediaDevices.addEventListener('devicechange', checkOutput);
-    void checkOutput();
-    return () => {
-      disposed = true;
-      mediaDevices.removeEventListener('devicechange', checkOutput);
-    };
-  }, [outputDeviceId]);
 
   useEffect(() => {
     const retrySignaling = () => {
@@ -577,10 +550,7 @@ export function ActiveRoom({
           sessionRef.current?.setVideoQualityMode(mode) ?? false
         }
         outputDeviceId={outputDeviceId}
-        onSelectOutput={(deviceId) => {
-          setAudioOutput({ deviceId });
-          setOutputWarning('');
-        }}
+        onSelectOutput={(deviceId) => setAudioOutput({ deviceId })}
         audioDeviceId={localAudioTrack?.getSettings().deviceId ?? ''}
         audioTrack={localAudioTrack}
         audioEnabled={localMedia.audioEnabled}
