@@ -1637,6 +1637,14 @@ export class RoomSession {
   }
 
   #setPeerConnectionStatus(peerId: string, status: PeerConnectionStatus): void {
+    // TURN 갱신의 ICE 재시작이나 트랙 추가로 이미 연결된 상대와 다시 협상하는 동안에도 미디어는
+    // 계속 흐르므로 연결됨과 발언·수신 품질 측정 기록을 유지한다.
+    if (
+      status === 'negotiating' &&
+      this.#peers.get(peerId)?.connection.connectionState === 'connected'
+    ) {
+      return;
+    }
     if (status !== 'connected') this.#participantActivity.forget(peerId);
     const participant = this.#participants.get(peerId);
     if (participant !== undefined) {

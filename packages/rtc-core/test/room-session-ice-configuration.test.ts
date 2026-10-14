@@ -106,6 +106,13 @@ describe('RoomSession', () => {
     const initiatorPeer = initiator.peerConnections[0];
     const initiatorChannel = initiatorPeer?.channels[0];
     initiatorPeer?.setConnectionState('connected');
+    const peerStates: string[] = [];
+    initiator.session.subscribe((snapshot) => {
+      const state = snapshot.participants.find(
+        ({ peerId }) => peerId === 'z-peer',
+      )?.connectionState;
+      if (state !== undefined) peerStates.push(state);
+    });
 
     const refreshedConfiguration: RTCConfiguration = {
       iceServers: [
@@ -130,7 +137,12 @@ describe('RoomSession', () => {
         description: { type: 'offer', sdp: 'restart-offer-sdp' },
       },
     });
+    // 응답을 기다리는 동안에도 연결된 상대를 연결 중으로 바꾸지 않는다.
+    expect(initiator.session.getSnapshot().participants).toContainEqual(
+      expect.objectContaining({ peerId: 'z-peer', connectionState: 'connected' }),
+    );
     await answerPeer(initiator, 'z-peer');
+    expect(peerStates).not.toContain('negotiating');
     expect(initiator.session.getSnapshot().participants).toContainEqual(
       expect.objectContaining({
         peerId: 'z-peer',
@@ -153,6 +165,22 @@ describe('RoomSession', () => {
     expect(responderPeer?.configurationCalls).toEqual([refreshedConfiguration]);
     expect(responderPeer?.offerOptions).toEqual([undefined]);
     expect(responder.socket.messagesOfType('rtc.offer')).toHaveLength(1);
+    // 시작자가 보낸 ICE 재시작 offer에 응답하는 동안에도 연결됨을 유지한다.
+    responder.socket.serverMessage({
+      v: PROTOCOL_VERSION,
+      type: 'rtc.offer',
+      roomId: ROOM_ID,
+      from: 'a-peer',
+      payload: {
+        negotiationId: 'restart-from-a-peer',
+        description: { type: 'offer', sdp: 'restart-offer-sdp' },
+      },
+    });
+    await flushMicrotasks();
+    expect(responder.socket.messagesOfType('rtc.answer').at(-1)).toMatchObject({ to: 'a-peer' });
+    expect(responder.session.getSnapshot().participants).toContainEqual(
+      expect.objectContaining({ peerId: 'a-peer', connectionState: 'connected' }),
+    );
     await responder.session.leave();
   });
 
