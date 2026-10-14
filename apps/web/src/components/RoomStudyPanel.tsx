@@ -161,15 +161,33 @@ export function RoomStudyPanel({
         ? '진행 중'
         : '정지';
   const disabled = !active || pending || !state;
+  // 명령 응답까지 조작을 잠가 누른 버튼에서 초점이 빠질 수 있다(Chromium). 응답 뒤 초점이 사라졌으면
+  // 누른 조작으로 돌려주고, 누른 버튼이 사라지는 경우에는 타이머 요약으로 돌려준다.
+  const commandFocus = useRef<HTMLElement | null>(null);
+  const rememberCommandFocus = (target?: HTMLElement | null) => {
+    const focused = document.activeElement;
+    commandFocus.current =
+      focused instanceof HTMLElement && regionRef.current?.contains(focused)
+        ? (target ?? focused)
+        : null;
+  };
+  useEffect(() => {
+    if (pending) return;
+    const target = commandFocus.current;
+    commandFocus.current = null;
+    const focused = document.activeElement;
+    if (target?.isConnected && (focused === null || focused === document.body)) target.focus();
+  }, [pending]);
   const command = (value: StudyCommand, expectedRevision?: number) => {
+    const sent = onCommand(value, expectedRevision);
+    if (!sent) commandFocus.current = null;
     setError(
-      onCommand(value, expectedRevision)
-        ? ''
-        : '타이머나 주제를 변경하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.',
+      sent ? '' : '타이머나 주제를 변경하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.',
     );
   };
   const requestTimerChange = (value: StudyCommand) => {
     if (disabled || !canControl || !state) return;
+    rememberCommandFocus();
     setError('');
     const hasProgress =
       state.running || (remaining > 0 && remaining < state.durationSeconds * 1000);
@@ -196,10 +214,12 @@ export function RoomStudyPanel({
         : { action: 'start', mode: 'focus', durationSeconds: lastFocusSeconds };
   const startNextTimer = () => {
     if (nextTimer === null || disabled || !canControl) return;
+    rememberCommandFocus(panelRef.current?.querySelector('summary'));
     if (onCommand(nextTimer)) {
       setError('');
       setCompletion('');
     } else {
+      commandFocus.current = null;
       setError('타이머나 주제를 변경하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.');
     }
   };
@@ -273,6 +293,7 @@ export function RoomStudyPanel({
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
+                  rememberCommandFocus();
                   command({ action: 'topic', topic: topic.trim() });
                 }}
               >
@@ -358,7 +379,10 @@ export function RoomStudyPanel({
               <div className="room-study__actions">
                 <button
                   disabled={disabled || remaining === 0}
-                  onClick={() => command({ action: state?.running ? 'pause' : 'resume' })}
+                  onClick={() => {
+                    rememberCommandFocus();
+                    command({ action: state?.running ? 'pause' : 'resume' });
+                  }}
                 >
                   {state?.running ? '일시정지' : '이어서 시작'}
                 </button>
@@ -424,7 +448,15 @@ export function RoomStudyPanel({
                 {`${nextTimer.mode === 'focus' ? '집중' : '휴식'} ${nextTimer.durationSeconds / 60}분 시작`}
               </button>
             ) : null}
-            <button type="button" onClick={() => setCompletion('')}>
+            <button
+              type="button"
+              onClick={(event) => {
+                // 안내를 닫으면 누른 버튼이 사라지므로 키보드 초점을 타이머 요약으로 옮긴다.
+                const returnFocus = document.activeElement === event.currentTarget;
+                setCompletion('');
+                if (returnFocus) panelRef.current?.querySelector('summary')?.focus();
+              }}
+            >
               확인
             </button>
           </div>

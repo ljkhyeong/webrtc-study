@@ -256,6 +256,77 @@ describe('타이머 종료 안내', () => {
     expect(onCommand).not.toHaveBeenCalled();
   });
 
+  it('명령 응답을 기다리며 잠긴 버튼에서 빠진 초점을 응답 뒤 돌려주고 사라진 안내 버튼은 요약으로 보낸다', () => {
+    const renderHost = (pending: boolean, changes: object = {}) =>
+      act(() =>
+        root.render(
+          <RoomStudyPanel
+            state={{ ...state, ...changes }}
+            active
+            canControl
+            hostPresent
+            pending={pending}
+            notice={null}
+            onCommand={onCommand}
+            onSync={onSync}
+          />,
+        ),
+      );
+    renderHost(false, { remainingMs: 40_000 });
+    const panel = container.querySelector<HTMLDetailsElement>('.room-study')!;
+    const summary = panel.querySelector('summary')!;
+    panel.open = true;
+    const pause = [...panel.querySelectorAll('button')].find(
+      (el) => el.textContent === '일시정지',
+    )!;
+    pause.focus();
+    act(() => pause.click());
+    expect(onCommand).toHaveBeenLastCalledWith({ action: 'pause' }, undefined);
+    renderHost(true, { remainingMs: 40_000 });
+    expect(pause.disabled).toBe(true);
+    // Chromium은 비활성화된 버튼의 초점을 문서로 옮긴다. jsdom은 비활성 요소의 blur를 무시하므로 흉내 낸다.
+    pause.disabled = false;
+    pause.blur();
+    pause.disabled = true;
+    expect(document.activeElement).toBe(document.body);
+    renderHost(false, { revision: 2, remainingMs: 40_000, running: false });
+    expect(document.activeElement).toBe(pause);
+    expect(pause.textContent).toBe('이어서 시작');
+
+    renderHost(false, { revision: 3, remainingMs: 2000, running: true, sampledAt: now });
+    now += 2000;
+    act(() => vi.advanceTimersByTime(2000));
+    renderHost(false, { revision: 3, remainingMs: 0, running: false, sampledAt: now });
+    const next = [...container.querySelectorAll('.room-study-completion button')].find(
+      (el) => el.textContent === '휴식 5분 시작',
+    ) as HTMLButtonElement;
+    next.focus();
+    act(() => next.click());
+    expect(container.querySelector('.room-study-completion')).toBeNull();
+    renderHost(true, { revision: 3, remainingMs: 0, running: false, sampledAt: now });
+    renderHost(false, { revision: 4, mode: 'break', durationSeconds: 300, remainingMs: 300_000 });
+    expect(document.activeElement).toBe(summary);
+
+    renderHost(false, { revision: 4, mode: 'break', durationSeconds: 300, sampledAt: now });
+    now += 2000;
+    act(() => vi.advanceTimersByTime(2000));
+    renderHost(false, {
+      revision: 4,
+      mode: 'break',
+      durationSeconds: 300,
+      remainingMs: 0,
+      running: false,
+      sampledAt: now,
+    });
+    const confirm = [...container.querySelectorAll('.room-study-completion button')].find(
+      (el) => el.textContent === '확인',
+    ) as HTMLButtonElement;
+    confirm.focus();
+    act(() => confirm.click());
+    expect(container.querySelector('.room-study-completion')).toBeNull();
+    expect(document.activeElement).toBe(summary);
+  });
+
   it('일시정지한 진행 시간도 보호하고 확인 중 다른 변경이 오면 취소하며 첫 시작은 바로 적용한다', () => {
     const reset = () =>
       [...container.querySelectorAll('button')].find((el) => el.textContent === '초기화')!;
