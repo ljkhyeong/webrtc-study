@@ -234,6 +234,9 @@ const DEFAULT_RECOVERY_OPTIONS: ResolvedRecoveryOptions = {
   peerDisconnectedGraceMs: 3_000,
   peerRecoveryTimeoutMs: 8_000,
 };
+// 브라우저가 반쯤 끊긴 WebSocket을 알아채지 못하는 경우를 위해, 타이머 조회 뒤 이 시간 동안 서버
+// 메시지가 없으면 연결이 끊긴 것으로 본다. 서버는 조회에 바로 응답한다.
+const SIGNALING_LIVENESS_TIMEOUT_MS = 10_000;
 // 서버가 재입장을 거부한 이유다. 자동 재연결이 이 이유로 끝나면 처음 입장과 같은 안내를 보인다.
 const REJOIN_REJECTION_CODES: ReadonlySet<RoomIssueCode> = new Set([
   'ROOM_FULL',
@@ -298,6 +301,7 @@ export class RoomSession {
   #canModerateMedia = false;
   #lastModerationNotice: ModerationNotice | null = null;
   #retryExpiryTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  #livenessTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   // peerId가 있으면 해당 참가자 연결에 대한 경고다.
   #warning: (RoomIssue & { readonly peerId: string | null }) | null = null;
   #error: RoomIssue | null = null;
@@ -402,9 +406,11 @@ export class RoomSession {
       webSocketFactory: options.webSocketFactory,
       canConnect: () => !this.#disposed,
       onMessage: (message, socket, generation) => {
+        this.#clearSignalingLiveness();
         void this.#routeServerMessage(message, socket, generation);
       },
       onInvalidMessage: (message) => {
+        this.#clearSignalingLiveness();
         this.#setWarning('invalid-signal-message', message);
       },
       onClose: (error, event) => {
@@ -884,7 +890,11 @@ export class RoomSession {
   }
 
   syncStudy(): boolean {
-    return this.#study.sync();
+    if (!this.#study.sync()) {
+      return false;
+    }
+    this.#watchSignalingLiveness();
+    return true;
   }
 
   updateStudy(command: StudyCommand, expectedRevision?: number): boolean {
@@ -1075,6 +1085,7 @@ export class RoomSession {
       return;
     }
 
+    this.#clearSignalingLiveness();
     this.#rememberStaleSelfId();
     this.#exhaustedPeerIds.clear();
     this.#resetRoomMembershipForReconnect();
@@ -1086,6 +1097,41 @@ export class RoomSession {
     };
     this.#setStatus('reconnecting');
     this.#signalingRecovery.startReconnect(reason);
+  }
+
+  #watchSignalingLiveness(): void {
+    if (this.#livenessTimer !== null) {
+      return;
+    }
+    const socket = this.#signalingTransport.socket;
+    const armedAt = this.#monotonicNow();
+    this.#livenessTimer = globalThis.setTimeout(() => {
+      this.#livenessTimer = null;
+      if (
+        this.#disposed ||
+        this.#status !== 'active' ||
+        this.#signalingTransport.socket !== socket
+      ) {
+        return;
+      }
+      // 탭 정지 등으로 타이머가 크게 늦었으면 받은 응답을 아직 처리하지 않았을 수 있어 한 번 더 묻는다.
+      if (this.#monotonicNow() - armedAt >= SIGNALING_LIVENESS_TIMEOUT_MS * 2 && this.syncStudy()) {
+        return;
+      }
+      this.#signalingTransport.close('signaling liveness timeout');
+      this.#beginReconnect({
+        code: 'signaling-closed',
+        message: `The signaling server did not respond within ${SIGNALING_LIVENESS_TIMEOUT_MS}ms`,
+      });
+    }, SIGNALING_LIVENESS_TIMEOUT_MS);
+  }
+
+  #clearSignalingLiveness(): void {
+    if (this.#livenessTimer === null) {
+      return;
+    }
+    globalThis.clearTimeout(this.#livenessTimer);
+    this.#livenessTimer = null;
   }
 
   #reconnectDelay(attempt: number): number {
@@ -1754,6 +1800,7 @@ export class RoomSession {
   // 퇴장·입장 실패·재연결 소진·치명적 오류로 세션을 끝낼 때 연결·미디어·참가자 상태를 한 번에 정리한다.
   #terminate(closeReason: string): void {
     this.#disposed = true;
+    this.#clearSignalingLiveness();
     this.#signalingRecovery.cancelReconnectWait();
     this.#signalingTransport.close(closeReason);
     this.#cleanupPeerResources();

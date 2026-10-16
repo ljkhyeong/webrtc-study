@@ -399,6 +399,91 @@ describe('RoomSession', () => {
     },
   );
 
+  it('타이머 조회 뒤 10초 동안 서버 메시지가 없으면 연결을 닫고 다시 연결한다', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness();
+      await joinSession(harness);
+      const staleSocket = harness.socket;
+
+      expect(harness.session.syncStudy()).toBe(true);
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(harness.sockets).toHaveLength(1);
+      expect(harness.session.getSnapshot().status).toBe('active');
+
+      await vi.advanceTimersByTimeAsync(1);
+      await flushMicrotasks();
+      expect(staleSocket.closeCalls).toContainEqual({
+        code: 1000,
+        reason: 'signaling liveness timeout',
+      });
+      expect(harness.session.getSnapshot().status).toBe('reconnecting');
+      expect(harness.sockets).toHaveLength(2);
+      expect(harness.audioTrack.stopped).toBe(false);
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('타이머 조회 뒤 서버 메시지가 오면 연결을 유지한다', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness();
+      await joinSession(harness);
+
+      expect(harness.session.syncStudy()).toBe(true);
+      await vi.advanceTimersByTimeAsync(3_000);
+      harness.socket.serverMessage({
+        v: PROTOCOL_VERSION,
+        type: 'room.study.state',
+        roomId: ROOM_ID,
+        payload: {
+          revision: 0,
+          topic: '',
+          mode: 'focus',
+          durationSeconds: 1500,
+          remainingMs: 1_500_000,
+          running: false,
+          conflict: false,
+        },
+      });
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      expect(harness.sockets).toHaveLength(1);
+      expect(harness.socket.closeCalls).toEqual([]);
+      expect(harness.session.getSnapshot().status).toBe('active');
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('조회 확인 타이머가 크게 늦게 실행되면 연결을 닫기 전에 한 번 더 조회한다', async () => {
+    vi.useFakeTimers();
+    try {
+      let monotonicNow = 0;
+      const harness = createHarness({ monotonicNow: () => monotonicNow });
+      await joinSession(harness);
+
+      expect(harness.session.syncStudy()).toBe(true);
+      // 탭이 멈춘 동안 단조 시계만 흘러 확인 타이머가 늦게 실행된 경우다.
+      monotonicNow = 25_000;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(harness.socket.messagesOfType('room.study.sync')).toHaveLength(2);
+      expect(harness.socket.closeCalls).toEqual([]);
+      expect(harness.session.getSnapshot().status).toBe('active');
+
+      monotonicNow = 35_000;
+      await vi.advanceTimersByTimeAsync(10_000);
+      await flushMicrotasks();
+      expect(harness.session.getSnapshot().status).toBe('reconnecting');
+      await harness.session.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('cancels reconnect backoff and creates no later socket after leave', async () => {
     vi.useFakeTimers();
     try {
