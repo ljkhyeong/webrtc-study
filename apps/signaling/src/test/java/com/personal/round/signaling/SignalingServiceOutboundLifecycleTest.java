@@ -156,6 +156,41 @@ class SignalingServiceOutboundLifecycleTest extends SignalingServiceTestSupport 
 	}
 
 	@Test
+	void heartbeatClosesAtTheNextSweepWhenThePingIsSentJustAfterTheSweep()
+			throws Exception {
+		CountDownLatch firstSendEntered = new CountDownLatch(1);
+		CountDownLatch releaseFirstSend = new CountDownLatch(1);
+		TestPeer late = peer("heartbeat-sent-after-sweep", firstSendEntered, releaseFirstSend);
+		connect(late);
+		long heartbeatIntervalMillis = properties(6).heartbeatInterval().toMillis();
+
+		try {
+			service.handle(late.session(), join("Late ping"));
+			assertThat(firstSendEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+			service.heartbeatSweep();
+			// 송신 실행기가 점검이 끝난 직후에 ping을 보낸 경우다.
+			monotonicTicker.advanceMillis(5);
+			releaseFirstSend.countDown();
+			late.awaitPing();
+
+			monotonicTicker.advanceMillis(heartbeatIntervalMillis - 1_006);
+			service.heartbeatSweep();
+			assertThat(late.closeStatus().get()).isNull();
+
+			monotonicTicker.advanceMillis(1_001);
+			service.heartbeatSweep();
+
+			late.awaitClosed();
+			assertThat(late.closeStatus().get())
+					.isEqualTo(new CloseStatus(4000, "Heartbeat timeout"));
+		}
+		finally {
+			releaseFirstSend.countDown();
+		}
+	}
+
+	@Test
 	void sendFailureDisconnectsOnceAndBroadcastsPeerLeft() throws Exception {
 		TestPeer ada = peer("ada");
 		TestPeer grace = peer("grace");

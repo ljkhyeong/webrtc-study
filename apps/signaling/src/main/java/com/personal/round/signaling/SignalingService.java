@@ -68,6 +68,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 	private static final CloseStatus PARTICIPATION_SESSION_SUPERSEDED =
 			new CloseStatus(4002, "Participation session superseded");
 	private static final long UNSET_NANOS = Long.MIN_VALUE;
+	private static final long HEARTBEAT_SEND_SLACK_NANOS = TimeUnit.SECONDS.toNanos(1);
 	private static final BytesKeyGenerator HEARTBEAT_CHALLENGE_GENERATOR =
 			KeyGenerators.secureRandom(2 * Long.BYTES);
 
@@ -85,7 +86,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 	private final Clock clock;
 	private final LongSupplier monotonicTicker;
 	private final int maxRoomSize;
-	private final long heartbeatIntervalNanos;
+	private final long heartbeatDeadlineNanos;
 	private final long unjoinedTimeoutNanos;
 	private final long shutdownCloseTimeoutMs;
 	private final SignalingInboundLimiter inboundLimiter;
@@ -107,7 +108,11 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 		this.clock = clock;
 		this.monotonicTicker = monotonicTicker;
 		this.maxRoomSize = properties.maxRoomSize();
-		this.heartbeatIntervalNanos = properties.heartbeatInterval().toNanos();
+		long heartbeatIntervalNanos = properties.heartbeatInterval().toNanos();
+		// ping은 점검이 끝난 뒤 송신 실행기에서 보내므로 실제 송신 시각이 점검보다 조금 늦다. 같은 간격으로
+		// 돌아오는 다음 점검에서 경과가 간격에 살짝 못 미쳐 한 주기를 더 기다리지 않도록 작은 여유를 둔다.
+		this.heartbeatDeadlineNanos = heartbeatIntervalNanos
+				- Math.min(HEARTBEAT_SEND_SLACK_NANOS, heartbeatIntervalNanos / 10);
 		this.unjoinedTimeoutNanos = properties.unjoinedTimeout().toNanos();
 		this.shutdownCloseTimeoutMs = properties.shutdownCloseTimeout().toMillis();
 		this.inboundLimiter = new SignalingInboundLimiter(properties);
@@ -310,7 +315,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 						if (elapsedAtLeast(
 								nowNanos,
 								peer.heartbeatPhaseStartedAtNanos,
-								heartbeatIntervalNanos)) {
+								heartbeatDeadlineNanos)) {
 							metrics.recordHeartbeatClose();
 							disconnectAndCloseLocked(peer, HEARTBEAT_TIMEOUT, workPlan);
 						}
