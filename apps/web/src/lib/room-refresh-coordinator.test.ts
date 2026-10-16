@@ -70,6 +70,36 @@ describe('TURN 갱신 재시도', () => {
     },
   );
 
+  it('절전으로 예약이 늦어져 기기 시각으로 갱신 시점이 지났으면 바로 한 번 갱신한다', async () => {
+    const fetcher = vi.fn(async () =>
+      Response.json({
+        urls: ['turn:turn.example.com:3478?transport=udp'],
+        username: 'test-user',
+        credential: 'test-credential',
+        expiresAt: 7_200,
+        refreshAfterSeconds: 240,
+      }),
+    );
+    vi.stubGlobal('fetch', fetcher);
+    coordinator.scheduleTurnRefresh(performance.now() + 240_000);
+
+    coordinator.refreshOverdueTurn();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetcher).not.toHaveBeenCalled();
+
+    // 절전 중에는 예약 타이머와 단조 증가 시계가 멈추고 기기 시각만 흐른다.
+    vi.setSystemTime(Date.now() + 300_000);
+    coordinator.refreshOverdueTurn();
+    coordinator.refreshOverdueTurn();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(updateRtcConfiguration).toHaveBeenCalledOnce();
+
+    coordinator.refreshOverdueTurn();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
   it('서버가 지정한 대기 중에 퇴장하면 다시 요청하지 않는다', async () => {
     const fetcher = vi.fn(
       async () =>

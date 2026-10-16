@@ -40,6 +40,8 @@ export class RoomRefreshCoordinator {
   #leaseGrantCount: number | null = null;
   #connectGrantCount: number | null = null;
   #joinedGrantCount: number | null = null;
+  // 예약 타이머는 운영체제 절전 중 단조 증가 시계와 함께 멈출 수 있어 갱신 시점을 기기 시각으로도 둔다.
+  #turnRefreshDueAtWallMs: number | null = null;
 
   constructor(options: RoomRefreshCoordinatorOptions) {
     this.#options = options;
@@ -79,6 +81,7 @@ export class RoomRefreshCoordinator {
       force: manager.issuedGrantCount === this.#joinedGrantCount,
     });
     this.#connectGrantCount = manager.issuedGrantCount;
+    this.refreshOverdueTurn();
   }
 
   /** 시그널링 연결이 방에 입장하면 호출한다. 그 연결에 쓴 참여권은 다음 재연결에 쓰지 않는다. */
@@ -120,12 +123,28 @@ export class RoomRefreshCoordinator {
 
   scheduleTurnRefresh(refreshDueAtMs: number): void {
     if (!this.#canRefresh()) return;
+    const delayMs = turnCredentialRefreshDelayMs(refreshDueAtMs);
+    this.#turnRefreshDueAtWallMs = Date.now() + delayMs;
     this.#lifetime.schedule(
       'turn',
       () => {
         void this.#refreshTurnConfiguration();
       },
-      turnCredentialRefreshDelayMs(refreshDueAtMs),
+      delayMs,
+    );
+  }
+
+  /** 절전에서 깨어나 기기 시각으로 TURN 갱신 시점이 이미 지났으면 늦어진 예약 대신 바로 갱신한다. */
+  refreshOverdueTurn(): void {
+    const dueAt = this.#turnRefreshDueAtWallMs;
+    if (dueAt === null || Date.now() < dueAt || !this.#canRefresh()) return;
+    this.#turnRefreshDueAtWallMs = null;
+    this.#lifetime.schedule(
+      'turn',
+      () => {
+        void this.#refreshTurnConfiguration();
+      },
+      0,
     );
   }
 

@@ -115,6 +115,19 @@ export function ActiveRoom({
     return () => window.removeEventListener('online', retrySignaling);
   }, []);
 
+  // 절전에서 깨어나면 멈춰 있던 TURN 갱신 예약을 기다리지 않고 바로 갱신한다.
+  useEffect(() => {
+    const refreshOverdueTurn = () => {
+      if (!document.hidden) refreshCoordinatorRef.current?.refreshOverdueTurn();
+    };
+    window.addEventListener('online', refreshOverdueTurn);
+    document.addEventListener('visibilitychange', refreshOverdueTurn);
+    return () => {
+      window.removeEventListener('online', refreshOverdueTurn);
+      document.removeEventListener('visibilitychange', refreshOverdueTurn);
+    };
+  }, []);
+
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
     let isCurrentSession = true;
