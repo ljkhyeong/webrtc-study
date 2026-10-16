@@ -16,6 +16,7 @@ import {
 } from '@round/protocol';
 import {
   measurePeerConnections,
+  selectedCandidatePairUsesRelay,
   type PeerConnectionDiagnostics,
 } from './connection-diagnostics.js';
 import { LocalInputLifecycle } from './local-input-lifecycle.js';
@@ -674,7 +675,7 @@ export class RoomSession {
     }
 
     for (const peer of restartPeers) {
-      this.#peerRecovery.begin(peer);
+      void this.#restartIceIfRelayed(peer);
     }
 
     if (failedPeerCount > 0) {
@@ -1132,6 +1133,21 @@ export class RoomSession {
     }
     globalThis.clearTimeout(this.#livenessTimer);
     this.#livenessTimer = null;
+  }
+
+  // 새 자격 증명은 중계를 쓰는 연결에만 필요하다. ICE 재시작은 재협상과 새 TURN 할당을 만들므로,
+  // 선택된 후보 쌍이 중계를 쓰거나 이를 확인할 수 없을 때만 시작한다.
+  async #restartIceIfRelayed(peer: PeerContext): Promise<void> {
+    let relayed: boolean | null = null;
+    try {
+      relayed = selectedCandidatePairUsesRelay(await peer.connection.getStats());
+    } catch {
+      // 통계를 읽지 못하면 기존처럼 재시작한다.
+    }
+    if (relayed === false || this.#status !== 'active' || !this.#isCurrentPeer(peer)) {
+      return;
+    }
+    this.#peerRecovery.begin(peer);
   }
 
   #reconnectDelay(attempt: number): number {

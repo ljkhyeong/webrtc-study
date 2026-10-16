@@ -59,10 +59,18 @@ function waitForSample(signal: AbortSignal, durationMs: number): Promise<void> {
   });
 }
 
-export function summarizeConnection(
-  before: RTCStatsReport,
-  report: RTCStatsReport,
-): ConnectionMetrics {
+/**
+ * 선택된 후보 쌍이 어느 쪽이든 TURN 중계를 쓰는지다. 후보 종류를 모르거나 연결 확인 중에 알게 된
+ * 주소(`prflx`)여서 상대의 중계 주소일 수 있으면 `null`이다.
+ */
+export function selectedCandidatePairUsesRelay(report: RTCStatsReport): boolean | null {
+  const { localCandidate, remoteCandidate } = selectedCandidates(report);
+  const types = [localCandidate?.candidateType, remoteCandidate?.candidateType];
+  if (types.includes('relay')) return true;
+  return types.every((type) => type === 'host' || type === 'srflx') ? false : null;
+}
+
+function selectedCandidates(report: RTCStatsReport) {
   const entries = [...report.values()];
   const transport = entries.find((stats): stats is RTCTransportStats => stats.type === 'transport');
   const selectedCandidatePair =
@@ -89,6 +97,15 @@ export function summarizeConnection(
       ? undefined
       : (report.get(candidatePair.remoteCandidateId) as
           (RTCStats & { readonly candidateType?: RTCIceCandidateType }) | undefined);
+  return { candidatePair, localCandidate, remoteCandidate };
+}
+
+export function summarizeConnection(
+  before: RTCStatsReport,
+  report: RTCStatsReport,
+): ConnectionMetrics {
+  const entries = [...report.values()];
+  const { candidatePair, localCandidate, remoteCandidate } = selectedCandidates(report);
 
   let packetsReceived = 0;
   let packetsLost = 0;

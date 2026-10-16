@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PROTOCOL_VERSION } from '@round/protocol';
 
+import { selectedCandidatePairUsesRelay } from '../src/connection-diagnostics.js';
 import {
   ROOM_ID,
   answerPeer,
@@ -9,6 +10,27 @@ import {
   flushMicrotasks,
   joinSession,
 } from './room-session.test-support.js';
+
+function selectedPairReport(
+  localType: RTCIceCandidateType,
+  remoteType: RTCIceCandidateType,
+): RTCStatsReport {
+  const stats = [
+    { id: 'transport', type: 'transport', timestamp: 0, selectedCandidatePairId: 'pair' },
+    {
+      id: 'pair',
+      type: 'candidate-pair',
+      timestamp: 0,
+      localCandidateId: 'local',
+      remoteCandidateId: 'remote',
+      state: 'succeeded',
+      nominated: true,
+    },
+    { id: 'local', type: 'local-candidate', timestamp: 0, candidateType: localType },
+    { id: 'remote', type: 'remote-candidate', timestamp: 0, candidateType: remoteType },
+  ];
+  return new Map(stats.map((entry) => [entry.id, entry])) as unknown as RTCStatsReport;
+}
 
 describe('RoomSession', () => {
   it('isolates RTC configuration for current and future peers without renegotiation', async () => {
@@ -182,6 +204,49 @@ describe('RoomSession', () => {
       expect.objectContaining({ peerId: 'a-peer', connectionState: 'connected' }),
     );
     await responder.session.leave();
+  });
+
+  it('선택된 후보 쌍의 종류로 중계 사용 여부를 판단하고 모르면 null을 돌려준다', () => {
+    expect(selectedCandidatePairUsesRelay(selectedPairReport('host', 'srflx'))).toBe(false);
+    expect(selectedCandidatePairUsesRelay(selectedPairReport('prflx', 'relay'))).toBe(true);
+    expect(selectedCandidatePairUsesRelay(selectedPairReport('host', 'prflx'))).toBeNull();
+    expect(selectedCandidatePairUsesRelay(new Map() as unknown as RTCStatsReport)).toBeNull();
+  });
+
+  it('TURN 갱신 뒤 선택된 후보 쌍이 중계를 쓰는 연결만 ICE를 다시 시작한다', async () => {
+    const harness = createHarness();
+    await joinSession(
+      harness,
+      [
+        { peerId: 'y-direct', displayName: 'Yuna' },
+        { peerId: 'z-relayed', displayName: 'Zoe' },
+      ],
+      'a-self',
+    );
+    await answerPeer(harness, 'y-direct');
+    await answerPeer(harness, 'z-relayed');
+    const [direct, relayed] = harness.peerConnections;
+    if (direct === undefined || relayed === undefined) {
+      throw new Error('Expected two peer connections');
+    }
+    direct.setConnectionState('connected');
+    relayed.setConnectionState('connected');
+    direct.statsReport = selectedPairReport('host', 'srflx');
+    relayed.statsReport = selectedPairReport('srflx', 'relay');
+    const refreshedConfiguration: RTCConfiguration = {
+      iceServers: [
+        { urls: 'turn:refreshed.example.test', username: 'user', credential: 'credential' },
+      ],
+    };
+
+    harness.session.updateRtcConfiguration(refreshedConfiguration, { restartIce: true });
+    await flushMicrotasks();
+
+    expect(direct.configurationCalls).toEqual([refreshedConfiguration]);
+    expect(direct.offerOptions).toEqual([undefined]);
+    expect(relayed.configurationCalls).toEqual([refreshedConfiguration]);
+    expect(relayed.offerOptions).toEqual([undefined, { iceRestart: true }]);
+    await harness.session.leave();
   });
 
   it('reports one non-fatal warning when configuration refresh fails for current peers', async () => {
