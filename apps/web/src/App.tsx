@@ -22,6 +22,7 @@ import {
 import { useClientRelease, checkSignalingCompatibility } from './lib/client-release';
 import { ClientReleaseNotice } from './components/ClientReleaseNotice';
 import { useRoomNavigation } from './lib/use-room-navigation';
+import type { TurnCredentialReuse } from './lib/rtc-configuration';
 
 const DISPLAY_NAME_STORAGE_KEY = 'round:display-name';
 
@@ -71,6 +72,7 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
     authMode === 'standalone' ? readStoredDisplayName() : '',
   );
   const [activeRoomKey, setActiveRoomKey] = useState<string | null>(null);
+  const [turnCredentialReuse] = useState<TurnCredentialReuse>(() => ({ last: null }));
   const release = useClientRelease(authMode === 'standalone' || activeRoomKey !== null);
   const [activeHostCapability, setActiveHostCapability] = useState<string | undefined>();
   const [initialInputEnabled, setInitialInputEnabled] =
@@ -205,6 +207,7 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
         takePreparedMediaStream={takePreparedMediaStream}
         onReconnect={retryCurrentRoom}
         onLeave={goHome}
+        turnCredentialReuse={turnCredentialReuse}
         registerLeaveGuard={registerLeaveGuard}
       />
     );

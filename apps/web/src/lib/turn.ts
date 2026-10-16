@@ -1,6 +1,6 @@
 import { hasOnlyKeys, isJsonObject } from './json-validation';
 
-interface TurnCredentials {
+export interface TurnCredentials {
   readonly iceServer: RTCIceServer;
   readonly refreshDueAtMs: number;
 }

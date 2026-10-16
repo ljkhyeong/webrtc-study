@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { loadRtcConfiguration } from './rtc-configuration';
+import { loadRtcConfiguration, type TurnCredentialReuse } from './rtc-configuration';
 import { loadTurnCredentials } from './turn';
 
 vi.mock('./turn', () => ({
@@ -53,6 +53,42 @@ describe('RTC configuration loading', () => {
       endpoint: '/api/turn',
       signal,
     });
+  });
+
+  it('보관소를 넘긴 입장만 아직 갱신 전인 직전 TURN 자격 증명을 다시 쓴다', async () => {
+    vi.useFakeTimers();
+    try {
+      const turnServer: RTCIceServer = {
+        urls: ['turn:round.example.com:3478'],
+        username: 'user',
+        credential: 'credential',
+      };
+      mockedLoadTurnCredentials.mockImplementation(async () => ({
+        iceServer: turnServer,
+        refreshDueAtMs: performance.now() + 240_000,
+      }));
+      const url = '/round/rooms/reuse-test/turn-credentials';
+      const reuse: TurnCredentialReuse = { last: null };
+
+      await loadRtcConfiguration(url, undefined, { reuse });
+      await loadRtcConfiguration(url, undefined, { reuse });
+      expect(mockedLoadTurnCredentials).toHaveBeenCalledOnce();
+
+      // 통화 중 갱신은 보관소 없이 항상 새로 받는다.
+      await loadRtcConfiguration(url);
+      expect(mockedLoadTurnCredentials).toHaveBeenCalledTimes(2);
+
+      // 방이 바뀌면 이전 방의 자격 증명은 다시 쓰지 않고, 갱신 시점이 지나도 새로 받는다.
+      await loadRtcConfiguration('/round/rooms/other-room/turn-credentials', undefined, { reuse });
+      expect(mockedLoadTurnCredentials).toHaveBeenCalledTimes(3);
+      await loadRtcConfiguration(url, undefined, { reuse });
+      expect(mockedLoadTurnCredentials).toHaveBeenCalledTimes(4);
+      vi.advanceTimersByTime(240_000);
+      await loadRtcConfiguration(url, undefined, { reuse });
+      expect(mockedLoadTurnCredentials).toHaveBeenCalledTimes(5);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('allows localhost with all policy when TURN is unavailable', async () => {

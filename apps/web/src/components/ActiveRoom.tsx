@@ -22,7 +22,11 @@ import {
   type RoundAuthMode,
 } from '../lib/room-endpoints';
 import { RoomRefreshCoordinator } from '../lib/room-refresh-coordinator';
-import { loadRtcConfiguration, type LoadedRtcConfiguration } from '../lib/rtc-configuration';
+import {
+  loadRtcConfiguration,
+  type LoadedRtcConfiguration,
+  type TurnCredentialReuse,
+} from '../lib/rtc-configuration';
 import {
   PEER_CONNECTION_FAILURE_MESSAGE,
   buildRoomSystemNotices,
@@ -63,6 +67,8 @@ interface ActiveRoomProps {
   /** 방 다시 입장 때 통화 중 마지막 마이크·카메라 켜기·끄기를 함께 넘긴다. 세션이 없으면 생략한다. */
   onReconnect: (inputEnabled?: RoomSessionOptions['initialInputEnabled']) => void;
   onLeave: () => void;
+  /** 같은 화면에서 다시 입장할 때 아직 갱신 전인 TURN 자격 증명을 재사용하는 보관소다. */
+  turnCredentialReuse?: TurnCredentialReuse | undefined;
   registerLeaveGuard?: RegisterLeaveGuard | undefined;
 }
 
@@ -78,6 +84,7 @@ export function ActiveRoom({
   takePreparedMediaStream,
   onReconnect,
   onLeave,
+  turnCredentialReuse,
   registerLeaveGuard,
 }: ActiveRoomProps) {
   const sessionRef = useRef<RoomSession | null>(null);
@@ -188,9 +195,11 @@ export function ActiveRoom({
 
             let loaded: LoadedRtcConfiguration;
             try {
+              // 방 다시 입장이면 아직 갱신 전인 직전 자격 증명을 다시 써 발급 한도를 아낀다.
               loaded = await loadRtcConfiguration(
                 resolvedEndpoints.turnCredentialsUrl,
                 refreshCoordinator.turnRequestSignal,
+                turnCredentialReuse === undefined ? {} : { reuse: turnCredentialReuse },
               );
             } catch (error) {
               throw new RoomStartupFailure(
@@ -303,6 +312,7 @@ export function ActiveRoom({
     releasePreparedMediaStream,
     roomId,
     takePreparedMediaStream,
+    turnCredentialReuse,
   ]);
 
   useEffect(() => {
