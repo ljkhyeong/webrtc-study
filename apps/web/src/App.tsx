@@ -20,7 +20,11 @@ import {
   type RoundAuthMode,
 } from './lib/room-endpoints';
 import { useClientRelease, checkSignalingCompatibility } from './lib/client-release';
-import { ClientReleaseNotice } from './components/ClientReleaseNotice';
+import {
+  ClientReleaseNotice,
+  RELEASE_CHECK_FAILED_MESSAGE,
+  RELEASE_UPDATE_BEFORE_JOIN_MESSAGE,
+} from './components/ClientReleaseNotice';
 import { useRoomNavigation } from './lib/use-room-navigation';
 import type { TurnCredentialReuse } from './lib/rtc-configuration';
 
@@ -72,6 +76,8 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
     authMode === 'standalone' ? readStoredDisplayName() : '',
   );
   const [activeRoomKey, setActiveRoomKey] = useState<string | null>(null);
+  // 통화가 오류로 끝난 화면에서는 새 배포 안내를 입장 전처럼 새로고침 안내로 보여 준다.
+  const [callEnded, setCallEnded] = useState(false);
   const [turnCredentialReuse] = useState<TurnCredentialReuse>(() => ({ last: null }));
   const release = useClientRelease(authMode === 'standalone' || activeRoomKey !== null);
   const [activeHostCapability, setActiveHostCapability] = useState<string | undefined>();
@@ -167,7 +173,15 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
           initialInputEnabled={retryInput?.roomId === roomId ? retryInput.inputEnabled : undefined}
           authorizeBeforeEntryAction={authorizeBeforeEntryAction}
           beforeJoin={async () => {
-            if ((await release.check()) !== 'current') return false;
+            // 위쪽 버전 안내와 함께 입장 버튼 근처에도 막힌 이유를 보여 준다.
+            const releaseStatus = await release.check();
+            if (releaseStatus !== 'current') {
+              throw new Error(
+                releaseStatus === 'update'
+                  ? RELEASE_UPDATE_BEFORE_JOIN_MESSAGE
+                  : RELEASE_CHECK_FAILED_MESSAGE,
+              );
+            }
             const endpoints = resolveNormalizedRoomEndpoints({
               roomId,
               authMode,
@@ -208,6 +222,7 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
         onReconnect={retryCurrentRoom}
         onLeave={goHome}
         turnCredentialReuse={turnCredentialReuse}
+        onCallEndedChange={setCallEnded}
         registerLeaveGuard={registerLeaveGuard}
       />
     );
@@ -231,6 +246,7 @@ function ConfiguredApp({ authMode }: { readonly authMode: RoundAuthMode }) {
       <ClientReleaseNotice
         status={release.status}
         inRoom={activeRoomKey !== null}
+        callEnded={callEnded}
         onRetry={() => void release.check()}
       />
       {roomEntry}

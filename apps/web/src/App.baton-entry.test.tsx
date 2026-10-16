@@ -9,6 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const rtcCoreMock = vi.hoisted(() => ({
   RoomSession: vi.fn(),
 }));
+// 화면에 표시할 배포 상태와 입장 직전 확인 결과를 테스트마다 바꾼다.
+const releaseMock = vi.hoisted(() => ({
+  status: 'current' as 'current' | 'update' | 'unavailable',
+  checkResult: 'current' as 'current' | 'update' | 'unavailable',
+}));
 
 vi.mock('@round/rtc-core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@round/rtc-core')>()),
@@ -99,6 +104,8 @@ describe('BATON room entry boundary', () => {
     container = document.createElement('div');
     document.body.append(container);
     root = null;
+    releaseMock.status = 'current';
+    releaseMock.checkResult = 'current';
     rtcCoreMock.RoomSession.mockReset();
     rtcCoreMock.RoomSession.mockImplementation(function (options: RoomSessionOptions) {
       const snapshot = activeRoomSnapshot();
@@ -284,6 +291,78 @@ describe('BATON room entry boundary', () => {
     expect(
       (rtcCoreMock.RoomSession.mock.calls[1]![0] as RoomSessionOptions).initialInputEnabled,
     ).toEqual({ audio: false, video: true });
+  });
+
+  it('새 버전이 있으면 입장하지 않고 입장 버튼 근처에 이유를 보여 준다', async () => {
+    releaseMock.status = 'update';
+    releaseMock.checkResult = 'update';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (input === '/api/v1/auth/session') return authenticatedSession();
+        if (input === GRANT_ENDPOINT)
+          return response(200, { expiresAt: 1_800_000_000, refreshAfterSeconds: 240 });
+        throw new Error(`예상하지 않은 요청: ${String(input)}`);
+      }),
+    );
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await fillPrejoinName(container);
+    await act(async () => buttonWithText(container, '카메라·마이크 없이 입장')?.click());
+
+    await waitForState(() =>
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+        '새 버전이 있습니다. 새로고침 후 입장해 주세요.',
+      ),
+    );
+    expect(rtcCoreMock.RoomSession).not.toHaveBeenCalled();
+  });
+
+  it('통화 중 새 버전을 알게 된 뒤 통화가 오류로 끝나면 바로 새로고침하도록 안내한다', async () => {
+    // 입장할 때는 최신이었고 통화 중에 새 배포를 감지한 경우다.
+    releaseMock.status = 'update';
+    const defaultSession = rtcCoreMock.RoomSession.getMockImplementation()!;
+    rtcCoreMock.RoomSession.mockImplementation(function (options: RoomSessionOptions) {
+      const session = defaultSession(options) as RoomSession;
+      const failed: RoomSessionSnapshot = {
+        ...activeRoomSnapshot(),
+        status: 'error',
+        selfId: null,
+        error: { code: 'reconnect-exhausted', message: 'reconnect exhausted' },
+      };
+      return Object.assign(session, { getSnapshot: () => failed });
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (input === '/api/v1/auth/session') return authenticatedSession();
+        if (input === GRANT_ENDPOINT)
+          return response(200, { expiresAt: 1_800_000_000, refreshAfterSeconds: 240 });
+        if (input === TURN_ENDPOINT)
+          return response(200, {
+            urls: ['turns:turn.example.test:5349'],
+            username: 'round-user',
+            credential: 'round-credential',
+            expiresAt: 1_800_000_000,
+            refreshAfterSeconds: 480,
+          });
+        throw new Error(`예상하지 않은 요청: ${String(input)}`);
+      }),
+    );
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await fillPrejoinName(container);
+    await act(async () => buttonWithText(container, '카메라·마이크 없이 입장')?.click());
+    await waitForState(() => expect(buttonWithText(container, '방 다시 입장')).not.toBeNull());
+
+    const notice = container.querySelector<HTMLElement>('aside[aria-label="버전 안내"]');
+    expect(notice?.textContent).toContain('새 버전이 있습니다. 새로고침 후 입장해 주세요.');
+    expect(notice === null ? null : buttonWithText(notice, '새로고침')).not.toBeNull();
+    expect(notice === null ? null : buttonWithText(notice, '나중에')).toBeNull();
   });
 
   it('completes session and room authorization before rendering prejoin or requesting media', async () => {
@@ -705,6 +784,9 @@ describe('BATON room entry boundary', () => {
   });
 });
 vi.mock('./lib/client-release', () => ({
-  useClientRelease: () => ({ status: 'current', check: async () => 'current' }),
+  useClientRelease: () => ({
+    status: releaseMock.status,
+    check: async () => releaseMock.checkResult,
+  }),
   checkSignalingCompatibility: vi.fn(async () => {}),
 }));

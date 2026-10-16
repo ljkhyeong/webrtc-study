@@ -69,6 +69,8 @@ interface ActiveRoomProps {
   onLeave: () => void;
   /** 같은 화면에서 다시 입장할 때 아직 갱신 전인 TURN 자격 증명을 재사용하는 보관소다. */
   turnCredentialReuse?: TurnCredentialReuse | undefined;
+  /** 통화가 오류로 끝났거나 종료됐는지 알린다. 화면에서 사라지면 `false`로 되돌린다. */
+  onCallEndedChange?: ((ended: boolean) => void) | undefined;
   registerLeaveGuard?: RegisterLeaveGuard | undefined;
 }
 
@@ -85,6 +87,7 @@ export function ActiveRoom({
   onReconnect,
   onLeave,
   turnCredentialReuse,
+  onCallEndedChange,
   registerLeaveGuard,
 }: ActiveRoomProps) {
   const sessionRef = useRef<RoomSession | null>(null);
@@ -429,6 +432,11 @@ export function ActiveRoom({
   });
   // 자동 연결 복구도 통화 중이므로 화면 켜짐을 풀지 않는다. 복구에 실패해 통화가 끝나면 해제한다.
   const screenWakeLock = useScreenWakeLock(status === 'active' || status === 'reconnecting');
+  const callEnded = status === 'error' || status === 'ended';
+  useEffect(() => {
+    onCallEndedChange?.(callEnded);
+    return () => onCallEndedChange?.(false);
+  }, [callEnded, onCallEndedChange]);
   const localMedia = snapshot?.localMedia ?? {
     audioAvailable: false,
     audioEnabled: false,
