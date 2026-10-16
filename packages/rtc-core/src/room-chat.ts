@@ -70,6 +70,11 @@ export class RoomChatLedger {
     this.#rememberMessage(message);
   }
 
+  /** 내가 보낸 메시지를 재전송할 수 있는 마지막 시각(단조 증가 시계)이다. */
+  retryDeadline(messageId: string): number | undefined {
+    return this.#retryDeadlines.get(messageId);
+  }
+
   retryCandidate(messageId: string): ChatMessage | undefined {
     if ((this.#retryDeadlines.get(messageId) ?? 0) <= this.#now()) return undefined;
     return this.#messages.find((message) => message.isLocal && message.id === messageId);

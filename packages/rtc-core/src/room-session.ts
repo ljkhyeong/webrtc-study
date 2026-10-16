@@ -297,6 +297,7 @@ export class RoomSession {
   #selfRole: ParticipantRole | null = null;
   #canModerateMedia = false;
   #lastModerationNotice: ModerationNotice | null = null;
+  #retryExpiryTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   // peerId가 있으면 해당 참가자 연결에 대한 경고다.
   #warning: (RoomIssue & { readonly peerId: string | null }) | null = null;
   #error: RoomIssue | null = null;
@@ -1943,9 +1944,35 @@ export class RoomSession {
 
   #emit(): void {
     this.#snapshot = this.#buildSnapshot();
+    this.#scheduleRetryExpiry();
     for (const listener of [...this.#listeners]) {
       listener(this.#snapshot);
     }
+  }
+
+  // 스냅샷은 바뀔 때만 다시 만들므로, 재전송 기한이 지나도 다른 변화가 없으면 재전송 버튼이 남는다.
+  // 재전송할 수 있는 메시지 중 가장 이른 기한이 지나면 스냅샷을 한 번 다시 만든다.
+  #scheduleRetryExpiry(): void {
+    if (this.#retryExpiryTimer !== null) {
+      globalThis.clearTimeout(this.#retryExpiryTimer);
+      this.#retryExpiryTimer = null;
+    }
+    let deadline = Number.POSITIVE_INFINITY;
+    for (const message of this.#snapshot.messages) {
+      if (message.recipients?.some((recipient) => recipient.canRetry === true)) {
+        deadline = Math.min(deadline, this.#chat.retryDeadline(message.id) ?? deadline);
+      }
+    }
+    if (this.#disposed || deadline === Number.POSITIVE_INFINITY) {
+      return;
+    }
+    this.#retryExpiryTimer = globalThis.setTimeout(
+      () => {
+        this.#retryExpiryTimer = null;
+        this.#emit();
+      },
+      Math.max(0, deadline - this.#monotonicNow()) + 1,
+    );
   }
 
   #wallClockNow(): number {

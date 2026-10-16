@@ -128,6 +128,24 @@ describe('참가자 재연결과 채팅 재전송', () => {
     expect(harness.session.retryChat(sent.id)).toBe(false);
   });
 
+  it('재전송 기한이 지나면 다른 변화가 없어도 재전송할 수 없다고 표시한다', async () => {
+    vi.useFakeTimers();
+    await connectedRoom();
+    const sent = harness.session.sendChat('확인 부탁드립니다.');
+    harness.peerConnections[0]!.channels[0]!.receive({ type: 'chat.ack', messageId: sent.id });
+    await vi.advanceTimersByTimeAsync(45_000);
+    const canRetry = () =>
+      harness.session
+        .getSnapshot()
+        .messages[0]!.recipients!.find((recipient) => recipient.peerId === 'peer-b')!.canRetry;
+    expect(canRetry()).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(74_999);
+    expect(canRetry()).toBe(true);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(canRetry()).toBe(false);
+  });
+
   it('연결을 새로 만든 후에도 이미 받은 메시지를 중복 표시하지 않는다', async () => {
     await connectedRoom();
     const message = {
