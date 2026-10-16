@@ -2,6 +2,8 @@ import type { SignalingTransport } from './signaling-transport.js';
 
 interface SignalingRecoveryFailure {
   readonly message: string;
+  /** 다시 시도해도 결과가 같은 실패다. 남은 시도 없이 재연결을 끝낸다. */
+  readonly final?: boolean;
 }
 
 interface JoinWait {
@@ -14,17 +16,20 @@ interface SignalingRecoveryLifecycleOptions {
   readonly serializedJoinMessage: string;
   readonly roomJoinTimeoutMs: number;
   readonly maxReconnectAttempts: number;
+  /** 첫 재연결 시도부터 새 시도를 시작할 수 있는 시간이다. */
+  readonly reconnectWindowMs: number;
   readonly reconnectDelay: (attempt: number) => number;
+  readonly now: () => number;
   readonly isCancelled: () => boolean;
   readonly isRoomActive: () => boolean;
   readonly createJoinTimeoutError: () => unknown;
   readonly createJoinIncompleteError: () => unknown;
   readonly onReconnectAttemptFailed: (error: unknown) => SignalingRecoveryFailure;
-  readonly onReconnectExhausted: (lastFailureMessage: string) => void;
+  readonly onReconnectExhausted: (lastFailureMessage: string, lastError: unknown) => void;
   readonly onUnexpectedFailure: (error: unknown) => void;
 }
 
-/** 방 입장 확인과 횟수가 제한된 시그널링 재연결을 관리한다. */
+/** 방 입장 확인과 시간·횟수가 제한된 시그널링 재연결을 관리한다. */
 export class SignalingRecoveryLifecycle {
   readonly #options: SignalingRecoveryLifecycleOptions;
 
@@ -104,7 +109,9 @@ export class SignalingRecoveryLifecycle {
   }
 
   async #performReconnect(initialFailure: SignalingRecoveryFailure): Promise<void> {
+    const startedAt = this.#options.now();
     let lastFailureMessage = initialFailure.message;
+    let lastError: unknown = null;
 
     for (let attempt = 0; attempt < this.#options.maxReconnectAttempts; attempt += 1) {
       if (this.#options.isCancelled()) {
@@ -112,7 +119,12 @@ export class SignalingRecoveryLifecycle {
       }
 
       if (attempt > 0) {
-        await this.#waitForReconnectDelay(this.#options.reconnectDelay(attempt));
+        const delayMs = this.#options.reconnectDelay(attempt);
+        // 다음 시도가 시간 예산 밖에서 시작되면 기다리지 않고 바로 끝낸다.
+        if (this.#options.now() - startedAt + delayMs >= this.#options.reconnectWindowMs) {
+          break;
+        }
+        await this.#waitForReconnectDelay(delayMs);
         if (this.#options.isCancelled()) {
           return;
         }
@@ -139,11 +151,16 @@ export class SignalingRecoveryLifecycle {
         if (this.#options.isCancelled()) {
           return;
         }
-        lastFailureMessage = this.#options.onReconnectAttemptFailed(error).message;
+        const failure = this.#options.onReconnectAttemptFailed(error);
+        lastFailureMessage = failure.message;
+        lastError = error;
+        if (failure.final === true) {
+          break;
+        }
       }
     }
 
-    this.#options.onReconnectExhausted(lastFailureMessage);
+    this.#options.onReconnectExhausted(lastFailureMessage, lastError);
   }
 
   #waitForReconnectDelay(delayMs: number): Promise<void> {

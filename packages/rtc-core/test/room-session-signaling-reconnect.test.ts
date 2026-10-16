@@ -307,6 +307,98 @@ describe('RoomSession', () => {
     }
   });
 
+  it('시간 예산 안에서만 새 재연결 시도를 시작한다', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    try {
+      const socketCreationTimes: number[] = [];
+      const harness = createHarness({
+        monotonicNow: () => Date.now(),
+        recovery: {
+          signalingConnectTimeoutMs: 1_000,
+          maxReconnectAttempts: 50,
+          reconnectWindowMs: 10_000,
+          reconnectInitialDelayMs: 1_000,
+          reconnectMaxDelayMs: 4_000,
+        },
+        onSocketCreated: (socket, index) => {
+          socketCreationTimes.push(Date.now());
+          if (index > 0) {
+            queueMicrotask(() => {
+              socket.error();
+              socket.serverClose(1006, 'connection refused');
+            });
+          }
+        },
+      });
+      await joinSession(harness);
+
+      harness.socket.serverClose(1001, 'Server shutting down');
+      await vi.runAllTimersAsync();
+      await flushMicrotasks();
+
+      // 7초에 시작한 시도 다음 대기(4초)는 10초 예산을 넘기므로 기다리지 않고 끝낸다.
+      expect(socketCreationTimes).toEqual([10_000, 10_000, 11_000, 13_000, 17_000]);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        status: 'error',
+        error: { code: 'reconnect-exhausted' },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { code: 'ROOM_FULL', attempts: 3 },
+    { code: 'FORBIDDEN', attempts: 1 },
+  ] as const)(
+    '재입장이 $code로 거절되면 $attempts번 시도한 뒤 그 이유로 끝낸다',
+    async ({ code, attempts }) => {
+      vi.useFakeTimers();
+      try {
+        const harness = createHarness({
+          recovery: {
+            maxReconnectAttempts: 3,
+            reconnectInitialDelayMs: 5,
+            reconnectMaxDelayMs: 5,
+          },
+          onSocketCreated: (socket, index) => {
+            if (index === 0) return;
+            const send = socket.send.bind(socket);
+            socket.send = (data: string) => {
+              send(data);
+              if ((JSON.parse(data) as { type: string }).type !== 'room.join') return;
+              queueMicrotask(() =>
+                socket.serverMessage({
+                  v: PROTOCOL_VERSION,
+                  type: 'error',
+                  roomId: ROOM_ID,
+                  payload: { code, message: `rejected with ${code}` },
+                }),
+              );
+            };
+            queueMicrotask(() => socket.open());
+          },
+        });
+        await joinSession(harness);
+
+        harness.socket.serverClose(1006, 'network lost');
+        await vi.runAllTimersAsync();
+        await flushMicrotasks();
+
+        expect(harness.sockets).toHaveLength(1 + attempts);
+        expect(harness.audioTrack.stopped).toBe(true);
+        expect(harness.session.getSnapshot()).toMatchObject({
+          status: 'error',
+          warning: null,
+          error: { code },
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it('cancels reconnect backoff and creates no later socket after leave', async () => {
     vi.useFakeTimers();
     try {

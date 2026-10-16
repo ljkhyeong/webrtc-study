@@ -147,6 +147,8 @@ export interface RoomSessionRecoveryOptions {
   readonly roomJoinTimeoutMs?: number;
   readonly peerConnectionTimeoutMs?: number;
   readonly maxReconnectAttempts?: number;
+  /** 시그널링 재연결을 처음 시도한 뒤 새 시도를 시작할 수 있는 시간이다. */
+  readonly reconnectWindowMs?: number;
   readonly reconnectInitialDelayMs?: number;
   readonly reconnectMaxDelayMs?: number;
   readonly peerDisconnectedGraceMs?: number;
@@ -223,12 +225,26 @@ const DEFAULT_RECOVERY_OPTIONS: ResolvedRecoveryOptions = {
   // 협상 재시도와 연결 watchdog이 경쟁하지 않도록 기본 초기 offer 재시도
   // backoff 상한(15.5초)보다 길게 설정한다.
   peerConnectionTimeoutMs: 20_000,
-  maxReconnectAttempts: 6,
+  // 서버 재시작(기동 대기 최대 20초)이나 정리되지 않은 이전 연결(30~60초)을 기다릴 수 있도록
+  // 시도 간격(최대 4초)은 유지하고 시간으로 제한한다. 횟수는 시간 안에서의 상한이다.
+  maxReconnectAttempts: 20,
+  reconnectWindowMs: 60_000,
   reconnectInitialDelayMs: 500,
   reconnectMaxDelayMs: 4_000,
   peerDisconnectedGraceMs: 3_000,
   peerRecoveryTimeoutMs: 8_000,
 };
+// 서버가 재입장을 거부한 이유다. 자동 재연결이 이 이유로 끝나면 처음 입장과 같은 안내를 보인다.
+const REJOIN_REJECTION_CODES: ReadonlySet<RoomIssueCode> = new Set([
+  'ROOM_FULL',
+  'FORBIDDEN',
+  'INVALID_MESSAGE',
+]);
+// 다시 시도해도 결과가 같은 거부다. 정원 초과는 끊긴 이전 연결이 정리되면 풀릴 수 있어 계속 시도한다.
+const FINAL_REJOIN_REJECTION_CODES: ReadonlySet<RoomIssueCode> = new Set([
+  'FORBIDDEN',
+  'INVALID_MESSAGE',
+]);
 class RoomSessionFailure extends Error {
   constructor(
     readonly code: RoomIssueCode,
@@ -457,7 +473,9 @@ export class RoomSession {
       serializedJoinMessage,
       roomJoinTimeoutMs: this.#recoveryOptions.roomJoinTimeoutMs,
       maxReconnectAttempts: this.#recoveryOptions.maxReconnectAttempts,
+      reconnectWindowMs: this.#recoveryOptions.reconnectWindowMs,
       reconnectDelay: (attempt) => this.#reconnectDelay(attempt),
+      now: () => this.#monotonicNow(),
       isCancelled: () => this.#disposed,
       isRoomActive: () => this.#status === 'active',
       createJoinTimeoutError: () =>
@@ -472,16 +490,19 @@ export class RoomSession {
           'signaling-closed',
           'Signaling connection closed while room entry was completing',
         ),
-      onReconnectAttemptFailed: (error) => this.#handleReconnectAttemptFailure(error),
-      onReconnectExhausted: (lastFailureMessage) => {
-        this.#finishReconnectFailure({
-          code: 'reconnect-exhausted',
-          message:
-            'Could not reconnect after ' +
-            this.#recoveryOptions.maxReconnectAttempts +
-            ' attempts. ' +
-            lastFailureMessage,
-        });
+      onReconnectAttemptFailed: (error) => ({
+        message: this.#handleReconnectAttemptFailure(error).message,
+        final: error instanceof RoomSessionFailure && FINAL_REJOIN_REJECTION_CODES.has(error.code),
+      }),
+      onReconnectExhausted: (lastFailureMessage, lastError) => {
+        this.#finishReconnectFailure(
+          lastError instanceof RoomSessionFailure && REJOIN_REJECTION_CODES.has(lastError.code)
+            ? { code: lastError.code, message: lastError.message }
+            : {
+                code: 'reconnect-exhausted',
+                message: 'Could not reconnect to the signaling server. ' + lastFailureMessage,
+              },
+        );
       },
       onUnexpectedFailure: (error) => {
         this.#finishReconnectFailure(this.#issueFromError(error, 'reconnect-exhausted'));
