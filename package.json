@@ -36,10 +36,10 @@
     "format:check": "prettier --check --ignore-unknown ."
   },
   "devDependencies": {
-    "@playwright/test": "1.62.0",
-    "concurrently": "10.0.4",
-    "prettier": "3.9.6",
+    "@playwright/test": "1.64.0",
+    "concurrently": "10.0.6",
+    "prettier": "3.9.10",
     "typescript": "7.0.2",
-    "yaml": "2.9.0"
+    "yaml": "2.9.1"
   }
 }
