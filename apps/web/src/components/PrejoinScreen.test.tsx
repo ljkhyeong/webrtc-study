@@ -385,6 +385,85 @@ describe('PrejoinScreen', () => {
     }
   });
 
+  it('권한 요청에 응답이 없어도 이름을 고치고 안내를 본 뒤 카메라·마이크 없이 입장할 수 있다', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    let grant!: (stream: MediaStream) => void;
+    const lateTrack = {
+      kind: 'audio',
+      readyState: 'live',
+      enabled: true,
+      stop: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      getSettings: () => ({}),
+    };
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: vi.fn(
+          () =>
+            new Promise<MediaStream>((resolve) => {
+              grant = resolve;
+            }),
+        ),
+        enumerateDevices: vi.fn(async () => []),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      },
+    });
+    const onJoin = vi.fn();
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const button = (name: string) =>
+      [...container.querySelectorAll('button')].find((item) => item.textContent?.trim() === name) ??
+      null;
+    try {
+      act(() =>
+        root.render(
+          <PrejoinScreen
+            initialDisplayName="림"
+            backLabel="BATON으로 돌아가기"
+            roomId="abcd-efgh-jkmp"
+            showHostCapabilityInput={false}
+            onBack={vi.fn()}
+            onJoin={onJoin}
+          />,
+        ),
+      );
+      await act(async () => button('카메라·마이크 켜기')!.click());
+
+      expect(container.textContent).toContain('마이크와 카메라를 확인하고 있습니다.');
+      expect(container.querySelector<HTMLInputElement>('#display-name')!.disabled).toBe(false);
+      expect(button('카메라·마이크 확인 중')!.disabled).toBe(true);
+      expect(button('카메라·마이크 없이 입장')!.disabled).toBe(false);
+      expect(container.textContent).not.toContain('권한 요청 창이 보이지 않으면');
+      await act(async () => vi.advanceTimersByTime(5_000));
+      expect(container.textContent).toContain('권한 요청 창이 보이지 않으면');
+
+      await act(async () => button('카메라·마이크 없이 입장')!.click());
+      expect(onJoin).toHaveBeenCalledExactlyOnceWith('림', null, undefined, {
+        audio: true,
+        video: true,
+      });
+
+      // 입장한 뒤에 도착한 권한 결과의 트랙은 바로 멈춘다.
+      await act(async () =>
+        grant({
+          getTracks: () => [lateTrack],
+          getAudioTracks: () => [lateTrack],
+          getVideoTracks: () => [],
+        } as unknown as MediaStream),
+      );
+      expect(lateTrack.stop).toHaveBeenCalledOnce();
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('requires a separate device-check action and offers a media-less join', () => {
     const getUserMedia = vi.fn();
     const webSocket = vi.fn();

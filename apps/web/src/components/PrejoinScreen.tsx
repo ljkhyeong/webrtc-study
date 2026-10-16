@@ -70,6 +70,7 @@ export function PrejoinScreen({
   const [hostCapability, setHostCapability] = useState('');
   const [hostOpen, setHostOpen] = useState(false);
   const [devicesOpen, setDevicesOpen] = useState(false);
+  const [checkingSlow, setCheckingSlow] = useState(false);
   const speakerTest = useSpeakerTest('');
 
   const normalizedHostCapability = hostCapability.trim() || undefined;
@@ -145,8 +146,20 @@ export function PrejoinScreen({
     })();
   };
 
+  // 권한 요청에 응답하지 않으면 장치 요청이 끝나지 않으므로 잠금은 요청을 시작할 때까지만 둔다.
+  // 그동안에도 이름을 고치거나 카메라·마이크 없이 입장할 수 있다.
+  const startDeviceRequest = (request: () => Promise<unknown>) => {
+    runAuthorized(async () => {
+      void request().catch((error: unknown) => {
+        if (actionLifetimeRef.current) {
+          setActionError(errorMessage(error));
+        }
+      });
+    });
+  };
+
   const handleCheckDevices = () => {
-    runAuthorized(() => ensureController().checkDevices());
+    startDeviceRequest(() => ensureController().checkDevices());
   };
 
   const handleJoin = (withMedia: boolean) => {
@@ -189,6 +202,16 @@ export function PrejoinScreen({
   const isIdle = snapshot.status === 'idle';
   const isChecking = snapshot.status === 'checking';
   const hasAnyMedia = snapshot.localMedia.audioAvailable || snapshot.localMedia.videoAvailable;
+
+  // 권한 요청 창을 놓쳤을 수 있으므로 확인이 오래 걸리면 다른 방법을 함께 안내한다.
+  useEffect(() => {
+    if (!isChecking) {
+      setCheckingSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setCheckingSlow(true), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [isChecking]);
 
   const speakerTestSection = (
     <section className="prejoin-speaker-test" aria-label="입장 전 스피커 확인">
@@ -287,6 +310,12 @@ export function PrejoinScreen({
               <div className="prejoin-preview__checking" role="status" aria-live="polite">
                 <span className="connecting-ring" />
                 <strong>마이크와 카메라를 확인하고 있습니다.</strong>
+                {checkingSlow ? (
+                  <small>
+                    권한 요청 창이 보이지 않으면 주소창의 권한 아이콘을 확인하거나, 카메라·마이크
+                    없이 입장해 주세요.
+                  </small>
+                ) : null}
               </div>
             ) : null}
           </section>
@@ -333,7 +362,7 @@ export function PrejoinScreen({
                       onClick={() => {
                         const controller = controllerRef.current;
                         if (controller !== null) {
-                          runAuthorized(() => controller.retryUnavailable());
+                          startDeviceRequest(() => controller.retryUnavailable());
                         }
                       }}
                     >
@@ -365,7 +394,7 @@ export function PrejoinScreen({
                             const deviceId = event.currentTarget.value;
                             const controller = controllerRef.current;
                             if (controller !== null) {
-                              runAuthorized(() => controller.selectInput(kind, deviceId));
+                              startDeviceRequest(() => controller.selectInput(kind, deviceId));
                             }
                           }}
                         >
@@ -448,15 +477,19 @@ export function PrejoinScreen({
                 type="submit"
                 disabled={isChecking || hostCapabilityInvalid || authorizationPending}
               >
-                {hasAnyMedia ? '입장하기' : '카메라·마이크 없이 입장'}
+                {hasAnyMedia
+                  ? '입장하기'
+                  : isChecking
+                    ? '카메라·마이크 확인 중'
+                    : '카메라·마이크 없이 입장'}
                 <ArrowIcon />
               </button>
             )}
-            {isIdle || hasAnyMedia ? (
+            {isIdle || hasAnyMedia || isChecking ? (
               <button
                 className="prejoin-text-action"
                 type="button"
-                disabled={(!isIdle && isChecking) || hostCapabilityInvalid || authorizationPending}
+                disabled={hostCapabilityInvalid || authorizationPending}
                 onClick={() => handleJoin(false)}
               >
                 카메라·마이크 없이 입장
