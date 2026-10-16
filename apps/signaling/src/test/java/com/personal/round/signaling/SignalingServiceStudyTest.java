@@ -46,12 +46,51 @@ class SignalingServiceStudyTest extends SignalingServiceTestSupport {
 		service.handle(participant.session(), new ClientMessage.Study(ROOM_ID, "sync", null));
 		assertThat(participant.nextJson().at("/payload/remainingMs").asLong()).isEqualTo(1_494_000);
 		service.disconnect(participant.session());
+		// 연결이 끊겨 빈 방은 보관 시간 안에 다시 입장하면 타이머·주제를 이어 쓴다.
+		monotonicTicker.advanceMillis(60_000);
 		TestPeer next = peer("next");
 		connect(next);
 		service.handle(next.session(), join("새 참가자"));
 		next.nextJson();
 		service.handle(next.session(), new ClientMessage.Study(ROOM_ID, "sync", null));
-		assertThat(next.nextJson().at("/payload/revision").asLong()).isZero();
+		var restored = next.nextJson();
+		assertThat(restored.at("/payload/revision").asLong()).isEqualTo(4);
+		assertThat(restored.at("/payload/topic").asString()).isEqualTo("코드 리뷰");
+		assertThat(restored.at("/payload/remainingMs").asLong()).isEqualTo(1_434_000);
+	}
+
+	@Test
+	void clearsAnEmptyRoomStudyAfterAnExplicitLeaveOrOnceTheRetentionExpires() throws Exception {
+		TestPeer leaving = peer("leaving-host");
+		connect(leaving);
+		service.handle(leaving.session(), new ClientMessage.Join(ROOM_ID, null, "방장", HOST_TOKEN));
+		leaving.nextJson();
+		service.handle(leaving.session(), update("topic", 0, "알고리즘", null, 0));
+		leaving.nextJson();
+		service.handle(leaving.session(), new ClientMessage.Leave(ROOM_ID, null));
+
+		TestPeer disconnected = peer("disconnected-host");
+		connect(disconnected);
+		service.handle(disconnected.session(), new ClientMessage.Join(ROOM_ID, null, "방장", HOST_TOKEN));
+		disconnected.nextJson();
+		service.handle(disconnected.session(), new ClientMessage.Study(ROOM_ID, "sync", null));
+		var afterLeave = disconnected.nextJson();
+		assertThat(afterLeave.at("/payload/revision").asLong()).isZero();
+		assertThat(afterLeave.at("/payload/topic").asString()).isEmpty();
+
+		service.handle(disconnected.session(), update("topic", 0, "자료구조", null, 0));
+		disconnected.nextJson();
+		service.disconnect(disconnected.session());
+		monotonicTicker.advanceMillis(600_000);
+
+		TestPeer late = peer("late");
+		connect(late);
+		service.handle(late.session(), join("늦은 참가자"));
+		late.nextJson();
+		service.handle(late.session(), new ClientMessage.Study(ROOM_ID, "sync", null));
+		var afterRetention = late.nextJson();
+		assertThat(afterRetention.at("/payload/revision").asLong()).isZero();
+		assertThat(afterRetention.at("/payload/topic").asString()).isEmpty();
 	}
 
 	private ClientMessage.Study update(String action, long revision, String topic, String mode, int seconds) {

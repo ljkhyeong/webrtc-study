@@ -69,6 +69,9 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 			new CloseStatus(4002, "Participation session superseded");
 	private static final long UNSET_NANOS = Long.MIN_VALUE;
 	private static final long HEARTBEAT_SEND_SLACK_NANOS = TimeUnit.SECONDS.toNanos(1);
+	// 노트북 덮개를 닫는 휴식처럼 혼자 있던 방장의 연결이 끊긴 동안 타이머·주제를 보관하는 시간이다.
+	private static final long PARKED_STUDY_RETENTION_NANOS = TimeUnit.MINUTES.toNanos(10);
+	private static final int MAX_PARKED_STUDY_STATES = 1_000;
 	private static final BytesKeyGenerator HEARTBEAT_CHALLENGE_GENERATOR =
 			KeyGenerators.secureRandom(2 * Long.BYTES);
 
@@ -77,6 +80,8 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 	private final Map<String, LinkedHashMap<String, Peer>> rooms = new HashMap<>();
 	private final Map<String, RoomStudyState> studyStates = new HashMap<>();
 	private final Map<String, RoomHandQueue> handQueues = new HashMap<>();
+	// 직접 나가지 않고 연결이 끊겨 빈 방의 타이머·주제다. 오래된 순서로 정리한다.
+	private final LinkedHashMap<String, ParkedStudy> parkedStudyStates = new LinkedHashMap<>();
 	// 대체된 피어는 방 상태에서 즉시 제거하지만 close가 반환될 때까지 입장 예약은 유지한다.
 	private final Map<String, Peer> pendingTerminalCleanup = new HashMap<>();
 	private final SignalingOutboundDispatcher<Peer> outboundDispatcher;
@@ -518,6 +523,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 				studyStates.putIfAbsent(message.roomId(), previousStudy);
 			}
 		}
+		restoreParkedStudyLocked(message.roomId());
 		LinkedHashMap<String, Peer> room = rooms.computeIfAbsent(
 				message.roomId(), ignored -> new LinkedHashMap<>());
 		if (room.size() >= maxRoomSize) {
@@ -578,7 +584,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 				"The message room does not match the joined room.", workPlan)) {
 			return;
 		}
-		removePeerFromRoom(peer, workPlan, null);
+		removePeerFromRoom(peer, workPlan, null, true);
 	}
 
 	private void relay(Peer peer, ClientMessage.Relay message, WorkPlan workPlan) {
@@ -793,7 +799,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 			}
 			inboundLimiter.release(peer.inboundLimit);
 			outboundDispatcher.clearLocked(peer);
-			removePeerFromRoom(peer, workPlan, pendingOutbound);
+			removePeerFromRoom(peer, workPlan, pendingOutbound, false);
 			return true;
 		}
 		return false;
@@ -845,10 +851,29 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 				: null;
 	}
 
+	private void parkStudyLocked(String roomId, RoomStudyState study) {
+		long nowNanos = monotonicTicker.getAsLong();
+		parkedStudyStates.values().removeIf(parked -> !parked.retainedAt(nowNanos));
+		parkedStudyStates.remove(roomId);
+		parkedStudyStates.put(roomId, new ParkedStudy(study, nowNanos));
+		if (parkedStudyStates.size() > MAX_PARKED_STUDY_STATES) {
+			parkedStudyStates.remove(parkedStudyStates.keySet().iterator().next());
+		}
+	}
+
+	/** 연결이 끊겨 비었던 방에 보관 시간 안에 다시 입장하면 타이머·주제를 이어 쓴다. */
+	private void restoreParkedStudyLocked(String roomId) {
+		ParkedStudy parked = parkedStudyStates.remove(roomId);
+		if (parked != null && parked.retainedAt(monotonicTicker.getAsLong())) {
+			studyStates.putIfAbsent(roomId, parked.state());
+		}
+	}
+
 	private void removePeerFromRoom(
 			Peer peer,
 			WorkPlan workPlan,
-			ArrayDeque<PendingOutbound> pendingOutbound) {
+			ArrayDeque<PendingOutbound> pendingOutbound,
+			boolean leftByRequest) {
 		if (peer.roomId == null) {
 			return;
 		}
@@ -868,8 +893,12 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 		}
 		if (room.isEmpty()) {
 			rooms.remove(roomId, room);
-			studyStates.remove(roomId);
+			RoomStudyState study = studyStates.remove(roomId);
 			handQueues.remove(roomId);
+			// 직접 나가지 않고 연결이 끊겨 빈 방이면 다시 입장할 때 이어 쓰도록 타이머·주제를 잠시 보관한다.
+			if (!leftByRequest && study != null) {
+				parkStudyLocked(roomId, study);
+			}
 			return;
 		}
 		if (!wasAnnounced) {
@@ -1082,6 +1111,7 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 			rooms.clear();
 			studyStates.clear();
 			handQueues.clear();
+			parkedStudyStates.clear();
 		}
 		closeSessionsConcurrently(sessions, closeDeadlineNanos);
 		awaitPendingTerminalCleanup(closeDeadlineNanos);
@@ -1275,6 +1305,13 @@ public class SignalingService implements SmartLifecycle, MeterBinder {
 		private PendingOutbound(Peer peer, WebSocketMessage<?> message) {
 			this.peer = peer;
 			this.message = message;
+		}
+	}
+
+	private record ParkedStudy(RoomStudyState state, long parkedAtNanos) {
+
+		boolean retainedAt(long nowNanos) {
+			return nowNanos - parkedAtNanos < PARKED_STUDY_RETENTION_NANOS;
 		}
 	}
 
