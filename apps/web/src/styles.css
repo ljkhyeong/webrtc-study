@@ -723,23 +723,32 @@ textarea:focus-visible {
   position: absolute;
   z-index: 30;
   top: 82px;
-  left: 28px;
+  left: 32px;
   display: grid;
-  width: min(620px, calc(100% - 56px));
+  width: min(620px, calc(100% - 64px));
   padding: 14px 16px;
   border: 1px solid var(--c-danger-line);
   border-radius: 0;
-  gap: 5px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title close'
+    'help close'
+    'url url';
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 5px;
   color: var(--c-ink);
   background: var(--c-danger-soft);
   box-shadow: none;
 }
 
 .room-copy-recovery strong {
+  grid-area: title;
   font-size: 0.82rem;
 }
 
 .room-copy-recovery span {
+  grid-area: help;
   color: var(--c-ink);
   font-size: 0.72rem;
 }
@@ -750,10 +759,23 @@ textarea:focus-visible {
   padding: 8px 10px;
   border: 1px solid var(--c-line-strong);
   border-radius: 0;
+  grid-area: url;
   color: var(--c-ink);
-  background: rgb(23 32 51 / 7%);
+  background: var(--c-surface);
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 0.72rem;
+}
+
+.room-copy-recovery button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--c-danger-line);
+  border-radius: 0;
+  grid-area: close;
+  color: var(--c-danger-ink);
+  background: var(--c-surface);
+  font-size: 0.68rem;
+  font-weight: 750;
 }
 
 /* 패널을 연 중간 폭에서는 상단 바의 부가 글자를 줄여 버튼이 줄바꿈되지 않게 한다. */
@@ -2408,6 +2430,11 @@ textarea:focus-visible {
   .side-panel {
     margin-right: 24px;
   }
+
+  .room-copy-recovery {
+    left: 24px;
+    width: min(620px, calc(100% - 48px));
+  }
 }
 
 @media (max-width: 760px) {
@@ -2493,8 +2520,8 @@ textarea:focus-visible {
 
   .room-copy-recovery {
     top: 66px;
-    right: 10px;
-    left: 10px;
+    right: 16px;
+    left: 16px;
     width: auto;
   }
 

@@ -373,7 +373,7 @@ describe('RoomView 브라우저 동작', () => {
     },
   );
 
-  it('초대 링크 복사 실패 시 정규 주소를 직접 복사할 수 있게 표시한다', async () => {
+  it('초대 링크 복사 실패 시 정규 주소를 직접 복사할 수 있게 표시하고 닫으면 방 코드로 초점을 돌려준다', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: vi.fn().mockRejectedValue(new DOMException('거부됨')) },
@@ -390,6 +390,14 @@ describe('RoomView 브라우저 동작', () => {
     );
     expect(recovery?.getAttribute('role')).toBe('alert');
     expect(manualCopy?.value).toBe(`${window.location.origin}/room/abcd-efgh-jkmp`);
+
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="초대 링크 복사 안내 닫기"]')
+        ?.click(),
+    );
+    expect(container.querySelector('.room-copy-recovery')).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('.room-code'));
   });
 
   async function openInviteDialog() {

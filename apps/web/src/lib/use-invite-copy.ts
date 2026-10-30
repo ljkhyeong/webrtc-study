@@ -9,6 +9,7 @@ type InviteCopyState =
 export function useInviteCopy(roomId: string): {
   readonly state: InviteCopyState;
   readonly copy: () => Promise<void>;
+  readonly dismissError: () => void;
 } {
   const [state, setState] = useState<InviteCopyState>({ status: 'idle' });
   const resetTimer = useRef<number | null>(null);
@@ -52,5 +53,9 @@ export function useInviteCopy(roomId: string): {
     }
   };
 
-  return { state, copy };
+  // 실패 안내는 다시 복사하기 전까지 남으므로 직접 주소를 복사한 뒤 닫을 수 있게 한다.
+  const dismissError = () =>
+    setState((current) => (current.status === 'error' ? { status: 'idle' } : current));
+
+  return { state, copy, dismissError };
 }

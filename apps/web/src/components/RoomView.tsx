@@ -176,7 +176,12 @@ export function RoomView({
     }
   }, [activePinnedPeerId]);
 
-  const { state: inviteCopyState, copy: handleCopy } = useInviteCopy(roomId);
+  const {
+    state: inviteCopyState,
+    copy: handleCopy,
+    dismissError: dismissCopyError,
+  } = useInviteCopy(roomId);
+  const roomCodeButtonRef = useRef<HTMLButtonElement>(null);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [chatNotifications, setChatNotifications] = useState<ChatNotificationSummary>({
     unreadMessageCount: 0,
@@ -290,6 +295,7 @@ export function RoomView({
         <div className="room-header__brand">
           <span className="wordmark">ROUND</span>
           <button
+            ref={roomCodeButtonRef}
             className="room-code"
             type="button"
             aria-label={
@@ -366,6 +372,17 @@ export function RoomView({
             value={inviteCopyState.inviteUrl}
             onFocus={(event) => event.currentTarget.select()}
           />
+          <button
+            type="button"
+            aria-label="초대 링크 복사 안내 닫기"
+            onClick={() => {
+              dismissCopyError();
+              // 안내와 함께 누른 버튼이 사라지므로 초점을 방 코드 복사 버튼으로 돌려준다.
+              roomCodeButtonRef.current?.focus();
+            }}
+          >
+            닫기
+          </button>
         </div>
       ) : null}
 
