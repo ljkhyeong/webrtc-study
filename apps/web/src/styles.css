@@ -328,6 +328,15 @@ textarea:focus-visible {
   outline-color: var(--c-accent);
 }
 
+/* 한글 안내·제목이 음절 중간에서 끊기지 않게 어절 단위로 줄을 바꾸고, 공백 없이 긴 글자는 넘치기 전에 끊는다. */
+.prejoin-shell,
+.room-shell,
+.baton-entry-shell,
+.media-device-dialog {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
 .landing-main {
   z-index: 1;
   display: grid;
@@ -4021,12 +4030,14 @@ textarea:focus-visible {
   border-top: 1px solid var(--c-rule);
 }
 
+/* 좁은 화면에서는 안내 글을 자르지 않고 음량 막대 아래 줄로 내린다. */
 .prejoin-devices__bar .microphone-level {
   display: flex;
   min-width: 0;
   flex: 1;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 6px 10px;
 }
 
 .prejoin-devices__bar .microphone-level > span {
@@ -4046,10 +4057,9 @@ textarea:focus-visible {
 
 .prejoin-devices__bar .microphone-level small {
   min-width: 0;
-  overflow: hidden;
+  flex: 1 1 180px;
   font-size: 0.8125rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
 }
 
 .prejoin-link-action,
