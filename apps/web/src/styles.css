@@ -1771,14 +1771,15 @@ textarea:focus-visible {
   background: var(--c-success-soft);
 }
 
-/* 오른쪽 패널은 채팅·손들기·참가자 탭을 한 카드에서 바꿔 보여 준다. */
+/* 오른쪽 패널은 채팅·손들기·참가자 탭을 한 카드에서 바꿔 보여 준다.
+   위아래·오른쪽 여백은 영상 영역의 안쪽 여백과 같게 두어 머리글·조작부 괘선과 끝을 맞춘다. */
 .side-panel {
   position: relative;
   z-index: 15;
   display: grid;
   min-width: 0;
   min-height: 0;
-  margin: 4px 24px 24px 0;
+  margin: 16px 32px 20px 0;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--c-line);
@@ -2105,11 +2106,36 @@ textarea:focus-visible {
   background: var(--c-raised);
 }
 
-/* 마우스 환경에서는 메시지에 올리거나 키보드로 이동할 때만 복사 버튼을 보인다. */
+/* 마우스 환경에서는 메시지에 올리거나 키보드로 이동할 때만 복사 버튼을 보인다. 숨긴 버튼이 메시지 사이에
+   자리를 차지하지 않게 말풍선 아래 모서리에 띄우고, 복사 실패 안내나 수신 확인 줄이 있으면 겹치지 않게
+   글 흐름에 둔다. */
 @media (hover: hover) and (pointer: fine) {
+  .chat-message__actions {
+    position: relative;
+    margin-top: 0;
+  }
+
   .chat-message__actions button {
+    position: absolute;
+    right: 8px;
+    bottom: -14px;
+    z-index: 1;
+    min-height: 24px;
+    padding: 2px 8px;
+    border: 1px solid var(--c-line-strong);
+    background: var(--c-surface);
     opacity: 0;
     transition: opacity 120ms ease;
+  }
+
+  .chat-message:has(.chat-message__recipients) .chat-message__actions,
+  .chat-message__actions:has([role='alert']) {
+    margin-top: 4px;
+  }
+
+  .chat-message:has(.chat-message__recipients) .chat-message__actions button,
+  .chat-message__actions:has([role='alert']) button {
+    position: static;
   }
 
   .chat-message:hover .chat-message__actions button,
@@ -2330,6 +2356,10 @@ textarea:focus-visible {
 
   .room-shell--panel-open .room-workspace {
     grid-template-columns: minmax(0, 1fr) 330px;
+  }
+
+  .side-panel {
+    margin-right: 24px;
   }
 }
 
