@@ -128,7 +128,8 @@ button:disabled {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+summary:focus-visible {
   outline: 3px solid rgb(44 128 105 / 35%);
   outline-offset: 3px;
 }
@@ -322,9 +323,10 @@ textarea:focus-visible {
   outline-offset: 3px;
 }
 
-/* 통화·입장 화면의 키보드 초점 표시는 주요 색으로 맞춘다. */
+/* 통화·입장 화면의 키보드 초점 표시는 주요 색으로 맞춘다. 새 버전 안내는 화면 밖 최상위에 그려진다. */
 .prejoin-shell :focus-visible,
-.room-shell :focus-visible {
+.room-shell :focus-visible,
+.client-release-notice :focus-visible {
   outline-color: var(--c-accent);
 }
 
@@ -332,7 +334,8 @@ textarea:focus-visible {
 .prejoin-shell,
 .room-shell,
 .baton-entry-shell,
-.media-device-dialog {
+.media-device-dialog,
+.client-release-notice {
   word-break: keep-all;
   overflow-wrap: break-word;
 }
@@ -2839,8 +2842,8 @@ textarea:focus-visible {
 .client-release-notice {
   position: fixed;
   z-index: 60;
-  left: 12px;
-  right: 12px;
+  left: 16px;
+  right: 16px;
   bottom: calc(106px + env(safe-area-inset-bottom, 0px));
   display: flex;
   align-items: center;
@@ -4381,20 +4384,22 @@ textarea:focus-visible {
   display: none;
 }
 
+/* 위 '방장이신가요?'처럼 밑줄 글자로 누를 수 있음을 보이고 누름 영역을 32px로 둔다. */
 .prejoin-back-action {
   justify-self: start;
-  margin: 16px 0 0 48px;
+  min-height: 32px;
+  margin: 8px 0 0 48px;
   padding: 0;
   border: 0;
   color: var(--c-ink-soft);
   background: transparent;
   font-size: 0.8125rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .prejoin-back-action:hover {
   color: var(--c-ink);
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 /* 채팅을 연 중간 폭에서는 연결 상태 글자를 숨기고 주제 글자를 줄인다. */
