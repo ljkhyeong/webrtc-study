@@ -50,9 +50,6 @@
   --c-accent-fill: #dfe2fd;
   --c-on-accent: #ffffff;
   --c-success: #18794e;
-  --c-success-soft: #eaf4ee;
-  --c-success-line: #a7d3b9;
-  --c-success-ink: #14613e;
   --c-hand: #111111;
   --c-on-hand: #ffffff;
   --c-hand-soft: #e9e8e1;
@@ -786,8 +783,6 @@ summary:focus-visible {
   font-weight: 750;
 }
 
-/* 패널을 연 중간 폭에서는 상단 바의 부가 글자를 줄여 버튼이 줄바꿈되지 않게 한다. */
-
 /* 통화 화면 위에 뜨는 대화상자는 통화 화면과 같은 색과 글자 크기를 사용한다. */
 .media-device-dialog {
   width: min(460px, calc(100vw - 32px));
@@ -1113,11 +1108,9 @@ summary:focus-visible {
   display: grid;
   min-width: 0;
   min-height: 0;
-  padding: 16px 32px 20px;
   grid-template-columns: repeat(var(--gallery-columns, 2), var(--tile-width, minmax(0, 1fr)));
   grid-auto-rows: var(--tile-height, minmax(180px, 1fr));
   place-content: center;
-  gap: 14px;
   overflow: auto;
   background: var(--c-bg);
 }
@@ -1131,9 +1124,7 @@ summary:focus-visible {
   position: relative;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--c-line);
   border-radius: 0;
-  background: var(--c-surface);
   container: video-tile / inline-size;
 }
 
@@ -1212,16 +1203,10 @@ summary:focus-visible {
 
 .video-tile__fallback span {
   display: grid;
-  width: clamp(72px, 9vw, 112px);
   aspect-ratio: 1;
   border: 0;
   border-radius: 0;
   place-items: center;
-  color: var(--c-tile-ink);
-  background: var(--c-tile-avatar);
-  font-size: clamp(1.25rem, 2.5vw, 2rem);
-  font-weight: 600;
-  letter-spacing: -0.03em;
 }
 
 .video-tile__preview-notice {
@@ -1246,20 +1231,14 @@ summary:focus-visible {
   left: 13px;
   z-index: 4;
   padding: 6px 8px;
-  border: 1px solid var(--c-warn-line);
   border-radius: 0;
-  color: var(--c-warn-ink);
-  background: var(--c-warn-soft);
   font-size: 0.64rem;
   font-weight: 750;
-  backdrop-filter: blur(10px);
 }
 
 .video-tile__connection--failed,
 .video-tile__connection--closed {
   border-color: var(--c-danger-line);
-  color: var(--c-danger-ink);
-  background: var(--c-danger-soft);
 }
 
 .video-tile__badges {
@@ -1276,19 +1255,14 @@ summary:focus-visible {
 .video-tile__badges span {
   padding: 6px 9px;
   border-radius: 0;
-  color: var(--c-ink);
-  background: var(--c-overlay);
   font-size: 0.62rem;
   font-weight: 750;
-  backdrop-filter: blur(10px);
 }
 
 .video-tile__badges .video-tile__hand-raised {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--c-on-accent);
-  background: var(--c-hand);
 }
 
 .video-tile__hand-raised svg {
@@ -1468,9 +1442,6 @@ summary:focus-visible {
 
 .video-tile__meta {
   position: absolute;
-  right: 14px;
-  bottom: 13px;
-  left: 14px;
   z-index: 4;
   display: flex;
   align-items: center;
@@ -1489,16 +1460,12 @@ summary:focus-visible {
 
 .participant-audio summary {
   display: flex;
-  min-width: 32px;
-  height: 32px;
   padding: 0 7px;
   align-items: center;
   justify-content: center;
   gap: 4px;
   border: 1px solid var(--c-line-strong);
   border-radius: 0;
-  color: var(--c-ink);
-  background: var(--c-overlay);
   font-size: 0.7rem;
   cursor: pointer;
   list-style: none;
@@ -1512,9 +1479,6 @@ summary:focus-visible {
 
 .video-tile__meta > .video-tile__local-mute {
   display: grid;
-  width: 32px;
-  height: 32px;
-  min-height: 0;
   padding: 0;
   place-items: center;
 }
@@ -1580,15 +1544,9 @@ summary:focus-visible {
 
 .video-tile__name {
   overflow: hidden;
-  padding: 6px 11px;
   border-radius: 0;
-  color: var(--c-ink);
-  background: var(--c-overlay);
-  font-size: 0.78rem;
-  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
-  backdrop-filter: blur(8px);
 }
 
 .video-tile__local-mute {
@@ -1613,13 +1571,8 @@ summary:focus-visible {
 
 .video-tile__muted {
   display: grid;
-  width: 28px;
-  height: 28px;
   border-radius: 0;
   place-items: center;
-  color: var(--c-ink-soft);
-  background: var(--c-overlay);
-  backdrop-filter: blur(10px);
 }
 
 .video-tile__muted svg {
@@ -1656,29 +1609,19 @@ summary:focus-visible {
 
 .waiting-note {
   position: absolute;
-  bottom: 28px;
-  left: 36px;
   z-index: 8;
   display: flex;
   padding: 10px 10px 10px 14px;
-  border: 1px solid var(--c-line);
   border-radius: 0;
   align-items: center;
   gap: 14px;
   color: var(--c-ink-soft);
-  background: var(--c-overlay);
-  box-shadow: none;
-  font-size: 0.7rem;
-  backdrop-filter: blur(14px);
 }
 
 .waiting-note button {
   padding: 8px 10px;
   border: 0;
   border-radius: 0;
-  color: var(--c-bg);
-  background: var(--c-accent);
-  font-size: 0.68rem;
   font-weight: 750;
 }
 
@@ -2541,8 +2484,6 @@ summary:focus-visible {
 
   .video-stage {
     height: 100%;
-    padding: 8px 8px 12px;
-    gap: 8px;
   }
 
   .video-tile {
@@ -2550,9 +2491,6 @@ summary:focus-visible {
   }
 
   .waiting-note {
-    right: 18px;
-    bottom: 20px;
-    left: 18px;
     justify-content: space-between;
   }
 
@@ -2653,11 +2591,9 @@ summary:focus-visible {
   line-height: 1.5;
 }
 .room-hand-queue ol {
-  margin: 0 0 12px;
   padding-left: 24px;
 }
 .room-hand-queue li {
-  padding: 6px 0;
   overflow-wrap: anywhere;
 }
 .room-hand-queue p {
@@ -2701,8 +2637,6 @@ summary:focus-visible {
   display: block;
   line-height: 1.5;
 }
-
-/* 공용 타이머는 상단 가운데에 크게 두고, 누르면 아래에 조작 패널을 연다. */
 
 .room-study__host-notice {
   padding: 10px 12px;
@@ -2765,10 +2699,7 @@ summary:focus-visible {
 }
 .room-study__body {
   position: absolute;
-  top: calc(100% + 8px);
-  left: 50%;
   width: min(480px, calc(100vw - 24px));
-  max-height: calc(100svh - 160px);
   overflow-y: auto;
   display: grid;
   gap: 14px;
@@ -2776,9 +2707,6 @@ summary:focus-visible {
   border: 1px solid var(--c-line);
   border-radius: 0;
   background: var(--c-surface);
-  transform: translateX(-50%);
-  box-shadow: none;
-  font-size: 0.8rem;
 }
 .room-study__body p {
   margin: 0;
@@ -3014,7 +2942,6 @@ summary:focus-visible {
 /* 연결된 타일은 테두리를 두지 않고 발언 중일 때만 파란 테두리로 표시한다. */
 .video-tile--speaking::after {
   position: absolute;
-  inset: -1px;
   z-index: 3;
   border: 3px solid var(--c-accent);
   border-radius: inherit;
@@ -3032,10 +2959,6 @@ summary:focus-visible {
   animation: none;
 }
 @media (max-width: 760px) {
-  .room-study__body {
-    left: 0;
-    transform: none;
-  }
   .quality-toggle {
     padding: 4px 6px;
     font-size: 0.65rem;
@@ -3081,28 +3004,13 @@ summary:focus-visible {
   }
 
   .video-tile__meta {
-    right: 8px;
-    bottom: 8px;
-    left: 8px;
     gap: 6px;
-  }
-
-  .video-tile__name {
-    font-size: 0.7rem;
   }
 
   .video-tile__meta > .video-tile__local-mute,
   .participant-audio summary {
-    min-width: 28px;
-    width: auto;
-    height: 28px;
     padding: 0 5px;
     font-size: 0.64rem;
-  }
-
-  .video-tile__fallback span {
-    width: 56px;
-    font-size: 1.1rem;
   }
 }
 
@@ -4233,7 +4141,6 @@ summary:focus-visible {
   position: relative;
   display: grid;
   padding: 16px 0 22px 48px;
-  gap: 10px;
   border-top: 1px solid var(--c-rule);
 }
 
