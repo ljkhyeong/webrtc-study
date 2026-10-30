@@ -988,7 +988,7 @@ textarea:focus-visible {
   border: 1px solid var(--c-line-strong);
   border-radius: 0;
   color: var(--c-ink);
-  background: rgb(23 32 51 / 6%);
+  background: var(--c-raised);
   font-size: 0.66rem;
   font-weight: 700;
 }
@@ -1003,7 +1003,7 @@ textarea:focus-visible {
 .connection-diagnostics__privacy {
   padding: 10px 11px;
   border-radius: 0;
-  background: rgb(23 32 51 / 5%);
+  background: var(--c-bg);
 }
 
 .connection-diagnostics__list {
@@ -1017,7 +1017,7 @@ textarea:focus-visible {
   border: 1px solid var(--c-line);
   border-radius: 0;
   gap: 9px;
-  background: rgb(23 32 51 / 3%);
+  background: var(--c-bg);
 }
 
 .connection-diagnostics__item > strong {
@@ -1958,7 +1958,7 @@ textarea:focus-visible {
 }
 
 .participant-list li:hover {
-  background: rgb(23 32 51 / 4%);
+  background: var(--c-bg);
 }
 
 .participant-list__avatar {
@@ -2645,7 +2645,7 @@ textarea:focus-visible {
   padding: 12px 14px;
   border: 1px solid var(--c-line);
   border-radius: 0;
-  background: rgb(23 32 51 / 3%);
+  background: var(--c-bg);
 }
 .screen-wake-setting label {
   display: flex;
@@ -2871,7 +2871,7 @@ textarea:focus-visible {
   display: grid;
   gap: 8px;
   padding: 10px 14px;
-  border-bottom: 1px solid #ffffff18;
+  border-bottom: 1px solid var(--c-line);
 }
 .chat-search__row {
   display: flex;
@@ -2922,9 +2922,11 @@ textarea:focus-visible {
 .chat-search button:disabled {
   opacity: 0.4;
 }
+/* 검색에 걸린 메시지는 말풍선 둘레까지 옅은 파랑으로 깔고, 현재 결과는 파란 테두리와 글자 강조로 보여 준다. */
 .chat-message[data-search-match] {
   border-radius: 0;
-  background: #b4ae4420;
+  background: var(--c-accent-soft);
+  box-shadow: 0 0 0 6px var(--c-accent-soft);
 }
 .chat-message[data-search-current] {
   outline: 2px solid var(--c-accent);
@@ -2932,8 +2934,8 @@ textarea:focus-visible {
 }
 .chat-message mark {
   border-radius: 0;
-  color: #18221c;
-  background: #f2dc81;
+  color: var(--c-ink);
+  background: var(--c-accent-fill);
 }
 .room-study__actions {
   display: flex;
@@ -2963,17 +2965,18 @@ textarea:focus-visible {
   gap: 6px;
 }
 .chat-message__recipients button {
+  min-height: 28px;
   border: 1px solid var(--c-line-strong);
   border-radius: 0;
   padding: 4px 7px;
-  color: var(--c-success-ink);
-  background: var(--c-success-soft);
+  color: var(--c-ink);
+  background: var(--c-raised);
   font-size: inherit;
 }
 .chat-message__recipients small {
   line-height: 1.5;
 }
-/* 연결된 타일은 테두리를 두지 않고 발언 중일 때만 민트색 테두리로 표시한다. */
+/* 연결된 타일은 테두리를 두지 않고 발언 중일 때만 파란 테두리로 표시한다. */
 .video-tile--speaking::after {
   position: absolute;
   inset: -1px;
@@ -3068,7 +3071,7 @@ textarea:focus-visible {
   }
 }
 
-/* 손들기 대기 순서는 번호를 붙인 주황 줄로 보여 준다. */
+/* 손들기 대기 순서는 검정 번호를 붙인 회색 줄로 보여 준다. */
 .room-hand-queue ol {
   display: grid;
   margin: 0 0 12px;
