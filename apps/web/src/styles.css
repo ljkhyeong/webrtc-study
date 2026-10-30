@@ -740,7 +740,7 @@ textarea:focus-visible {
 
 /* 패널을 연 중간 폭에서는 상단 바의 부가 글자를 줄여 버튼이 줄바꿈되지 않게 한다. */
 
-/* 통화 화면 위에 뜨는 대화상자는 통화 화면과 같은 어두운 색과 글자 크기를 사용한다. */
+/* 통화 화면 위에 뜨는 대화상자는 통화 화면과 같은 색과 글자 크기를 사용한다. */
 .media-device-dialog {
   width: min(460px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
@@ -857,8 +857,8 @@ textarea:focus-visible {
 }
 
 .media-device-dialog header button:hover:not(:disabled) {
-  color: white;
-  background: rgb(23 32 51 / 8%);
+  color: var(--c-ink);
+  background: var(--c-raised);
 }
 
 .media-device-dialog .dialog-button--primary {
@@ -1829,8 +1829,8 @@ textarea:focus-visible {
 }
 
 .side-panel__close:hover {
-  color: white;
-  background: rgb(23 32 51 / 8%);
+  color: var(--c-ink);
+  background: var(--c-raised);
 }
 
 .side-panel__close svg {
@@ -2101,7 +2101,7 @@ textarea:focus-visible {
 }
 
 .chat-message__actions button:hover {
-  color: white;
+  color: var(--c-ink);
   background: var(--c-raised);
 }
 
