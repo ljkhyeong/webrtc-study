@@ -928,7 +928,7 @@ textarea:focus-visible {
   opacity: 0.5;
 }
 
-.invite-dialog header svg {
+.media-device-dialog header svg {
   display: block;
   width: 20px;
   height: 20px;

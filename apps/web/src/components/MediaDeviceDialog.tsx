@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { VideoQualityMode, ScreenShareQuality } from '@round/rtc-core';
 import { useModalDialog } from '../lib/use-modal-dialog';
 import { AudioOutputControls } from './AudioOutputControls';
+import { CloseIcon } from './Icons';
 import { MicrophoneLevel } from './MicrophoneLevel';
 import type { ScreenWakeLockControl } from '../lib/use-screen-wake-lock';
 
@@ -163,7 +164,7 @@ export function MediaDeviceDialog({
       <header>
         <h2 id="media-device-title">통화 장치 설정</h2>
         <button type="button" onClick={onClose} aria-label="장치 설정 닫기">
-          닫기
+          <CloseIcon />
         </button>
       </header>
       <p>
