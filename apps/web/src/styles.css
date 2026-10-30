@@ -243,7 +243,12 @@ textarea:focus-visible {
   border-bottom: 1px solid var(--c-line);
 }
 
+/* 로고는 입장 준비·통화 화면과 같은 좁은 숫자 글꼴로 맞춘다. */
 .baton-entry-header .wordmark {
+  font-family: var(--c-figure-font);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
   text-decoration: none;
 }
 
@@ -255,12 +260,16 @@ textarea:focus-visible {
   justify-items: start;
 }
 
+.baton-entry-main .eyebrow {
+  letter-spacing: 0.08em;
+}
+
 .baton-entry-main h1 {
   max-width: 620px;
   margin: 12px 0 20px;
   font-size: clamp(2.25rem, 6vw, 4.6rem);
-  letter-spacing: -0.07em;
-  line-height: 0.98;
+  letter-spacing: -0.04em;
+  line-height: 1.04;
 }
 
 .baton-entry-main > p:not(.eyebrow) {
@@ -1625,32 +1634,33 @@ textarea:focus-visible {
   font-weight: 750;
 }
 
+/* 연결 중·연결 실패 안내는 영상 영역 전체를 종이색으로 덮어 머리글과 조작부 괘선 사이에 둔다. */
 .connecting-layer {
   position: absolute;
-  inset: 18px;
+  inset: 0;
   z-index: 9;
   display: flex;
-  border: 1px solid var(--c-line);
-  border-radius: 0;
+  padding: 24px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  background: rgb(238 241 245 / 94%);
+  background: rgb(244 243 238 / 94%);
   backdrop-filter: blur(10px);
 }
 
 .connecting-layer strong {
   margin-top: 22px;
   color: var(--c-ink);
-  font-family: 'Iowan Old Style', 'Noto Serif KR', serif;
-  font-size: 1.35rem;
-  font-weight: 500;
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-align: center;
 }
 
 .connecting-layer p {
-  margin: 9px 0 0;
+  margin: 8px 0 0;
   color: var(--c-ink-soft);
-  font-size: 0.74rem;
+  font-size: 0.8125rem;
 }
 
 .connecting-ring {
@@ -1667,7 +1677,7 @@ textarea:focus-visible {
   height: 42px;
   padding: 10px;
   border: 1px solid var(--c-danger-line);
-  border-radius: 50%;
+  border-radius: 0;
   color: var(--c-danger-ink);
   background: var(--c-danger-soft);
 }
@@ -2472,10 +2482,6 @@ textarea:focus-visible {
     bottom: 20px;
     left: 18px;
     justify-content: space-between;
-  }
-
-  .connecting-layer {
-    inset: 8px;
   }
 
   .side-panel {
