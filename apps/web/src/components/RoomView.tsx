@@ -257,6 +257,14 @@ export function RoomView({
     screenSharePending,
     moderationNotice,
   ]);
+  // 방장 안내는 장치를 다시 켤 때까지 영상 위 표식을 가리므로 닫을 수 있다. 안내가 지워진 뒤 방장이 다시
+  // 끄면 새로 보인다.
+  const [dismissedModerationNotice, setDismissedModerationNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!moderationNotice) setDismissedModerationNotice(null);
+  }, [moderationNotice]);
+  const visibleModerationNotice =
+    moderationNotice !== dismissedModerationNotice ? moderationNotice : undefined;
   const raisedHandNames = participants
     .filter((participant) => participant.handRaised)
     .map((participant) => `${participant.displayName}${participant.isLocal ? ' (나)' : ''}`);
@@ -374,6 +382,7 @@ export function RoomView({
           ref={stageRef}
           className={`video-stage${activePinnedPeerId ? ' video-stage--pinned' : ''}`}
           style={galleryStyle}
+          tabIndex={-1}
           aria-label="스터디 참가자 영상"
         >
           {participants.map((participant) => (
@@ -436,7 +445,7 @@ export function RoomView({
           ) : null}
 
           {peerRecoveryMessage ||
-          moderationNotice ||
+          visibleModerationNotice ||
           mediaWarning ||
           systemNotices.length > 0 ||
           (errorMessage && !terminalConnectionError) ? (
@@ -469,10 +478,21 @@ export function RoomView({
                   ) : null}
                 </div>
               ) : null}
-              {moderationNotice ? (
-                <p className="room-notice room-notice--moderation" role="status">
-                  {moderationNotice}
-                </p>
+              {visibleModerationNotice ? (
+                <div className="room-notice room-notice--moderation">
+                  <p role="status">{visibleModerationNotice}</p>
+                  <button
+                    type="button"
+                    aria-label="방장 안내 닫기"
+                    onClick={() => {
+                      setDismissedModerationNotice(visibleModerationNotice);
+                      // 누른 버튼이 사라지므로 초점을 영상 영역으로 옮겨 키보드 위치를 잃지 않게 한다.
+                      stageRef.current?.focus();
+                    }}
+                  >
+                    닫기
+                  </button>
+                </div>
               ) : null}
               {systemNotices.map((notice) => (
                 <p

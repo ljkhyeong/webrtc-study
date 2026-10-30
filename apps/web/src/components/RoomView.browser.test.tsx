@@ -696,6 +696,30 @@ describe('RoomView 브라우저 동작', () => {
     expect(announcement()).toBe('마이크를 켰습니다.');
   });
 
+  it('방장 안내를 닫으면 영상 영역으로 초점을 옮기고 안내가 지워진 뒤 다시 끄면 새로 보인다', () => {
+    const props = roomViewProps();
+    const notice = '방장이 마이크를 껐습니다. 필요하면 직접 다시 켤 수 있습니다.';
+    const render = (moderationNotice?: string) =>
+      act(() => root.render(<RoomView {...props} moderationNotice={moderationNotice} />));
+    const dismiss = () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="방장 안내 닫기"]');
+
+    render(notice);
+    expect(container.querySelector('.room-notice--moderation [role="status"]')?.textContent).toBe(
+      notice,
+    );
+    dismiss()?.focus();
+    act(() => dismiss()?.click());
+    expect(container.querySelector('.room-notice--moderation')).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('.video-stage'));
+
+    render(notice);
+    expect(dismiss()).toBeNull();
+    render(undefined);
+    render(notice);
+    expect(dismiss()).not.toBeNull();
+  });
+
   it('채팅 패널을 닫으면 하단 채팅 버튼으로 포커스를 복원한다', async () => {
     act(() => root.render(<RoomView {...roomViewProps()} />));
     const toggle = container.querySelector<HTMLButtonElement>('button[aria-label="채팅 열기"]');

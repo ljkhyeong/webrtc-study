@@ -1092,6 +1092,11 @@ textarea:focus-visible {
   background: var(--c-bg);
 }
 
+/* 영상 영역은 방장 안내를 닫은 뒤 초점을 받아 둘 뿐 누르는 조작이 아니므로 초점 테두리를 그리지 않는다. */
+.video-stage:focus {
+  outline: none;
+}
+
 .video-tile {
   position: relative;
   min-height: 0;
@@ -1755,18 +1760,21 @@ textarea:focus-visible {
   background: var(--c-warn-soft);
 }
 
-.room-notice--recoverable {
+.room-notice--recoverable,
+.room-notice--moderation {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
 }
 
-.room-notice--recoverable span {
+.room-notice--recoverable span,
+.room-notice--moderation p {
   min-width: 0;
 }
 
-.room-notice--recoverable button {
+.room-notice--recoverable button,
+.room-notice--moderation button {
   min-height: 34px;
   padding: 0 11px;
   border: 1px solid var(--c-warn-line);
@@ -1784,10 +1792,26 @@ textarea:focus-visible {
   background: var(--c-danger-soft);
 }
 
+/* 방장이 끈 장치 안내는 성공 표시가 아니므로 검정 글자와 괘선으로 두고, 다시 켤 때까지 영상 위 표식을
+   가리지 않게 닫을 수 있다. */
 .room-notice--moderation {
-  border-color: var(--c-success-line);
-  color: var(--c-success-ink);
-  background: var(--c-success-soft);
+  border-color: var(--c-rule);
+  color: var(--c-ink);
+  background: var(--c-surface);
+}
+
+.room-notice--moderation p {
+  margin: 0;
+}
+
+.room-notice--moderation button {
+  border-color: var(--c-line-strong);
+  color: var(--c-ink);
+  background: var(--c-raised);
+}
+
+.room-notice--moderation button:hover {
+  background: var(--c-raised-hover);
 }
 
 /* 오른쪽 패널은 채팅·손들기·참가자 탭을 한 카드에서 바꿔 보여 준다.
